@@ -90,11 +90,10 @@ export default function CreateUserModal({
       }
     }
 
-    // Validation for Corporate Admin creating property_manager
+    // ✅ FIX: Allow Corporate Admin to create Property Manager WITHOUT buildings
     if (isCorporateAdmin) {
       if (userFormData.userType === 'property_manager' && selectedUserBuildings.length === 0) {
-        setError("Please select at least one building for the Property Manager")
-        return
+        console.log('⚠️ Creating Property Manager without buildings - they can be assigned later via Admin Panel')
       }
     }
 
@@ -171,6 +170,8 @@ export default function CreateUserModal({
         }
 
         console.log('✅ Buildings assigned successfully')
+      } else if (userFormData.userType === 'property_manager') {
+        console.log('ℹ️ Property Manager created without buildings - assign later via Admin Panel')
       }
 
       // Reset form
@@ -371,12 +372,15 @@ export default function CreateUserModal({
           {(userFormData.userType === 'property_manager' || (!isMaster && !isCorporateAdmin)) && (
             <div>
               <label className="block text-sm font-medium text-foreground mb-2">
-                Assign Buildings {userFormData.userType === 'property_manager' && '*'}
+                Assign Buildings {isMaster && userFormData.userType === 'property_manager' && '*'}
+                {isCorporateAdmin && userFormData.userType === 'property_manager' && ' (Optional)'}
               </label>
               <div className="border border-border rounded p-4 space-y-2 max-h-48 overflow-y-auto">
                 {buildings.length === 0 ? (
                   <p className="text-sm text-muted-foreground">
-                    No buildings available
+                    {isCorporateAdmin && userFormData.userType === 'property_manager' 
+                      ? 'No buildings yet. Create a building first, then assign it to this Property Manager via the Admin Panel.'
+                      : 'No buildings available'}
                   </p>
                 ) : (
                   buildings.map((building) => (
@@ -397,8 +401,10 @@ export default function CreateUserModal({
                 )}
               </div>
               <p className="text-xs text-muted-foreground mt-1">
-                {userFormData.userType === 'property_manager' 
+                {isMaster && userFormData.userType === 'property_manager' 
                   ? 'Property Managers need at least one building'
+                  : isCorporateAdmin && userFormData.userType === 'property_manager'
+                  ? '✅ You can create the Property Manager now and assign buildings later via Admin Panel → Buildings tab'
                   : 'Optional - You can assign buildings later'}
               </p>
             </div>

@@ -11,7 +11,7 @@ interface CreateBuildingModalProps {
   onClose: () => void
   onSuccess: () => void
   currentUser: any
-  availableUsers: Array<{ id: number; name: string; email: string; user_type: string }>
+  availableUsers: Array<{ id: number; name: string; email: string; user_type: string; company_id?: number }>
 }
 
 export default function CreateBuildingModal({
@@ -33,10 +33,11 @@ export default function CreateBuildingModal({
 
   const isMaster = currentUser?.user_type === 'master'
   const isCorporateAdmin = currentUser?.user_type === 'corporate_administrator'
+  const isPropertyManager = currentUser?.user_type === 'property_manager'
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target
-    setBuildingFormData(prev => ({ ...prev, [name]: value }))
+    setBuildingFormData(prev => ({ ...prev, [name]: name === 'managerId' ? parseInt(value) || 0 : value }))
   }
 
   const toggleBuildingUser = (userId: number) => {
@@ -76,10 +77,12 @@ export default function CreateBuildingModal({
           .single()
         
         companyIdToAssign = pmData?.company_id || null
-      } else if (isCorporateAdmin || currentUser?.user_type === 'property_manager') {
+      } else if (isCorporateAdmin || isPropertyManager) {
         // Corporate Admin and Property Manager use their own company_id
         companyIdToAssign = currentUser.company_id
       }
+
+      console.log('🏢 Creating building with company_id:', companyIdToAssign)
 
       const { data: newBuilding, error: buildingError } = await supabase
         .from('buildings')
@@ -148,6 +151,13 @@ export default function CreateBuildingModal({
       setSaving(false)
     }
   }
+
+  // Filter available property managers based on user type
+  const availablePropertyManagers = isMaster 
+    ? availableUsers.filter(user => user.user_type === 'property_manager')
+    : isCorporateAdmin
+    ? availableUsers.filter(user => user.user_type === 'property_manager' && user.company_id === currentUser.company_id)
+    : []
 
   if (!isOpen) return null
 
@@ -227,6 +237,7 @@ export default function CreateBuildingModal({
             </p>
           </div>
 
+          {/* Master User - Can see all PMs */}
           {isMaster && (
             <div>
               <label className="block text-sm font-medium text-foreground mb-2">
@@ -241,18 +252,50 @@ export default function CreateBuildingModal({
                 className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
               >
                 <option value={0}>Select Property Manager</option>
-                {availableUsers
-                  .filter(user => user.user_type === 'property_manager')
-                  .map(pm => (
-                    <option key={pm.id} value={pm.id}>
-                      {pm.name} ({pm.email})
-                    </option>
-                  ))}
+                {availablePropertyManagers.map(pm => (
+                  <option key={pm.id} value={pm.id}>
+                    {pm.name} ({pm.email})
+                  </option>
+                ))}
               </select>
             </div>
           )}
 
-          {!isMaster && (
+          {/* Corporate Admin - Can see PMs from their company */}
+          {isCorporateAdmin && (
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-2">
+                Property Manager *
+              </label>
+              <select
+                name="managerId"
+                value={buildingFormData.managerId}
+                onChange={handleInputChange}
+                disabled={saving}
+                required
+                className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
+              >
+                <option value={0}>Select Property Manager</option>
+                {availablePropertyManagers.length === 0 ? (
+                  <option disabled>No Property Managers available - Create one first</option>
+                ) : (
+                  availablePropertyManagers.map(pm => (
+                    <option key={pm.id} value={pm.id}>
+                      {pm.name} ({pm.email})
+                    </option>
+                  ))
+                )}
+              </select>
+              <p className="text-xs text-muted-foreground mt-1">
+                {availablePropertyManagers.length === 0 
+                  ? '⚠️ Create a Property Manager first via Admin Panel → Users tab'
+                  : 'Select from your company\'s Property Managers'}
+              </p>
+            </div>
+          )}
+
+          {/* Property Manager - Auto-assigned */}
+          {isPropertyManager && (
             <div>
               <label className="block text-sm font-medium text-foreground mb-2">
                 Property Manager
