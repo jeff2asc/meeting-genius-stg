@@ -1,3 +1,4 @@
+@"
 @echo off
 echo ================================
 echo Meeting Genius Git Deploy
@@ -19,7 +20,7 @@ if errorlevel 1 (
 
 echo.
 echo [2/2] Deploying to server...
-ssh -i "C:\Users\Jeff Domingo\Videos\meetinggenius_openssh" root@45.59.114.16 "cd /opt/meetinggenius/app && git pull origin main && npm install --legacy-peer-deps --production && npm run build && pm2 reload meetinggenius"
+ssh -i "C:\Users\Jeff Domingo\Videos\meetinggenius_openssh" root@45.59.114.16 "cd /opt/meetinggenius/app && git pull origin main && npm install --legacy-peer-deps --production && npm run build && pm2 restart meetinggenius"
 
 echo.
 echo ================================
@@ -29,3 +30,4 @@ echo.
 echo App: https://app.meetinggenius.ca
 echo.
 pause
+"@ | Out-File -FilePath "C:\Users\Jeff Domingo\Videos\meeting-genius\deploy-git.bat" -Encoding ASCII -Force
