@@ -133,7 +133,7 @@ export default function MeetingView({
         id: section.id,
         title: section.title,
         order_index: section.order_index,
-        isExpanded: false, // collapsed by default
+        isExpanded: false,
         topics: (topicsData || []).filter(
           (topic) => topic.section_id === section.id
         ).map((topic) => ({
@@ -144,7 +144,7 @@ export default function MeetingView({
           attachments: 0,
           tasks: topic.tasks?.[0]?.count || 0,
           decisions: topic.decisions?.[0]?.count || 0,
-          order_index: topic.order_index,
+          order_index: topic.order_index
         }))
       }))
       setSections(sectionsWithTopics)
@@ -290,24 +290,204 @@ export default function MeetingView({
     }
   }
 
-  // HEADER CONTENT ADDED HERE!
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case "working_agenda":
+        return "bg-blue-100 text-blue-800"
+      case "agenda":
+        return "bg-green-100 text-green-800"
+      case "working_minutes":
+        return "bg-yellow-100 text-yellow-800"
+      case "minutes":
+        return "bg-purple-100 text-purple-800"
+      default:
+        return "bg-gray-100 text-gray-800"
+    }
+  }
+
+  const getStatusText = (status: string) => {
+    switch (status) {
+      case "working_agenda":
+        return "Working Agenda"
+      case "agenda":
+        return "Agenda"
+      case "working_minutes":
+        return "Working Minutes"
+      case "minutes":
+        return "Minutes"
+      default:
+        return status
+    }
+  }
+
+  const handleCreateSection = () => {
+    if (!userCanEdit) {
+      alert("You do not have permission to create sections.")
+      return
+    }
+    setShowCreateSectionModal(true)
+  }
+
+  const handleStartRecording = () => {
+    if (!userCanEdit) {
+      alert("You do not have permission to record meetings.")
+      return
+    }
+    setIsRecording(true)
+    setElapsedTime(0)
+    const interval = setInterval(() => setElapsedTime(prev => prev + 1), 1000)
+    setTimerInterval(interval)
+  }
+
+  const handleStopRecording = () => {
+    setIsRecording(false)
+    if (timerInterval) {
+      clearInterval(timerInterval)
+      setTimerInterval(null)
+    }
+  }
+
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString)
+    return date.toLocaleDateString("en-US", {
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric"
+    })
+  }
+
+  const formatTime = (timeString: string) => {
+    if (!timeString) return null
+    const [hours, minutes] = timeString.split(":")
+    const hour = parseInt(hours)
+    const ampm = hour >= 12 ? "PM" : "AM"
+    const displayHour = hour % 12 || 12
+    return `${displayHour}:${minutes} ${ampm}`
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted flex items-center justify-center">
+        <p className="text-muted-foreground">Loading meeting...</p>
+      </div>
+    )
+  }
+  if (!meeting) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted flex items-center justify-center">
+        <p className="text-muted-foreground">Meeting not found</p>
+      </div>
+    )
+  }
+  const totalTopics = sections.reduce((sum, section) => sum + section.topics.length, 0)
+
   return (
     <>
       <header className="border-b border-border bg-card shadow-sm sticky top-0 z-40">
         <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-4">
-              <h1 className="text-2xl font-bold text-foreground">Meeting Genius</h1>
-              {meeting && (
-                <span className="ml-5 bg-muted px-3 py-1 rounded text-sm">{meeting.building}</span>
+              <Button variant="ghost" size="icon" onClick={onBack} className="hover:bg-muted">
+                <ArrowLeft className="h-5 w-5" />
+              </Button>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-xl font-bold text-foreground">{meeting.title}</h1>
+                  {userCanEdit && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setShowEditMeetingModal(true)}
+                      className="hover:bg-muted border border-blue-500"
+                      title="Edit Meeting"
+                    >
+                      <Edit2 className="h-4 w-4" />
+                    </Button>
+                  )}
+                  <Badge variant="outline" className={getStatusColor(meeting.status)}>
+                    {getStatusText(meeting.status)}
+                  </Badge>
+                </div>
+                <p className="text-sm text-muted-foreground">{meeting.building}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-4">
+              {userCanEdit && (
+                <Button
+                  onClick={handleCreateSection}
+                  variant="outline"
+                  className="border-primary text-primary hover:bg-primary/10"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create Section
+                </Button>
+              )}
+              {isMounted && isRecording && <Timer elapsedTime={elapsedTime} />}
+              {isMounted && userCanEdit && (
+                <>
+                  {!isRecording ? (
+                    <Button
+                      onClick={handleStartRecording}
+                      className="bg-red-500 hover:bg-red-600 text-white"
+                    >
+                      <span className="flex items-center gap-2">
+                        <span className="h-3 w-3 rounded-full bg-white"></span>
+                        Start Recording
+                      </span>
+                    </Button>
+                  ) : (
+                    <Button
+                      onClick={handleStopRecording}
+                      variant="outline"
+                      className="border-red-500 text-red-500 hover:bg-red-50"
+                    >
+                      <span className="flex items-center gap-2">
+                        <span className="h-3 w-3 rounded-sm bg-red-500"></span>
+                        Stop Recording
+                      </span>
+                    </Button>
+                  )}
+                </>
               )}
             </div>
-            <div className="flex items-center gap-2">
-              {/* Add your global navigation, user, org switch, admin, logout(s) here if needed */}
-            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
+            {meeting.meeting_type && (
+              <div className="flex items-center gap-1">
+                <FileText className="h-4 w-4" />
+                <span>{meeting.meeting_type}</span>
+              </div>
+            )}
+            {meeting.meeting_date && (
+              <div className="flex items-center gap-1">
+                <Calendar className="h-4 w-4" />
+                <span>{formatDate(meeting.meeting_date)}</span>
+              </div>
+            )}
+            {meeting.start_time && (
+              <div className="flex items-center gap-1">
+                <Clock className="h-4 w-4" />
+                <span>{formatTime(meeting.start_time)}</span>
+              </div>
+            )}
+            {meeting.location && (
+              <div className="flex items-center gap-1">
+                <MapPin className="h-4 w-4" />
+                <span>{meeting.location}</span>
+              </div>
+            )}
+            {meeting.strata_plan_number && (
+              <div className="flex items-center gap-1">
+                <FileText className="h-4 w-4" />
+                <span>Plan: {meeting.strata_plan_number}</span>
+              </div>
+            )}
           </div>
         </div>
       </header>
+
       <DragDropContext onDragEnd={onDragEnd}>
         <Droppable droppableId="all-sections" type="SECTION">
           {(provided: any) => (
@@ -408,6 +588,55 @@ export default function MeetingView({
           )}
         </Droppable>
       </DragDropContext>
+
+      {/* Modals */}
+      {showCreateSectionModal && userCanEdit && (
+        <CreateSectionModal
+          meetingId={meetingId}
+          onClose={() => setShowCreateSectionModal(false)}
+          onSuccess={() => {
+            fetchSectionsAndTopics()
+            setShowCreateSectionModal(false)
+          }}
+        />
+      )}
+
+      {showCreateTopicModal && selectedSection && userCanEdit && (
+        <CreateTopicModal
+          meetingId={meetingId}
+          sectionId={selectedSection.id}
+          sectionTitle={selectedSection.title}
+          onClose={() => {
+            setShowCreateTopicModal(false)
+            setSelectedSection(null)
+          }}
+          onSuccess={() => {
+            fetchSectionsAndTopics()
+            setShowCreateTopicModal(false)
+            setSelectedSection(null)
+          }}
+        />
+      )}
+
+      {showEditMeetingModal && userCanEdit && meeting && (
+        <EditMeetingModal
+          isOpen={showEditMeetingModal}
+          onClose={() => setShowEditMeetingModal(false)}
+          onSuccess={() => {
+            fetchMeetingData()
+            setShowEditMeetingModal(false)
+          }}
+          meeting={{
+            id: parseInt(meetingId),
+            title: meeting.title,
+            meeting_date: meeting.meeting_date,
+            location: meeting.location,
+            start_time: meeting.start_time,
+            meeting_type: meeting.meeting_type,
+            strata_plan_number: meeting.strata_plan_number,
+          }}
+        />
+      )}
     </>
   )
 }
