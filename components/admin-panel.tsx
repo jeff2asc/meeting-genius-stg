@@ -456,7 +456,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
               </Button>
               <div>
                 <h1 className="text-xl font-bold text-foreground">Admin Panelz</h1>
-                <p className="text-sm text-muted-foreground">Manage users, buildings and companies</p>
+                <p className="text-sm text-muted-foreground">Manage users, buildings and companieszzzz</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
