@@ -20,7 +20,7 @@ if errorlevel 1 (
 
 echo.
 echo [2/2] Deploying to server...
-ssh -i "C:\Users\Jeff Domingo\Videos\meetinggenius_openssh" root@45.59.114.16 "cd /opt/meetinggenius/app && git pull origin main && npm install --legacy-peer-deps --production && npm run build && pm2 restart meetinggenius"
+ssh -i "C:\Users\Jeff Domingo\Videos\meetinggenius_openssh" root@45.59.114.16 "cd /opt/meetinggenius/app && git pull origin main && npm install --legacy-peer-deps && npm run build && pm2 restart meetinggenius"
 
 echo.
 echo ================================
