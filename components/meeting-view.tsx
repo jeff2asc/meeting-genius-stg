@@ -17,7 +17,6 @@ import { supabase, getCurrentUser } from "@/lib/supabase"
 import { canEditMeeting, isReadOnly } from "@/lib/permissions"
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd'
 
-
 interface MeetingViewProps {
   meetingId: string
   onBack: () => void
@@ -228,13 +227,10 @@ export default function MeetingView({
       const newSections = Array.from(sections)
       const [removed] = newSections.splice(source.index, 1)
       newSections.splice(destination.index, 0, removed)
-
       newSections.forEach((s, idx) => {
         s.order_index = idx + 1
       })
-
       setSections(newSections)
-
       try {
         await Promise.all(
           newSections.map((section) =>
@@ -250,14 +246,11 @@ export default function MeetingView({
       const fromIdx = sections.findIndex((s) => s.id === Number(source.droppableId))
       const toIdx = sections.findIndex((s) => s.id === Number(destination.droppableId))
       if (fromIdx === -1 || toIdx === -1) return
-
       const fromSection = sections[fromIdx]
       const toSection = sections[toIdx]
-
       const sourceTopics = Array.from(fromSection.topics)
       const destTopics = Array.from(toSection.topics)
       const [removed] = sourceTopics.splice(source.index, 1)
-
       if (fromIdx === toIdx) {
         sourceTopics.splice(destination.index, 0, removed)
         const newSections = [...sections]
@@ -267,9 +260,7 @@ export default function MeetingView({
         try {
           await Promise.all(
             newSections[fromIdx].topics.map((topic) =>
-              supabase
-                .from("topics").update({ order_index: topic.order_index })
-                .eq("id", topic.id)
+              supabase.from("topics").update({ order_index: topic.order_index }).eq("id", topic.id)
             )
           )
         } catch (err) { }
@@ -299,124 +290,124 @@ export default function MeetingView({
     }
   }
 
-  // (Helpers like formatDate, formatTime, getStatusColor...)
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted flex items-center justify-center">
-        <p className="text-muted-foreground">Loading meeting...</p>
-      </div>
-    )
-  }
-  if (!meeting) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted flex items-center justify-center">
-        <p className="text-muted-foreground">Meeting not found</p>
-      </div>
-    )
-  }
-  const totalTopics = sections.reduce((sum, section) => sum + section.topics.length, 0)
-
+  // HEADER CONTENT ADDED HERE!
   return (
-    <DragDropContext onDragEnd={onDragEnd}>
-      <Droppable droppableId="all-sections" type="SECTION">
-        {(provided: any) => (
-          <div
-            {...provided.droppableProps}
-            ref={provided.innerRef}
-            className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8 space-y-6"
-          >
-            {sections.map((section, index) => (
-              <Draggable key={section.id} draggableId={section.id.toString()} index={index}>
-                {(provided: any) => (
-                  <div ref={provided.innerRef} {...provided.draggableProps}>
-                    <Card className="border-0 bg-gradient-to-r from-primary/10 to-decision-purple/10 mb-3">
-                      <button
-                        {...provided.dragHandleProps}
-                        onClick={() => toggleSection(section.id)}
-                        className="w-full p-4 flex items-center justify-between hover:bg-muted/20 transition-colors"
-                      >
-                        <div className="flex items-center gap-3">
-                          {section.isExpanded ? (
-                            <ChevronDown className="h-5 w-5 text-primary" />
-                          ) : (
-                            <ChevronRight className="h-5 w-5 text-primary" />
-                          )}
-                          <h2 className="text-lg font-bold text-foreground">{section.title}</h2>
-                          <span className="text-sm text-muted-foreground">
-                            ({section.topics.length} {section.topics.length === 1 ? 'topic' : 'topics'})
-                          </span>
-                        </div>
-                        {userCanEdit && (
-                          <Button
-                            size="sm"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleAddTopic(section.id, section.title)
-                            }}
-                            className="bg-primary hover:bg-primary/90"
-                          >
-                            <Plus className="h-4 w-4 mr-2" />
-                            Add Topic
-                          </Button>
-                        )}
-                      </button>
-                      {section.isExpanded && (
-                        <Droppable droppableId={section.id.toString()} type="TOPIC">
-                          {(provided: any) => (
-                            <div
-                              {...provided.droppableProps}
-                              ref={provided.innerRef}
-                              className="space-y-4 ml-8"
-                            >
-                              {section.topics.length > 0 ? (
-                                section.topics.map((topic, idx) => (
-                                  <Draggable
-                                    key={topic.id}
-                                    draggableId={`topic-${topic.id}`}
-                                    index={idx}
-                                  >
-                                    {(provided: any) => (
-                                      <div
-                                        ref={provided.innerRef}
-                                        {...provided.draggableProps}
-                                        {...provided.dragHandleProps}
-                                      >
-                                        <TopicCard
-                                          topic={topic}
-                                          topicNumber={idx + 1}
-                                          onUpdate={updates => updateTopic(topic.id, updates)}
-                                          onDelete={id => deleteTopic(id)}
-                                          onTaskClick={() => onTaskClick(topic.id)}
-                                          onNoteClick={() => onNoteClick(topic.id)}
-                                          onDecisionClick={() => onDecisionClick(topic.id)}
-                                          isReadOnly={userIsReadOnly}
-                                        />
-                                      </div>
-                                    )}
-                                  </Draggable>
-                                ))
-                              ) : (
-                                <div className="text-center py-8 text-muted-foreground border-2 border-dashed border-border rounded-lg">
-                                  {userCanEdit
-                                    ? 'No topics in this section yet. Click "Add Topic" to create one.'
-                                    : 'No topics in this section yet.'}
-                                </div>
-                              )}
-                              {provided.placeholder}
-                            </div>
-                          )}
-                        </Droppable>
-                      )}
-                    </Card>
-                  </div>
-                )}
-              </Draggable>
-            ))}
-            {provided.placeholder}
+    <>
+      <header className="border-b border-border bg-card shadow-sm sticky top-0 z-40">
+        <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <h1 className="text-2xl font-bold text-foreground">Meeting Genius</h1>
+              {meeting && (
+                <span className="ml-5 bg-muted px-3 py-1 rounded text-sm">{meeting.building}</span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              {/* Add your global navigation, user, org switch, admin, logout(s) here if needed */}
+            </div>
           </div>
-        )}
-      </Droppable>
-    </DragDropContext>
+        </div>
+      </header>
+      <DragDropContext onDragEnd={onDragEnd}>
+        <Droppable droppableId="all-sections" type="SECTION">
+          {(provided: any) => (
+            <div
+              {...provided.droppableProps}
+              ref={provided.innerRef}
+              className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8 space-y-6"
+            >
+              {sections.map((section, index) => (
+                <Draggable key={section.id} draggableId={section.id.toString()} index={index}>
+                  {(provided: any) => (
+                    <div ref={provided.innerRef} {...provided.draggableProps}>
+                      <Card className="border-0 bg-gradient-to-r from-primary/10 to-decision-purple/10 mb-3">
+                        <button
+                          {...provided.dragHandleProps}
+                          onClick={() => toggleSection(section.id)}
+                          className="w-full p-4 flex items-center justify-between hover:bg-muted/20 transition-colors"
+                        >
+                          <div className="flex items-center gap-3">
+                            {section.isExpanded ? (
+                              <ChevronDown className="h-5 w-5 text-primary" />
+                            ) : (
+                              <ChevronRight className="h-5 w-5 text-primary" />
+                            )}
+                            <h2 className="text-lg font-bold text-foreground">{section.title}</h2>
+                            <span className="text-sm text-muted-foreground">
+                              ({section.topics.length} {section.topics.length === 1 ? 'topic' : 'topics'})
+                            </span>
+                          </div>
+                          {userCanEdit && (
+                            <Button
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleAddTopic(section.id, section.title)
+                              }}
+                              className="bg-primary hover:bg-primary/90"
+                            >
+                              <Plus className="h-4 w-4 mr-2" />
+                              Add Topic
+                            </Button>
+                          )}
+                        </button>
+                        {section.isExpanded && (
+                          <Droppable droppableId={section.id.toString()} type="TOPIC">
+                            {(provided: any) => (
+                              <div
+                                {...provided.droppableProps}
+                                ref={provided.innerRef}
+                                className="space-y-4 ml-8"
+                              >
+                                {section.topics.length > 0 ? (
+                                  section.topics.map((topic, idx) => (
+                                    <Draggable
+                                      key={topic.id}
+                                      draggableId={`topic-${topic.id}`}
+                                      index={idx}
+                                    >
+                                      {(provided: any) => (
+                                        <div
+                                          ref={provided.innerRef}
+                                          {...provided.draggableProps}
+                                          {...provided.dragHandleProps}
+                                        >
+                                          <TopicCard
+                                            topic={topic}
+                                            topicNumber={idx + 1}
+                                            onUpdate={updates => updateTopic(topic.id, updates)}
+                                            onDelete={id => deleteTopic(id)}
+                                            onTaskClick={() => onTaskClick(topic.id)}
+                                            onNoteClick={() => onNoteClick(topic.id)}
+                                            onDecisionClick={() => onDecisionClick(topic.id)}
+                                            isReadOnly={userIsReadOnly}
+                                          />
+                                        </div>
+                                      )}
+                                    </Draggable>
+                                  ))
+                                ) : (
+                                  <div className="text-center py-8 text-muted-foreground border-2 border-dashed border-border rounded-lg">
+                                    {userCanEdit
+                                      ? 'No topics in this section yet. Click "Add Topic" to create one.'
+                                      : 'No topics in this section yet.'}
+                                  </div>
+                                )}
+                                {provided.placeholder}
+                              </div>
+                            )}
+                          </Droppable>
+                        )}
+                      </Card>
+                    </div>
+                  )}
+                </Draggable>
+              ))}
+              {provided.placeholder}
+            </div>
+          )}
+        </Droppable>
+      </DragDropContext>
+    </>
   )
 }
