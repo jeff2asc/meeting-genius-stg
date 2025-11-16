@@ -11,8 +11,15 @@ interface CreateBuildingModalProps {
   onClose: () => void
   onSuccess: () => void
   currentUser: any
-  availableUsers: Array<{ id: number; name: string; email: string; user_type: string; company_id?: number }>
+  availableUsers: Array<{ 
+    id: number
+    name: string
+    email: string
+    user_type: string
+    company_id?: number | null  // ✅ Add this - changed to accept null
+  }>
 }
+
 
 export default function CreateBuildingModal({
   isOpen,

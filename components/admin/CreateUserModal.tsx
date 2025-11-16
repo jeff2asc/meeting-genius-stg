@@ -11,7 +11,7 @@ interface CreateUserModalProps {
   onClose: () => void
   onSuccess: () => void
   currentUser: any
-  propertyManagers: Array<{ id: number; name: string; email: string }>
+  propertyManagers: Array<{ id: number; name: string; email: string; company_id?: number | null }>
   buildings: Array<{ id: number; name: string }>
   companies: Company[]
 }
@@ -90,7 +90,7 @@ export default function CreateUserModal({
       }
     }
 
-    // ✅ FIX: Allow Corporate Admin to create Property Manager WITHOUT buildings
+    // Allow Corporate Admin to create Property Manager WITHOUT buildings
     if (isCorporateAdmin) {
       if (userFormData.userType === 'property_manager' && selectedUserBuildings.length === 0) {
         console.log('⚠️ Creating Property Manager without buildings - they can be assigned later via Admin Panel')
@@ -100,24 +100,33 @@ export default function CreateUserModal({
     setSaving(true)
 
     try {
-      // Determine company_id based on user type
+      // ✅ FIXED: Determine company_id based on user type - NOW INCLUDES REGULAR USERS
       let companyIdToAssign = null
       
       if (isMaster) {
         // Master manually selects company for corporate_administrator and property_manager
         if (userFormData.userType === 'corporate_administrator' || userFormData.userType === 'property_manager') {
           companyIdToAssign = userFormData.companyId
-          console.log('🏢 Assigning company_id:', companyIdToAssign, 'to', userFormData.userType)
+          console.log('🏢 Master assigning company_id:', companyIdToAssign, 'to', userFormData.userType)
+        }
+        // ✅ NEW: Master creating regular user - inherit company_id from selected PM
+        else if (userFormData.userType === 'user' && userFormData.assignedPmId) {
+          const selectedPM = propertyManagers.find(pm => pm.id === userFormData.assignedPmId)
+          companyIdToAssign = selectedPM?.company_id || null
+          console.log('🏢 Master creating user - inheriting company_id:', companyIdToAssign, 'from PM:', selectedPM?.name)
         }
       } else if (isCorporateAdmin) {
-        // Corporate Admin automatically assigns their company to new property_manager
-        if (userFormData.userType === 'property_manager') {
+        // ✅ UPDATED: Corporate Admin assigns their company to BOTH property_manager AND regular users
+        if (userFormData.userType === 'property_manager' || userFormData.userType === 'user') {
           companyIdToAssign = currentUser.company_id
-          console.log('🏢 Corporate Admin assigning their company_id:', companyIdToAssign)
+          console.log('🏢 Corporate Admin assigning their company_id:', companyIdToAssign, 'to', userFormData.userType)
         }
       } else if (currentUser?.user_type === 'property_manager') {
-        // Property Manager doesn't assign company_id to regular users
-        companyIdToAssign = null
+        // ✅ NEW: Property Manager assigns their company to regular users
+        if (userFormData.userType === 'user') {
+          companyIdToAssign = currentUser.company_id
+          console.log('🏢 Property Manager assigning their company_id:', companyIdToAssign, 'to user')
+        }
       }
 
       console.log('📋 Creating user with data:', {
@@ -260,7 +269,7 @@ export default function CreateUserModal({
                 className="w-full px-3 py-2 bg-muted text-muted-foreground rounded border border-border"
               />
               <p className="text-xs text-muted-foreground mt-1">
-                This user will be assigned to you
+                This user will be assigned to you and your company
               </p>
             </div>
           )}
@@ -364,7 +373,7 @@ export default function CreateUserModal({
                 ))}
               </select>
               <p className="text-xs text-muted-foreground mt-1">
-                This Property Manager will manage this user
+                This Property Manager will manage this user (company will be inherited from PM)
               </p>
             </div>
           )}

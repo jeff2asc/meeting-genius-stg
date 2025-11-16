@@ -232,6 +232,8 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
         return
       }
 
+      console.log('👥 Admin Panel - Users fetched:', usersData)
+
       const { data: userBuildingsData } = await supabase
         .from('user_buildings')
         .select(`
@@ -350,6 +352,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
 
   const handleCreateUserSuccess = () => {
     fetchUsers()
+    fetchPropertyManagers() // Also refresh property managers list
   }
 
   const handleCreateBuildingSuccess = () => {
@@ -438,11 +441,32 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
     return buildings
   }
 
+  // ✅ FIXED WITH DEBUG LOGGING: Now includes Property Managers and respects company filtering
   const getAvailableUsers = () => {
-    if (currentUser?.user_type === 'property_manager') {
-      return users.filter(u => u.assigned_pm_id === currentUser.id && u.user_type === 'user')
+    console.log('🔍 getAvailableUsers called - currentUser:', currentUser?.user_type, currentUser?.company_id)
+    console.log('🔍 Total users available:', users.length, users)
+    
+    // Corporate Admin: See all users from their company (including Property Managers)
+    if (isCorporateAdmin && currentUser?.company_id) {
+      console.log('🔍 Corporate Admin - returning all company users')
+      const filtered = users // Already filtered by company_id in fetchUsers()
+      console.log('🔍 Filtered users for Corporate Admin:', filtered)
+      return filtered
     }
-    return users.filter(u => u.user_type === 'user')
+    
+    // Property Manager: See only their assigned users (excluding themselves and other PMs)
+    if (currentUser?.user_type === 'property_manager') {
+      const filtered = users.filter(u => 
+        (u.assigned_pm_id === currentUser.id && u.user_type === 'user') ||
+        u.id === currentUser.id // Include self
+      )
+      console.log('🔍 Property Manager - filtered users:', filtered)
+      return filtered
+    }
+    
+    // Master: See everyone
+    console.log('🔍 Master - returning all users')
+    return users
   }
 
   return (
