@@ -15,7 +15,8 @@ import CreateTopicModal from "./create-topic-modal"
 import EditMeetingModal from "./EditMeetingModal"
 import { supabase, getCurrentUser } from "@/lib/supabase"
 import { canEditMeeting, isReadOnly } from "@/lib/permissions"
-import { DragDropContext, Droppable, Draggable } from 'react-beautiful-dnd'
+import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd'
+
 
 interface MeetingViewProps {
   meetingId: string
