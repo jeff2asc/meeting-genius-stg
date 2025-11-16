@@ -1,0 +1,1404 @@
+"use client"
+
+import { useState, useEffect } from "react"
+import { ArrowLeft, Plus, User, Building2, Shield, X, Filter, Edit2, MapPin, FileText } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Card } from "@/components/ui/card"
+import { getCurrentUser } from "@/lib/supabase"
+import { supabase } from "@/lib/supabase"
+
+interface AdminPanelProps {
+  onBack: () => void
+}
+
+interface UserRow {
+  id: number
+  name: string
+  email: string
+  user_type: string
+  created_at: string
+  assigned_pm_id: number | null
+  buildings?: string[]
+}
+
+interface PropertyManager {
+  id: number
+  name: string
+  email: string
+}
+
+interface Building {
+  id: number
+  name: string
+  address: string | null
+  manager_id: number
+  created_at: string
+  users?: Array<{ id: number; name: string; email: string }>
+}
+
+type TabType = "users" | "buildings"
+
+export default function AdminPanel({ onBack }: AdminPanelProps) {
+  const [activeTab, setActiveTab] = useState<TabType>("users")
+  const [users, setUsers] = useState<UserRow[]>([])
+  const [propertyManagers, setPropertyManagers] = useState<PropertyManager[]>([])
+  const [filteredUsers, setFilteredUsers] = useState<UserRow[]>([])
+  const [buildings, setBuildings] = useState<Building[]>([])
+  const [loading, setLoading] = useState(true)
+  const [showCreateUserModal, setShowCreateUserModal] = useState(false)
+  const [showCreateBuildingModal, setShowCreateBuildingModal] = useState(false)
+  const [showEditBuildingModal, setShowEditBuildingModal] = useState(false)
+  const [selectedBuilding, setSelectedBuilding] = useState<Building | null>(null)
+  const currentUser = getCurrentUser()
+
+  // Document Management States
+  const [buildingDocuments, setBuildingDocuments] = useState<Record<number, boolean>>({})
+  const [showDocumentModal, setShowDocumentModal] = useState(false)
+  const [documentFormUrl, setDocumentFormUrl] = useState("")
+  const [showViewDocumentModal, setShowViewDocumentModal] = useState(false)
+  const [viewingDocument, setViewingDocument] = useState<{ building: Building; content: string } | null>(null)
+
+  // Filters
+  const [filterUserType, setFilterUserType] = useState<string>("all")
+  const [filterBuilding, setFilterBuilding] = useState<string>("all")
+
+  // Create User Form State
+  const [userFormData, setUserFormData] = useState({
+    name: "",
+    email: "",
+    password: "",
+    userType: "user" as "master" | "property_manager" | "user",
+    assignedPmId: 0,
+  })
+  const [selectedUserBuildings, setSelectedUserBuildings] = useState<number[]>([])
+
+  // Create Building Form State
+  const [buildingFormData, setBuildingFormData] = useState({
+    name: "",
+    address: "",
+  })
+  const [selectedBuildingUsers, setSelectedBuildingUsers] = useState<number[]>([])
+
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const isMaster = currentUser?.user_type === 'master'
+  const canCreateUser = isMaster || currentUser?.user_type === 'property_manager'
+  const canCreateBuilding = isMaster || currentUser?.user_type === 'property_manager'
+
+  useEffect(() => {
+    fetchPropertyManagers()
+    fetchUsers()
+    fetchBuildings()
+  }, [])
+
+  useEffect(() => {
+    applyFilters()
+  }, [users, filterUserType, filterBuilding])
+
+  useEffect(() => {
+    if (buildings.length > 0) {
+      fetchBuildingDocuments()
+    }
+  }, [buildings])
+
+  const fetchBuildingDocuments = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('building_documents')
+        .select('building_id')
+
+      if (error) {
+        console.error('Error fetching building documents:', error)
+        return
+      }
+
+      const documentsMap: Record<number, boolean> = {}
+      data?.forEach(doc => {
+        documentsMap[doc.building_id] = true
+      })
+
+      setBuildingDocuments(documentsMap)
+    } catch (err) {
+      console.error('Unexpected error:', err)
+    }
+  }
+
+  const handleManageDocuments = (building: Building) => {
+    const hasDocuments = buildingDocuments[building.id] || false
+    
+    const formUrl = hasDocuments
+      ? `https://rulesengine.asccreative.com/form/8fe10f3e-bbb7-4ef0-8911-d43c27ad8666?Building Id=${building.id}&Building Name=${encodeURIComponent(building.name)}`
+      : `https://rulesengine.asccreative.com/form/6a4fe687-c1f7-43ea-b6e3-687e5e9a47fa?Building Id=${building.id}&Building Name=${encodeURIComponent(building.name)}`
+
+    setDocumentFormUrl(formUrl)
+    setShowDocumentModal(true)
+  }
+
+  const handleViewDocument = async (building: Building) => {
+    try {
+      const { data, error } = await supabase
+        .from('building_documents')
+        .select('rules_and_regulations')
+        .eq('building_id', building.id)
+        .single()
+
+      if (error) {
+        console.error('Error fetching document:', error)
+        alert('Failed to load document')
+        return
+      }
+
+      setViewingDocument({
+        building: building,
+        content: data.rules_and_regulations || 'No content available'
+      })
+      setShowViewDocumentModal(true)
+    } catch (err) {
+      console.error('Unexpected error:', err)
+      alert('Failed to load document')
+    }
+  }
+
+  const fetchPropertyManagers = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .select('id, name, email')
+        .eq('user_type', 'property_manager')
+        .order('name')
+
+      if (error) {
+        console.error('Error fetching property managers:', error)
+        return
+      }
+
+      setPropertyManagers(data || [])
+    } catch (err) {
+      console.error('Unexpected error:', err)
+    }
+  }
+
+  const fetchUsers = async () => {
+    try {
+      setLoading(true)
+
+      const { data: usersData, error: usersError } = await supabase
+        .from('users')
+        .select('id, name, email, user_type, assigned_pm_id, created_at')
+        .order('created_at', { ascending: false })
+
+      if (usersError) {
+        console.error('Error fetching users:', usersError)
+        return
+      }
+
+      const { data: userBuildingsData } = await supabase
+        .from('user_buildings')
+        .select(`
+          user_id,
+          building_id,
+          buildings!inner(id, name)
+        `)
+
+      const usersWithBuildings = (usersData || []).map(user => {
+        const userBuildings = (userBuildingsData || [])
+          .filter((ub: any) => ub.user_id === user.id)
+          .map((ub: any) => ub.buildings?.name)
+          .filter(Boolean) as string[]
+
+        return {
+          ...user,
+          buildings: userBuildings
+        }
+      })
+
+      if (currentUser?.user_type === 'property_manager') {
+        const filteredUsers = usersWithBuildings.filter(user => 
+          user.assigned_pm_id === currentUser.id || user.id === currentUser.id
+        )
+        setUsers(filteredUsers)
+      } else {
+        setUsers(usersWithBuildings)
+      }
+
+    } catch (err) {
+      console.error('Unexpected error:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const fetchBuildings = async () => {
+    try {
+      const { data: buildingsData, error: buildingsError } = await supabase
+        .from('buildings')
+        .select('id, name, address, manager_id, created_at')
+        .order('name')
+
+      if (buildingsError) {
+        console.error('Error fetching buildings:', buildingsError)
+        return
+      }
+
+      const { data: userBuildingsData } = await supabase
+        .from('user_buildings')
+        .select(`
+          building_id,
+          users!inner(id, name, email)
+        `)
+
+      const buildingsWithUsers = (buildingsData || []).map(building => {
+        const buildingUsers = (userBuildingsData || [])
+          .filter((ub: any) => ub.building_id === building.id)
+          .map((ub: any) => ub.users)
+          .filter(Boolean)
+
+        return {
+          ...building,
+          users: buildingUsers
+        }
+      })
+
+      setBuildings(buildingsWithUsers)
+    } catch (err) {
+      console.error('Unexpected error:', err)
+    }
+  }
+
+  const applyFilters = () => {
+    let filtered = [...users]
+
+    if (filterUserType !== "all") {
+      filtered = filtered.filter(user => user.user_type === filterUserType)
+    }
+
+    if (filterBuilding !== "all") {
+      if (filterBuilding === "unassigned") {
+        filtered = filtered.filter(user => !user.buildings || user.buildings.length === 0)
+      } else {
+        filtered = filtered.filter(user => user.buildings?.includes(filterBuilding))
+      }
+    }
+
+    setFilteredUsers(filtered)
+  }
+
+  const handleUserInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const { name, value } = e.target
+    setUserFormData(prev => ({ ...prev, [name]: value }))
+  }
+
+  const handleBuildingInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target
+    setBuildingFormData(prev => ({ ...prev, [name]: value }))
+  }
+
+  const toggleUserBuilding = (buildingId: number) => {
+    setSelectedUserBuildings(prev => 
+      prev.includes(buildingId)
+        ? prev.filter(id => id !== buildingId)
+        : [...prev, buildingId]
+    )
+  }
+
+  const toggleBuildingUser = (userId: number) => {
+    setSelectedBuildingUsers(prev => 
+      prev.includes(userId)
+        ? prev.filter(id => id !== userId)
+        : [...prev, userId]
+    )
+  }
+
+  const handleCreateUser = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError(null)
+
+    if (!userFormData.name.trim() || !userFormData.email.trim() || !userFormData.password.trim()) {
+      setError("All fields are required")
+      return
+    }
+
+    if (isMaster) {
+      if (userFormData.userType === 'property_manager') {
+        if (selectedUserBuildings.length === 0) {
+          setError("Please select at least one building for the Property Manager")
+          return
+        }
+      } else if (userFormData.userType === 'user') {
+        if (!userFormData.assignedPmId || userFormData.assignedPmId === 0) {
+          setError("Please select a Property Manager for this user")
+          return
+        }
+      }
+    }
+
+    setSaving(true)
+
+    try {
+      const { data: newUser, error: userError } = await supabase
+        .from('users')
+        .insert({
+          name: userFormData.name.trim(),
+          email: userFormData.email.toLowerCase().trim(),
+          password_hash: '$2a$10$rXqvFZnPzAMcLzCP2L4dxu7L6Y3Y5KjGNQQF6xZ4Y5Y5Y5Y5Y5Y5Y5',
+          user_type: isMaster ? userFormData.userType : 'user',
+          assigned_pm_id: isMaster && userFormData.userType === 'user' 
+            ? userFormData.assignedPmId 
+            : (currentUser?.user_type === 'property_manager' ? currentUser.id : null)
+        })
+        .select()
+        .single()
+
+      if (userError) {
+        console.error('Error creating user:', userError)
+        setError('Failed to create user. Email may already exist.')
+        setSaving(false)
+        return
+      }
+
+      if (selectedUserBuildings.length > 0) {
+        const buildingAssignments = selectedUserBuildings.map(buildingId => ({
+          user_id: newUser.id,
+          building_id: buildingId
+        }))
+
+        const { error: buildingsError } = await supabase
+          .from('user_buildings')
+          .insert(buildingAssignments)
+
+        if (buildingsError) {
+          console.error('Error assigning buildings:', buildingsError)
+          setError('User created but failed to assign buildings')
+          setSaving(false)
+          return
+        }
+      }
+
+      console.log('✅ User created successfully')
+
+      setUserFormData({
+        name: "",
+        email: "",
+        password: "",
+        userType: "user",
+        assignedPmId: 0
+      })
+      setSelectedUserBuildings([])
+      setShowCreateUserModal(false)
+      fetchUsers()
+
+    } catch (err) {
+      console.error('Unexpected error:', err)
+      setError('An unexpected error occurred')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleCreateBuilding = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError(null)
+
+    if (!buildingFormData.name.trim()) {
+      setError("Building name is required")
+      return
+    }
+
+    setSaving(true)
+
+    try {
+      const { data: newBuilding, error: buildingError } = await supabase
+        .from('buildings')
+        .insert({
+          name: buildingFormData.name.trim(),
+          address: buildingFormData.address.trim() || null,
+          manager_id: currentUser!.id,
+          primary_color: '#3b82f6'
+        })
+        .select()
+        .single()
+
+      if (buildingError) {
+        console.error('Error creating building:', buildingError)
+        setError('Failed to create building.')
+        setSaving(false)
+        return
+      }
+
+      const usersToAssign = [...new Set([currentUser!.id, ...selectedBuildingUsers])]
+
+      const userAssignments = usersToAssign.map(userId => ({
+        user_id: userId,
+        building_id: newBuilding.id
+      }))
+
+      const { error: assignError } = await supabase
+        .from('user_buildings')
+        .insert(userAssignments)
+
+      if (assignError) {
+        console.error('Error assigning users:', assignError)
+        setError('Building created but failed to assign users')
+        setSaving(false)
+        return
+      }
+
+      console.log('✅ Building created successfully')
+
+      setBuildingFormData({
+        name: "",
+        address: ""
+      })
+      setSelectedBuildingUsers([])
+      setShowCreateBuildingModal(false)
+      fetchBuildings()
+      fetchUsers()
+
+    } catch (err) {
+      console.error('Unexpected error:', err)
+      setError('An unexpected error occurred')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleEditBuilding = (building: Building) => {
+    setSelectedBuilding(building)
+    setBuildingFormData({
+      name: building.name,
+      address: building.address || ""
+    })
+    setSelectedBuildingUsers(building.users?.map(u => u.id) || [])
+    setShowEditBuildingModal(true)
+  }
+
+  const handleUpdateBuilding = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!selectedBuilding) return
+
+    setError(null)
+    setSaving(true)
+
+    try {
+      const { error: updateError } = await supabase
+        .from('buildings')
+        .update({
+          name: buildingFormData.name.trim(),
+          address: buildingFormData.address.trim() || null
+        })
+        .eq('id', selectedBuilding.id)
+
+      if (updateError) {
+        console.error('Error updating building:', updateError)
+        setError('Failed to update building')
+        setSaving(false)
+        return
+      }
+
+      await supabase
+        .from('user_buildings')
+        .delete()
+        .eq('building_id', selectedBuilding.id)
+
+      const userAssignments = selectedBuildingUsers.map(userId => ({
+        user_id: userId,
+        building_id: selectedBuilding.id
+      }))
+
+      if (userAssignments.length > 0) {
+        const { error: assignError } = await supabase
+          .from('user_buildings')
+          .insert(userAssignments)
+
+        if (assignError) {
+          console.error('Error assigning users:', assignError)
+          setError('Building updated but failed to assign users')
+          setSaving(false)
+          return
+        }
+      }
+
+      console.log('✅ Building updated successfully')
+
+      setShowEditBuildingModal(false)
+      setSelectedBuilding(null)
+      fetchBuildings()
+      fetchUsers()
+
+    } catch (err) {
+      console.error('Unexpected error:', err)
+      setError('An unexpected error occurred')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const getUserTypeIcon = (userType: string) => {
+    switch (userType) {
+      case 'master':
+        return <Shield className="h-4 w-4 text-purple-600" />
+      case 'property_manager':
+        return <Building2 className="h-4 w-4 text-blue-600" />
+      default:
+        return <User className="h-4 w-4 text-gray-600" />
+    }
+  }
+
+  const getUserTypeBadge = (userType: string) => {
+    switch (userType) {
+      case 'master':
+        return 'bg-purple-100 text-purple-800 border-purple-200'
+      case 'property_manager':
+        return 'bg-blue-100 text-blue-800 border-blue-200'
+      default:
+        return 'bg-gray-100 text-gray-800 border-gray-200'
+    }
+  }
+
+  const getBuildingsList = () => {
+    if (currentUser?.user_type === 'property_manager') {
+      return buildings.filter(b => b.users?.some(u => u.id === currentUser.id))
+    }
+    return buildings
+  }
+
+  const getAvailableUsers = () => {
+    if (currentUser?.user_type === 'property_manager') {
+      return users.filter(u => u.assigned_pm_id === currentUser.id && u.user_type === 'user')
+    }
+    return users.filter(u => u.user_type === 'user')
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted">
+      <header className="border-b border-border bg-card shadow-sm sticky top-0 z-40">
+        <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <Button variant="ghost" size="icon" onClick={onBack} className="hover:bg-muted">
+                <ArrowLeft className="h-5 w-5" />
+              </Button>
+              <div>
+                <h1 className="text-xl font-bold text-foreground">Admin Panel</h1>
+                <p className="text-sm text-muted-foreground">Manage users and buildings</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              {activeTab === "users" && canCreateUser && (
+                <Button
+                  onClick={() => setShowCreateUserModal(true)}
+                  className="bg-gradient-to-r from-primary to-decision-purple text-primary-foreground"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create User
+                </Button>
+              )}
+              {activeTab === "buildings" && canCreateBuilding && (
+                <Button
+                  onClick={() => setShowCreateBuildingModal(true)}
+                  className="bg-gradient-to-r from-primary to-decision-purple text-primary-foreground"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create Building
+                </Button>
+              )}
+            </div>
+          </div>
+
+          <div className="flex gap-4 mt-4">
+            <button
+              onClick={() => setActiveTab("users")}
+              className={`pb-2 px-1 font-medium text-sm transition-colors ${
+                activeTab === "users"
+                  ? "text-primary border-b-2 border-primary"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              👥 Users
+            </button>
+            <button
+              onClick={() => setActiveTab("buildings")}
+              className={`pb-2 px-1 font-medium text-sm transition-colors ${
+                activeTab === "buildings"
+                  ? "text-primary border-b-2 border-primary"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              🏢 Buildings
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+        {/* USERS TAB */}
+        {activeTab === "users" && (
+          <>
+            <div className="mb-6">
+              <h2 className="text-2xl font-bold text-foreground mb-2">User Management</h2>
+              <p className="text-muted-foreground">
+                {isMaster
+                  ? 'You have full access to manage all users'
+                  : 'Manage users assigned to you'}
+              </p>
+            </div>
+
+            <Card className="p-4 mb-6">
+              <div className="flex items-center gap-2 mb-3">
+                <Filter className="h-4 w-4 text-muted-foreground" />
+                <h3 className="font-semibold text-foreground">Filters</h3>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {isMaster && (
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-2">
+                      User Type
+                    </label>
+                    <select
+                      value={filterUserType}
+                      onChange={(e) => setFilterUserType(e.target.value)}
+                      className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50"
+                    >
+                      <option value="all">All Users</option>
+                      <option value="master">Master Only</option>
+                      <option value="property_manager">Property Managers Only</option>
+                      <option value="user">Users Only</option>
+                    </select>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-2">
+                    Building
+                  </label>
+                  <select
+                    value={filterBuilding}
+                    onChange={(e) => setFilterBuilding(e.target.value)}
+                    className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  >
+                    <option value="all">All Buildings</option>
+                    <option value="unassigned">Not Assigned to Any Building</option>
+                    {getBuildingsList().map(building => (
+                      <option key={building.id} value={building.name}>
+                        {building.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground mt-3">
+                Showing {filteredUsers.length} of {users.length} users
+              </p>
+            </Card>
+
+            {loading ? (
+              <div className="text-center py-12">
+                <p className="text-muted-foreground">Loading users...</p>
+              </div>
+            ) : (
+              <div className="grid gap-4">
+                {filteredUsers.map((user) => (
+                  <Card key={user.id} className="p-4 hover:shadow-md transition-shadow">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-4 flex-1">
+                        <div className="flex items-center justify-center w-12 h-12 rounded-full bg-primary/10">
+                          {getUserTypeIcon(user.user_type)}
+                        </div>
+                        <div className="flex-1">
+                          <h3 className="font-semibold text-foreground">{user.name}</h3>
+                          <p className="text-sm text-muted-foreground">{user.email}</p>
+                          {user.buildings && user.buildings.length > 0 ? (
+                            <div className="flex flex-wrap gap-1 mt-2">
+                              {user.buildings.map((building, idx) => (
+                                <span
+                                  key={idx}
+                                  className="text-xs bg-muted px-2 py-0.5 rounded"
+                                >
+                                  {building}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="mt-2">
+                              <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded">
+                                No buildings assigned
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        <span className={`text-xs font-medium px-3 py-1 rounded-full border ${getUserTypeBadge(user.user_type)}`}>
+                          {user.user_type.replace('_', ' ').toUpperCase()}
+                        </span>
+                        <p className="text-sm text-muted-foreground whitespace-nowrap">
+                          {new Date(user.created_at).toLocaleDateString()}
+                        </p>
+                      </div>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            )}
+
+            {filteredUsers.length === 0 && !loading && (
+              <div className="text-center py-12 border-2 border-dashed border-border rounded-lg">
+                <p className="text-muted-foreground">No users found matching filters</p>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* BUILDINGS TAB */}
+        {activeTab === "buildings" && (
+          <>
+            <div className="mb-6">
+              <h2 className="text-2xl font-bold text-foreground mb-2">Building Management</h2>
+              <p className="text-muted-foreground">
+                {isMaster
+                  ? 'Manage all buildings in the system'
+                  : 'Manage your assigned buildings'}
+              </p>
+            </div>
+
+            {loading ? (
+              <div className="text-center py-12">
+                <p className="text-muted-foreground">Loading buildings...</p>
+              </div>
+            ) : (
+              <div className="grid gap-4">
+                {getBuildingsList().map((building) => {
+                  const hasDocuments = buildingDocuments[building.id] || false
+                  
+                  return (
+                    <Card key={building.id} className="p-4 hover:shadow-md transition-shadow">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-4 flex-1">
+                          <div className="flex items-center justify-center w-12 h-12 rounded-full bg-blue-100">
+                            <Building2 className="h-6 w-6 text-blue-600" />
+                          </div>
+                          <div className="flex-1">
+                            <h3 className="font-semibold text-foreground">{building.name}</h3>
+                            {building.address && (
+                              <p className="text-sm text-muted-foreground flex items-center gap-1">
+                                <MapPin className="h-3 w-3" />
+                                {building.address}
+                              </p>
+                            )}
+                            {building.users && building.users.length > 0 && (
+                              <div className="flex flex-wrap gap-1 mt-2">
+                                <span className="text-xs text-muted-foreground">
+                                  Users ({building.users.length}):
+                                </span>
+                                {building.users.slice(0, 3).map((user, idx) => (
+                                  <span
+                                    key={idx}
+                                    className="text-xs bg-muted px-2 py-0.5 rounded"
+                                  >
+                                    {user.name}
+                                  </span>
+                                ))}
+                                {building.users.length > 3 && (
+                                  <span className="text-xs text-muted-foreground">
+                                    +{building.users.length - 3} more
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleEditBuilding(building)}
+                          >
+                            <Edit2 className="h-4 w-4 mr-2" />
+                            Edit
+                          </Button>
+                          
+                          {/* Document Management Buttons */}
+                          {hasDocuments ? (
+                            <>
+                              <Button
+                                size="sm"
+                                onClick={() => handleViewDocument(building)}
+                                className="bg-blue-600 hover:bg-blue-700 text-white"
+                              >
+                                <FileText className="h-4 w-4 mr-2" />
+                                View Document
+                              </Button>
+                              <Button
+                                size="sm"
+                                onClick={() => handleManageDocuments(building)}
+                                className="bg-green-600 hover:bg-green-700 text-white"
+                              >
+                                <Edit2 className="h-4 w-4 mr-2" />
+                                Update Document
+                              </Button>
+                            </>
+                          ) : (
+                            <Button
+                              size="sm"
+                              onClick={() => handleManageDocuments(building)}
+                              className="bg-purple-600 hover:bg-purple-700 text-white"
+                            >
+                              <FileText className="h-4 w-4 mr-2" />
+                              Add Document
+                            </Button>
+                          )}
+                          
+                          <p className="text-sm text-muted-foreground whitespace-nowrap ml-2">
+                            {new Date(building.created_at).toLocaleDateString()}
+                          </p>
+                        </div>
+                      </div>
+                    </Card>
+                  )
+                })}
+              </div>
+            )}
+
+            {getBuildingsList().length === 0 && !loading && (
+              <div className="text-center py-12 border-2 border-dashed border-border rounded-lg">
+                <p className="text-muted-foreground">No buildings found</p>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* CREATE USER MODAL */}
+      {showCreateUserModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 animate-in fade-in overflow-y-auto p-4">
+          <Card className="w-full max-w-2xl border-0 rounded-2xl shadow-2xl my-8">
+            <div className="flex items-center justify-between border-b border-border bg-gradient-to-r from-primary/5 to-decision-purple/5 p-6">
+              <div>
+                <h2 className="text-xl font-bold text-foreground">Create New User</h2>
+                <p className="text-sm text-muted-foreground">
+                  {isMaster ? 'Create a Property Manager or User' : 'Create a User for your team'}
+                </p>
+              </div>
+              <button
+                onClick={() => setShowCreateUserModal(false)}
+                className="flex h-8 w-8 items-center justify-center rounded hover:bg-muted transition-colors"
+                disabled={saving}
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateUser} className="p-6 space-y-4">
+              {error && (
+                <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded text-sm">
+                  {error}
+                </div>
+              )}
+
+              {isMaster && (
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-2">
+                    User Type *
+                  </label>
+                  <select
+                    name="userType"
+                    value={userFormData.userType}
+                    onChange={handleUserInputChange}
+                    disabled={saving}
+                    className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
+                  >
+                    <option value="user">User</option>
+                    <option value="property_manager">Property Manager</option>
+                  </select>
+                </div>
+              )}
+
+              {!isMaster && (
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-2">
+                    User Type
+                  </label>
+                  <input
+                    type="text"
+                    value="User"
+                    disabled
+                    className="w-full px-3 py-2 bg-muted text-muted-foreground rounded border border-border"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    This user will be assigned to you
+                  </p>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-2">
+                  Full Name *
+                </label>
+                <input
+                  type="text"
+                  name="name"
+                  value={userFormData.name}
+                  onChange={handleUserInputChange}
+                  placeholder="John Doe"
+                  required
+                  disabled={saving}
+                  className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-2">
+                  Email Address *
+                </label>
+                <input
+                  type="email"
+                  name="email"
+                  value={userFormData.email}
+                  onChange={handleUserInputChange}
+                  placeholder="john@example.com"
+                  required
+                  disabled={saving}
+                  className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-2">
+                  Temporary Password *
+                </label>
+                <input
+                  type="text"
+                  name="password"
+                  value={userFormData.password}
+                  onChange={handleUserInputChange}
+                  placeholder="e.g., welcome123"
+                  required
+                  disabled={saving}
+                  className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  User will use this password to login
+                </p>
+              </div>
+
+              {isMaster && userFormData.userType === 'user' && (
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-2">
+                    Assign to Property Manager *
+                  </label>
+                  <select
+                    name="assignedPmId"
+                    value={userFormData.assignedPmId}
+                    onChange={handleUserInputChange}
+                    disabled={saving}
+                    required
+                    className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
+                  >
+                    <option value={0}>Select Property Manager</option>
+                    {propertyManagers.map(pm => (
+                      <option key={pm.id} value={pm.id}>
+                        {pm.name} ({pm.email})
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    This Property Manager will manage this user
+                  </p>
+                </div>
+              )}
+
+              {(userFormData.userType === 'property_manager' || !isMaster) && (
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-2">
+                    Assign Buildings {userFormData.userType === 'property_manager' && '*'}
+                  </label>
+                  <div className="border border-border rounded p-4 space-y-2 max-h-48 overflow-y-auto">
+                    {getBuildingsList().length === 0 ? (
+                      <p className="text-sm text-muted-foreground">
+                        No buildings available
+                      </p>
+                    ) : (
+                      getBuildingsList().map((building) => (
+                        <label
+                          key={building.id}
+                          className="flex items-center gap-2 cursor-pointer hover:bg-muted p-2 rounded"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedUserBuildings.includes(building.id)}
+                            onChange={() => toggleUserBuilding(building.id)}
+                            disabled={saving}
+                            className="h-4 w-4 rounded border-border cursor-pointer"
+                          />
+                          <span className="text-sm text-foreground">{building.name}</span>
+                        </label>
+                      ))
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {userFormData.userType === 'property_manager' 
+                      ? 'Property Managers need at least one building'
+                      : 'Optional - You can assign buildings later'}
+                  </p>
+                </div>
+              )}
+
+              <div className="flex gap-3 pt-4">
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  onClick={() => setShowCreateUserModal(false)} 
+                  className="flex-1"
+                  disabled={saving}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  className="flex-1 bg-gradient-to-r from-primary to-decision-purple text-primary-foreground hover:opacity-90"
+                  disabled={saving}
+                >
+                  {saving ? "Creating..." : "Create User"}
+                </Button>
+              </div>
+            </form>
+          </Card>
+        </div>
+      )}
+
+      {/* CREATE BUILDING MODAL */}
+      {showCreateBuildingModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 animate-in fade-in overflow-y-auto p-4">
+          <Card className="w-full max-w-2xl border-0 rounded-2xl shadow-2xl my-8">
+            <div className="flex items-center justify-between border-b border-border bg-gradient-to-r from-primary/5 to-decision-purple/5 p-6">
+              <div>
+                <h2 className="text-xl font-bold text-foreground">Create New Building</h2>
+                <p className="text-sm text-muted-foreground">
+                  Add a building and assign your users
+                </p>
+              </div>
+              <button
+                onClick={() => setShowCreateBuildingModal(false)}
+                className="flex h-8 w-8 items-center justify-center rounded hover:bg-muted transition-colors"
+                disabled={saving}
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateBuilding} className="p-6 space-y-4">
+              {error && (
+                <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded text-sm">
+                  {error}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-2">
+                  Building Name *
+                </label>
+                <input
+                  type="text"
+                  name="name"
+                  value={buildingFormData.name}
+                  onChange={handleBuildingInputChange}
+                  placeholder="e.g., Sunset Apartments"
+                  required
+                  disabled={saving}
+                  className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-2">
+                  Address
+                </label>
+                <textarea
+                  name="address"
+                  value={buildingFormData.address}
+                  onChange={handleBuildingInputChange}
+                  placeholder="123 Main St, City, State, ZIP"
+                  disabled={saving}
+                  rows={2}
+                  className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none disabled:opacity-50"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-2">
+                  Assign Users
+                </label>
+                <div className="border border-border rounded p-4 space-y-2 max-h-48 overflow-y-auto">
+                  {getAvailableUsers().length === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      No users available. Create users first.
+                    </p>
+                  ) : (
+                    getAvailableUsers().map((user) => (
+                      <label
+                        key={user.id}
+                        className="flex items-center gap-2 cursor-pointer hover:bg-muted p-2 rounded"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedBuildingUsers.includes(user.id)}
+                          onChange={() => toggleBuildingUser(user.id)}
+                          disabled={saving || user.id === currentUser?.id}
+                          className="h-4 w-4 rounded border-border cursor-pointer"
+                        />
+                        <div className="flex-1">
+                          <span className="text-sm text-foreground">{user.name}</span>
+                          <span className="text-xs text-muted-foreground ml-2">({user.email})</span>
+                        </div>
+                        {user.id === currentUser?.id && (
+                          <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded">
+                            You (auto-assigned)
+                          </span>
+                        )}
+                      </label>
+                    ))
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  You will be automatically assigned to this building
+                </p>
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  onClick={() => setShowCreateBuildingModal(false)} 
+                  className="flex-1"
+                  disabled={saving}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  className="flex-1 bg-gradient-to-r from-primary to-decision-purple text-primary-foreground hover:opacity-90"
+                  disabled={saving}
+                >
+                  {saving ? "Creating..." : "Create Building"}
+                </Button>
+              </div>
+            </form>
+          </Card>
+        </div>
+      )}
+
+      {/* EDIT BUILDING MODAL */}
+      {showEditBuildingModal && selectedBuilding && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 animate-in fade-in overflow-y-auto p-4">
+          <Card className="w-full max-w-2xl border-0 rounded-2xl shadow-2xl my-8">
+            <div className="flex items-center justify-between border-b border-border bg-gradient-to-r from-primary/5 to-decision-purple/5 p-6">
+              <div>
+                <h2 className="text-xl font-bold text-foreground">Edit Building</h2>
+                <p className="text-sm text-muted-foreground">
+                  Update building details and manage users
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowEditBuildingModal(false)
+                  setSelectedBuilding(null)
+                }}
+                className="flex h-8 w-8 items-center justify-center rounded hover:bg-muted transition-colors"
+                disabled={saving}
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleUpdateBuilding} className="p-6 space-y-4">
+              {error && (
+                <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded text-sm">
+                  {error}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-2">
+                  Building Name *
+                </label>
+                <input
+                  type="text"
+                  name="name"
+                  value={buildingFormData.name}
+                  onChange={handleBuildingInputChange}
+                  placeholder="e.g., Sunset Apartments"
+                  required
+                  disabled={saving}
+                  className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-2">
+                  Address
+                </label>
+                <textarea
+                  name="address"
+                  value={buildingFormData.address}
+                  onChange={handleBuildingInputChange}
+                  placeholder="123 Main St, City, State, ZIP"
+                  disabled={saving}
+                  rows={2}
+                  className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none disabled:opacity-50"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-2">
+                  Manage Users
+                </label>
+                <div className="border border-border rounded p-4 space-y-2 max-h-48 overflow-y-auto">
+                  {getAvailableUsers().length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No users available</p>
+                  ) : (
+                    getAvailableUsers().map((user) => (
+                      <label
+                        key={user.id}
+                        className="flex items-center gap-2 cursor-pointer hover:bg-muted p-2 rounded"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedBuildingUsers.includes(user.id)}
+                          onChange={() => toggleBuildingUser(user.id)}
+                          disabled={saving}
+                          className="h-4 w-4 rounded border-border cursor-pointer"
+                        />
+                        <div className="flex-1">
+                          <span className="text-sm text-foreground">{user.name}</span>
+                          <span className="text-xs text-muted-foreground ml-2">({user.email})</span>
+                        </div>
+                      </label>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  onClick={() => {
+                    setShowEditBuildingModal(false)
+                    setSelectedBuilding(null)
+                  }} 
+                  className="flex-1"
+                  disabled={saving}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  className="flex-1 bg-gradient-to-r from-primary to-decision-purple text-primary-foreground hover:opacity-90"
+                  disabled={saving}
+                >
+                  {saving ? "Updating..." : "Update Building"}
+                </Button>
+              </div>
+            </form>
+          </Card>
+        </div>
+      )}
+
+      {/* DOCUMENT UPLOAD MODAL */}
+      {showDocumentModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 animate-in fade-in">
+          <div className="bg-card rounded-lg shadow-xl w-full h-full m-4 flex flex-col">
+            <div className="flex items-center justify-between p-6 border-b border-border">
+              <h3 className="text-xl font-semibold text-foreground flex items-center space-x-2">
+                <FileText className="h-5 w-5" />
+                <span>Building Document Management</span>
+              </h3>
+              <button
+                onClick={() => {
+                  setShowDocumentModal(false)
+                  fetchBuildingDocuments()
+                }}
+                className="text-muted-foreground hover:text-foreground transition-colors p-2 hover:bg-muted rounded-full"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+            
+            <div className="flex-1 overflow-hidden">
+              <iframe
+                src={documentFormUrl}
+                className="w-full h-full border-0"
+                title="Building Document Form"
+              />
+            </div>
+            
+            <div className="p-4 border-t border-border bg-muted">
+              <div className="flex justify-between items-center">
+                <p className="text-sm text-muted-foreground">
+                  Documents will be processed and available for AI analysis
+                </p>
+                <Button
+                  onClick={() => {
+                    setShowDocumentModal(false)
+                    fetchBuildingDocuments()
+                  }}
+                  variant="outline"
+                >
+                  Close
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* VIEW DOCUMENT MODAL */}
+      {showViewDocumentModal && viewingDocument && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 animate-in fade-in p-4">
+          <Card className="w-full max-w-4xl max-h-[90vh] border-0 rounded-2xl shadow-2xl flex flex-col">
+            <div className="flex items-center justify-between border-b border-border bg-gradient-to-r from-primary/5 to-decision-purple/5 p-6">
+              <div>
+                <h2 className="text-xl font-bold text-foreground">Rules and Regulations</h2>
+                <p className="text-sm text-muted-foreground">
+                  {viewingDocument.building.name}
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowViewDocumentModal(false)
+                  setViewingDocument(null)
+                }}
+                className="flex h-8 w-8 items-center justify-center rounded hover:bg-muted transition-colors"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6">
+              <div className="prose prose-sm max-w-none">
+                <pre className="whitespace-pre-wrap font-sans text-sm text-foreground bg-muted p-4 rounded">
+                  {viewingDocument.content}
+                </pre>
+              </div>
+            </div>
+
+            <div className="p-4 border-t border-border bg-muted">
+              <div className="flex justify-end">
+                <Button
+                  onClick={() => {
+                    setShowViewDocumentModal(false)
+                    setViewingDocument(null)
+                  }}
+                  variant="outline"
+                >
+                  Close
+                </Button>
+              </div>
+            </div>
+          </Card>
+        </div>
+      )}
+    </div>
+  )
+}
