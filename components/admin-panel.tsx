@@ -479,7 +479,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
                 <ArrowLeft className="h-5 w-5" />
               </Button>
               <div>
-                <h1 className="text-xl font-bold text-foreground">Admin Panelyz</h1>
+                <h1 className="text-xl font-bold text-foreground">Admin Panel</h1>
                 <p className="text-sm text-muted-foreground">Manage users, buildings and companies</p>
               </div>
             </div>
