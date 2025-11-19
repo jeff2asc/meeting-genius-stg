@@ -31,3 +31,5 @@ echo App: https://app.meetinggenius.ca
 echo.
 pause
 "@ | Out-File -FilePath "C:\Users\Jeff Domingo\Videos\meeting-genius\deploy-git.bat" -Encoding ASCII -Force
+
+
