@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import {
   ArrowLeft, Plus, ChevronDown, ChevronRight, Calendar,
-  Clock, MapPin, FileText, Edit2
+  Clock, MapPin, FileText, Edit2, Play, CheckCircle, ChevronLeft
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -44,6 +44,12 @@ interface Section {
   isExpanded: boolean
 }
 
+const STATUS_FLOW = [
+  "working_agenda",
+  "working_minutes",
+  "minutes"
+] as const
+
 export default function MeetingView({
   meetingId,
   onBack,
@@ -72,6 +78,7 @@ export default function MeetingView({
   }, [])
   useEffect(() => {
     if (meetingId) fetchMeetingData()
+    // eslint-disable-next-line
   }, [meetingId])
 
   const fetchMeetingData = async () => {
@@ -87,14 +94,8 @@ export default function MeetingView({
         return
       }
       setMeeting({
-        title: meetingData.title,
-        building: meetingData.buildings?.name || "Unknown",
-        meeting_date: meetingData.meeting_date,
-        location: meetingData.location,
-        start_time: meetingData.start_time,
-        meeting_type: meetingData.meeting_type,
-        strata_plan_number: meetingData.strata_plan_number,
-        status: meetingData.status
+        ...meetingData,
+        building: meetingData.buildings?.name || "Unknown"
       })
       await fetchSectionsAndTopics()
     } catch (err) {
@@ -220,9 +221,7 @@ export default function MeetingView({
 
   const onDragEnd = async (result: any) => {
     if (!result.destination) return
-
     const { source, destination, type } = result
-
     if (type === "SECTION") {
       const newSections = Array.from(sections)
       const [removed] = newSections.splice(source.index, 1)
@@ -295,9 +294,8 @@ export default function MeetingView({
       case "working_agenda":
         return "bg-blue-100 text-blue-800"
       case "agenda":
-        return "bg-green-100 text-green-800"
       case "working_minutes":
-        return "bg-yellow-100 text-yellow-800"
+        return "bg-green-100 text-green-800"
       case "minutes":
         return "bg-purple-100 text-purple-800"
       default:
@@ -310,13 +308,45 @@ export default function MeetingView({
       case "working_agenda":
         return "Working Agenda"
       case "agenda":
-        return "Agenda"
       case "working_minutes":
         return "Working Minutes"
       case "minutes":
-        return "Minutes"
+        return "Final Minutes"
       default:
         return status
+    }
+  }
+
+  const canTransition = (from: string, direction: "forward" | "backward") => {
+    const index = STATUS_FLOW.indexOf(from as any)
+    if (direction === "forward") return index < STATUS_FLOW.length - 1
+    if (direction === "backward") return index > 0
+    return false
+  }
+
+  const nextStatus = (current: string) => {
+    const index = STATUS_FLOW.indexOf(current as any)
+    return index < STATUS_FLOW.length - 1 ? STATUS_FLOW[index + 1] : current
+  }
+  const prevStatus = (current: string) => {
+    const index = STATUS_FLOW.indexOf(current as any)
+    return index > 0 ? STATUS_FLOW[index - 1] : current
+  }
+
+  const updateMeetingStatus = async (targetStatus: string) => {
+    try {
+      setLoading(true)
+      const { error } = await supabase
+        .from("meetings")
+        .update({ status: targetStatus })
+        .eq("id", meetingId)
+      if (!error) {
+        await fetchMeetingData()
+      }
+    } catch (err) {
+      console.error("Error updating meeting status:", err)
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -394,7 +424,7 @@ export default function MeetingView({
               <div>
                 <div className="flex items-center gap-2">
                   <h1 className="text-xl font-bold text-foreground">{meeting.title}</h1>
-                  {userCanEdit && (
+                  {userCanEdit && meeting.status === "working_agenda" && (
                     <Button
                       size="sm"
                       variant="ghost"
@@ -408,21 +438,57 @@ export default function MeetingView({
                   <Badge variant="outline" className={getStatusColor(meeting.status)}>
                     {getStatusText(meeting.status)}
                   </Badge>
+                  {/* State buttons */}
+                  {userCanEdit && (
+                    <>
+                      {canTransition(meeting.status, "backward") && (
+                        <Button
+                          variant="outline"
+                          onClick={() => updateMeetingStatus(prevStatus(meeting.status))}
+                          className="bg-gray-100 border border-gray-400 ml-2"
+                        >
+                          <ChevronLeft className="h-4 w-4" />
+                          Back to {getStatusText(prevStatus(meeting.status))}
+                        </Button>
+                      )}
+                      {canTransition(meeting.status, "forward") && (
+                        <Button
+                          onClick={() => updateMeetingStatus(nextStatus(meeting.status))}
+                          className="bg-green-600 text-white ml-2"
+                        >
+                          {meeting.status === "working_agenda" && (
+                            <>
+                              <Play className="h-4 w-4 mr-2" />
+                              Start Meeting
+                            </>
+                          )}
+                          {meeting.status === "working_minutes" && (
+                            <>
+                              <CheckCircle className="h-4 w-4 mr-2" />
+                              End Meeting
+                            </>
+                          )}
+                        </Button>
+                      )}
+                    </>
+                  )}
                 </div>
                 <p className="text-sm text-muted-foreground">{meeting.building}</p>
               </div>
             </div>
             <div className="flex items-center gap-4">
-              {userCanEdit && (
-                <Button
-                  onClick={handleCreateSection}
-                  variant="outline"
-                  className="border-primary text-primary hover:bg-primary/10"
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  Create Section
-                </Button>
-              )}
+              {/* Only show create section in working_agenda or working_minutes */}
+              {userCanEdit &&
+                (meeting.status === "working_agenda" || meeting.status === "working_minutes") && (
+                  <Button
+                    onClick={handleCreateSection}
+                    variant="outline"
+                    className="border-primary text-primary hover:bg-primary/10"
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Create Section
+                  </Button>
+                )}
               {isMounted && isRecording && <Timer elapsedTime={elapsedTime} />}
               {isMounted && userCanEdit && (
                 <>
@@ -452,7 +518,6 @@ export default function MeetingView({
               )}
             </div>
           </div>
-
           <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
             {meeting.meeting_type && (
               <div className="flex items-center gap-1">
@@ -487,7 +552,7 @@ export default function MeetingView({
           </div>
         </div>
       </header>
-
+      {/* MAIN content below */}
       <DragDropContext onDragEnd={onDragEnd}>
         <Droppable droppableId="all-sections" type="SECTION">
           {(provided: any) => (
@@ -517,7 +582,7 @@ export default function MeetingView({
                               ({section.topics.length} {section.topics.length === 1 ? 'topic' : 'topics'})
                             </span>
                           </div>
-                          {userCanEdit && (
+                          {userCanEdit && meeting.status !== "minutes" && (
                             <Button
                               size="sm"
                               onClick={(e) => {
@@ -560,7 +625,7 @@ export default function MeetingView({
                                             onTaskClick={() => onTaskClick(topic.id)}
                                             onNoteClick={() => onNoteClick(topic.id)}
                                             onDecisionClick={() => onDecisionClick(topic.id)}
-                                            isReadOnly={userIsReadOnly}
+                                            isReadOnly={userIsReadOnly || meeting.status === "minutes"}
                                           />
                                         </div>
                                       )}
@@ -568,7 +633,7 @@ export default function MeetingView({
                                   ))
                                 ) : (
                                   <div className="text-center py-8 text-muted-foreground border-2 border-dashed border-border rounded-lg">
-                                    {userCanEdit
+                                    {userCanEdit && meeting.status !== "minutes"
                                       ? 'No topics in this section yet. Click "Add Topic" to create one.'
                                       : 'No topics in this section yet.'}
                                   </div>
@@ -600,7 +665,6 @@ export default function MeetingView({
           }}
         />
       )}
-
       {showCreateTopicModal && selectedSection && userCanEdit && (
         <CreateTopicModal
           meetingId={meetingId}
@@ -617,7 +681,6 @@ export default function MeetingView({
           }}
         />
       )}
-
       {showEditMeetingModal && userCanEdit && meeting && (
         <EditMeetingModal
           isOpen={showEditMeetingModal}
