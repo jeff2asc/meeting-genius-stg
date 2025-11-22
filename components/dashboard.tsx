@@ -102,8 +102,6 @@ export default function Dashboard({
         return
       }
 
-      console.log('📋 Buildings fetched for', currentUser.user_type, ':', data)
-
       setBuildings(data || [])
       
       if (onBuildingsLoaded) {
@@ -365,7 +363,13 @@ export default function Dashboard({
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
                           <Calendar className="h-5 w-5 text-primary" />
-                          <span className="font-medium text-foreground">{meeting.title}</span>
+                          <button
+                            className="font-medium text-foreground underline hover:text-primary focus:outline-none ml-1"
+                            onClick={() => onStartMeeting(meeting.id)}
+                            title="Open Meeting"
+                          >
+                            {meeting.title}
+                          </button>
                         </div>
                       </td>
                       <td className="px-6 py-4 text-muted-foreground">{meeting.date}</td>
