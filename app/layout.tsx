@@ -7,9 +7,9 @@ const _geist = Geist({ subsets: ["latin"] });
 const _geistMono = Geist_Mono({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: 'v0 App',
-  description: 'Created with v0',
-  generator: 'v0.app',
+  title: 'Meeting Genius',
+  description: 'Meeting and agenda management for property managers',
+  generator: 'MeetingGenius',
 }
 
 export default function RootLayout({
@@ -20,7 +20,18 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`font-sans antialiased`}>
-        {children}
+        <header className="border-b bg-white shadow-sm">
+          <div className="container mx-auto px-4 py-3 flex items-center">
+            <img 
+              src="/MG2 logo.png" 
+              alt="Meeting Genius Logo" 
+              className="h-10 w-auto"
+            />
+          </div>
+        </header>
+        <main>
+          {children}
+        </main>
         <Analytics />
       </body>
     </html>
