@@ -60,13 +60,20 @@ export default function TopicCard({
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null)
   const [showAiResult, setShowAiResult] = useState(false)
 
+  // --- AUTO-REFRESH LOGIC ---
   useEffect(() => {
+    let interval: NodeJS.Timeout | null = null;
     if (isExpanded) {
       fetchHistory()
       fetchAiAnalysis()
+      interval = setInterval(fetchHistory, 6000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [topic.id, isExpanded])
+  // --------------------------
 
   const fetchHistory = async () => {
     setLoadingHistory(true)
@@ -148,7 +155,6 @@ export default function TopicCard({
         .order('created_at', { ascending: false })
         .limit(1)
         .single()
-
       if (data) setAiAnalysis(data.analysis_result)
     } catch (err) {
       console.error('Error fetching AI analysis:', err)
@@ -445,7 +451,8 @@ export default function TopicCard({
                   </span>
                 </div>
                 <div className="space-y-1">
-                  {history.filter(h => h.type === type).length > 0 ? (
+                  {loadingHistory && <div className="text-xs text-muted-foreground px-2">Loading...</div>}
+                  {!loadingHistory && history.filter(h => h.type === type).length > 0 ? (
                     history.filter(h => h.type === type).map(item => (
                       <div key={item.id} className="flex items-start gap-2 rounded bg-background border border-border px-3 py-2">
                         <div className="flex-1 min-w-0">
@@ -470,7 +477,7 @@ export default function TopicCard({
                       </div>
                     ))
                   ) : (
-                    <div className="text-xs text-muted-foreground px-2">
+                    !loadingHistory && <div className="text-xs text-muted-foreground px-2">
                       {isReadOnly 
                         ? `No ${type}s yet.`
                         : `No ${type}s yet. Click the button above to add one.`}
