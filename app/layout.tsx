@@ -10,6 +10,11 @@ export const metadata: Metadata = {
   title: 'Meeting Genius',
   description: 'Meeting and agenda management for property managers',
   generator: 'MeetingGenius',
+  icons: {
+    icon: '/MG2 logo.png',
+    shortcut: '/MG2 logo.png',
+    apple: '/MG2 logo.png',
+  },
 }
 
 export default function RootLayout({
