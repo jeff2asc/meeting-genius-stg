@@ -28,7 +28,7 @@ export default function Dashboard({
   const [buildings, setBuildings] = useState<any[]>([])
   const [meetings, setMeetings] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  
+
   // Edit Meeting Modal state
   const [showEditMeetingModal, setShowEditMeetingModal] = useState(false)
   const [selectedMeeting, setSelectedMeeting] = useState<any>(null)
@@ -52,10 +52,8 @@ export default function Dashboard({
 
       // Filter based on user type
       if (currentUser.user_type === 'master') {
-        // Master sees ALL buildings
         query = query.order('name')
       } else if (currentUser.user_type === 'corporate_administrator') {
-        // Corporate Admin sees all buildings in their company
         if (currentUser.company_id) {
           query = query.eq('company_id', currentUser.company_id).order('name')
         } else {
@@ -65,11 +63,8 @@ export default function Dashboard({
           return
         }
       } else if (currentUser.user_type === 'property_manager') {
-        // Property Manager sees only their buildings
         query = query.eq('manager_id', currentUser.id).order('name')
       } else {
-        // Regular users, vendors, attendees see buildings they're assigned to
-        // Need to fetch via user_buildings join
         const { data: userBuildings, error: userBuildingsError } = await supabase
           .from('user_buildings')
           .select('building_id')
@@ -83,7 +78,6 @@ export default function Dashboard({
         }
 
         const buildingIds = userBuildings?.map(ub => ub.building_id) || []
-        
         if (buildingIds.length === 0) {
           setBuildings([])
           setLoading(false)
@@ -103,11 +97,10 @@ export default function Dashboard({
       }
 
       setBuildings(data || [])
-      
       if (onBuildingsLoaded) {
         onBuildingsLoaded(data || [])
       }
-      
+
       if (data && data.length > 0) {
         setSelectedBuilding(data[0].name)
         if (onBuildingSelected) {
@@ -181,6 +174,7 @@ export default function Dashboard({
     Finalized: "bg-purple-100 text-purple-800 border-purple-200",
   }
 
+  // UPDATED: Only show Edit button for meetings NOT finalized
   const getActionButtons = (meeting: typeof meetings[0]) => {
     let primaryButton
 
@@ -223,10 +217,13 @@ export default function Dashboard({
         break
     }
 
+    // Show edit only for non-finalized
+    const showEdit = userCanCreateMeeting && meeting.status !== "Finalized"
+
     return (
       <div className="flex items-center gap-2">
         {primaryButton}
-        {userCanCreateMeeting && (
+        {showEdit && (
           <Button
             onClick={() => handleEditMeeting(meeting)}
             size="sm"
@@ -409,7 +406,7 @@ export default function Dashboard({
           </div>
         </Card>
       </div>
-
+      
       {/* Edit Meeting Modal */}
       {showEditMeetingModal && selectedMeeting && (
         <EditMeetingModal
