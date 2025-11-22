@@ -18,7 +18,6 @@ import { supabase, getCurrentUser } from "@/lib/supabase"
 import { canEditMeeting, isReadOnly } from "@/lib/permissions"
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd'
 
-
 interface MeetingViewProps {
   meetingId: string
   onBack: () => void
@@ -26,7 +25,6 @@ interface MeetingViewProps {
   onNoteClick: (topicId: number) => void
   onDecisionClick: (topicId: number) => void
 }
-
 interface Topic {
   id: number
   title: string
@@ -37,7 +35,6 @@ interface Topic {
   decisions: number
   order_index?: number
 }
-
 interface Section {
   id: number
   title: string
@@ -45,7 +42,6 @@ interface Section {
   topics: Topic[]
   isExpanded: boolean
 }
-
 const STATUS_FLOW = [
   "working_agenda",
   "working_minutes",
@@ -69,6 +65,7 @@ export default function MeetingView({
   const [showCreateSectionModal, setShowCreateSectionModal] = useState(false)
   const [showCreateTopicModal, setShowCreateTopicModal] = useState(false)
   const [showEditMeetingModal, setShowEditMeetingModal] = useState(false)
+  const [showAttendeesModal, setShowAttendeesModal] = useState(false)
   const [selectedSection, setSelectedSection] = useState<{ id: number; title: string } | null>(null)
 
   const currentUser = getCurrentUser()
@@ -320,7 +317,6 @@ export default function MeetingView({
     if (direction === "backward") return index > 0
     return false
   }
-
   const nextStatus = (current: string) => {
     const index = STATUS_FLOW.indexOf(current as any)
     return index < STATUS_FLOW.length - 1 ? STATUS_FLOW[index + 1] : current
@@ -468,6 +464,13 @@ export default function MeetingView({
                       )}
                     </>
                   )}
+                  {/* Popup Attendees Button */}
+                  <Button
+                    onClick={() => setShowAttendeesModal(true)}
+                    variant="outline"
+                  >
+                    View Attendees
+                  </Button>
                 </div>
                 <p className="text-sm text-muted-foreground">{meeting.building}</p>
               </div>
@@ -547,21 +550,35 @@ export default function MeetingView({
           </div>
         </div>
       </header>
+      
+      {/* ---- Attendees POPUP MODAL ---- */}
+      {showAttendeesModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
+          <div className="bg-card p-4 rounded-lg shadow-lg max-w-lg w-full">
+            <AttendeeManagement
+              meetingId={meetingId}
+              attendees={(meeting.attendees as Attendee[]) || []}
+              status={meeting.status}
+              userCanEdit={userCanEdit}
+              onUpdate={async updatedAttendees => {
+                await supabase.from("meetings")
+                  .update({ attendees: updatedAttendees })
+                  .eq("id", meetingId)
+                await fetchMeetingData()
+              }}
+            />
+            <Button
+              onClick={() => setShowAttendeesModal(false)}
+              className="mt-4 w-full"
+              variant="outline"
+            >
+              Close
+            </Button>
+          </div>
+        </div>
+      )}
 
-      <AttendeeManagement
-  meetingId={meetingId}
-  attendees={(meeting.attendees as Attendee[]) || []}
-  status={meeting.status}
-  userCanEdit={userCanEdit}
-  onUpdate={async updatedAttendees => {
-    await supabase.from("meetings")
-      .update({ attendees: updatedAttendees })
-      .eq("id", meetingId)
-    await fetchMeetingData()
-  }}
-/>
-
-
+      {/* ---- MEETING SECTIONS/TOPICS REMAIN UNCHANGED ---- */}
       <DragDropContext onDragEnd={onDragEnd}>
         <Droppable droppableId="all-sections" type="SECTION">
           {(provided: any) => (
