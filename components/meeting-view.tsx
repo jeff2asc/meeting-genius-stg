@@ -13,9 +13,11 @@ import Timer from "./timer"
 import CreateSectionModal from "./create-section-modal"
 import CreateTopicModal from "./create-topic-modal"
 import EditMeetingModal from "./EditMeetingModal"
+import AttendeeManagement, { Attendee } from "./AttendeeManagement"
 import { supabase, getCurrentUser } from "@/lib/supabase"
 import { canEditMeeting, isReadOnly } from "@/lib/permissions"
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd'
+
 
 interface MeetingViewProps {
   meetingId: string
@@ -73,13 +75,8 @@ export default function MeetingView({
   const userCanEdit = currentUser ? canEditMeeting(currentUser.user_type) : false
   const userIsReadOnly = currentUser ? isReadOnly(currentUser.user_type) : false
 
-  useEffect(() => {
-    setIsMounted(true)
-  }, [])
-  useEffect(() => {
-    if (meetingId) fetchMeetingData()
-    // eslint-disable-next-line
-  }, [meetingId])
+  useEffect(() => { setIsMounted(true) }, [])
+  useEffect(() => { if (meetingId) fetchMeetingData() }, [meetingId])
 
   const fetchMeetingData = async () => {
     try {
@@ -438,7 +435,6 @@ export default function MeetingView({
                   <Badge variant="outline" className={getStatusColor(meeting.status)}>
                     {getStatusText(meeting.status)}
                   </Badge>
-                  {/* State buttons */}
                   {userCanEdit && (
                     <>
                       {canTransition(meeting.status, "backward") && (
@@ -477,7 +473,6 @@ export default function MeetingView({
               </div>
             </div>
             <div className="flex items-center gap-4">
-              {/* Only show create section in working_agenda or working_minutes */}
               {userCanEdit &&
                 (meeting.status === "working_agenda" || meeting.status === "working_minutes") && (
                   <Button
@@ -552,7 +547,21 @@ export default function MeetingView({
           </div>
         </div>
       </header>
-      {/* MAIN content below */}
+
+      <AttendeeManagement
+  meetingId={meetingId}
+  attendees={(meeting.attendees as Attendee[]) || []}
+  status={meeting.status}
+  userCanEdit={userCanEdit}
+  onUpdate={async updatedAttendees => {
+    await supabase.from("meetings")
+      .update({ attendees: updatedAttendees })
+      .eq("id", meetingId)
+    await fetchMeetingData()
+  }}
+/>
+
+
       <DragDropContext onDragEnd={onDragEnd}>
         <Droppable droppableId="all-sections" type="SECTION">
           {(provided: any) => (
@@ -654,7 +663,6 @@ export default function MeetingView({
         </Droppable>
       </DragDropContext>
 
-      {/* Modals */}
       {showCreateSectionModal && userCanEdit && (
         <CreateSectionModal
           meetingId={meetingId}
