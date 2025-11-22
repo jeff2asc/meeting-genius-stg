@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { ChevronDown, FileText, CheckSquare, Scale, Paperclip, Edit2, Trash2, X, Check, Sparkles, Loader2 } from "lucide-react"
+import { ChevronDown, FileText, CheckSquare, Scale, Paperclip, Edit2, Trash2, X, Check, Sparkles, Loader2, Plus } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { supabase } from "@/lib/supabase"
@@ -21,6 +21,7 @@ interface HistoryItem {
   content: string
   timestamp: string
   details?: string
+  attachmentUrl?: string
 }
 
 interface TopicCardProps {
@@ -53,12 +54,8 @@ export default function TopicCard({
   const [hasChanges, setHasChanges] = useState(false)
   const [saving, setSaving] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
-  
-  // History state
   const [history, setHistory] = useState<HistoryItem[]>([])
   const [loadingHistory, setLoadingHistory] = useState(false)
-
-  // AI Analysis state
   const [analyzingAI, setAnalyzingAI] = useState(false)
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null)
   const [showAiResult, setShowAiResult] = useState(false)
@@ -68,6 +65,7 @@ export default function TopicCard({
       fetchHistory()
       fetchAiAnalysis()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [topic.id, isExpanded])
 
   const fetchHistory = async () => {
@@ -75,13 +73,13 @@ export default function TopicCard({
     try {
       const historyItems: HistoryItem[] = []
 
-      const { data: notes, error: notesError } = await supabase
+      const { data: notes } = await supabase
         .from('notes')
         .select('id, content, created_at')
         .eq('topic_id', topic.id)
         .order('created_at', { ascending: false })
 
-      if (!notesError && notes) {
+      if (notes) {
         notes.forEach(note => {
           historyItems.push({
             id: note.id,
@@ -92,13 +90,13 @@ export default function TopicCard({
         })
       }
 
-      const { data: tasks, error: tasksError } = await supabase
+      const { data: tasks } = await supabase
         .from('tasks')
         .select('id, description, assigned_name, assigned_email, status, created_at')
         .eq('topic_id', topic.id)
         .order('created_at', { ascending: false })
 
-      if (!tasksError && tasks) {
+      if (tasks) {
         tasks.forEach(task => {
           const assignee = task.assigned_name || task.assigned_email || 'Unassigned'
           historyItems.push({
@@ -111,13 +109,13 @@ export default function TopicCard({
         })
       }
 
-      const { data: decisions, error: decisionsError } = await supabase
+      const { data: decisions } = await supabase
         .from('decisions')
         .select('id, motion_text, result, votes_for, votes_against, recorded_at')
         .eq('topic_id', topic.id)
         .order('recorded_at', { ascending: false })
 
-      if (!decisionsError && decisions) {
+      if (decisions) {
         decisions.forEach(decision => {
           const voteText = decision.votes_for !== null || decision.votes_against !== null
             ? ` • Votes: ${decision.votes_for || 0} for, ${decision.votes_against || 0} against`
@@ -143,7 +141,7 @@ export default function TopicCard({
 
   const fetchAiAnalysis = async () => {
     try {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from('ai_analyses')
         .select('analysis_result')
         .eq('topic_id', topic.id)
@@ -151,9 +149,7 @@ export default function TopicCard({
         .limit(1)
         .single()
 
-      if (!error && data) {
-        setAiAnalysis(data.analysis_result)
-      }
+      if (data) setAiAnalysis(data.analysis_result)
     } catch (err) {
       console.error('Error fetching AI analysis:', err)
     }
@@ -164,15 +160,12 @@ export default function TopicCard({
       alert('You do not have permission to analyze topics.')
       return
     }
-
     if (!topic.description || topic.description.trim() === '') {
       alert('Please add a description first before analyzing with AI')
       return
     }
-
     setAnalyzingAI(true)
     setShowAiResult(false)
-
     try {
       const { data: topicData, error: topicError } = await supabase
         .from('topics')
@@ -192,7 +185,6 @@ export default function TopicCard({
         return
       }
 
-      // Type-safe access to nested data
       const meetingData = topicData.meetings as any
       const buildingId = meetingData?.building_id
       const buildingName = meetingData?.buildings?.name
@@ -202,12 +194,9 @@ export default function TopicCard({
         setAnalyzingAI(false)
         return
       }
-
       const response = await fetch('https://rulesengine.asccreative.com/webhook/843afc5f-abe0-4bb4-bb9f-369d2657c4d0', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           topic_id: topic.id,
           topic_title: topic.title,
@@ -216,7 +205,6 @@ export default function TopicCard({
           description: topic.description,
         }),
       })
-
       if (response.ok) {
         await new Promise(resolve => setTimeout(resolve, 2000))
         await fetchAiAnalysis()
@@ -237,12 +225,10 @@ export default function TopicCard({
     setEditedTitle(e.target.value)
     setHasChanges(true)
   }
-
   const handleDescriptionChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setEditedDescription(e.target.value)
     setHasChanges(true)
   }
-
   const handleSave = async () => {
     setSaving(true)
     await onUpdate({ title: editedTitle, description: editedDescription })
@@ -250,7 +236,6 @@ export default function TopicCard({
     setIsEditing(false)
     setSaving(false)
   }
-
   const handleEdit = () => {
     if (isReadOnly) {
       alert('You do not have permission to edit topics.')
@@ -259,14 +244,12 @@ export default function TopicCard({
     setIsEditing(true)
     setHasChanges(false)
   }
-
   const handleCancel = () => {
     setEditedTitle(topic.title)
     setEditedDescription(topic.description || "")
     setIsEditing(false)
     setHasChanges(false)
   }
-
   const handleDelete = async () => {
     if (isReadOnly) {
       alert('You do not have permission to delete topics.')
@@ -275,36 +258,25 @@ export default function TopicCard({
     await onDelete(topic.id)
     setShowDeleteConfirm(false)
   }
-
   const getHistoryIcon = (type: string) => {
     switch (type) {
-      case 'note':
-        return <FileText className="h-4 w-4 text-note-blue" />
-      case 'task':
-        return <CheckSquare className="h-4 w-4 text-task-green" />
-      case 'decision':
-        return <Scale className="h-4 w-4 text-decision-purple" />
-      default:
-        return null
+      case 'note': return <FileText className="h-4 w-4 text-note-blue" />
+      case 'task': return <CheckSquare className="h-4 w-4 text-task-green" />
+      case 'decision': return <Scale className="h-4 w-4 text-decision-purple" />
+      default: return null
     }
   }
-
   const getHistoryBadgeColor = (type: string) => {
     switch (type) {
-      case 'note':
-        return 'bg-note-blue/10 text-note-blue border-note-blue/20'
-      case 'task':
-        return 'bg-task-green/10 text-task-green border-task-green/20'
-      case 'decision':
-        return 'bg-decision-purple/10 text-decision-purple border-decision-purple/20'
-      default:
-        return 'bg-gray-100 text-gray-600'
+      case 'note': return 'bg-note-blue/10 text-note-blue border-note-blue/20'
+      case 'task': return 'bg-task-green/10 text-task-green border-task-green/20'
+      case 'decision': return 'bg-decision-purple/10 text-decision-purple border-decision-purple/20'
+      default: return 'bg-gray-100 text-gray-600'
     }
   }
 
   return (
     <Card className="border-0 bg-card shadow-md overflow-hidden">
-      {/* Topic Header */}
       <div className="border-b border-border bg-gradient-to-r from-primary/5 to-decision-purple/5 p-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3 flex-1">
@@ -315,7 +287,6 @@ export default function TopicCard({
               <ChevronDown className={`h-5 w-5 transition-transform ${isExpanded ? "" : "-rotate-90"}`} />
             </button>
             <span className="text-sm font-semibold text-muted-foreground">Topic {topicNumber}</span>
-            
             {isEditing ? (
               <input
                 value={editedTitle}
@@ -346,33 +317,26 @@ export default function TopicCard({
                 {topic.decisions}
               </div>
             </div>
-
             {!isEditing && !isReadOnly && (
               <div className="flex items-center gap-1">
                 <button
                   onClick={handleEdit}
                   className="flex h-8 w-8 items-center justify-center rounded hover:bg-muted transition-colors text-primary"
                   title="Edit topic"
-                >
-                  <Edit2 className="h-4 w-4" />
-                </button>
+                ><Edit2 className="h-4 w-4" /></button>
                 <button
                   onClick={() => setShowDeleteConfirm(true)}
                   className="flex h-8 w-8 items-center justify-center rounded hover:bg-muted transition-colors text-destructive"
                   title="Delete topic"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
+                ><Trash2 className="h-4 w-4" /></button>
               </div>
             )}
           </div>
         </div>
       </div>
 
-      {/* Expandable Content */}
       {isExpanded && (
         <>
-          {/* Description Editor */}
           <div className="p-4 border-b border-border">
             {isEditing ? (
               <textarea
@@ -387,8 +351,6 @@ export default function TopicCard({
                 <div className="min-h-32 text-foreground p-3 mb-3">
                   {topic.description || <span className="text-muted-foreground">No description yet...</span>}
                 </div>
-                
-                {/* AI Analysis Button */}
                 {topic.description && !isEditing && !isReadOnly && (
                   <div className="flex gap-2">
                     <Button
@@ -399,17 +361,14 @@ export default function TopicCard({
                     >
                       {analyzingAI ? (
                         <>
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          Analyzing...
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Analyzing...
                         </>
                       ) : (
                         <>
-                          <Sparkles className="h-4 w-4 mr-2" />
-                          🤖 Analyze with AI
+                          <Sparkles className="h-4 w-4 mr-2" /> 🤖 Analyze with AI
                         </>
                       )}
                     </Button>
-                    
                     {aiAnalysis && (
                       <Button
                         onClick={() => setShowAiResult(!showAiResult)}
@@ -421,8 +380,6 @@ export default function TopicCard({
                     )}
                   </div>
                 )}
-
-                {/* AI Analysis Result - Show for everyone */}
                 {showAiResult && aiAnalysis && (
                   <div className="mt-4 p-4 bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-200 rounded-lg">
                     <div className="flex items-center gap-2 mb-2">
@@ -438,140 +395,90 @@ export default function TopicCard({
             )}
           </div>
 
-          {/* Save/Cancel Buttons */}
           {isEditing && !isReadOnly && (
             <div className="px-4 py-3 bg-muted/20 border-b border-border flex gap-2">
-              <Button
-                onClick={handleCancel}
-                variant="outline"
-                className="flex-1"
-              >
-                <X className="h-4 w-4 mr-2" />
-                Cancel
-              </Button>
-              <Button
-                onClick={handleSave}
-                disabled={saving || !hasChanges}
-                className="flex-1 bg-primary hover:bg-primary/90"
-              >
-                <Check className="h-4 w-4 mr-2" />
-                {saving ? "Saving..." : "Save Changes"}
+              <Button onClick={handleCancel} variant="outline" className="flex-1"><X className="h-4 w-4 mr-2" />Cancel</Button>
+              <Button onClick={handleSave} disabled={saving || !hasChanges} className="flex-1 bg-primary hover:bg-primary/90">
+                <Check className="h-4 w-4 mr-2" />{saving ? "Saving..." : "Save Changes"}
               </Button>
             </div>
           )}
 
-          {/* Delete Confirmation */}
           {showDeleteConfirm && !isReadOnly && (
             <div className="px-4 py-3 bg-red-50 border-b border-red-200">
               <p className="text-sm text-red-800 mb-3">
                 Are you sure you want to delete this topic? This action cannot be undone.
               </p>
               <div className="flex gap-2">
-                <Button
-                  onClick={() => setShowDeleteConfirm(false)}
-                  variant="outline"
-                  size="sm"
-                  className="flex-1"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={handleDelete}
-                  size="sm"
-                  className="flex-1 bg-red-600 hover:bg-red-700 text-white"
-                >
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  Delete Topic
+                <Button onClick={() => setShowDeleteConfirm(false)} variant="outline" size="sm" className="flex-1">Cancel</Button>
+                <Button onClick={handleDelete} size="sm" className="flex-1 bg-red-600 hover:bg-red-700 text-white">
+                  <Trash2 className="h-4 w-4 mr-2" />Delete Topic
                 </Button>
               </div>
             </div>
           )}
 
-          {/* Action Buttons - Hidden for read-only users */}
           {!isReadOnly && (
             <div className="flex gap-2 border-b border-border bg-muted/30 p-4">
-              <Button 
-                size="sm" 
-                className="flex-1 bg-note-blue text-white hover:bg-note-blue/90"
-                onClick={onNoteClick}
-              >
+              <Button size="sm" className="flex-1 bg-note-blue text-white hover:bg-note-blue/90" onClick={onNoteClick}>
                 <FileText className="h-4 w-4 mr-2" />📝 Note
               </Button>
-              <Button 
-                size="sm" 
-                className="flex-1 bg-task-green text-white hover:bg-task-green/90" 
-                onClick={onTaskClick}
-              >
+              <Button size="sm" className="flex-1 bg-task-green text-white hover:bg-task-green/90" onClick={onTaskClick}>
                 <CheckSquare className="h-4 w-4 mr-2" />✓ Task
               </Button>
-              <Button 
-                size="sm" 
-                className="flex-1 bg-decision-purple text-white hover:bg-decision-purple/90"
-                onClick={onDecisionClick}
-              >
-                <Scale className="h-4 w-4 mr-2" />
-                ⚖️ Decision
+              <Button size="sm" className="flex-1 bg-decision-purple text-white hover:bg-decision-purple/90" onClick={onDecisionClick}>
+                <Scale className="h-4 w-4 mr-2" />⚖️ Decision
               </Button>
             </div>
           )}
 
-          {/* History Section */}
           <div className="p-4 bg-muted/20">
-            <div className="flex items-center justify-between mb-3">
-              <h4 className="text-sm font-semibold text-foreground">History</h4>
-              <button
-                onClick={fetchHistory}
-                disabled={loadingHistory}
-                className="text-xs text-primary hover:underline disabled:opacity-50"
-              >
-                {loadingHistory ? "Loading..." : "Refresh"}
-              </button>
-            </div>
-            
-            {loadingHistory ? (
-              <div className="text-sm text-muted-foreground text-center py-4">
-                Loading history...
-              </div>
-            ) : history.length > 0 ? (
-              <div className="space-y-3">
-                {history.map((item) => (
-                  <div 
-                    key={`${item.type}-${item.id}`} 
-                    className="bg-background rounded-lg p-3 border border-border"
-                  >
-                    <div className="flex items-start gap-2">
-                      <div className="mt-0.5">
-                        {getHistoryIcon(item.type)}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className={`text-xs font-medium px-2 py-0.5 rounded border ${getHistoryBadgeColor(item.type)}`}>
-                            {item.type.toUpperCase()}
-                          </span>
-                          <span className="text-xs text-muted-foreground">
-                            {item.timestamp}
-                          </span>
+            <h4 className="text-sm font-semibold text-foreground mb-2">History by Type</h4>
+            {["task", "decision", "note"].map(type => (
+              <div className="mb-4" key={type}>
+                <div className="flex items-center gap-2 mb-1">
+                  {type === "task" && <CheckSquare className="h-4 w-4 text-task-green" />}
+                  {type === "decision" && <Scale className="h-4 w-4 text-decision-purple" />}
+                  {type === "note" && <FileText className="h-4 w-4 text-note-blue" />}
+                  <span className="font-semibold text-xs uppercase">
+                    {type === "task" ? "Tasks" : type === "decision" ? "Decisions" : "Notes"}
+                  </span>
+                </div>
+                <div className="space-y-1">
+                  {history.filter(h => h.type === type).length > 0 ? (
+                    history.filter(h => h.type === type).map(item => (
+                      <div key={item.id} className="flex items-start gap-2 rounded bg-background border border-border px-3 py-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex gap-2 items-center mb-1">
+                            <span className={`text-xs font-medium px-2 py-0.5 rounded ${getHistoryBadgeColor(item.type)}`}>{item.type.toUpperCase()}</span>
+                            <span className="text-xs text-muted-foreground">{item.timestamp}</span>
+                          </div>
+                          <div className="flex gap-2 items-center">
+                            <p className="text-sm text-foreground mb-0">{item.content}</p>
+                            <button
+                              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors"
+                              title={item.attachmentUrl ? "View Attachment" : "Attach File"}
+                            >
+                              <Paperclip className="h-4 w-4" />
+                              {item.attachmentUrl ? "File" : "Attach"}
+                            </button>
+                          </div>
+                          {item.details && (
+                            <p className="text-xs text-muted-foreground">{item.details}</p>
+                          )}
                         </div>
-                        <p className="text-sm text-foreground mb-1">
-                          {item.content}
-                        </p>
-                        {item.details && (
-                          <p className="text-xs text-muted-foreground">
-                            {item.details}
-                          </p>
-                        )}
                       </div>
+                    ))
+                  ) : (
+                    <div className="text-xs text-muted-foreground px-2">
+                      {isReadOnly 
+                        ? `No ${type}s yet.`
+                        : `No ${type}s yet. Click the button above to add one.`}
                     </div>
-                  </div>
-                ))}
+                  )}
+                </div>
               </div>
-            ) : (
-              <div className="text-sm text-muted-foreground text-center py-8 border-2 border-dashed border-border rounded">
-                {isReadOnly 
-                  ? 'No notes, tasks, or decisions yet.'
-                  : 'No notes, tasks, or decisions yet. Click the buttons above to add items.'}
-              </div>
-            )}
+            ))}
           </div>
         </>
       )}
