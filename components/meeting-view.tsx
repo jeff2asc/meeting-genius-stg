@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import {
-  ArrowLeft, Plus, ChevronDown, ChevronRight, Calendar,
+  ArrowLeft, Plus, Trash, Pencil, ChevronDown, ChevronRight, Calendar,
   Clock, MapPin, FileText, Edit2, Play, CheckCircle, ChevronLeft
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -25,6 +25,7 @@ interface MeetingViewProps {
   onNoteClick: (topicId: number) => void
   onDecisionClick: (topicId: number) => void
 }
+
 interface Topic {
   id: number
   title: string
@@ -35,6 +36,7 @@ interface Topic {
   decisions: number
   order_index?: number
 }
+
 interface Section {
   id: number
   title: string
@@ -42,6 +44,7 @@ interface Section {
   topics: Topic[]
   isExpanded: boolean
 }
+
 const STATUS_FLOW = [
   "working_agenda",
   "working_minutes",
@@ -68,9 +71,15 @@ export default function MeetingView({
   const [showAttendeesModal, setShowAttendeesModal] = useState(false)
   const [selectedSection, setSelectedSection] = useState<{ id: number; title: string } | null>(null)
 
+  // Section Editing/Removal State
+  const [editingSection, setEditingSection] = useState<{ id: number, title: string } | null>(null)
+  const [sectionRenameValue, setSectionRenameValue] = useState("")
+  const [sectionToDelete, setSectionToDelete] = useState<Section | null>(null)
+
   const currentUser = getCurrentUser()
   const userCanEdit = currentUser ? canEditMeeting(currentUser.user_type) : false
   const userIsReadOnly = currentUser ? isReadOnly(currentUser.user_type) : false
+  const editingLocked = !userCanEdit || (meeting?.status === "minutes")
 
   useEffect(() => { setIsMounted(true) }, [])
   useEffect(() => { if (meetingId) fetchMeetingData() }, [meetingId])
@@ -156,6 +165,29 @@ export default function MeetingView({
     setSelectedSection({ id: sectionId, title: sectionTitle })
     setShowCreateTopicModal(true)
   }
+
+  // Section Rename/Remove Logic
+  const beginSectionRename = (section: Section) => {
+    setEditingSection({ id: section.id, title: section.title })
+    setSectionRenameValue(section.title)
+  }
+  const saveSectionRename = async () => {
+    if (!editingSection) return
+    await supabase.from("sections")
+      .update({ title: sectionRenameValue })
+      .eq("id", editingSection.id)
+    setEditingSection(null)
+    setSectionRenameValue("")
+    await fetchSectionsAndTopics()
+  }
+  const askDeleteSection = (section: Section) => setSectionToDelete(section)
+  const confirmDeleteSection = async () => {
+    if (!sectionToDelete) return
+    await supabase.from("sections").delete().eq("id", sectionToDelete.id)
+    setSectionToDelete(null)
+    await fetchSectionsAndTopics()
+  }
+  const cancelDeleteSection = () => setSectionToDelete(null)
 
   const updateTopic = async (id: number, updates: Partial<Topic>) => {
     if (!userCanEdit) {
@@ -317,10 +349,12 @@ export default function MeetingView({
     if (direction === "backward") return index > 0
     return false
   }
+
   const nextStatus = (current: string) => {
     const index = STATUS_FLOW.indexOf(current as any)
     return index < STATUS_FLOW.length - 1 ? STATUS_FLOW[index + 1] : current
   }
+
   const prevStatus = (current: string) => {
     const index = STATUS_FLOW.indexOf(current as any)
     return index > 0 ? STATUS_FLOW[index - 1] : current
@@ -396,6 +430,7 @@ export default function MeetingView({
       </div>
     )
   }
+
   if (!meeting) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted flex items-center justify-center">
@@ -403,6 +438,7 @@ export default function MeetingView({
       </div>
     )
   }
+
   const totalTopics = sections.reduce((sum, section) => sum + section.topics.length, 0)
 
   return (
@@ -464,7 +500,6 @@ export default function MeetingView({
                       )}
                     </>
                   )}
-                  {/* Popup Attendees Button */}
                   <Button
                     onClick={() => setShowAttendeesModal(true)}
                     variant="outline"
@@ -550,8 +585,8 @@ export default function MeetingView({
           </div>
         </div>
       </header>
-      
-      {/* ---- Attendees POPUP MODAL ---- */}
+
+      {/* Attendees POPUP MODAL */}
       {showAttendeesModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
           <div className="bg-card p-4 rounded-lg shadow-lg max-w-lg w-full">
@@ -578,7 +613,7 @@ export default function MeetingView({
         </div>
       )}
 
-      {/* ---- MEETING SECTIONS/TOPICS REMAIN UNCHANGED ---- */}
+      {/* MEETING SECTIONS/TOPICS WITH DRAG AND DROP */}
       <DragDropContext onDragEnd={onDragEnd}>
         <Droppable droppableId="all-sections" type="SECTION">
           {(provided: any) => (
@@ -592,43 +627,83 @@ export default function MeetingView({
                   {(provided: any) => (
                     <div ref={provided.innerRef} {...provided.draggableProps}>
                       <Card className="border-0 bg-gradient-to-r from-primary/10 to-decision-purple/10 mb-3">
-                        <button
-                          {...provided.dragHandleProps}
-                          onClick={() => toggleSection(section.id)}
-                          className="w-full p-4 flex items-center justify-between hover:bg-muted/20 transition-colors"
-                        >
+                        <div className="w-full p-4 flex items-center justify-between">
                           <div className="flex items-center gap-3">
-                            {section.isExpanded ? (
-                              <ChevronDown className="h-5 w-5 text-primary" />
+                            <div {...provided.dragHandleProps} onClick={() => toggleSection(section.id)} className="cursor-pointer">
+                              {section.isExpanded ? (
+                                <ChevronDown className="h-5 w-5 text-primary" />
+                              ) : (
+                                <ChevronRight className="h-5 w-5 text-primary" />
+                              )}
+                            </div>
+                            {editingSection?.id === section.id ? (
+                              <form
+                                onSubmit={e => {
+                                  e.preventDefault()
+                                  saveSectionRename()
+                                }}
+                                className="flex items-center gap-2"
+                              >
+                                <input
+                                  value={sectionRenameValue}
+                                  onChange={e => setSectionRenameValue(e.target.value)}
+                                  className="text-lg font-bold border px-2 py-1 rounded"
+                                  autoFocus
+                                  onBlur={saveSectionRename}
+                                />
+                              </form>
                             ) : (
-                              <ChevronRight className="h-5 w-5 text-primary" />
+                              <>
+                                <h2 className="text-lg font-bold text-foreground">{section.title}</h2>
+                                <span className="text-sm text-muted-foreground">
+                                  ({section.topics.length} {section.topics.length === 1 ? 'topic' : 'topics'})
+                                </span>
+                              </>
                             )}
-                            <h2 className="text-lg font-bold text-foreground">{section.title}</h2>
-                            <span className="text-sm text-muted-foreground">
-                              ({section.topics.length} {section.topics.length === 1 ? 'topic' : 'topics'})
-                            </span>
                           </div>
-                          {userCanEdit && meeting.status !== "minutes" && (
-                            <Button
-                              size="sm"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                handleAddTopic(section.id, section.title)
-                              }}
-                              className="bg-primary hover:bg-primary/90"
-                            >
-                              <Plus className="h-4 w-4 mr-2" />
-                              Add Topic
-                            </Button>
-                          )}
-                        </button>
+                          <div className="flex items-center gap-2">
+                            {!editingLocked && editingSection?.id !== section.id && (
+                              <>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => beginSectionRename(section)}
+                                  title="Edit section name"
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => askDeleteSection(section)}
+                                  title="Delete section"
+                                >
+                                  <Trash className="h-4 w-4 text-red-600" />
+                                </Button>
+                              </>
+                            )}
+                            {userCanEdit && meeting.status !== "minutes" && (
+                              <Button
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleAddTopic(section.id, section.title)
+                                }}
+                                className="bg-primary hover:bg-primary/90"
+                              >
+                                <Plus className="h-4 w-4 mr-2" />
+                                Add Topic
+                              </Button>
+                            )}
+                          </div>
+                        </div>
                         {section.isExpanded && (
                           <Droppable droppableId={section.id.toString()} type="TOPIC">
                             {(provided: any) => (
                               <div
                                 {...provided.droppableProps}
                                 ref={provided.innerRef}
-                                className="space-y-4 ml-8"
+                                className="space-y-4 ml-8 pb-4"
                               >
                                 {section.topics.length > 0 ? (
                                   section.topics.map((topic, idx) => (
@@ -680,51 +755,69 @@ export default function MeetingView({
         </Droppable>
       </DragDropContext>
 
-      {showCreateSectionModal && userCanEdit && (
-        <CreateSectionModal
-          meetingId={meetingId}
-          onClose={() => setShowCreateSectionModal(false)}
-          onSuccess={() => {
-            fetchSectionsAndTopics()
-            setShowCreateSectionModal(false)
-          }}
-        />
-      )}
-      {showCreateTopicModal && selectedSection && userCanEdit && (
-        <CreateTopicModal
-          meetingId={meetingId}
-          sectionId={selectedSection.id}
-          sectionTitle={selectedSection.title}
-          onClose={() => {
-            setShowCreateTopicModal(false)
-            setSelectedSection(null)
-          }}
-          onSuccess={() => {
-            fetchSectionsAndTopics()
-            setShowCreateTopicModal(false)
-            setSelectedSection(null)
-          }}
-        />
-      )}
-      {showEditMeetingModal && userCanEdit && meeting && (
-        <EditMeetingModal
-          isOpen={showEditMeetingModal}
-          onClose={() => setShowEditMeetingModal(false)}
-          onSuccess={() => {
-            fetchMeetingData()
-            setShowEditMeetingModal(false)
-          }}
-          meeting={{
-            id: parseInt(meetingId),
-            title: meeting.title,
-            meeting_date: meeting.meeting_date,
-            location: meeting.location,
-            start_time: meeting.start_time,
-            meeting_type: meeting.meeting_type,
-            strata_plan_number: meeting.strata_plan_number,
-          }}
-        />
-      )}
-    </>
-  )
-}
+      {/* Section Delete Confirmation Modal */}
+      {sectionToDelete && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 z-50 flex items-center justify-center">
+          <div className="bg-white border p-6 rounded-lg shadow-lg max-w-md w-full">
+            <h2 className="text-xl font-bold mb-2">Delete Section?</h2>
+            <p className="mb-4">
+              Are you sure you want to permanently delete <b>{sectionToDelete.title}</b> and all its topics? This cannot be undone.
+            </p>
+            <div className="flex gap-4 justify-end">
+              <Button variant="outline" onClick={cancelDeleteSection}>Cancel</Button>
+              <Button className="bg-red-600 text-white" onClick={confirmDeleteSection}>Delete</Button>
+            </div>
+          </div>
+        </div>
+            )}
+
+            {/* Modals for Section/Topic Creation and Editing */}
+            {showCreateSectionModal && userCanEdit && (
+              <CreateSectionModal
+                meetingId={meetingId}
+                onClose={() => setShowCreateSectionModal(false)}
+                onSuccess={() => {
+                  fetchSectionsAndTopics()
+                  setShowCreateSectionModal(false)
+                }}
+              />
+            )}
+            {showCreateTopicModal && selectedSection && userCanEdit && (
+              <CreateTopicModal
+                meetingId={meetingId}
+                sectionId={selectedSection.id}
+                sectionTitle={selectedSection.title}
+                onClose={() => {
+                  setShowCreateTopicModal(false)
+                  setSelectedSection(null)
+                }}
+                onSuccess={() => {
+                  fetchSectionsAndTopics()
+                  setShowCreateTopicModal(false)
+                  setSelectedSection(null)
+                }}
+              />
+            )}
+            {showEditMeetingModal && userCanEdit && meeting && (
+              <EditMeetingModal
+                isOpen={showEditMeetingModal}
+                onClose={() => setShowEditMeetingModal(false)}
+                onSuccess={() => {
+                  fetchMeetingData()
+                  setShowEditMeetingModal(false)
+                }}
+                meeting={{
+                  id: parseInt(meetingId),
+                  title: meeting.title,
+                  meeting_date: meeting.meeting_date,
+                  location: meeting.location,
+                  start_time: meeting.start_time,
+                  meeting_type: meeting.meeting_type,
+                  strata_plan_number: meeting.strata_plan_number,
+                }}
+              />
+            )}
+          </>
+        )
+      }
+      
