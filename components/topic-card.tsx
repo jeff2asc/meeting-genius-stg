@@ -235,7 +235,6 @@ export default function TopicCard({
     setHasChanges(false)
     setIsEditing(false)
     setSaving(false)
-    // Refresh history after saving description
     fetchHistory()
   }
   const handleEdit = () => {
@@ -261,21 +260,6 @@ export default function TopicCard({
     setShowDeleteConfirm(false)
   }
 
-  // Wrapped handlers to refresh history after adding items
-  const handleNoteClickWithRefresh = () => {
-    onNoteClick()
-    // Delay to allow modal close and DB update, then refresh
-    setTimeout(() => fetchHistory(), 1000)
-  }
-  const handleTaskClickWithRefresh = () => {
-    onTaskClick()
-    setTimeout(() => fetchHistory(), 1000)
-  }
-  const handleDecisionClickWithRefresh = () => {
-    onDecisionClick()
-    setTimeout(() => fetchHistory(), 1000)
-  }
-
   const getHistoryIcon = (type: string) => {
     switch (type) {
       case 'note': return <FileText className="h-4 w-4 text-note-blue" />
@@ -292,6 +276,14 @@ export default function TopicCard({
       default: return 'bg-gray-100 text-gray-600'
     }
   }
+
+  // Expose fetchHistory so parent can call it after modal closes
+  useEffect(() => {
+    if (onHistoryRefresh) {
+      // This allows the parent to trigger refresh
+      (window as any)[`refreshHistory_${topic.id}`] = fetchHistory
+    }
+  }, [topic.id, onHistoryRefresh])
 
   return (
     <Card className="border-0 bg-card shadow-md overflow-hidden">
@@ -438,13 +430,13 @@ export default function TopicCard({
 
           {!isReadOnly && (
             <div className="flex gap-2 border-b border-border bg-muted/30 p-4">
-              <Button size="sm" className="flex-1 bg-note-blue text-white hover:bg-note-blue/90" onClick={handleNoteClickWithRefresh}>
+              <Button size="sm" className="flex-1 bg-note-blue text-white hover:bg-note-blue/90" onClick={onNoteClick}>
                 <FileText className="h-4 w-4 mr-2" />📝 Note
               </Button>
-              <Button size="sm" className="flex-1 bg-task-green text-white hover:bg-task-green/90" onClick={handleTaskClickWithRefresh}>
+              <Button size="sm" className="flex-1 bg-task-green text-white hover:bg-task-green/90" onClick={onTaskClick}>
                 <CheckSquare className="h-4 w-4 mr-2" />✓ Task
               </Button>
-              <Button size="sm" className="flex-1 bg-decision-purple text-white hover:bg-decision-purple/90" onClick={handleDecisionClickWithRefresh}>
+              <Button size="sm" className="flex-1 bg-decision-purple text-white hover:bg-decision-purple/90" onClick={onDecisionClick}>
                 <Scale className="h-4 w-4 mr-2" />⚖️ Decision
               </Button>
             </div>
