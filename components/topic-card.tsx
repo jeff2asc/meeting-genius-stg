@@ -60,20 +60,14 @@ export default function TopicCard({
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null)
   const [showAiResult, setShowAiResult] = useState(false)
 
-  // --- AUTO-REFRESH LOGIC ---
+  // Load history only when expanded, no continuous polling
   useEffect(() => {
-    let interval: NodeJS.Timeout | null = null;
     if (isExpanded) {
       fetchHistory()
       fetchAiAnalysis()
-      interval = setInterval(fetchHistory, 6000);
-    }
-    return () => {
-      if (interval) clearInterval(interval);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [topic.id, isExpanded])
-  // --------------------------
 
   const fetchHistory = async () => {
     setLoadingHistory(true)
@@ -241,6 +235,8 @@ export default function TopicCard({
     setHasChanges(false)
     setIsEditing(false)
     setSaving(false)
+    // Refresh history after saving description
+    fetchHistory()
   }
   const handleEdit = () => {
     if (isReadOnly) {
@@ -264,6 +260,22 @@ export default function TopicCard({
     await onDelete(topic.id)
     setShowDeleteConfirm(false)
   }
+
+  // Wrapped handlers to refresh history after adding items
+  const handleNoteClickWithRefresh = () => {
+    onNoteClick()
+    // Delay to allow modal close and DB update, then refresh
+    setTimeout(() => fetchHistory(), 1000)
+  }
+  const handleTaskClickWithRefresh = () => {
+    onTaskClick()
+    setTimeout(() => fetchHistory(), 1000)
+  }
+  const handleDecisionClickWithRefresh = () => {
+    onDecisionClick()
+    setTimeout(() => fetchHistory(), 1000)
+  }
+
   const getHistoryIcon = (type: string) => {
     switch (type) {
       case 'note': return <FileText className="h-4 w-4 text-note-blue" />
@@ -426,13 +438,13 @@ export default function TopicCard({
 
           {!isReadOnly && (
             <div className="flex gap-2 border-b border-border bg-muted/30 p-4">
-              <Button size="sm" className="flex-1 bg-note-blue text-white hover:bg-note-blue/90" onClick={onNoteClick}>
+              <Button size="sm" className="flex-1 bg-note-blue text-white hover:bg-note-blue/90" onClick={handleNoteClickWithRefresh}>
                 <FileText className="h-4 w-4 mr-2" />📝 Note
               </Button>
-              <Button size="sm" className="flex-1 bg-task-green text-white hover:bg-task-green/90" onClick={onTaskClick}>
+              <Button size="sm" className="flex-1 bg-task-green text-white hover:bg-task-green/90" onClick={handleTaskClickWithRefresh}>
                 <CheckSquare className="h-4 w-4 mr-2" />✓ Task
               </Button>
-              <Button size="sm" className="flex-1 bg-decision-purple text-white hover:bg-decision-purple/90" onClick={onDecisionClick}>
+              <Button size="sm" className="flex-1 bg-decision-purple text-white hover:bg-decision-purple/90" onClick={handleDecisionClickWithRefresh}>
                 <Scale className="h-4 w-4 mr-2" />⚖️ Decision
               </Button>
             </div>
