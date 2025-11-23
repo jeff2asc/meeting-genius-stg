@@ -24,6 +24,7 @@ interface MeetingViewProps {
   onTaskClick: (topicId: number) => void
   onNoteClick: (topicId: number) => void
   onDecisionClick: (topicId: number) => void
+  onRegisterTopicRefresh?: (topicId: number, callback: () => void) => void
 }
 
 interface Topic {
@@ -56,7 +57,8 @@ export default function MeetingView({
   onBack,
   onTaskClick,
   onNoteClick,
-  onDecisionClick
+  onDecisionClick,
+  onRegisterTopicRefresh
 }: MeetingViewProps) {
   const [meeting, setMeeting] = useState<any>(null)
   const [sections, setSections] = useState<Section[]>([])
@@ -726,6 +728,7 @@ export default function MeetingView({
                                             onTaskClick={() => onTaskClick(topic.id)}
                                             onNoteClick={() => onNoteClick(topic.id)}
                                             onDecisionClick={() => onDecisionClick(topic.id)}
+                                            onRegisterRefresh={onRegisterTopicRefresh}
                                             isReadOnly={userIsReadOnly || meeting.status === "minutes"}
                                           />
                                         </div>
@@ -769,55 +772,54 @@ export default function MeetingView({
             </div>
           </div>
         </div>
-            )}
+      )}
 
-            {/* Modals for Section/Topic Creation and Editing */}
-            {showCreateSectionModal && userCanEdit && (
-              <CreateSectionModal
-                meetingId={meetingId}
-                onClose={() => setShowCreateSectionModal(false)}
-                onSuccess={() => {
-                  fetchSectionsAndTopics()
-                  setShowCreateSectionModal(false)
-                }}
-              />
-            )}
-            {showCreateTopicModal && selectedSection && userCanEdit && (
-              <CreateTopicModal
-                meetingId={meetingId}
-                sectionId={selectedSection.id}
-                sectionTitle={selectedSection.title}
-                onClose={() => {
-                  setShowCreateTopicModal(false)
-                  setSelectedSection(null)
-                }}
-                onSuccess={() => {
-                  fetchSectionsAndTopics()
-                  setShowCreateTopicModal(false)
-                  setSelectedSection(null)
-                }}
-              />
-            )}
-            {showEditMeetingModal && userCanEdit && meeting && (
-              <EditMeetingModal
-                isOpen={showEditMeetingModal}
-                onClose={() => setShowEditMeetingModal(false)}
-                onSuccess={() => {
-                  fetchMeetingData()
-                  setShowEditMeetingModal(false)
-                }}
-                meeting={{
-                  id: parseInt(meetingId),
-                  title: meeting.title,
-                  meeting_date: meeting.meeting_date,
-                  location: meeting.location,
-                  start_time: meeting.start_time,
-                  meeting_type: meeting.meeting_type,
-                  strata_plan_number: meeting.strata_plan_number,
-                }}
-              />
-            )}
-          </>
-        )
-      }
-      
+      {/* Modals for Section/Topic Creation and Editing */}
+      {showCreateSectionModal && userCanEdit && (
+        <CreateSectionModal
+          meetingId={meetingId}
+          onClose={() => setShowCreateSectionModal(false)}
+          onSuccess={() => {
+            fetchSectionsAndTopics()
+            setShowCreateSectionModal(false)
+          }}
+        />
+      )}
+      {showCreateTopicModal && selectedSection && userCanEdit && (
+        <CreateTopicModal
+          meetingId={meetingId}
+          sectionId={selectedSection.id}
+          sectionTitle={selectedSection.title}
+          onClose={() => {
+            setShowCreateTopicModal(false)
+            setSelectedSection(null)
+          }}
+          onSuccess={() => {
+            fetchSectionsAndTopics()
+            setShowCreateTopicModal(false)
+            setSelectedSection(null)
+          }}
+        />
+      )}
+      {showEditMeetingModal && userCanEdit && meeting && (
+        <EditMeetingModal
+          isOpen={showEditMeetingModal}
+          onClose={() => setShowEditMeetingModal(false)}
+          onSuccess={() => {
+            fetchMeetingData()
+            setShowEditMeetingModal(false)
+          }}
+          meeting={{
+            id: parseInt(meetingId),
+            title: meeting.title,
+            meeting_date: meeting.meeting_date,
+            location: meeting.location,
+            start_time: meeting.start_time,
+            meeting_type: meeting.meeting_type,
+            strata_plan_number: meeting.strata_plan_number,
+          }}
+        />
+      )}
+    </>
+  )
+}

@@ -32,7 +32,7 @@ interface TopicCardProps {
   onTaskClick: () => void
   onNoteClick: () => void
   onDecisionClick: () => void
-  onHistoryRefresh?: () => void
+  onRegisterRefresh?: (topicId: number, callback: () => void) => void
   isReadOnly?: boolean
 }
 
@@ -44,7 +44,7 @@ export default function TopicCard({
   onTaskClick,
   onNoteClick,
   onDecisionClick,
-  onHistoryRefresh,
+  onRegisterRefresh,
   isReadOnly = false
 }: TopicCardProps) {
   const [isExpanded, setIsExpanded] = useState(true)
@@ -60,13 +60,19 @@ export default function TopicCard({
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null)
   const [showAiResult, setShowAiResult] = useState(false)
 
-  // Load history only when expanded, no continuous polling
+  // NEW: Register the refresh callback on mount
+  useEffect(() => {
+    if (onRegisterRefresh) {
+      onRegisterRefresh(topic.id, fetchHistory)
+    }
+  }, [topic.id, onRegisterRefresh])
+
+  // Load history only when expanded
   useEffect(() => {
     if (isExpanded) {
       fetchHistory()
       fetchAiAnalysis()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [topic.id, isExpanded])
 
   const fetchHistory = async () => {
@@ -235,6 +241,7 @@ export default function TopicCard({
     setHasChanges(false)
     setIsEditing(false)
     setSaving(false)
+    // Refresh history after saving description
     fetchHistory()
   }
   const handleEdit = () => {
@@ -276,14 +283,6 @@ export default function TopicCard({
       default: return 'bg-gray-100 text-gray-600'
     }
   }
-
-  // Expose fetchHistory so parent can call it after modal closes
-  useEffect(() => {
-    if (onHistoryRefresh) {
-      // This allows the parent to trigger refresh
-      (window as any)[`refreshHistory_${topic.id}`] = fetchHistory
-    }
-  }, [topic.id, onHistoryRefresh])
 
   return (
     <Card className="border-0 bg-card shadow-md overflow-hidden">

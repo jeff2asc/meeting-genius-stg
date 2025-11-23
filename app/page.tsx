@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import Dashboard from "@/components/dashboard"
 import MeetingView from "@/components/meeting-view"
 import AdminPanel from "@/components/admin-panel"
@@ -28,6 +28,9 @@ export default function Home() {
   const [buildings, setBuildings] = useState<any[]>([])
   const [refreshKey, setRefreshKey] = useState(0)
   const [currentUser, setCurrentUser] = useState<any>(null)
+
+  // NEW: Store the callback to refresh TopicCard history
+  const topicRefreshCallbackRef = useRef<(() => void) | null>(null)
 
   useEffect(() => {
     const loggedIn = isLoggedIn()
@@ -89,6 +92,11 @@ export default function Home() {
     setSelectedMeeting(null)
   }
 
+  // NEW: Function to register the refresh callback from TopicCard
+  const registerTopicRefresh = (topicId: number, callback: () => void) => {
+    topicRefreshCallbackRef.current = callback
+  }
+
   const handleNoteClick = (topicId: number) => {
     setSelectedTopicId(topicId)
     setShowNoteModal(true)
@@ -102,6 +110,25 @@ export default function Home() {
   const handleTaskClick = (topicId: number) => {
     setSelectedTopicId(topicId)
     setShowTaskModal(true)
+  }
+
+  // NEW: Called after modal saves successfully
+  const handleNoteSave = () => {
+    if (topicRefreshCallbackRef.current) {
+      topicRefreshCallbackRef.current()
+    }
+  }
+
+  const handleTaskSave = () => {
+    if (topicRefreshCallbackRef.current) {
+      topicRefreshCallbackRef.current()
+    }
+  }
+
+  const handleDecisionSave = () => {
+    if (topicRefreshCallbackRef.current) {
+      topicRefreshCallbackRef.current()
+    }
   }
 
   const handleAdminClick = () => {
@@ -165,6 +192,7 @@ export default function Home() {
           onTaskClick={handleTaskClick}
           onNoteClick={handleNoteClick}
           onDecisionClick={handleDecisionClick}
+          onRegisterTopicRefresh={registerTopicRefresh}
         />
       )}
 
@@ -180,7 +208,7 @@ export default function Home() {
             setShowTaskModal(false)
             setSelectedTopicId(null)
           }}
-          onSave={() => setRefreshKey(prev => prev + 1)}
+          onSave={handleTaskSave}
         />
       )}
       
@@ -191,7 +219,7 @@ export default function Home() {
             setShowNoteModal(false)
             setSelectedTopicId(null)
           }}
-          onSave={() => setRefreshKey(prev => prev + 1)}
+          onSave={handleNoteSave}
         />
       )}
       
@@ -202,7 +230,7 @@ export default function Home() {
             setShowDecisionModal(false)
             setSelectedTopicId(null)
           }}
-          onSave={() => setRefreshKey(prev => prev + 1)}
+          onSave={handleDecisionSave}
         />
       )}
       
