@@ -113,16 +113,26 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
 
   const fetchCompanies = async () => {
     try {
-      const { data, error } = await supabase
+      let companiesQuery = supabase
         .from('companies')
         .select('*')
         .order('name')
-
+  
+      // Apply filtering based on user type
+      if (isMaster) {
+        // Master sees ALL companies - no filter needed
+      } else if (isCorporateAdmin && currentUser?.company_id) {
+        // Corporate Admin sees ONLY their company
+        companiesQuery = companiesQuery.eq('id', currentUser.company_id)
+      }
+  
+      const { data, error } = await companiesQuery
+  
       if (error) {
         console.error('Error fetching companies:', error)
         return
       }
-
+  
       setCompanies(data || [])
     } catch (err) {
       console.error('Unexpected error:', err)
