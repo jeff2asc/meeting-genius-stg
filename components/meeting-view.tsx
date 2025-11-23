@@ -811,6 +811,7 @@ export default function MeetingView({
           }}
           meeting={{
             id: parseInt(meetingId),
+            building_id: meeting.building_id, // <-- ADD THIS LINE!
             title: meeting.title,
             meeting_date: meeting.meeting_date,
             location: meeting.location,
@@ -818,6 +819,7 @@ export default function MeetingView({
             meeting_type: meeting.meeting_type,
             strata_plan_number: meeting.strata_plan_number,
           }}
+          
         />
       )}
     </>

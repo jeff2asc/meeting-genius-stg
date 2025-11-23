@@ -1,34 +1,99 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { supabase, getCurrentUser } from "@/lib/supabase"
+import { supabase } from "@/lib/supabase"
 
 interface CreateMeetingModalProps {
   onClose: () => void
   onSuccess: () => void
-  buildings: Array<{ id: number; name: string }>
+  buildings: Array<{ id: number; name: string; company_id: number }>
   selectedBuildingName?: string
 }
 
+// Remove Company state - use only arrays for defaults!
 export default function CreateMeetingModal({ onClose, onSuccess, buildings }: CreateMeetingModalProps) {
   const [formData, setFormData] = useState({
     title: "",
     meetingDate: "",
     location: "",
     startTime: "",
-    meetingType: "Council Meeting",
+    meetingType: "",
     strataPlanNumber: "",
     buildingId: buildings[0]?.id || 0,
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
+  const [meetingTypes, setMeetingTypes] = useState<string[]>([])
+  const [meetingSections, setMeetingSections] = useState<string[]>([])
+
+  useEffect(() => {
+    // Fetch company defaults when modal opens or building changes
+    async function fetchCompanyDefaults() {
+      const selectedBuilding = buildings.find(b => b.id === formData.buildingId)
+      if (!selectedBuilding || !selectedBuilding.company_id) {
+        setMeetingTypes([
+          "Council Meeting",
+          "AGM",
+          "SGM",
+          "Special Meeting",
+          "Emergency Meeting"
+        ])
+        setMeetingSections([
+          "Call to Order",
+          "Approval of Agenda",
+          "Old Business / Business Arising",
+          "New Business",
+          "Financial Report",
+          "Maintenance & Operations",
+          "Correspondence",
+          "Council Roundtable",
+          "Adjournment"
+        ])
+        setFormData(f => ({ ...f, meetingType: "Council Meeting" }))
+        return
+      }
+
+      const { data: company, error } = await supabase
+        .from("companies")
+        .select("default_meeting_sections, default_meeting_types")
+        .eq("id", selectedBuilding.company_id)
+        .single()
+
+      setMeetingTypes(
+        company?.default_meeting_types || [
+          "Council Meeting",
+          "AGM",
+          "SGM",
+          "Special Meeting",
+          "Emergency Meeting"
+        ]
+      )
+      setMeetingSections(
+        company?.default_meeting_sections || [
+          "Call to Order",
+          "Approval of Agenda",
+          "Old Business / Business Arising",
+          "New Business",
+          "Financial Report",
+          "Maintenance & Operations",
+          "Correspondence",
+          "Council Roundtable",
+          "Adjournment"
+        ]
+      )
+      setFormData(f => ({ ...f, meetingType: company?.default_meeting_types?.[0] || "Council Meeting" }))
+    }
+
+    fetchCompanyDefaults()
+    // eslint-disable-next-line
+  }, [formData.buildingId, buildings])
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target
-    setFormData((prev) => ({
+    setFormData(prev => ({
       ...prev,
       [name]: name === "buildingId" ? parseInt(value) : value,
     }))
@@ -40,7 +105,6 @@ export default function CreateMeetingModal({ onClose, onSuccess, buildings }: Cr
     setError("")
 
     try {
-      // Insert the meeting record
       const { data: meetingData, error: insertError } = await supabase
         .from("meetings")
         .insert([
@@ -65,26 +129,27 @@ export default function CreateMeetingModal({ onClose, onSuccess, buildings }: Cr
         return
       }
 
-      console.log("Meeting created successfully:", meetingData)
-
-      // Insert standard template sections for the new meeting
-      const standardSections = [
-        { title: "Call to Order", order_index: 1 },
-        { title: "Approval of Agenda", order_index: 2 },
-        { title: "Old Business / Business Arising", order_index: 3 },
-        { title: "New Business", order_index: 4 },
-        { title: "Financial Report", order_index: 5 },
-        { title: "Maintenance & Operations", order_index: 6 },
-        { title: "Correspondence", order_index: 7 },
-        { title: "Council Roundtable", order_index: 8 },
-        { title: "Adjournment", order_index: 9 },
-      ]
+      // Compose sections from defaults array only
+      const standardSections = (meetingSections.length > 0 ? meetingSections : [
+        "Call to Order",
+        "Approval of Agenda",
+        "Old Business / Business Arising",
+        "New Business",
+        "Financial Report",
+        "Maintenance & Operations",
+        "Correspondence",
+        "Council Roundtable",
+        "Adjournment"
+      ]).map((title, idx) => ({
+        title,
+        order_index: idx + 1,
+      }))
 
       // Insert sections
       const { data: insertedSections, error: sectionsError } = await supabase
         .from("sections")
         .insert(
-          standardSections.map((section) => ({
+          standardSections.map(section => ({
             meeting_id: meetingData.id,
             title: section.title,
             order_index: section.order_index,
@@ -94,11 +159,8 @@ export default function CreateMeetingModal({ onClose, onSuccess, buildings }: Cr
 
       if (sectionsError) {
         console.error("Error inserting sections:", sectionsError)
-        // You can choose to continue or stop here
       } else {
-        console.log("Standard sections inserted:", insertedSections)
-
-        // Insert preset topics for Call to Order, Approval of Agenda, Adjournment (for example)
+        // Insert preset topics for Call to Order, Approval of Agenda, Adjournment
         const presetTopics = [
           { section_title: "Call to Order", title: "Meeting called to order at [time]" },
           { section_title: "Approval of Agenda", title: "Approval of the agenda" },
@@ -107,29 +169,26 @@ export default function CreateMeetingModal({ onClose, onSuccess, buildings }: Cr
 
         // Map section title to section id
         const sectionIdMap: Record<string, number> = {}
-        insertedSections?.forEach((section) => {
+        insertedSections?.forEach(section => {
           if (section.title && section.id) {
             sectionIdMap[section.title] = section.id
           }
         })
 
         // Insert preset topics
-        const topicsToInsert = presetTopics.map((topic) => ({
+        const topicsToInsert = presetTopics.map(topic => ({
           meeting_id: meetingData.id,
           section_id: sectionIdMap[topic.section_title] || null,
           title: topic.title,
-          order_index: 1, // Starting order
+          order_index: 1,
         }))
 
         const { error: topicsError } = await supabase.from("topics").insert(topicsToInsert)
         if (topicsError) {
           console.error("Error inserting preset topics:", topicsError)
-        } else {
-          console.log("Preset topics inserted")
         }
       }
 
-      // Call onSuccess to refresh lists outside
       onSuccess()
       onClose()
     } catch (err) {
@@ -143,7 +202,6 @@ export default function CreateMeetingModal({ onClose, onSuccess, buildings }: Cr
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 animate-in fade-in">
       <Card className="w-full sm:max-w-md border-0 rounded-t-2xl sm:rounded-2xl shadow-2xl max-h-[90vh] overflow-y-auto">
-        {/* Header */}
         <div className="flex items-center justify-between border-b border-border bg-gradient-to-r from-primary/5 to-decision-purple/5 p-6 sticky top-0 z-10">
           <h2 className="text-xl font-bold text-foreground">Create New Meeting</h2>
           <button
@@ -154,7 +212,6 @@ export default function CreateMeetingModal({ onClose, onSuccess, buildings }: Cr
           </button>
         </div>
 
-        {/* Form */}
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           {error && (
             <div className="p-3 bg-red-100 border border-red-200 text-red-800 rounded-lg text-sm">
@@ -214,11 +271,9 @@ export default function CreateMeetingModal({ onClose, onSuccess, buildings }: Cr
               required
               className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50"
             >
-              <option value="Council Meeting">Council Meeting</option>
-              <option value="AGM">AGM (Annual General Meeting)</option>
-              <option value="SGM">SGM (Special General Meeting)</option>
-              <option value="Special Meeting">Special Meeting</option>
-              <option value="Emergency Meeting">Emergency Meeting</option>
+              {meetingTypes.map(type => (
+                <option key={type} value={type}>{type}</option>
+              ))}
             </select>
           </div>
 

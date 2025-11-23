@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { X } from "lucide-react"
+import { X, Plus, Trash2, Edit2, Save } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { supabase } from "@/lib/supabase"
@@ -10,6 +10,8 @@ interface Company {
   id: number
   name: string
   created_at: string
+  default_meeting_sections?: string[]
+  default_meeting_types?: string[]
 }
 
 interface EditCompanyModalProps {
@@ -26,14 +28,71 @@ export default function EditCompanyModal({
   company
 }: EditCompanyModalProps) {
   const [companyName, setCompanyName] = useState("")
+  const [meetingSections, setMeetingSections] = useState<string[]>([])
+  const [meetingTypes, setMeetingTypes] = useState<string[]>([])
+  const [editingSectionIdx, setEditingSectionIdx] = useState<number | null>(null)
+  const [editingTypeIdx, setEditingTypeIdx] = useState<number | null>(null)
+  const [editingValue, setEditingValue] = useState("")
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (company) {
       setCompanyName(company.name)
+      setMeetingSections(company.default_meeting_sections || [
+        "Call to Order",
+        "Approval of Agenda",
+        "Old Business / Business Arising",
+        "New Business",
+        "Financial Report",
+        "Maintenance & Operations",
+        "Correspondence",
+        "Council Roundtable",
+        "Adjournment"
+      ])
+      setMeetingTypes(company.default_meeting_types || [
+        "Council Meeting",
+        "AGM",
+        "SGM",
+        "Special Meeting",
+        "Emergency Meeting"
+      ])
     }
   }, [company])
+
+  // Section editing
+  const handleAddSection = () => setMeetingSections([...meetingSections, "New Section"])
+  const handleDeleteSection = (idx: number) => setMeetingSections(meetingSections.filter((_, i) => i !== idx))
+  const handleEditSection = (idx: number) => {
+    setEditingSectionIdx(idx)
+    setEditingValue(meetingSections[idx])
+  }
+  const handleSaveSectionEdit = () => {
+    if (editingSectionIdx !== null) {
+      const updated = [...meetingSections]
+      updated[editingSectionIdx] = editingValue
+      setMeetingSections(updated)
+      setEditingSectionIdx(null)
+      setEditingValue("")
+    }
+  }
+
+  // Meeting type editing
+  const handleAddType = () => setMeetingTypes([...meetingTypes, "New Type"])
+  const handleDeleteType = (idx: number) => setMeetingTypes(meetingTypes.filter((_, i) => i !== idx))
+  const handleEditType = (idx: number) => {
+    setEditingTypeIdx(idx)
+    setEditingValue(meetingTypes[idx])
+  }
+  const handleSaveTypeEdit = () => {
+    if (editingTypeIdx !== null) {
+      const updated = [...meetingTypes]
+      updated[editingTypeIdx] = editingValue
+      setMeetingTypes(updated)
+      setEditingTypeIdx(null)
+      setEditingValue("")
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -43,7 +102,6 @@ export default function EditCompanyModal({
       setError("Company name is required")
       return
     }
-
     if (!company) return
 
     setSaving(true)
@@ -53,6 +111,8 @@ export default function EditCompanyModal({
         .from('companies')
         .update({
           name: companyName.trim(),
+          default_meeting_sections: meetingSections,
+          default_meeting_types: meetingTypes,
           updated_at: new Date().toISOString()
         })
         .eq('id', company.id)
@@ -67,7 +127,6 @@ export default function EditCompanyModal({
       console.log('✅ Company updated successfully')
       onSuccess()
       onClose()
-
     } catch (err) {
       console.error('Unexpected error:', err)
       setError('An unexpected error occurred')
@@ -85,7 +144,7 @@ export default function EditCompanyModal({
           <div>
             <h2 className="text-xl font-bold text-foreground">Edit Company</h2>
             <p className="text-sm text-muted-foreground">
-              Update company information
+              Update company info & meeting templates
             </p>
           </div>
           <button
@@ -97,7 +156,7 @@ export default function EditCompanyModal({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="p-6 space-y-6">
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded text-sm">
               {error}
@@ -111,7 +170,7 @@ export default function EditCompanyModal({
             <input
               type="text"
               value={companyName}
-              onChange={(e) => setCompanyName(e.target.value)}
+              onChange={e => setCompanyName(e.target.value)}
               placeholder="e.g., ABC Property Management"
               required
               disabled={saving}
@@ -119,6 +178,83 @@ export default function EditCompanyModal({
             />
           </div>
 
+          {/* Default Meeting Sections */}
+          <div>
+            <label className="block text-sm font-semibold text-foreground mb-2">
+              Default Meeting Sections
+            </label>
+            <div className="space-y-2">
+              {meetingSections.map((section, idx) =>
+                editingSectionIdx === idx ? (
+                  <div key={idx} className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={editingValue}
+                      onChange={e => setEditingValue(e.target.value)}
+                      className="w-full px-2 py-1 rounded border border-border"
+                    />
+                    <Button variant="outline" size="sm" onClick={handleSaveSectionEdit} type="button">
+                      <Save className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ) : (
+                  <div key={idx} className="flex items-center gap-2">
+                    <span>{section}</span>
+                    <Button variant="outline" size="sm" title="Edit" type="button" onClick={() => handleEditSection(idx)}>
+                      <Edit2 className="h-4 w-4" />
+                    </Button>
+                    <Button variant="outline" size="sm" title="Delete" type="button" onClick={() => handleDeleteSection(idx)}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                )
+              )}
+              <Button variant="secondary" size="sm" type="button" onClick={handleAddSection}>
+                <Plus className="h-4 w-4 mr-1" />
+                Add Section
+              </Button>
+            </div>
+          </div>
+
+          {/* Default Meeting Types */}
+          <div>
+            <label className="block text-sm font-semibold text-foreground mb-2">
+              Default Meeting Types
+            </label>
+            <div className="space-y-2">
+              {meetingTypes.map((type, idx) =>
+                editingTypeIdx === idx ? (
+                  <div key={idx} className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={editingValue}
+                      onChange={e => setEditingValue(e.target.value)}
+                      className="w-full px-2 py-1 rounded border border-border"
+                    />
+                    <Button variant="outline" size="sm" onClick={handleSaveTypeEdit} type="button">
+                      <Save className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ) : (
+                  <div key={idx} className="flex items-center gap-2">
+                    <span>{type}</span>
+                    <Button variant="outline" size="sm" title="Edit" type="button" onClick={() => handleEditType(idx)}>
+                      <Edit2 className="h-4 w-4" />
+                    </Button>
+                    <Button variant="outline" size="sm" title="Delete" type="button" onClick={() => handleDeleteType(idx)}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                )
+              )}
+              <Button variant="secondary" size="sm" type="button" onClick={handleAddType}>
+                <Plus className="h-4 w-4 mr-1" />
+                Add Type
+              </Button>
+            </div>
+          </div>
+
+          {/* Save/Cancel buttons */}
           <div className="flex gap-3 pt-4">
             <Button 
               type="button" 

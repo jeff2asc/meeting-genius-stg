@@ -8,6 +8,7 @@ import { supabase } from "@/lib/supabase"
 
 interface Meeting {
   id: number
+  building_id: number
   title: string
   meeting_date: string
   location: string | null
@@ -34,22 +35,81 @@ export default function EditMeetingModal({
     meetingDate: "",
     location: "",
     startTime: "",
-    meetingType: "Council Meeting",
+    meetingType: "",
     strataPlanNumber: "",
   })
+  const [meetingTypes, setMeetingTypes] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    async function fetchCompanyMeetingTypes() {
+      if (!meeting || !meeting.building_id) {
+        setMeetingTypes([
+          "Council Meeting",
+          "AGM",
+          "SGM",
+          "Special Meeting",
+          "Emergency Meeting"
+        ])
+        setFormData(prev => ({ ...prev, meetingType: "Council Meeting" }))
+        return
+      }
+
+      // Fetch building to get company_id
+      const { data: building, error: buildingError } = await supabase
+        .from('buildings')
+        .select('company_id')
+        .eq('id', meeting.building_id)
+        .single()
+
+      if (buildingError || !building?.company_id) {
+        setMeetingTypes([
+          "Council Meeting",
+          "AGM",
+          "SGM",
+          "Special Meeting",
+          "Emergency Meeting"
+        ])
+        setFormData(prev => ({
+          ...prev,
+          meetingType: meeting?.meeting_type || "Council Meeting"
+        }))
+        return
+      }
+
+      // Fetch company meeting types
+      const { data: company, error: companyError } = await supabase
+        .from('companies')
+        .select('default_meeting_types')
+        .eq('id', building.company_id)
+        .single()
+
+      const types = company?.default_meeting_types || [
+        "Council Meeting",
+        "AGM",
+        "SGM",
+        "Special Meeting",
+        "Emergency Meeting"
+      ]
+
+      setMeetingTypes(types)
+      setFormData(prev => ({
+        ...prev,
+        meetingType: meeting?.meeting_type || types[0] || ""
+      }))
+    }
+
     if (meeting) {
       setFormData({
         title: meeting.title,
         meetingDate: meeting.meeting_date,
         location: meeting.location || "",
         startTime: meeting.start_time || "",
-        meetingType: meeting.meeting_type || "Council Meeting",
+        meetingType: meeting.meeting_type || "",
         strataPlanNumber: meeting.strata_plan_number || "",
       })
+      fetchCompanyMeetingTypes()
     }
   }, [meeting])
 
@@ -89,7 +149,6 @@ export default function EditMeetingModal({
 
       onSuccess()
       onClose()
-
     } catch (err) {
       console.error('Unexpected error:', err)
       setError('An unexpected error occurred')
@@ -154,11 +213,9 @@ export default function EditMeetingModal({
               disabled={saving}
               className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
             >
-              <option value="Council Meeting">Council Meeting</option>
-              <option value="AGM">AGM (Annual General Meeting)</option>
-              <option value="SGM">SGM (Special General Meeting)</option>
-              <option value="Special Meeting">Special Meeting</option>
-              <option value="Emergency Meeting">Emergency Meeting</option>
+              {meetingTypes.map(type => (
+                <option key={type} value={type}>{type}</option>
+              ))}
             </select>
           </div>
 

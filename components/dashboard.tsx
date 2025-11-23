@@ -130,9 +130,11 @@ export default function Dashboard({
         return
       }
 
+      // <-- FIXED: always include building_id so you avoid the EditMeetingModal error!
       const formattedMeetings = (data || []).map(meeting => ({
         id: String(meeting.id),
         building: selectedBuilding,
+        building_id: meeting.building_id, // <-- added this property!
         title: meeting.title,
         date: new Date(meeting.meeting_date).toLocaleDateString('en-US', { 
           month: 'short', 
@@ -422,6 +424,7 @@ export default function Dashboard({
           }}
           meeting={{
             id: parseInt(selectedMeeting.id),
+            building_id: selectedMeeting.building_id, // <- FIXED
             title: selectedMeeting.title,
             meeting_date: selectedMeeting.meeting_date,
             location: selectedMeeting.location,

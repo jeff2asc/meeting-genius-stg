@@ -19,6 +19,25 @@ interface NewUser {
   role: 'corporate_administrator' | 'property_manager'
 }
 
+const DEFAULT_SECTIONS = [
+  "Call to Order",
+  "Approval of Agenda",
+  "Old Business / Business Arising",
+  "New Business",
+  "Financial Report",
+  "Maintenance & Operations",
+  "Correspondence",
+  "Council Roundtable",
+  "Adjournment",
+]
+const DEFAULT_TYPES = [
+  "Council Meeting",
+  "AGM",
+  "SGM",
+  "Special Meeting",
+  "Emergency Meeting",
+]
+
 export default function CreateCompanyModal({
   isOpen,
   onClose,
@@ -57,7 +76,6 @@ export default function CreateCompanyModal({
       return
     }
 
-    // Validate all users have required fields
     for (let i = 0; i < newUsers.length; i++) {
       const user = newUsers[i]
       if (!user.name.trim() || !user.email.trim() || !user.password.trim()) {
@@ -69,11 +87,13 @@ export default function CreateCompanyModal({
     setSaving(true)
 
     try {
-      // 1. Create company
+      // 1. Create company with meeting section/type defaults
       const { data: newCompany, error: companyError } = await supabase
         .from('companies')
         .insert({
-          name: companyName.trim()
+          name: companyName.trim(),
+          default_meeting_sections: DEFAULT_SECTIONS,
+          default_meeting_types: DEFAULT_TYPES
         })
         .select()
         .single()
@@ -84,17 +104,16 @@ export default function CreateCompanyModal({
         setSaving(false)
         return
       }
-
       console.log('✅ Company created:', newCompany.id)
 
-      // 2. Create users and assign to company
+      // 2. Create users
       for (const user of newUsers) {
         const { error: userError } = await supabase
           .from('users')
           .insert({
             name: user.name.trim(),
             email: user.email.toLowerCase().trim(),
-            password_hash: '$2a$10$rXqvFZnPzAMcLzCP2L4dxu7L6Y3Y5KjGNQQF6xZ4Y5Y5Y5Y5Y5Y5Y5',
+            password_hash: '$2a$10$rXqvFZnPzAMcLzCP2L4dxu7L6Y3Y5KjGNQQF6xZ4Y5Y5Y5Y5Y5Y5Y5', // Replace with secure hash logic
             user_type: user.role,
             company_id: newCompany.id
           })
@@ -109,12 +128,10 @@ export default function CreateCompanyModal({
         console.log('✅ User created:', user.email)
       }
 
-      // Reset form
       setCompanyName("")
       setNewUsers([])
       onSuccess()
       onClose()
-
     } catch (err) {
       console.error('Unexpected error:', err)
       setError('An unexpected error occurred')
@@ -146,7 +163,6 @@ export default function CreateCompanyModal({
             <X className="h-5 w-5" />
           </button>
         </div>
-
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto">
           <div className="p-6 space-y-6">
             {error && (
@@ -154,7 +170,6 @@ export default function CreateCompanyModal({
                 {error}
               </div>
             )}
-
             {/* Company Name */}
             <div>
               <label className="block text-sm font-medium text-foreground mb-2">
@@ -188,7 +203,6 @@ export default function CreateCompanyModal({
                   Add Corp Admin
                 </Button>
               </div>
-
               {corpAdmins.length === 0 ? (
                 <div className="text-center py-4 border-2 border-dashed border-border rounded-lg">
                   <p className="text-sm text-muted-foreground">
@@ -265,7 +279,6 @@ export default function CreateCompanyModal({
                   Add Property Manager
                 </Button>
               </div>
-
               {propertyManagers.length === 0 ? (
                 <div className="text-center py-4 border-2 border-dashed border-border rounded-lg">
                   <p className="text-sm text-muted-foreground">
@@ -324,12 +337,10 @@ export default function CreateCompanyModal({
                 </div>
               )}
             </div>
-
             <div className="bg-blue-50 border border-blue-200 p-3 rounded text-sm text-blue-800">
               <strong>💡 Tip:</strong> You can create the company without users and add them later, or add multiple users here and they'll all be assigned to this company automatically.
             </div>
           </div>
-
           <div className="border-t border-border p-6 bg-muted/20">
             <div className="flex gap-3">
               <Button 

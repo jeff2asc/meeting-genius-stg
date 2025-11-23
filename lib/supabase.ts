@@ -5,12 +5,14 @@ const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYm
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
-// Company interface
+// Company interface -- updated to include new fields
 export interface Company {
   id: number
   name: string
   created_at: string
   updated_at: string
+  default_meeting_sections?: string[]    // <-- ADDED
+  default_meeting_types?: string[]       // <-- ADDED
 }
 
 // User interface - with all 6 user types + company_id
@@ -25,10 +27,8 @@ export interface User {
 // Get current user from localStorage
 export function getCurrentUser(): User | null {
   if (typeof window === 'undefined') return null
-  
   const userJson = localStorage.getItem('current_user')
   if (!userJson) return null
-  
   try {
     return JSON.parse(userJson)
   } catch {
@@ -55,6 +55,7 @@ export function isLoggedIn(): boolean {
   return getCurrentUser() !== null
 }
 
+// Database type -- updated for companies table fields
 export type Database = {
   public: {
     Tables: {
@@ -64,9 +65,13 @@ export type Database = {
           name: string
           created_at: string
           updated_at: string
+          default_meeting_sections: string[] | null    // <-- ADDED
+          default_meeting_types: string[] | null       // <-- ADDED
         }
         Insert: {
           name: string
+          default_meeting_sections?: string[] | null    // <-- ADDED
+          default_meeting_types?: string[] | null       // <-- ADDED
         }
       }
       users: {
