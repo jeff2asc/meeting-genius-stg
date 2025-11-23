@@ -14,10 +14,10 @@ export const canAccessAdmin = (userType: UserType | string): boolean => {
 
 /**
  * Can this user type manage companies?
- * Only Master can create/edit/delete companies
+ * Master and Corporate Administrators can create/edit/delete companies
  */
 export const canManageCompanies = (userType: UserType | string): boolean => {
-  return userType === 'master'
+  return ['master', 'corporate_administrator'].includes(userType)
 }
 
 /**
