@@ -464,19 +464,7 @@ export default function TopicCard({
     history.filter(h => h.type === type).map(item => (
       <div 
         key={item.id} 
-        onClick={(e) => {
-          e.stopPropagation()
-          if (item.type === 'task') {
-            console.log('Task clicked! ID:', item.id)
-            setSelectedTaskId(item.id)
-          }
-        }}
-        className={`flex items-start gap-2 rounded bg-background border border-border px-3 py-2 ${
-          item.type === 'task' 
-            ? 'cursor-pointer hover:bg-muted/50 hover:border-task-green/50 transition-all hover:shadow-md' 
-            : ''
-        }`}
-        style={item.type === 'task' ? { cursor: 'pointer' } : {}}
+        className="flex items-start gap-2 rounded bg-background border border-border px-3 py-2"
       >
         <div className="flex-1 min-w-0">
           <div className="flex gap-2 items-center mb-1">
@@ -487,24 +475,27 @@ export default function TopicCard({
           </div>
           <div className="flex gap-2 items-center">
             <p className="text-sm text-foreground mb-0">{item.content}</p>
-            {item.type !== 'task' && (
-              <button
-                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors"
-                title={item.attachmentUrl ? "View Attachment" : "Attach File"}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <Paperclip className="h-4 w-4" />
-                {item.attachmentUrl ? "File" : "Attach"}
-              </button>
-            )}
+            <button
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors"
+              title={item.attachmentUrl ? "View Attachment" : "Attach File"}
+            >
+              <Paperclip className="h-4 w-4" />
+              {item.attachmentUrl ? "File" : "Attach"}
+            </button>
           </div>
           {item.details && (
             <p className="text-xs text-muted-foreground">{item.details}</p>
           )}
           {item.type === 'task' && (
-            <p className="text-xs text-task-green font-medium mt-1">
-              👆 Click to view details →
-            </p>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setSelectedTaskId(item.id)}
+              className="mt-2 text-task-green border-task-green hover:bg-task-green/10"
+            >
+              <CheckSquare className="h-3 w-3 mr-1" />
+              View Task Details
+            </Button>
           )}
         </div>
       </div>
@@ -517,6 +508,7 @@ export default function TopicCard({
     </div>
   )}
 </div>
+
 
                 </div>
               ))}
