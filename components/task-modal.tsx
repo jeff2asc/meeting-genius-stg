@@ -18,6 +18,7 @@ interface TaskModalProps {
 interface Assignee {
   name: string
   email: string
+  present?: boolean
 }
 
 export default function TaskModal({ topicId, meetingId, onClose, onSave }: TaskModalProps) {
@@ -57,13 +58,15 @@ export default function TaskModal({ topicId, meetingId, onClose, onSave }: TaskM
         return
       }
 
+      console.log('Raw attendees data:', data?.attendees)
+
       if (data?.attendees && Array.isArray(data.attendees)) {
-        const attendeeList = data.attendees
-          .filter((a: any) => a.present) // Only show present attendees
-          .map((a: any) => ({
-            name: a.name,
-            email: a.email
-          }))
+        // Show ALL attendees, not just present ones
+        const attendeeList = data.attendees.map((a: any) => ({
+          name: a.name,
+          email: a.email,
+          present: a.present // Keep track if they were present
+        }))
         console.log('Meeting attendees loaded:', attendeeList)
         setMeetingAttendees(attendeeList)
       }
@@ -81,7 +84,7 @@ export default function TaskModal({ topicId, meetingId, onClose, onSave }: TaskM
       return
     }
 
-    setAssignees([...assignees, attendee])
+    setAssignees([...assignees, { name: attendee.name, email: attendee.email }])
     setError(null)
   }
 
@@ -320,8 +323,15 @@ export default function TaskModal({ topicId, meetingId, onClose, onSave }: TaskM
                             isAlreadyAssigned ? 'opacity-50 cursor-not-allowed bg-green-50' : ''
                           }`}
                         >
-                          <div className="font-medium text-sm">{attendee.name}</div>
-                          <div className="text-xs text-muted-foreground">{attendee.email}</div>
+                          <div className="flex items-center justify-between">
+                            <div className="flex-1">
+                              <div className="font-medium text-sm">{attendee.name}</div>
+                              <div className="text-xs text-muted-foreground">{attendee.email}</div>
+                            </div>
+                            {attendee.present && (
+                              <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">Present</span>
+                            )}
+                          </div>
                           {isAlreadyAssigned && (
                             <div className="text-xs text-green-600 font-medium mt-0.5">✓ Already assigned</div>
                           )}
@@ -331,7 +341,7 @@ export default function TaskModal({ topicId, meetingId, onClose, onSave }: TaskM
                   </div>
                 ) : (
                   <div className="border border-dashed border-border rounded-lg p-4 text-center text-sm text-muted-foreground">
-                    No attendees marked present
+                    No attendees added to this meeting
                   </div>
                 )}
               </div>
