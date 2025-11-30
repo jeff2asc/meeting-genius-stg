@@ -16,6 +16,7 @@ import ViewDocumentModal from "./admin/ViewDocumentModal"
 import UsersTab from "./admin/UsersTab"
 import BuildingsTab from "./admin/BuildingsTab"
 import CompaniesTab from "./admin/CompaniesTab"
+import MinutesTemplatesTab from "./admin/MinutesTemplatesTab"
 import CreateCompanyModal from "./admin/CreateCompanyModal"
 import EditCompanyModal from "./admin/EditCompanyModal"
 import CompanyDetailsModal from "./admin/CompanyDetailsModal"
@@ -52,7 +53,7 @@ interface Building {
   users?: Array<{ id: number; name: string; email: string }>
 }
 
-type TabType = "users" | "buildings" | "companies"
+type TabType = "users" | "buildings" | "companies" | "minutes"
 
 export default function AdminPanel({ onBack }: AdminPanelProps) {
   const [activeTab, setActiveTab] = useState<TabType>("users")
@@ -362,7 +363,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
 
   const handleCreateUserSuccess = () => {
     fetchUsers()
-    fetchPropertyManagers() // Also refresh property managers list
+    fetchPropertyManagers()
   }
 
   const handleCreateBuildingSuccess = () => {
@@ -386,7 +387,6 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
   }
 
   const handleDeleteCompany = async (company: Company) => {
-    // Get counts for warning
     const { count: userCount } = await supabase
       .from('users')
       .select('*', { count: 'exact', head: true })
@@ -447,34 +447,29 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
   }
 
   const getBuildingsList = () => {
-    // Buildings are already filtered in fetchBuildings()
     return buildings
   }
 
-  // ✅ FIXED WITH DEBUG LOGGING: Now includes Property Managers and respects company filtering
   const getAvailableUsers = () => {
     console.log('🔍 getAvailableUsers called - currentUser:', currentUser?.user_type, currentUser?.company_id)
     console.log('🔍 Total users available:', users.length, users)
     
-    // Corporate Admin: See all users from their company (including Property Managers)
     if (isCorporateAdmin && currentUser?.company_id) {
       console.log('🔍 Corporate Admin - returning all company users')
-      const filtered = users // Already filtered by company_id in fetchUsers()
+      const filtered = users
       console.log('🔍 Filtered users for Corporate Admin:', filtered)
       return filtered
     }
     
-    // Property Manager: See only their assigned users (excluding themselves and other PMs)
     if (currentUser?.user_type === 'property_manager') {
       const filtered = users.filter(u => 
         (u.assigned_pm_id === currentUser.id && u.user_type === 'user') ||
-        u.id === currentUser.id // Include self
+        u.id === currentUser.id
       )
       console.log('🔍 Property Manager - filtered users:', filtered)
       return filtered
     }
     
-    // Master: See everyone
     console.log('🔍 Master - returning all users')
     return users
   }
@@ -490,7 +485,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
               </Button>
               <div>
                 <h1 className="text-xl font-bold text-foreground">Admin Panel</h1>
-                <p className="text-sm text-muted-foreground">Manage users, buildings and companies</p>
+                <p className="text-sm text-muted-foreground">Manage users, buildings, companies and minutes templates</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -557,6 +552,16 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
                 🏛️ Companies
               </button>
             )}
+            <button
+              onClick={() => setActiveTab("minutes")}
+              className={`pb-2 px-1 font-medium text-sm transition-colors ${
+                activeTab === "minutes"
+                  ? "text-primary border-b-2 border-primary"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              📄 Minutes Templates
+            </button>
           </div>
         </div>
       </header>
@@ -597,6 +602,13 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
             onViewDetails={handleViewCompanyDetails}
             onAssignUsers={handleAssignUsers}
             onRefresh={fetchCompanies}
+          />
+        )}
+
+        {activeTab === "minutes" && (
+          <MinutesTemplatesTab
+            buildings={getBuildingsList()}
+            loading={loading}
           />
         )}
       </div>
