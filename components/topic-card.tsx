@@ -5,6 +5,7 @@ import { ChevronDown, FileText, CheckSquare, Scale, Paperclip, Edit2, Trash2, X,
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { supabase } from "@/lib/supabase"
+import TaskDetailsModal from "./TaskDetailsModal"
 
 interface Topic {
   id: number
@@ -27,7 +28,7 @@ interface HistoryItem {
 interface TopicCardProps {
   topic: Topic
   topicNumber: number
-  meetingId: number // <-- ADDED THIS
+  meetingId: number
   onUpdate: (updates: Partial<Topic>) => void
   onDelete: (topicId: number) => void
   onTaskClick: () => void
@@ -40,7 +41,7 @@ interface TopicCardProps {
 export default function TopicCard({ 
   topic, 
   topicNumber,
-  meetingId, // <-- ADDED THIS
+  meetingId,
   onUpdate,
   onDelete,
   onTaskClick,
@@ -61,15 +62,14 @@ export default function TopicCard({
   const [analyzingAI, setAnalyzingAI] = useState(false)
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null)
   const [showAiResult, setShowAiResult] = useState(false)
+  const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null)
 
-  // NEW: Register the refresh callback on mount
   useEffect(() => {
     if (onRegisterRefresh) {
       onRegisterRefresh(topic.id, fetchHistory)
     }
   }, [topic.id, onRegisterRefresh])
 
-  // Load history only when expanded
   useEffect(() => {
     if (isExpanded) {
       fetchHistory()
@@ -243,7 +243,6 @@ export default function TopicCard({
     setHasChanges(false)
     setIsEditing(false)
     setSaving(false)
-    // Refresh history after saving description
     fetchHistory()
   }
   const handleEdit = () => {
@@ -269,14 +268,6 @@ export default function TopicCard({
     setShowDeleteConfirm(false)
   }
 
-  const getHistoryIcon = (type: string) => {
-    switch (type) {
-      case 'note': return <FileText className="h-4 w-4 text-note-blue" />
-      case 'task': return <CheckSquare className="h-4 w-4 text-task-green" />
-      case 'decision': return <Scale className="h-4 w-4 text-decision-purple" />
-      default: return null
-    }
-  }
   const getHistoryBadgeColor = (type: string) => {
     switch (type) {
       case 'note': return 'bg-note-blue/10 text-note-blue border-note-blue/20'
@@ -287,213 +278,235 @@ export default function TopicCard({
   }
 
   return (
-    <Card className="border-0 bg-card shadow-md overflow-hidden">
-      <div className="border-b border-border bg-gradient-to-r from-primary/5 to-decision-purple/5 p-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3 flex-1">
-            <button
-              onClick={() => setIsExpanded(!isExpanded)}
-              className="flex h-8 w-8 items-center justify-center rounded hover:bg-muted transition-colors"
-            >
-              <ChevronDown className={`h-5 w-5 transition-transform ${isExpanded ? "" : "-rotate-90"}`} />
-            </button>
-            <span className="text-sm font-semibold text-muted-foreground">Topic {topicNumber}</span>
-            {isEditing ? (
-              <input
-                value={editedTitle}
-                onChange={handleTitleChange}
-                className="flex-1 bg-background px-2 py-1 rounded border border-primary text-foreground font-semibold focus:outline-none focus:ring-2 focus:ring-primary/50"
-                placeholder="Topic title..."
-                autoFocus
-                disabled={isReadOnly}
-              />
-            ) : (
-              <h3 className="flex-1 font-semibold text-foreground">
-                {topic.title}
-              </h3>
-            )}
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                <Paperclip className="h-4 w-4" />
-                {topic.attachments}
-              </div>
-              <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                <CheckSquare className="h-4 w-4" />
-                {topic.tasks}
-              </div>
-              <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                <Scale className="h-4 w-4" />
-                {topic.decisions}
-              </div>
+    <>
+      <Card className="border-0 bg-card shadow-md overflow-hidden">
+        <div className="border-b border-border bg-gradient-to-r from-primary/5 to-decision-purple/5 p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3 flex-1">
+              <button
+                onClick={() => setIsExpanded(!isExpanded)}
+                className="flex h-8 w-8 items-center justify-center rounded hover:bg-muted transition-colors"
+              >
+                <ChevronDown className={`h-5 w-5 transition-transform ${isExpanded ? "" : "-rotate-90"}`} />
+              </button>
+              <span className="text-sm font-semibold text-muted-foreground">Topic {topicNumber}</span>
+              {isEditing ? (
+                <input
+                  value={editedTitle}
+                  onChange={handleTitleChange}
+                  className="flex-1 bg-background px-2 py-1 rounded border border-primary text-foreground font-semibold focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  placeholder="Topic title..."
+                  autoFocus
+                  disabled={isReadOnly}
+                />
+              ) : (
+                <h3 className="flex-1 font-semibold text-foreground">
+                  {topic.title}
+                </h3>
+              )}
             </div>
-            {!isEditing && !isReadOnly && (
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={handleEdit}
-                  className="flex h-8 w-8 items-center justify-center rounded hover:bg-muted transition-colors text-primary"
-                  title="Edit topic"
-                ><Edit2 className="h-4 w-4" /></button>
-                <button
-                  onClick={() => setShowDeleteConfirm(true)}
-                  className="flex h-8 w-8 items-center justify-center rounded hover:bg-muted transition-colors text-destructive"
-                  title="Delete topic"
-                ><Trash2 className="h-4 w-4" /></button>
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <Paperclip className="h-4 w-4" />
+                  {topic.attachments}
+                </div>
+                <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <CheckSquare className="h-4 w-4" />
+                  {topic.tasks}
+                </div>
+                <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <Scale className="h-4 w-4" />
+                  {topic.decisions}
+                </div>
               </div>
-            )}
+              {!isEditing && !isReadOnly && (
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={handleEdit}
+                    className="flex h-8 w-8 items-center justify-center rounded hover:bg-muted transition-colors text-primary"
+                    title="Edit topic"
+                  ><Edit2 className="h-4 w-4" /></button>
+                  <button
+                    onClick={() => setShowDeleteConfirm(true)}
+                    className="flex h-8 w-8 items-center justify-center rounded hover:bg-muted transition-colors text-destructive"
+                    title="Delete topic"
+                  ><Trash2 className="h-4 w-4" /></button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
-      </div>
 
-      {isExpanded && (
-        <>
-          <div className="p-4 border-b border-border">
-            {isEditing ? (
-              <textarea
-                value={editedDescription}
-                onChange={handleDescriptionChange}
-                placeholder="Add description here..."
-                className="w-full min-h-32 bg-background text-foreground rounded border border-primary p-3 focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none"
-                disabled={isReadOnly}
-              />
-            ) : (
-              <>
-                <div className="min-h-32 text-foreground p-3 mb-3">
-                  {topic.description || <span className="text-muted-foreground">No description yet...</span>}
-                </div>
-                {topic.description && !isEditing && !isReadOnly && (
-                  <div className="flex gap-2">
-                    <Button
-                      onClick={handleAiAnalysis}
-                      disabled={analyzingAI}
-                      size="sm"
-                      className="bg-gradient-to-r from-purple-600 to-blue-600 text-white hover:opacity-90"
-                    >
-                      {analyzingAI ? (
-                        <>
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Analyzing...
-                        </>
-                      ) : (
-                        <>
-                          <Sparkles className="h-4 w-4 mr-2" /> 🤖 Analyze with AI
-                        </>
-                      )}
-                    </Button>
-                    {aiAnalysis && (
+        {isExpanded && (
+          <>
+            <div className="p-4 border-b border-border">
+              {isEditing ? (
+                <textarea
+                  value={editedDescription}
+                  onChange={handleDescriptionChange}
+                  placeholder="Add description here..."
+                  className="w-full min-h-32 bg-background text-foreground rounded border border-primary p-3 focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none"
+                  disabled={isReadOnly}
+                />
+              ) : (
+                <>
+                  <div className="min-h-32 text-foreground p-3 mb-3">
+                    {topic.description || <span className="text-muted-foreground">No description yet...</span>}
+                  </div>
+                  {topic.description && !isEditing && !isReadOnly && (
+                    <div className="flex gap-2">
                       <Button
-                        onClick={() => setShowAiResult(!showAiResult)}
-                        variant="outline"
+                        onClick={handleAiAnalysis}
+                        disabled={analyzingAI}
                         size="sm"
+                        className="bg-gradient-to-r from-purple-600 to-blue-600 text-white hover:opacity-90"
                       >
-                        {showAiResult ? 'Hide' : 'Show'} Analysis
+                        {analyzingAI ? (
+                          <>
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Analyzing...
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles className="h-4 w-4 mr-2" /> 🤖 Analyze with AI
+                          </>
+                        )}
                       </Button>
-                    )}
-                  </div>
-                )}
-                {showAiResult && aiAnalysis && (
-                  <div className="mt-4 p-4 bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-200 rounded-lg">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Sparkles className="h-5 w-5 text-purple-600" />
-                      <h4 className="font-semibold text-purple-900">AI Analysis Result</h4>
-                    </div>
-                    <div className="text-sm text-gray-800 whitespace-pre-wrap">
-                      {aiAnalysis}
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-
-          {isEditing && !isReadOnly && (
-            <div className="px-4 py-3 bg-muted/20 border-b border-border flex gap-2">
-              <Button onClick={handleCancel} variant="outline" className="flex-1"><X className="h-4 w-4 mr-2" />Cancel</Button>
-              <Button onClick={handleSave} disabled={saving || !hasChanges} className="flex-1 bg-primary hover:bg-primary/90">
-                <Check className="h-4 w-4 mr-2" />{saving ? "Saving..." : "Save Changes"}
-              </Button>
-            </div>
-          )}
-
-          {showDeleteConfirm && !isReadOnly && (
-            <div className="px-4 py-3 bg-red-50 border-b border-red-200">
-              <p className="text-sm text-red-800 mb-3">
-                Are you sure you want to delete this topic? This action cannot be undone.
-              </p>
-              <div className="flex gap-2">
-                <Button onClick={() => setShowDeleteConfirm(false)} variant="outline" size="sm" className="flex-1">Cancel</Button>
-                <Button onClick={handleDelete} size="sm" className="flex-1 bg-red-600 hover:bg-red-700 text-white">
-                  <Trash2 className="h-4 w-4 mr-2" />Delete Topic
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {!isReadOnly && (
-            <div className="flex gap-2 border-b border-border bg-muted/30 p-4">
-              <Button size="sm" className="flex-1 bg-note-blue text-white hover:bg-note-blue/90" onClick={onNoteClick}>
-                <FileText className="h-4 w-4 mr-2" />📝 Note
-              </Button>
-              <Button size="sm" className="flex-1 bg-task-green text-white hover:bg-task-green/90" onClick={onTaskClick}>
-                <CheckSquare className="h-4 w-4 mr-2" />✓ Task
-              </Button>
-              <Button size="sm" className="flex-1 bg-decision-purple text-white hover:bg-decision-purple/90" onClick={onDecisionClick}>
-                <Scale className="h-4 w-4 mr-2" />⚖️ Decision
-              </Button>
-            </div>
-          )}
-
-          <div className="p-4 bg-muted/20">
-            <h4 className="text-sm font-semibold text-foreground mb-2">History by Type</h4>
-            {["task", "decision", "note"].map(type => (
-              <div className="mb-4" key={type}>
-                <div className="flex items-center gap-2 mb-1">
-                  {type === "task" && <CheckSquare className="h-4 w-4 text-task-green" />}
-                  {type === "decision" && <Scale className="h-4 w-4 text-decision-purple" />}
-                  {type === "note" && <FileText className="h-4 w-4 text-note-blue" />}
-                  <span className="font-semibold text-xs uppercase">
-                    {type === "task" ? "Tasks" : type === "decision" ? "Decisions" : "Notes"}
-                  </span>
-                </div>
-                <div className="space-y-1">
-                  {loadingHistory && <div className="text-xs text-muted-foreground px-2">Loading...</div>}
-                  {!loadingHistory && history.filter(h => h.type === type).length > 0 ? (
-                    history.filter(h => h.type === type).map(item => (
-                      <div key={item.id} className="flex items-start gap-2 rounded bg-background border border-border px-3 py-2">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex gap-2 items-center mb-1">
-                            <span className={`text-xs font-medium px-2 py-0.5 rounded ${getHistoryBadgeColor(item.type)}`}>{item.type.toUpperCase()}</span>
-                            <span className="text-xs text-muted-foreground">{item.timestamp}</span>
-                          </div>
-                          <div className="flex gap-2 items-center">
-                            <p className="text-sm text-foreground mb-0">{item.content}</p>
-                            <button
-                              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors"
-                              title={item.attachmentUrl ? "View Attachment" : "Attach File"}
-                            >
-                              <Paperclip className="h-4 w-4" />
-                              {item.attachmentUrl ? "File" : "Attach"}
-                            </button>
-                          </div>
-                          {item.details && (
-                            <p className="text-xs text-muted-foreground">{item.details}</p>
-                          )}
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    !loadingHistory && <div className="text-xs text-muted-foreground px-2">
-                      {isReadOnly 
-                        ? `No ${type}s yet.`
-                        : `No ${type}s yet. Click the button above to add one.`}
+                      {aiAnalysis && (
+                        <Button
+                          onClick={() => setShowAiResult(!showAiResult)}
+                          variant="outline"
+                          size="sm"
+                        >
+                          {showAiResult ? 'Hide' : 'Show'} Analysis
+                        </Button>
+                      )}
                     </div>
                   )}
+                  {showAiResult && aiAnalysis && (
+                    <div className="mt-4 p-4 bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-200 rounded-lg">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Sparkles className="h-5 w-5 text-purple-600" />
+                        <h4 className="font-semibold text-purple-900">AI Analysis Result</h4>
+                      </div>
+                      <div className="text-sm text-gray-800 whitespace-pre-wrap">
+                        {aiAnalysis}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            {isEditing && !isReadOnly && (
+              <div className="px-4 py-3 bg-muted/20 border-b border-border flex gap-2">
+                <Button onClick={handleCancel} variant="outline" className="flex-1"><X className="h-4 w-4 mr-2" />Cancel</Button>
+                <Button onClick={handleSave} disabled={saving || !hasChanges} className="flex-1 bg-primary hover:bg-primary/90">
+                  <Check className="h-4 w-4 mr-2" />{saving ? "Saving..." : "Save Changes"}
+                </Button>
+              </div>
+            )}
+
+            {showDeleteConfirm && !isReadOnly && (
+              <div className="px-4 py-3 bg-red-50 border-b border-red-200">
+                <p className="text-sm text-red-800 mb-3">
+                  Are you sure you want to delete this topic? This action cannot be undone.
+                </p>
+                <div className="flex gap-2">
+                  <Button onClick={() => setShowDeleteConfirm(false)} variant="outline" size="sm" className="flex-1">Cancel</Button>
+                  <Button onClick={handleDelete} size="sm" className="flex-1 bg-red-600 hover:bg-red-700 text-white">
+                    <Trash2 className="h-4 w-4 mr-2" />Delete Topic
+                  </Button>
                 </div>
               </div>
-            ))}
-          </div>
-        </>
+            )}
+
+            {!isReadOnly && (
+              <div className="flex gap-2 border-b border-border bg-muted/30 p-4">
+                <Button size="sm" className="flex-1 bg-note-blue text-white hover:bg-note-blue/90" onClick={onNoteClick}>
+                  <FileText className="h-4 w-4 mr-2" />📝 Note
+                </Button>
+                <Button size="sm" className="flex-1 bg-task-green text-white hover:bg-task-green/90" onClick={onTaskClick}>
+                  <CheckSquare className="h-4 w-4 mr-2" />✓ Task
+                </Button>
+                <Button size="sm" className="flex-1 bg-decision-purple text-white hover:bg-decision-purple/90" onClick={onDecisionClick}>
+                  <Scale className="h-4 w-4 mr-2" />⚖️ Decision
+                </Button>
+              </div>
+            )}
+
+            <div className="p-4 bg-muted/20">
+              <h4 className="text-sm font-semibold text-foreground mb-2">History by Type</h4>
+              {["task", "decision", "note"].map(type => (
+                <div className="mb-4" key={type}>
+                  <div className="flex items-center gap-2 mb-1">
+                    {type === "task" && <CheckSquare className="h-4 w-4 text-task-green" />}
+                    {type === "decision" && <Scale className="h-4 w-4 text-decision-purple" />}
+                    {type === "note" && <FileText className="h-4 w-4 text-note-blue" />}
+                    <span className="font-semibold text-xs uppercase">
+                      {type === "task" ? "Tasks" : type === "decision" ? "Decisions" : "Notes"}
+                    </span>
+                  </div>
+                  <div className="space-y-1">
+                    {loadingHistory && <div className="text-xs text-muted-foreground px-2">Loading...</div>}
+                    {!loadingHistory && history.filter(h => h.type === type).length > 0 ? (
+                      history.filter(h => h.type === type).map(item => (
+                        <div 
+                          key={item.id} 
+                          className="flex flex-col gap-2 rounded bg-background border border-border px-3 py-2"
+                        >
+                          <div className="flex-1">
+                            <div className="flex gap-2 items-center mb-1">
+                              <span className={`text-xs font-medium px-2 py-0.5 rounded border ${getHistoryBadgeColor(item.type)}`}>
+                                {item.type.toUpperCase()}
+                              </span>
+                              <span className="text-xs text-muted-foreground">{item.timestamp}</span>
+                            </div>
+                            <p className="text-sm text-foreground mb-1">{item.content}</p>
+                            {item.details && (
+                              <p className="text-xs text-muted-foreground">{item.details}</p>
+                            )}
+                          </div>
+                          {item.type === 'task' && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                console.log('Clicking task:', item.id)
+                                setSelectedTaskId(item.id)
+                              }}
+                              className="w-full text-task-green border-task-green hover:bg-task-green/10"
+                            >
+                              <CheckSquare className="h-3 w-3 mr-1" />
+                              View Task Details
+                            </Button>
+                          )}
+                        </div>
+                      ))
+                    ) : (
+                      !loadingHistory && <div className="text-xs text-muted-foreground px-2">
+                        {isReadOnly 
+                          ? `No ${type}s yet.`
+                          : `No ${type}s yet. Click the button above to add one.`}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </Card>
+
+      {selectedTaskId && (
+        <TaskDetailsModal
+          taskId={selectedTaskId}
+          onClose={() => setSelectedTaskId(null)}
+          onUpdate={() => {
+            fetchHistory()
+          }}
+        />
       )}
-    </Card>
+    </>
   )
 }
