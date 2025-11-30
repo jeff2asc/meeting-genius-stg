@@ -52,6 +52,13 @@ export default function CompanyDetailsModal({
   const [selectedManagerId, setSelectedManagerId] = useState<number | null>(null)
   const [savingBuilding, setSavingBuilding] = useState(false)
 
+  // Create PM inline
+  const [showCreatePM, setShowCreatePM] = useState(false)
+  const [newPMName, setNewPMName] = useState("")
+  const [newPMEmail, setNewPMEmail] = useState("")
+  const [newPMPassword, setNewPMPassword] = useState("")
+  const [savingPM, setSavingPM] = useState(false)
+
   // Add Admin State
   const [showAddAdmin, setShowAddAdmin] = useState(false)
   const [newAdminName, setNewAdminName] = useState("")
@@ -111,14 +118,57 @@ export default function CompanyDetailsModal({
     
     const { data } = await supabase
       .from('users')
-      .select('id, name, email, user_type') // <-- Added user_type
+      .select('id, name, email, user_type')
       .eq('company_id', company.id)
       .eq('user_type', 'property_manager')
       .order('name')
     
     setPropertyManagers(data || [])
   }
-  
+
+  const handleCreatePM = async () => {
+    if (!newPMName.trim() || !newPMEmail.trim() || !newPMPassword.trim()) {
+      setError("All fields are required for new Property Manager")
+      return
+    }
+
+    setSavingPM(true)
+    setError(null)
+
+    try {
+      const { data: newUser, error: insertError } = await supabase
+        .from('users')
+        .insert({
+          name: newPMName.trim(),
+          email: newPMEmail.toLowerCase().trim(),
+          password_hash: '$2a$10$rXqvFZnPzAMcLzCP2L4dxu7L6Y3Y5KjGNQQF6xZ4Y5Y5Y5Y5Y5Y5Y5',
+          user_type: 'property_manager',
+          company_id: company?.id
+        })
+        .select()
+        .single()
+
+      if (insertError) {
+        console.error('Error creating PM:', insertError)
+        setError('Failed to create property manager. Email may already exist.')
+        setSavingPM(false)
+        return
+      }
+
+      // Refresh and auto-select
+      await fetchPropertyManagers()
+      setSelectedManagerId(newUser.id)
+      setNewPMName("")
+      setNewPMEmail("")
+      setNewPMPassword("")
+      setShowCreatePM(false)
+    } catch (err) {
+      console.error('Unexpected error:', err)
+      setError('An unexpected error occurred')
+    } finally {
+      setSavingPM(false)
+    }
+  }
 
   const handleAddBuilding = async () => {
     if (!newBuildingName.trim()) {
@@ -141,8 +191,7 @@ export default function CompanyDetailsModal({
           name: newBuildingName.trim(),
           address: newBuildingAddress.trim() || null,
           company_id: company?.id,
-          manager_id: selectedManagerId,
-          type: 'Strata/Condo'
+          manager_id: selectedManagerId
         })
 
       if (insertError) {
@@ -451,24 +500,87 @@ export default function CompanyDetailsModal({
                         />
                         
                         {/* Property Manager Selector */}
-                        <select
-                          value={selectedManagerId || ""}
-                          onChange={(e) => setSelectedManagerId(Number(e.target.value))}
-                          className="w-full px-3 py-2 bg-white border border-border rounded focus:outline-none focus:ring-2 focus:ring-green-500"
-                        >
-                          <option value="">Select Property Manager *</option>
-                          {propertyManagers.map(pm => (
-                            <option key={pm.id} value={pm.id}>
-                              {pm.name} ({pm.email})
-                            </option>
-                          ))}
-                        </select>
-                        
-                        {propertyManagers.length === 0 && (
-                          <p className="text-xs text-orange-600">
-                            ⚠️ No property managers in this company. Add one first in the Administrators tab, then assign user type as Property Manager.
-                          </p>
-                        )}
+                        <div>
+                          {!showCreatePM ? (
+                            <>
+                              <select
+                                value={selectedManagerId || ""}
+                                onChange={(e) => setSelectedManagerId(Number(e.target.value))}
+                                className="w-full px-3 py-2 bg-white border border-border rounded focus:outline-none focus:ring-2 focus:ring-green-500"
+                              >
+                                <option value="">Select Property Manager *</option>
+                                {propertyManagers.map(pm => (
+                                  <option key={pm.id} value={pm.id}>
+                                    {pm.name} ({pm.email})
+                                  </option>
+                                ))}
+                              </select>
+                              
+                              <Button
+                                type="button"
+                                onClick={() => setShowCreatePM(true)}
+                                size="sm"
+                                variant="outline"
+                                className="w-full mt-2 text-blue-600 border-blue-300 hover:bg-blue-50"
+                              >
+                                <Plus className="h-4 w-4 mr-2" />
+                                Create New Property Manager
+                              </Button>
+                            </>
+                          ) : (
+                            <Card className="p-3 bg-blue-50 border-blue-200">
+                              <h5 className="text-sm font-semibold mb-2">New Property Manager</h5>
+                              <div className="space-y-2">
+                                <input
+                                  type="text"
+                                  value={newPMName}
+                                  onChange={(e) => setNewPMName(e.target.value)}
+                                  placeholder="Full Name *"
+                                  className="w-full px-2 py-1.5 text-sm bg-white border border-border rounded"
+                                />
+                                <input
+                                  type="email"
+                                  value={newPMEmail}
+                                  onChange={(e) => setNewPMEmail(e.target.value)}
+                                  placeholder="Email *"
+                                  className="w-full px-2 py-1.5 text-sm bg-white border border-border rounded"
+                                />
+                                <input
+                                  type="text"
+                                  value={newPMPassword}
+                                  onChange={(e) => setNewPMPassword(e.target.value)}
+                                  placeholder="Password *"
+                                  className="w-full px-2 py-1.5 text-sm bg-white border border-border rounded"
+                                />
+                                <div className="flex gap-2">
+                                  <Button
+                                    type="button"
+                                    onClick={() => {
+                                      setShowCreatePM(false)
+                                      setNewPMName("")
+                                      setNewPMEmail("")
+                                      setNewPMPassword("")
+                                    }}
+                                    size="sm"
+                                    variant="outline"
+                                    className="flex-1"
+                                  >
+                                    Cancel
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    onClick={handleCreatePM}
+                                    size="sm"
+                                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
+                                    disabled={savingPM}
+                                  >
+                                    {savingPM ? "Creating..." : "Create PM"}
+                                  </Button>
+                                </div>
+                              </div>
+                            </Card>
+                          )}
+                        </div>
                         
                         <div className="flex gap-2">
                           <Button
@@ -477,6 +589,7 @@ export default function CompanyDetailsModal({
                               setNewBuildingName("")
                               setNewBuildingAddress("")
                               setSelectedManagerId(null)
+                              setShowCreatePM(false)
                               setError(null)
                             }}
                             variant="outline"
