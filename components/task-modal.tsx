@@ -32,7 +32,8 @@ export default function TaskModal({ topicId, meetingId, onClose, onSave }: TaskM
   const [newAssigneeName, setNewAssigneeName] = useState("")
   const [newAssigneeEmail, setNewAssigneeEmail] = useState("")
   const [meetingAttendees, setMeetingAttendees] = useState<Assignee[]>([])
-  const [showAttendeeDropdown, setShowAttendeeDropdown] = useState(false)
+  const [showAttendeeSelector, setShowAttendeeSelector] = useState(false)
+  const [selectedAttendeeEmails, setSelectedAttendeeEmails] = useState<Set<string>>(new Set())
 
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -68,7 +69,28 @@ export default function TaskModal({ topicId, meetingId, onClose, onSave }: TaskM
     }
   }
 
-  const handleAddAssignee = () => {
+  const handleToggleAttendee = (attendee: Assignee) => {
+    const newSelected = new Set(selectedAttendeeEmails)
+    if (newSelected.has(attendee.email)) {
+      newSelected.delete(attendee.email)
+    } else {
+      newSelected.add(attendee.email)
+    }
+    setSelectedAttendeeEmails(newSelected)
+  }
+
+  const handleAddSelectedAttendees = () => {
+    const newAssignees = meetingAttendees.filter(a => 
+      selectedAttendeeEmails.has(a.email) && 
+      !assignees.some(existing => existing.email === a.email)
+    )
+    
+    setAssignees([...assignees, ...newAssignees])
+    setSelectedAttendeeEmails(new Set())
+    setShowAttendeeSelector(false)
+  }
+
+  const handleAddManualAssignee = () => {
     if (!newAssigneeName.trim() || !newAssigneeEmail.trim()) {
       setError("Both name and email are required")
       return
@@ -90,19 +112,6 @@ export default function TaskModal({ topicId, meetingId, onClose, onSave }: TaskM
     setError(null)
   }
 
-  const handleSelectFromDropdown = (attendee: Assignee) => {
-    // Check for duplicates
-    const exists = assignees.some(a => a.email.toLowerCase() === attendee.email.toLowerCase())
-    if (exists) {
-      setError("This person is already assigned")
-      return
-    }
-
-    setAssignees([...assignees, attendee])
-    setShowAttendeeDropdown(false)
-    setError(null)
-  }
-
   const handleRemoveAssignee = (emailToRemove: string) => {
     setAssignees(assignees.filter(a => a.email !== emailToRemove))
   }
@@ -113,7 +122,7 @@ export default function TaskModal({ topicId, meetingId, onClose, onSave }: TaskM
       if (field === 'name' && newAssigneeName.trim()) {
         document.getElementById('assignee-email-input')?.focus()
       } else if (field === 'email' && newAssigneeEmail.trim() && newAssigneeName.trim()) {
-        handleAddAssignee()
+        handleAddManualAssignee()
       }
     }
   }
@@ -263,9 +272,63 @@ export default function TaskModal({ topicId, meetingId, onClose, onSave }: TaskM
               </div>
             )}
 
-            {/* Add New Assignee */}
+            {/* Add from Attendees with Checkboxes */}
+            {!saving && meetingAttendees.length > 0 && (
+              <div className="mb-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowAttendeeSelector(!showAttendeeSelector)}
+                  className="w-full justify-between"
+                >
+                  <span>Select from Meeting Attendees</span>
+                  <ChevronDown className={`h-4 w-4 transition-transform ${showAttendeeSelector ? 'rotate-180' : ''}`} />
+                </Button>
+
+                {showAttendeeSelector && (
+                  <div className="mt-2 border border-border rounded-lg p-3 bg-muted/20 max-h-60 overflow-y-auto">
+                    {meetingAttendees.map((attendee, idx) => {
+                      const isAlreadyAssigned = assignees.some(a => a.email === attendee.email)
+                      return (
+                        <div key={idx} className="flex items-center gap-2 py-2">
+                          <input
+                            type="checkbox"
+                            id={`attendee-${idx}`}
+                            checked={selectedAttendeeEmails.has(attendee.email)}
+                            onChange={() => handleToggleAttendee(attendee)}
+                            disabled={isAlreadyAssigned}
+                            className="h-4 w-4 rounded border-border text-primary focus:ring-2 focus:ring-primary/50"
+                          />
+                          <label 
+                            htmlFor={`attendee-${idx}`} 
+                            className={`flex-1 text-sm cursor-pointer ${isAlreadyAssigned ? 'opacity-50' : ''}`}
+                          >
+                            <div className="font-medium">{attendee.name}</div>
+                            <div className="text-xs text-muted-foreground">{attendee.email}</div>
+                          </label>
+                          {isAlreadyAssigned && (
+                            <span className="text-xs text-green-600 font-medium">Already assigned</span>
+                          )}
+                        </div>
+                      )
+                    })}
+                    <Button
+                      type="button"
+                      onClick={handleAddSelectedAttendees}
+                      disabled={selectedAttendeeEmails.size === 0}
+                      className="w-full mt-2 bg-primary hover:bg-primary/90"
+                    >
+                      Add Selected ({selectedAttendeeEmails.size})
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Manual Add Assignee */}
             {!saving && (
               <div className="space-y-2">
+                <div className="text-sm text-muted-foreground mb-1">Or add manually:</div>
                 <div className="flex gap-2">
                   <input
                     type="text"
@@ -286,7 +349,7 @@ export default function TaskModal({ topicId, meetingId, onClose, onSave }: TaskM
                   />
                   <Button
                     type="button"
-                    onClick={handleAddAssignee}
+                    onClick={handleAddManualAssignee}
                     disabled={!newAssigneeName.trim() || !newAssigneeEmail.trim()}
                     className="bg-primary hover:bg-primary/90"
                   >
@@ -294,45 +357,6 @@ export default function TaskModal({ topicId, meetingId, onClose, onSave }: TaskM
                     Add
                   </Button>
                 </div>
-
-                {/* Dropdown to select from attendees */}
-                {meetingAttendees.length > 0 && (
-                  <div className="relative">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => setShowAttendeeDropdown(!showAttendeeDropdown)}
-                      className="w-full justify-between text-sm"
-                    >
-                      <span className="text-muted-foreground">
-                        Or select from meeting attendees
-                      </span>
-                      <ChevronDown className="h-4 w-4" />
-                    </Button>
-
-                    {showAttendeeDropdown && (
-                      <>
-                        <div 
-                          className="fixed inset-0 z-10" 
-                          onClick={() => setShowAttendeeDropdown(false)}
-                        />
-                        <div className="absolute top-full mt-1 w-full bg-white border border-border rounded-lg shadow-lg z-20 max-h-48 overflow-y-auto">
-                          {meetingAttendees.map((attendee, idx) => (
-                            <button
-                              key={idx}
-                              type="button"
-                              onClick={() => handleSelectFromDropdown(attendee)}
-                              className="w-full px-3 py-2 text-left hover:bg-muted transition-colors first:rounded-t-lg last:rounded-b-lg"
-                            >
-                              <div className="font-medium text-sm">{attendee.name}</div>
-                              <div className="text-xs text-muted-foreground">{attendee.email}</div>
-                            </button>
-                          ))}
-                        </div>
-                      </>
-                    )}
-                  </div>
-                )}
               </div>
             )}
           </div>
