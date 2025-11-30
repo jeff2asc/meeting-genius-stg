@@ -10,7 +10,6 @@ import { supabase, getCurrentUser } from "@/lib/supabase"
 
 interface TaskModalProps {
   topicId: number
-  meetingId: number
   onClose: () => void
   onSave?: () => void
 }
@@ -21,7 +20,7 @@ interface Assignee {
   present?: boolean
 }
 
-export default function TaskModal({ topicId, meetingId, onClose, onSave }: TaskModalProps) {
+export default function TaskModal({ topicId, onClose, onSave }: TaskModalProps) {
   const [formData, setFormData] = useState({
     description: "",
     dueDate: "",
@@ -33,61 +32,65 @@ export default function TaskModal({ topicId, meetingId, onClose, onSave }: TaskM
   const [newAssigneeName, setNewAssigneeName] = useState("")
   const [newAssigneeEmail, setNewAssigneeEmail] = useState("")
   const [meetingAttendees, setMeetingAttendees] = useState<Assignee[]>([])
+  const [meetingId, setMeetingId] = useState<number | null>(null)
 
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // DEBUG: Log props on mount
+  // Fetch meeting_id from topic, then fetch attendees
   useEffect(() => {
-    console.log('🔍 TaskModal mounted with:')
-    console.log('- topicId:', topicId)
-    console.log('- meetingId:', meetingId)
-  }, [])
+    fetchMeetingIdAndAttendees()
+  }, [topicId])
 
-  useEffect(() => {
-    if (meetingId) {
-      fetchMeetingAttendees()
-    } else {
-      console.warn('⚠️ meetingId is undefined, cannot fetch attendees')
-    }
-  }, [meetingId])
-
-  const fetchMeetingAttendees = async () => {
+  const fetchMeetingIdAndAttendees = async () => {
     try {
-      console.log('📡 Fetching attendees for meeting:', meetingId)
+      console.log('🔍 Fetching meeting_id for topic:', topicId)
       
-      const { data, error } = await supabase
-        .from("meetings")
-        .select("attendees")
-        .eq("id", meetingId)
+      // First, get the meeting_id from the topic
+      const { data: topicData, error: topicError } = await supabase
+        .from('topics')
+        .select('meeting_id')
+        .eq('id', topicId)
         .single()
 
-      if (error) {
-        console.error('❌ Error fetching attendees:', error)
+      if (topicError || !topicData) {
+        console.error('❌ Error fetching topic:', topicError)
         return
       }
 
-      console.log('📦 Raw attendees data:', data?.attendees)
+      const fetchedMeetingId = topicData.meeting_id
+      console.log('✅ Meeting ID found:', fetchedMeetingId)
+      setMeetingId(fetchedMeetingId)
 
-      if (data?.attendees && Array.isArray(data.attendees)) {
-        // Show ALL attendees, not just present ones
-        const attendeeList = data.attendees.map((a: any) => ({
+      // Now fetch attendees for that meeting
+      const { data: meetingData, error: meetingError } = await supabase
+        .from('meetings')
+        .select('attendees')
+        .eq('id', fetchedMeetingId)
+        .single()
+
+      if (meetingError) {
+        console.error('❌ Error fetching meeting attendees:', meetingError)
+        return
+      }
+
+      console.log('📦 Raw attendees data:', meetingData?.attendees)
+
+      if (meetingData?.attendees && Array.isArray(meetingData.attendees)) {
+        const attendeeList = meetingData.attendees.map((a: any) => ({
           name: a.name,
           email: a.email,
-          present: a.present // Keep track if they were present
+          present: a.present
         }))
         console.log('✅ Meeting attendees loaded:', attendeeList)
         setMeetingAttendees(attendeeList)
-      } else {
-        console.warn('⚠️ No attendees array found in data')
       }
     } catch (err) {
-      console.error('💥 Unexpected error fetching attendees:', err)
+      console.error('💥 Unexpected error:', err)
     }
   }
 
   const handleAddFromAttendees = (attendee: Assignee) => {
-    // Check for duplicates
     const exists = assignees.some(a => a.email.toLowerCase() === attendee.email.toLowerCase())
     if (exists) {
       setError("This person is already assigned")
@@ -105,7 +108,6 @@ export default function TaskModal({ topicId, meetingId, onClose, onSave }: TaskM
       return
     }
 
-    // Check for duplicates
     const exists = assignees.some(a => a.email.toLowerCase() === newAssigneeEmail.toLowerCase())
     if (exists) {
       setError("This person is already assigned")
@@ -171,13 +173,12 @@ export default function TaskModal({ topicId, meetingId, onClose, onSave }: TaskM
       const tokenExpiry = new Date()
       tokenExpiry.setDate(tokenExpiry.getDate() + 90)
 
-      // Create ONE task with multiple assignees stored as JSONB array
       const taskData = {
         topic_id: topicId,
         description: formData.description.trim(),
-        assignees: assignees, // Store all assignees as JSONB array
-        assigned_name: assignees[0].name, // Keep first assignee for backward compatibility
-        assigned_email: assignees[0].email, // Keep first assignee for backward compatibility
+        assignees: assignees,
+        assigned_name: assignees[0].name,
+        assigned_email: assignees[0].email,
         due_date: formData.dueDate || null,
         status: 'open',
         external_update_token: externalToken,
@@ -354,7 +355,7 @@ export default function TaskModal({ topicId, meetingId, onClose, onSave }: TaskM
                   </div>
                 ) : (
                   <div className="border border-dashed border-border rounded-lg p-4 text-center text-sm text-muted-foreground">
-                    {meetingId ? 'No attendees added to this meeting' : 'Meeting ID missing'}
+                    No attendees added to this meeting
                   </div>
                 )}
               </div>
