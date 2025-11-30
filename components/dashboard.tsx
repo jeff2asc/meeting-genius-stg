@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { supabase, getCurrentUser } from "@/lib/supabase"
 import EditMeetingModal from "./EditMeetingModal"
+import TaskDetailsModal from "./TaskDetailsModal"
 
 interface DashboardProps {
   onStartMeeting: (meetingId: string) => void
@@ -36,6 +37,9 @@ export default function Dashboard({
   // Edit Meeting Modal state
   const [showEditMeetingModal, setShowEditMeetingModal] = useState(false)
   const [selectedMeeting, setSelectedMeeting] = useState<any>(null)
+
+  // Task Details Modal state
+  const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null)
 
   useEffect(() => {
     fetchBuildings()
@@ -107,7 +111,7 @@ export default function Dashboard({
       }
 
       if (data && data.length > 0) {
-        setSelectedBuilding("All") // Default to "All"
+        setSelectedBuilding("All")
         if (onBuildingSelected) {
           onBuildingSelected("All")
         }
@@ -263,7 +267,6 @@ export default function Dashboard({
       console.error('Unexpected error:', err)
     }
   }
-  
 
   const handleEditMeeting = (meeting: any) => {
     setSelectedMeeting(meeting)
@@ -621,7 +624,12 @@ export default function Dashboard({
                           <td className="px-6 py-4 text-sm text-muted-foreground">{task.building}</td>
                         )}
                         <td className="px-6 py-4">
-                          <p className="font-medium text-foreground">{task.description}</p>
+                          <button
+                            onClick={() => setSelectedTaskId(task.id)}
+                            className="font-medium text-foreground underline hover:text-task-green focus:outline-none text-left"
+                          >
+                            {task.description}
+                          </button>
                           <p className="text-xs text-muted-foreground mt-1">Topic: {task.topic}</p>
                         </td>
                         <td className="px-6 py-4 text-sm text-muted-foreground">{task.meeting}</td>
@@ -689,6 +697,18 @@ export default function Dashboard({
             start_time: selectedMeeting.start_time,
             meeting_type: selectedMeeting.meeting_type,
             strata_plan_number: selectedMeeting.strata_plan_number,
+          }}
+        />
+      )}
+
+      {/* Task Details Modal */}
+      {selectedTaskId && (
+        <TaskDetailsModal
+          taskId={selectedTaskId}
+          onClose={() => setSelectedTaskId(null)}
+          onUpdate={() => {
+            fetchTasks()
+            setSelectedTaskId(null)
           }}
         />
       )}
