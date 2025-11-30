@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { X, Users, Building2, UserCheck, Home, Plus, Trash2, Edit2 } from "lucide-react"
+import { X, Users, Building2, UserCheck, Home, Plus, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { supabase } from "@/lib/supabase"
@@ -29,6 +29,7 @@ interface Building {
   id: number
   name: string
   address: string | null
+  manager_id: number | null
 }
 
 type Tab = "overview" | "buildings" | "admins"
@@ -40,6 +41,7 @@ export default function CompanyDetailsModal({
 }: CompanyDetailsModalProps) {
   const [users, setUsers] = useState<User[]>([])
   const [buildings, setBuildings] = useState<Building[]>([])
+  const [propertyManagers, setPropertyManagers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<Tab>("overview")
 
@@ -47,6 +49,7 @@ export default function CompanyDetailsModal({
   const [showAddBuilding, setShowAddBuilding] = useState(false)
   const [newBuildingName, setNewBuildingName] = useState("")
   const [newBuildingAddress, setNewBuildingAddress] = useState("")
+  const [selectedManagerId, setSelectedManagerId] = useState<number | null>(null)
   const [savingBuilding, setSavingBuilding] = useState(false)
 
   // Add Admin State
@@ -61,6 +64,7 @@ export default function CompanyDetailsModal({
   useEffect(() => {
     if (company && isOpen) {
       fetchCompanyData()
+      fetchPropertyManagers()
     }
   }, [company, isOpen])
 
@@ -85,7 +89,7 @@ export default function CompanyDetailsModal({
       // Fetch buildings in this company
       const { data: buildingsData, error: buildingsError } = await supabase
         .from('buildings')
-        .select('id, name, address')
+        .select('id, name, address, manager_id')
         .eq('company_id', company.id)
         .order('name')
 
@@ -102,9 +106,28 @@ export default function CompanyDetailsModal({
     }
   }
 
+  const fetchPropertyManagers = async () => {
+    if (!company) return
+    
+    const { data } = await supabase
+      .from('users')
+      .select('id, name, email, user_type') // <-- Added user_type
+      .eq('company_id', company.id)
+      .eq('user_type', 'property_manager')
+      .order('name')
+    
+    setPropertyManagers(data || [])
+  }
+  
+
   const handleAddBuilding = async () => {
     if (!newBuildingName.trim()) {
       setError("Building name is required")
+      return
+    }
+
+    if (!selectedManagerId) {
+      setError("Please select a property manager")
       return
     }
 
@@ -117,7 +140,9 @@ export default function CompanyDetailsModal({
         .insert({
           name: newBuildingName.trim(),
           address: newBuildingAddress.trim() || null,
-          company_id: company?.id
+          company_id: company?.id,
+          manager_id: selectedManagerId,
+          type: 'Strata/Condo'
         })
 
       if (insertError) {
@@ -129,6 +154,7 @@ export default function CompanyDetailsModal({
 
       setNewBuildingName("")
       setNewBuildingAddress("")
+      setSelectedManagerId(null)
       setShowAddBuilding(false)
       await fetchCompanyData()
     } catch (err) {
@@ -177,7 +203,7 @@ export default function CompanyDetailsModal({
         .insert({
           name: newAdminName.trim(),
           email: newAdminEmail.toLowerCase().trim(),
-          password_hash: '$2a$10$rXqvFZnPzAMcLzCP2L4dxu7L6Y3Y5KjGNQQF6xZ4Y5Y5Y5Y5Y5Y5Y5', // Replace with actual hash
+          password_hash: '$2a$10$rXqvFZnPzAMcLzCP2L4dxu7L6Y3Y5KjGNQQF6xZ4Y5Y5Y5Y5Y5Y5Y5',
           user_type: 'corporate_administrator',
           company_id: company?.id
         })
@@ -220,6 +246,7 @@ export default function CompanyDetailsModal({
       }
 
       await fetchCompanyData()
+      await fetchPropertyManagers()
     } catch (err) {
       console.error('Unexpected error:', err)
     }
@@ -242,6 +269,12 @@ export default function CompanyDetailsModal({
         {badge.label}
       </span>
     )
+  }
+
+  const getManagerName = (managerId: number | null) => {
+    if (!managerId) return "No manager assigned"
+    const manager = propertyManagers.find(pm => pm.id === managerId)
+    return manager ? manager.name : "Unknown manager"
   }
 
   if (!isOpen || !company) return null
@@ -416,12 +449,34 @@ export default function CompanyDetailsModal({
                           placeholder="Address (optional)"
                           className="w-full px-3 py-2 bg-white border border-border rounded focus:outline-none focus:ring-2 focus:ring-green-500"
                         />
+                        
+                        {/* Property Manager Selector */}
+                        <select
+                          value={selectedManagerId || ""}
+                          onChange={(e) => setSelectedManagerId(Number(e.target.value))}
+                          className="w-full px-3 py-2 bg-white border border-border rounded focus:outline-none focus:ring-2 focus:ring-green-500"
+                        >
+                          <option value="">Select Property Manager *</option>
+                          {propertyManagers.map(pm => (
+                            <option key={pm.id} value={pm.id}>
+                              {pm.name} ({pm.email})
+                            </option>
+                          ))}
+                        </select>
+                        
+                        {propertyManagers.length === 0 && (
+                          <p className="text-xs text-orange-600">
+                            ⚠️ No property managers in this company. Add one first in the Administrators tab, then assign user type as Property Manager.
+                          </p>
+                        )}
+                        
                         <div className="flex gap-2">
                           <Button
                             onClick={() => {
                               setShowAddBuilding(false)
                               setNewBuildingName("")
                               setNewBuildingAddress("")
+                              setSelectedManagerId(null)
                               setError(null)
                             }}
                             variant="outline"
@@ -435,7 +490,7 @@ export default function CompanyDetailsModal({
                             onClick={handleAddBuilding}
                             size="sm"
                             className="flex-1 bg-green-600 hover:bg-green-700 text-white"
-                            disabled={savingBuilding}
+                            disabled={savingBuilding || !selectedManagerId}
                           >
                             {savingBuilding ? "Adding..." : "Add Building"}
                           </Button>
@@ -462,6 +517,9 @@ export default function CompanyDetailsModal({
                                 {building.address && (
                                   <p className="text-sm text-muted-foreground">{building.address}</p>
                                 )}
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  Manager: {getManagerName(building.manager_id)}
+                                </p>
                               </div>
                             </div>
                             <Button
