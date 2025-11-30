@@ -407,14 +407,21 @@ export default function MeetingView({
   }
 
   const formatDate = (dateString: string) => {
-    const date = new Date(dateString)
+    if (!dateString) return "No date"
+    
+    // Parse as UTC to avoid timezone shifts
+    const [year, month, day] = dateString.split('-').map(Number)
+    const date = new Date(Date.UTC(year, month - 1, day))
+    
     return date.toLocaleDateString("en-US", {
       weekday: "long",
       year: "numeric",
       month: "long",
-      day: "numeric"
+      day: "numeric",
+      timeZone: "UTC" // Force UTC interpretation
     })
   }
+  
 
   const formatTime = (timeString: string) => {
     if (!timeString) return null
