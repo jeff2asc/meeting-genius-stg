@@ -10,7 +10,7 @@ import { supabase, getCurrentUser } from "@/lib/supabase"
 
 interface TaskModalProps {
   topicId: number
-  meetingId: number // Add this to fetch attendees
+  meetingId: number
   onClose: () => void
   onSave?: () => void
 }
@@ -149,38 +149,37 @@ export default function TaskModal({ topicId, meetingId, onClose, onSave }: TaskM
     try {
       const currentUser = getCurrentUser()
 
-      // Create a task for each assignee
-      const taskInserts = assignees.map(assignee => {
-        const externalToken = crypto.randomUUID()
-        const tokenExpiry = new Date()
-        tokenExpiry.setDate(tokenExpiry.getDate() + 90)
+      const externalToken = crypto.randomUUID()
+      const tokenExpiry = new Date()
+      tokenExpiry.setDate(tokenExpiry.getDate() + 90)
 
-        return {
-          topic_id: topicId,
-          description: formData.description.trim(),
-          assigned_name: assignee.name,
-          assigned_email: assignee.email,
-          due_date: formData.dueDate || null,
-          status: 'open',
-          external_update_token: externalToken,
-          token_expires_at: tokenExpiry.toISOString(),
-          created_by: currentUser?.id
-        }
-      })
+      // Create ONE task with multiple assignees stored as JSONB array
+      const taskData = {
+        topic_id: topicId,
+        description: formData.description.trim(),
+        assignees: assignees, // Store all assignees as JSONB array
+        assigned_name: assignees[0].name, // Keep first assignee for backward compatibility
+        assigned_email: assignees[0].email, // Keep first assignee for backward compatibility
+        due_date: formData.dueDate || null,
+        status: 'open',
+        external_update_token: externalToken,
+        token_expires_at: tokenExpiry.toISOString(),
+        created_by: currentUser?.id
+      }
 
       const { data, error: insertError } = await supabase
         .from('tasks')
-        .insert(taskInserts)
+        .insert(taskData)
         .select()
 
       if (insertError) {
-        console.error('Error inserting tasks:', insertError)
+        console.error('Error inserting task:', insertError)
         setError(`Failed to save task: ${insertError.message}`)
         setSaving(false)
         return
       }
 
-      console.log('✅ Task(s) saved successfully:', data)
+      console.log('✅ Task saved successfully:', data)
 
       if (formData.sendNotification) {
         assignees.forEach(assignee => {
@@ -348,6 +347,21 @@ export default function TaskModal({ topicId, meetingId, onClose, onSave }: TaskM
               disabled={saving}
               className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
             />
+          </div>
+
+          {/* Send Notification Checkbox */}
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="sendNotification"
+              checked={formData.sendNotification}
+              onChange={handleCheckboxChange}
+              disabled={saving}
+              className="h-4 w-4 rounded border-border text-primary focus:ring-2 focus:ring-primary/50"
+            />
+            <label htmlFor="sendNotification" className="text-sm text-foreground">
+              Send email notification to assignees
+            </label>
           </div>
 
           <div className="flex gap-3 pt-4">
