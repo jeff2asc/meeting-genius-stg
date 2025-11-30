@@ -730,6 +730,7 @@ export default function MeetingView({
                                           <TopicCard
                                             topic={topic}
                                             topicNumber={idx + 1}
+                                            meetingId={parseInt(meetingId)}
                                             onUpdate={updates => updateTopic(topic.id, updates)}
                                             onDelete={id => deleteTopic(id)}
                                             onTaskClick={() => onTaskClick(topic.id)}

@@ -27,6 +27,7 @@ interface HistoryItem {
 interface TopicCardProps {
   topic: Topic
   topicNumber: number
+  meetingId: number // <-- ADDED THIS
   onUpdate: (updates: Partial<Topic>) => void
   onDelete: (topicId: number) => void
   onTaskClick: () => void
@@ -38,7 +39,8 @@ interface TopicCardProps {
 
 export default function TopicCard({ 
   topic, 
-  topicNumber, 
+  topicNumber,
+  meetingId, // <-- ADDED THIS
   onUpdate,
   onDelete,
   onTaskClick,
