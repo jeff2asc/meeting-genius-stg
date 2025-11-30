@@ -175,49 +175,95 @@ export default function Dashboard({
 
   const fetchTasks = async () => {
     try {
-      let query = supabase
-        .from('tasks')
-        .select(`
-          *,
-          topics(title, meetings(title, buildings(name)))
-        `)
-        .order('created_at', { ascending: false })
-
-      // If not "All", filter by building
+      // First, get all meetings for the selected building(s)
+      let meetingQuery = supabase
+        .from('meetings')
+        .select('id')
+  
       if (selectedBuilding !== "All") {
         const building = buildings.find(b => b.name === selectedBuilding)
         if (building) {
-          // Join through topics -> meetings -> buildings
-          query = query.eq('topics.meetings.building_id', building.id)
+          meetingQuery = meetingQuery.eq('building_id', building.id)
+        }
+      } else {
+        // Get all buildings' IDs that user has access to
+        const buildingIds = buildings.map(b => b.id)
+        if (buildingIds.length > 0) {
+          meetingQuery = meetingQuery.in('building_id', buildingIds)
         }
       }
-
-      const { data, error } = await query
-
-      if (error) {
-        console.error('Error fetching tasks:', error)
+  
+      const { data: meetingsData, error: meetingsError } = await meetingQuery
+  
+      if (meetingsError) {
+        console.error('Error fetching meetings for tasks:', meetingsError)
         return
       }
-
-      const formattedTasks = (data || []).map(task => ({
-        id: task.id,
-        description: task.description,
-        building: task.topics?.meetings?.buildings?.name || 'Unknown',
-        meeting: task.topics?.meetings?.title || 'Unknown Meeting',
-        topic: task.topics?.title || 'Unknown Topic',
-        assigned_name: task.assigned_name,
-        assigned_email: task.assigned_email,
-        assignees: task.assignees || [],
-        status: task.status,
-        due_date: task.due_date,
-        created_at: task.created_at
-      }))
-
+  
+      const meetingIds = (meetingsData || []).map(m => m.id)
+  
+      if (meetingIds.length === 0) {
+        setTasks([])
+        return
+      }
+  
+      // Now get topics from those meetings
+      const { data: topicsData, error: topicsError } = await supabase
+        .from('topics')
+        .select('id, title, meeting_id, meetings(id, title, building_id, buildings(name))')
+        .in('meeting_id', meetingIds)
+  
+      if (topicsError) {
+        console.error('Error fetching topics:', topicsError)
+        return
+      }
+  
+      const topicIds = (topicsData || []).map(t => t.id)
+  
+      if (topicIds.length === 0) {
+        setTasks([])
+        return
+      }
+  
+      // Finally get tasks from those topics
+      const { data: tasksData, error: tasksError } = await supabase
+        .from('tasks')
+        .select('*')
+        .in('topic_id', topicIds)
+        .order('created_at', { ascending: false })
+  
+      if (tasksError) {
+        console.error('Error fetching tasks:', tasksError)
+        return
+      }
+  
+      // Map tasks with their topic/meeting/building info
+      const formattedTasks = (tasksData || []).map(task => {
+        const topic = topicsData?.find(t => t.id === task.topic_id)
+        const meeting = topic?.meetings as any
+        const building = meeting?.buildings as any
+  
+        return {
+          id: task.id,
+          description: task.description,
+          building: building?.name || 'Unknown',
+          meeting: meeting?.title || 'Unknown Meeting',
+          topic: topic?.title || 'Unknown Topic',
+          assigned_name: task.assigned_name,
+          assigned_email: task.assigned_email,
+          assignees: task.assignees || [],
+          status: task.status,
+          due_date: task.due_date,
+          created_at: task.created_at
+        }
+      })
+  
       setTasks(formattedTasks)
     } catch (err) {
       console.error('Unexpected error:', err)
     }
   }
+  
 
   const handleEditMeeting = (meeting: any) => {
     setSelectedMeeting(meeting)
