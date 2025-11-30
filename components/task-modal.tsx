@@ -37,15 +37,24 @@ export default function TaskModal({ topicId, meetingId, onClose, onSave }: TaskM
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // DEBUG: Log props on mount
+  useEffect(() => {
+    console.log('🔍 TaskModal mounted with:')
+    console.log('- topicId:', topicId)
+    console.log('- meetingId:', meetingId)
+  }, [])
+
   useEffect(() => {
     if (meetingId) {
       fetchMeetingAttendees()
+    } else {
+      console.warn('⚠️ meetingId is undefined, cannot fetch attendees')
     }
   }, [meetingId])
 
   const fetchMeetingAttendees = async () => {
     try {
-      console.log('Fetching attendees for meeting:', meetingId)
+      console.log('📡 Fetching attendees for meeting:', meetingId)
       
       const { data, error } = await supabase
         .from("meetings")
@@ -54,11 +63,11 @@ export default function TaskModal({ topicId, meetingId, onClose, onSave }: TaskM
         .single()
 
       if (error) {
-        console.error("Error fetching attendees:", error)
+        console.error('❌ Error fetching attendees:', error)
         return
       }
 
-      console.log('Raw attendees data:', data?.attendees)
+      console.log('📦 Raw attendees data:', data?.attendees)
 
       if (data?.attendees && Array.isArray(data.attendees)) {
         // Show ALL attendees, not just present ones
@@ -67,11 +76,13 @@ export default function TaskModal({ topicId, meetingId, onClose, onSave }: TaskM
           email: a.email,
           present: a.present // Keep track if they were present
         }))
-        console.log('Meeting attendees loaded:', attendeeList)
+        console.log('✅ Meeting attendees loaded:', attendeeList)
         setMeetingAttendees(attendeeList)
+      } else {
+        console.warn('⚠️ No attendees array found in data')
       }
     } catch (err) {
-      console.error("Unexpected error fetching attendees:", err)
+      console.error('💥 Unexpected error fetching attendees:', err)
     }
   }
 
@@ -174,13 +185,15 @@ export default function TaskModal({ topicId, meetingId, onClose, onSave }: TaskM
         created_by: currentUser?.id
       }
 
+      console.log('💾 Saving task:', taskData)
+
       const { data, error: insertError } = await supabase
         .from('tasks')
         .insert(taskData)
         .select()
 
       if (insertError) {
-        console.error('Error inserting task:', insertError)
+        console.error('❌ Error inserting task:', insertError)
         setError(`Failed to save task: ${insertError.message}`)
         setSaving(false)
         return
@@ -200,7 +213,7 @@ export default function TaskModal({ topicId, meetingId, onClose, onSave }: TaskM
 
       onClose()
     } catch (err) {
-      console.error('Unexpected error:', err)
+      console.error('💥 Unexpected error:', err)
       setError('An unexpected error occurred')
       setSaving(false)
     }
@@ -341,7 +354,7 @@ export default function TaskModal({ topicId, meetingId, onClose, onSave }: TaskM
                   </div>
                 ) : (
                   <div className="border border-dashed border-border rounded-lg p-4 text-center text-sm text-muted-foreground">
-                    No attendees added to this meeting
+                    {meetingId ? 'No attendees added to this meeting' : 'Meeting ID missing'}
                   </div>
                 )}
               </div>
