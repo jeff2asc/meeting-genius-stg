@@ -1,6 +1,6 @@
 "use client"
 
-import { Building2, MapPin, Edit2, FileText } from "lucide-react"
+import { Building2, MapPin, Edit2, FileText, Users } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -13,7 +13,7 @@ interface Building {
   company_id: number | null
   building_type?: string
   created_at: string
-  users?: Array<{ id: number; name: string; email: string }>
+  users?: Array<{ id: number; name: string; email: string; user_type: string }>
 }
 
 interface BuildingCardProps {
@@ -22,6 +22,7 @@ interface BuildingCardProps {
   onEdit: (building: Building) => void
   onViewDocument: (building: Building) => void
   onManageDocuments: (building: Building) => void
+  onViewUsers: (building: Building) => void
 }
 
 const getBuildingTypeColor = (type: string) => {
@@ -42,7 +43,8 @@ export default function BuildingCard({
   hasDocuments,
   onEdit,
   onViewDocument,
-  onManageDocuments
+  onManageDocuments,
+  onViewUsers
 }: BuildingCardProps) {
   return (
     <Card className="p-4 hover:shadow-md transition-shadow">
@@ -97,6 +99,17 @@ export default function BuildingCard({
           >
             <Edit2 className="h-4 w-4 mr-2" />
             Edit
+          </Button>
+
+          {/* View Users Button */}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => onViewUsers(building)}
+            className="border-blue-200 text-blue-700 hover:bg-blue-50"
+          >
+            <Users className="h-4 w-4 mr-2" />
+            View Users
           </Button>
           
           {/* Document Management Buttons */}

@@ -49,8 +49,9 @@ interface Building {
   address: string | null
   manager_id: number
   company_id: number | null
+  building_type?: string
   created_at: string
-  users?: Array<{ id: number; name: string; email: string }>
+  users?: Array<{ id: number; name: string; email: string; user_type: string }>
 }
 
 type TabType = "users" | "buildings" | "companies" | "minutes"
@@ -285,7 +286,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
     try {
       let buildingsQuery = supabase
         .from('buildings')
-        .select('id, name, address, manager_id, company_id, created_at')
+        .select('id, name, address, manager_id, company_id, building_type, created_at')
         .order('name')
 
       // Apply filtering based on user type
@@ -313,11 +314,12 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
 
       console.log('🏢 Admin Panel - Buildings fetched for', currentUser?.user_type, ':', buildingsData)
 
+      // Fetch users for each building with user_type included
       const { data: userBuildingsData } = await supabase
         .from('user_buildings')
         .select(`
           building_id,
-          users!inner(id, name, email)
+          users!inner(id, name, email, user_type)
         `)
 
       const buildingsWithUsers = (buildingsData || []).map(building => {
