@@ -20,6 +20,29 @@ interface CreateMeetingModalProps {
   selectedBuildingName?: string
 }
 
+// Type for sections
+type Section = {
+  id: number
+  meeting_id: number
+  title: string
+  order_index: number
+  created_at?: string
+  updated_at?: string
+}
+
+// Type for topics
+type Topic = {
+  id: number
+  meeting_id: number
+  section_id: number | null
+  title: string
+  description: string | null
+  order_index: number
+  rolled_over_from_topic_id: number | null
+  created_at?: string
+  updated_at?: string
+}
+
 
 export default function CreateMeetingModal({ onClose, onSuccess, buildings }: CreateMeetingModalProps) {
   const [formData, setFormData] = useState({
@@ -160,9 +183,8 @@ export default function CreateMeetingModal({ onClose, onSuccess, buildings }: Cr
         const prevSections = await getSectionsFromMeeting(previousMeeting.id)
         
         // Step 2.2: Copy sections to new meeting
-        // Step 2.2: Copy sections to new meeting
-const newSections: Array<{ id: number; meeting_id: number; title: string; order_index: number }> = []
-
+        const newSections: Section[] = []
+        
         for (const section of prevSections) {
           const { data: newSection, error: sectionError } = await supabase
             .from('sections')
@@ -177,7 +199,7 @@ const newSections: Array<{ id: number; meeting_id: number; title: string; order_
           if (sectionError) {
             console.error('Error inserting section:', sectionError)
           } else if (newSection) {
-            newSections.push(newSection)
+            newSections.push(newSection as Section)
           }
         }
 
@@ -449,7 +471,7 @@ const newSections: Array<{ id: number; meeting_id: number; title: string; order_
               name="location"
               value={formData.location}
               onChange={handleInputChange}
-              placeholder="e.g., Conference Room A or Zoom Meeting"
+              placeholder="e.g., Conference Room A or Zoom Meetings"
               className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50"
             />
           </div>

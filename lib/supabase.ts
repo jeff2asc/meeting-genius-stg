@@ -359,6 +359,10 @@ export async function getOpenTasksFromMeeting(meetingId: number) {
 /**
  * Get company default sections
  */
+/**
+ * Get company default sections
+ */
+
 export async function getCompanyDefaultSections(companyId: number) {
   const { data, error } = await supabase
     .from('companies')
