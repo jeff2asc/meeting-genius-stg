@@ -1,10 +1,8 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
-
 # dependencies
 /node_modules
 
 # next.js
-/.next/
+# /.next/
 /out/
 
 # production
@@ -24,10 +22,4 @@ yarn-error.log*
 
 # typescript
 *.tsbuildinfo
-next-env.d.tsd e p l o y / 
- 
- n o d e _ m o d u l e s / 
- 
- . n e x t / 
- 
- 
+next-env.d.ts

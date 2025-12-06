@@ -1,46 +1,40 @@
 @echo off
 echo ================================
-echo Meeting Genius Deployment
+echo Meeting Genius Git Deploy
 echo ================================
 echo.
 
-echo [1/4] Building application...
 cd "C:\Users\Jeff Domingo\Videos\meeting-genius"
-call npm run build
 
+echo [1/3] Building locally...
+call npm run build
 if errorlevel 1 (
-    echo ERROR: Build failed!
+    echo ERROR: Local build failed!
     pause
     exit /b 1
 )
 
 echo.
-echo [2/4] Preparing deploy folder...
-if exist deploy rmdir /s /q deploy
-mkdir deploy
-xcopy /E /I /Y .next deploy\.next
-xcopy /E /I /Y public deploy\public
-copy /Y package.json deploy\
-copy /Y package-lock.json deploy\
-copy /Y next.config.js deploy\
+echo [2/3] Pushing to GitHub...
+git add .
+git commit -m "Deploy %date% %time%"
+git push origin main
+
+if errorlevel 1 (
+    echo Trying pull and retry...
+    git pull origin main --rebase
+    git push origin main
+)
 
 echo.
-echo [3/4] Uploading to server (app.meetinggenius.ca)...
-scp -i "C:\Users\Jeff Domingo\Videos\meetinggenius_openssh" -r deploy\.next root@45.59.114.16:/opt/meetinggenius/app/
-scp -i "C:\Users\Jeff Domingo\Videos\meetinggenius_openssh" -r deploy\public root@45.59.114.16:/opt/meetinggenius/app/
-scp -i "C:\Users\Jeff Domingo\Videos\meetinggenius_openssh" deploy\package.json root@45.59.114.16:/opt/meetinggenius/app/
-scp -i "C:\Users\Jeff Domingo\Videos\meetinggenius_openssh" deploy\package-lock.json root@45.59.114.16:/opt/meetinggenius/app/
-scp -i "C:\Users\Jeff Domingo\Videos\meetinggenius_openssh" deploy\next.config.js root@45.59.114.16:/opt/meetinggenius/app/
+echo [3/3] Deploying to server...
+ssh -i "C:\Users\Jeff Domingo\Videos\meetinggenius_openssh" root@45.59.114.16 "cd /opt/meetinggenius/app && git pull origin main && pm2 restart meetinggenius"
 
 echo.
-echo [4/4] Deployment Complete!
+echo ================================
+echo Deployment Complete! (30-60 sec)
 echo ================================
 echo.
-echo Next: SSH into server and run:
-echo   cd /opt/meetinggenius/app
-echo   npm install --production
-echo   systemctl restart meetinggenius
-echo.
-echo App now available at: https://app.meetinggenius.ca
+echo App: https://app.meetinggenius.ca
 echo.
 pause
