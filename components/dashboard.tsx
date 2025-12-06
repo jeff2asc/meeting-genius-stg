@@ -1,5 +1,6 @@
 "use client"
 
+
 import { useState, useEffect } from "react"
 import { ChevronDown, User, Plus, Search, Calendar, FileText, Eye, Play, Edit2, CheckSquare } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -7,6 +8,7 @@ import { Card } from "@/components/ui/card"
 import { supabase, getCurrentUser } from "@/lib/supabase"
 import EditMeetingModal from "./EditMeetingModal"
 import TaskDetailsModal from "./TaskDetailsModal"
+
 
 interface DashboardProps {
   onStartMeeting: (meetingId: string) => void
@@ -16,7 +18,9 @@ interface DashboardProps {
   userCanCreateMeeting?: boolean
 }
 
+
 type Tab = "meetings" | "tasks" | "all"
+
 
 export default function Dashboard({ 
   onStartMeeting, 
@@ -27,37 +31,47 @@ export default function Dashboard({
 }: DashboardProps) {
   const [selectedBuilding, setSelectedBuilding] = useState("")
   const [showBuildingDropdown, setShowBuildingDropdown] = useState(false)
+  const [selectedMeetingType, setSelectedMeetingType] = useState("All")
+  const [showMeetingTypeDropdown, setShowMeetingTypeDropdown] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
   const [buildings, setBuildings] = useState<any[]>([])
   const [meetings, setMeetings] = useState<any[]>([])
   const [tasks, setTasks] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<Tab>("meetings")
+  const [availableMeetingTypes, setAvailableMeetingTypes] = useState<string[]>([])
+
 
   // Edit Meeting Modal state
   const [showEditMeetingModal, setShowEditMeetingModal] = useState(false)
   const [selectedMeeting, setSelectedMeeting] = useState<any>(null)
 
+
   // Task Details Modal state
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null)
+
 
   useEffect(() => {
     fetchBuildings()
   }, [])
+
 
   useEffect(() => {
     if (selectedBuilding) {
       fetchMeetings()
       fetchTasks()
     }
-  }, [selectedBuilding])
+  }, [selectedBuilding, selectedMeetingType])
+
 
   const fetchBuildings = async () => {
     try {
       const currentUser = getCurrentUser()
       if (!currentUser) return
 
+
       let query = supabase.from('buildings').select('*')
+
 
       // Filter based on user type
       if (currentUser.user_type === 'master') {
@@ -79,12 +93,14 @@ export default function Dashboard({
           .select('building_id')
           .eq('user_id', currentUser.id)
 
+
         if (userBuildingsError) {
           console.error('Error fetching user buildings:', userBuildingsError)
           setBuildings([])
           setLoading(false)
           return
         }
+
 
         const buildingIds = userBuildings?.map(ub => ub.building_id) || []
         if (buildingIds.length === 0) {
@@ -93,10 +109,13 @@ export default function Dashboard({
           return
         }
 
+
         query = query.in('id', buildingIds).order('name')
       }
 
+
       const { data, error } = await query
+
 
       if (error) {
         console.error('Error fetching buildings:', error)
@@ -105,10 +124,12 @@ export default function Dashboard({
         return
       }
 
+
       setBuildings(data || [])
       if (onBuildingsLoaded) {
         onBuildingsLoaded(data || [])
       }
+
 
       if (data && data.length > 0) {
         setSelectedBuilding("All")
@@ -123,12 +144,14 @@ export default function Dashboard({
     }
   }
 
+
   const fetchMeetings = async () => {
     try {
       let query = supabase
         .from('meetings')
         .select('*, buildings(name)')
         .order('meeting_date', { ascending: false })
+
 
       // Filter by building if not "All"
       if (selectedBuilding !== "All") {
@@ -144,12 +167,20 @@ export default function Dashboard({
         }
       }
 
+
       const { data, error } = await query
+
 
       if (error) {
         console.error('Error fetching meetings:', error)
         return
       }
+
+
+      // Extract unique meeting types
+      const meetingTypes = Array.from(new Set(data?.map(m => m.meeting_type).filter(Boolean))) as string[]
+      setAvailableMeetingTypes(meetingTypes.sort())
+
 
       const formattedMeetings = (data || []).map(meeting => ({
         id: String(meeting.id),
@@ -171,11 +202,13 @@ export default function Dashboard({
                 'Finalized'
       }))
 
+
       setMeetings(formattedMeetings)
     } catch (err) {
       console.error('Unexpected error:', err)
     }
   }
+
 
   const fetchTasks = async () => {
     try {
@@ -268,10 +301,12 @@ export default function Dashboard({
     }
   }
 
+
   const handleEditMeeting = (meeting: any) => {
     setSelectedMeeting(meeting)
     setShowEditMeetingModal(true)
   }
+
 
   const handleBuildingSelect = (buildingName: string) => {
     setSelectedBuilding(buildingName)
@@ -281,12 +316,21 @@ export default function Dashboard({
     }
   }
 
+
+  const handleMeetingTypeSelect = (meetingType: string) => {
+    setSelectedMeetingType(meetingType)
+    setShowMeetingTypeDropdown(false)
+  }
+
+
   const filteredMeetings = meetings.filter((meeting) => {
     const matchesSearch = meeting.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
                          meeting.date.toLowerCase().includes(searchQuery.toLowerCase()) ||
                          meeting.building.toLowerCase().includes(searchQuery.toLowerCase())
-    return matchesSearch
+    const matchesMeetingType = selectedMeetingType === "All" || meeting.meeting_type === selectedMeetingType
+    return matchesSearch && matchesMeetingType
   })
+
 
   const filteredTasks = tasks.filter((task) => {
     const matchesSearch = task.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -295,13 +339,16 @@ export default function Dashboard({
     return matchesSearch
   })
 
+
   type MeetingStatus = "Draft" | "In Progress" | "Finalized"
+
 
   const statusStyles: Record<MeetingStatus, string> = {
     Draft: "bg-blue-100 text-blue-800 border-blue-200",
     "In Progress": "bg-green-100 text-green-800 border-green-200",
     Finalized: "bg-purple-100 text-purple-800 border-purple-200",
   }
+
 
   const taskStatusStyles: Record<string, string> = {
     open: "bg-blue-100 text-blue-800",
@@ -310,8 +357,10 @@ export default function Dashboard({
     blocked: "bg-red-100 text-red-800",
   }
 
+
   const getActionButtons = (meeting: typeof meetings[0]) => {
     let primaryButton
+
 
     switch (meeting.status) {
       case "Draft":
@@ -352,7 +401,9 @@ export default function Dashboard({
         break
     }
 
+
     const showEdit = userCanCreateMeeting && meeting.status !== "Finalized"
+
 
     return (
       <div className="flex items-center gap-2">
@@ -372,6 +423,7 @@ export default function Dashboard({
     )
   }
 
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted flex items-center justify-center">
@@ -379,6 +431,7 @@ export default function Dashboard({
       </div>
     )
   }
+
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted">
@@ -443,6 +496,7 @@ export default function Dashboard({
         </div>
       </header>
 
+
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         <div className="mb-6 flex items-center justify-between">
           <div>
@@ -466,6 +520,7 @@ export default function Dashboard({
             </Button>
           )}
         </div>
+
 
         {/* Tabs */}
         <div className="mb-6 border-b border-border">
@@ -506,8 +561,9 @@ export default function Dashboard({
           </div>
         </div>
 
-        <div className="mb-6">
-          <div className="relative">
+
+        <div className="mb-6 flex gap-3">
+          <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <input
               type="text"
@@ -517,7 +573,54 @@ export default function Dashboard({
               className="w-full pl-10 pr-4 py-2 bg-card border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground"
             />
           </div>
+          
+          {/* Meeting Type Filter - Only show on meetings tab */}
+          {(activeTab === "meetings" || activeTab === "all") && availableMeetingTypes.length > 0 && (
+            <div className="relative">
+              <Button
+                variant="outline"
+                className="flex items-center gap-2 bg-card"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setShowMeetingTypeDropdown(!showMeetingTypeDropdown)
+                }}
+              >
+                {selectedMeetingType === "All" ? "All Types" : selectedMeetingType}
+                <ChevronDown className="h-4 w-4" />
+              </Button>
+              {showMeetingTypeDropdown && (
+                <>
+                  <div 
+                    className="fixed inset-0 z-40" 
+                    onClick={() => setShowMeetingTypeDropdown(false)}
+                  />
+                  <div className="absolute right-0 mt-2 w-56 bg-card border border-border rounded-lg shadow-lg z-50">
+                    <button
+                      onClick={() => handleMeetingTypeSelect("All")}
+                      className={`w-full px-4 py-2 text-left hover:bg-muted transition-colors first:rounded-t-lg ${
+                        selectedMeetingType === "All" ? "bg-muted font-semibold" : ""
+                      }`}
+                    >
+                      All Types
+                    </button>
+                    {availableMeetingTypes.map((type) => (
+                      <button
+                        key={type}
+                        onClick={() => handleMeetingTypeSelect(type)}
+                        className={`w-full px-4 py-2 text-left hover:bg-muted transition-colors last:rounded-b-lg ${
+                          type === selectedMeetingType ? "bg-muted font-semibold" : ""
+                        }`}
+                      >
+                        {type}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </div>
+
 
         {/* Meetings Tab */}
         {(activeTab === "meetings" || activeTab === "all") && (
@@ -538,6 +641,7 @@ export default function Dashboard({
                       <th className="px-6 py-4 text-sm font-semibold text-muted-foreground">Building</th>
                     )}
                     <th className="px-6 py-4 text-sm font-semibold text-muted-foreground">Meeting</th>
+                    <th className="px-6 py-4 text-sm font-semibold text-muted-foreground">Type</th>
                     <th className="px-6 py-4 text-sm font-semibold text-muted-foreground">Date</th>
                     <th className="px-6 py-4 text-sm font-semibold text-muted-foreground">Status</th>
                     <th className="px-6 py-4 text-sm font-semibold text-muted-foreground">Actions</th>
@@ -562,6 +666,11 @@ export default function Dashboard({
                             </button>
                           </div>
                         </td>
+                        <td className="px-6 py-4 text-sm text-muted-foreground">
+                          <span className="px-2 py-1 rounded bg-muted text-foreground text-xs font-medium">
+                            {meeting.meeting_type || 'N/A'}
+                          </span>
+                        </td>
                         <td className="px-6 py-4 text-muted-foreground">{meeting.date}</td>
                         <td className="px-6 py-4">
                           <span className={`px-3 py-1 rounded-full text-xs font-medium border ${statusStyles[meeting.status as MeetingStatus]}`}>
@@ -575,10 +684,12 @@ export default function Dashboard({
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={selectedBuilding === "All" ? 5 : 4} className="px-6 py-12 text-center">
+                      <td colSpan={selectedBuilding === "All" ? 6 : 5} className="px-6 py-12 text-center">
                         <p className="text-muted-foreground mb-4">
                           {searchQuery 
                             ? `No meetings found matching "${searchQuery}"`
+                            : selectedMeetingType !== "All"
+                            ? `No ${selectedMeetingType} meetings found`
                             : `No meetings found`
                           }
                         </p>
@@ -590,6 +701,7 @@ export default function Dashboard({
             </div>
           </Card>
         )}
+
 
         {/* Tasks Tab */}
         {(activeTab === "tasks" || activeTab === "all") && (
@@ -700,6 +812,7 @@ export default function Dashboard({
           }}
         />
       )}
+
 
       {/* Task Details Modal */}
       {selectedTaskId && (
