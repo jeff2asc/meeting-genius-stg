@@ -1,14 +1,12 @@
 "use client"
 
-
 import { useState, useEffect } from "react"
-import { ChevronDown, User, Plus, Search, Calendar, FileText, Eye, Play, Edit2, CheckSquare } from "lucide-react"
+import { ChevronDown, User, Plus, Search, Calendar, FileText, Eye, Play, Edit2, CheckSquare, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { supabase, getCurrentUser } from "@/lib/supabase"
 import EditMeetingModal from "./EditMeetingModal"
 import TaskDetailsModal from "./TaskDetailsModal"
-
 
 interface DashboardProps {
   onStartMeeting: (meetingId: string) => void
@@ -18,9 +16,7 @@ interface DashboardProps {
   userCanCreateMeeting?: boolean
 }
 
-
 type Tab = "meetings" | "tasks" | "all"
-
 
 export default function Dashboard({ 
   onStartMeeting, 
@@ -41,20 +37,21 @@ export default function Dashboard({
   const [activeTab, setActiveTab] = useState<Tab>("meetings")
   const [availableMeetingTypes, setAvailableMeetingTypes] = useState<string[]>([])
 
-
   // Edit Meeting Modal state
   const [showEditMeetingModal, setShowEditMeetingModal] = useState(false)
   const [selectedMeeting, setSelectedMeeting] = useState<any>(null)
 
-
   // Task Details Modal state
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null)
 
+  // Delete Confirmation States
+  const [meetingToDelete, setMeetingToDelete] = useState<any>(null)
+  const [taskToDelete, setTaskToDelete] = useState<any>(null)
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
     fetchBuildings()
   }, [])
-
 
   useEffect(() => {
     if (selectedBuilding) {
@@ -63,15 +60,12 @@ export default function Dashboard({
     }
   }, [selectedBuilding, selectedMeetingType])
 
-
   const fetchBuildings = async () => {
     try {
       const currentUser = getCurrentUser()
       if (!currentUser) return
 
-
       let query = supabase.from('buildings').select('*')
-
 
       // Filter based on user type
       if (currentUser.user_type === 'master') {
@@ -93,14 +87,12 @@ export default function Dashboard({
           .select('building_id')
           .eq('user_id', currentUser.id)
 
-
         if (userBuildingsError) {
           console.error('Error fetching user buildings:', userBuildingsError)
           setBuildings([])
           setLoading(false)
           return
         }
-
 
         const buildingIds = userBuildings?.map(ub => ub.building_id) || []
         if (buildingIds.length === 0) {
@@ -109,13 +101,10 @@ export default function Dashboard({
           return
         }
 
-
         query = query.in('id', buildingIds).order('name')
       }
 
-
       const { data, error } = await query
-
 
       if (error) {
         console.error('Error fetching buildings:', error)
@@ -124,12 +113,10 @@ export default function Dashboard({
         return
       }
 
-
       setBuildings(data || [])
       if (onBuildingsLoaded) {
         onBuildingsLoaded(data || [])
       }
-
 
       if (data && data.length > 0) {
         setSelectedBuilding("All")
@@ -144,14 +131,12 @@ export default function Dashboard({
     }
   }
 
-
   const fetchMeetings = async () => {
     try {
       let query = supabase
         .from('meetings')
         .select('*, buildings(name)')
         .order('meeting_date', { ascending: false })
-
 
       // Filter by building if not "All"
       if (selectedBuilding !== "All") {
@@ -167,20 +152,16 @@ export default function Dashboard({
         }
       }
 
-
       const { data, error } = await query
-
 
       if (error) {
         console.error('Error fetching meetings:', error)
         return
       }
 
-
       // Extract unique meeting types
       const meetingTypes = Array.from(new Set(data?.map(m => m.meeting_type).filter(Boolean))) as string[]
       setAvailableMeetingTypes(meetingTypes.sort())
-
 
       const formattedMeetings = (data || []).map(meeting => ({
         id: String(meeting.id),
@@ -202,13 +183,11 @@ export default function Dashboard({
                 'Finalized'
       }))
 
-
       setMeetings(formattedMeetings)
     } catch (err) {
       console.error('Unexpected error:', err)
     }
   }
-
 
   const fetchTasks = async () => {
     try {
@@ -301,12 +280,60 @@ export default function Dashboard({
     }
   }
 
-
   const handleEditMeeting = (meeting: any) => {
     setSelectedMeeting(meeting)
     setShowEditMeetingModal(true)
   }
 
+  const handleDeleteMeeting = async () => {
+    if (!meetingToDelete) return
+    
+    setDeleting(true)
+    try {
+      const { error } = await supabase
+        .from('meetings')
+        .delete()
+        .eq('id', parseInt(meetingToDelete.id))
+
+      if (error) {
+        console.error('Error deleting meeting:', error)
+        alert('Failed to delete meeting. Please try again.')
+      } else {
+        await fetchMeetings()
+        setMeetingToDelete(null)
+      }
+    } catch (err) {
+      console.error('Unexpected error:', err)
+      alert('An error occurred while deleting the meeting.')
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  const handleDeleteTask = async () => {
+    if (!taskToDelete) return
+    
+    setDeleting(true)
+    try {
+      const { error } = await supabase
+        .from('tasks')
+        .delete()
+        .eq('id', taskToDelete.id)
+
+      if (error) {
+        console.error('Error deleting task:', error)
+        alert('Failed to delete task. Please try again.')
+      } else {
+        await fetchTasks()
+        setTaskToDelete(null)
+      }
+    } catch (err) {
+      console.error('Unexpected error:', err)
+      alert('An error occurred while deleting the task.')
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   const handleBuildingSelect = (buildingName: string) => {
     setSelectedBuilding(buildingName)
@@ -316,12 +343,10 @@ export default function Dashboard({
     }
   }
 
-
   const handleMeetingTypeSelect = (meetingType: string) => {
     setSelectedMeetingType(meetingType)
     setShowMeetingTypeDropdown(false)
   }
-
 
   const filteredMeetings = meetings.filter((meeting) => {
     const matchesSearch = meeting.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -331,7 +356,6 @@ export default function Dashboard({
     return matchesSearch && matchesMeetingType
   })
 
-
   const filteredTasks = tasks.filter((task) => {
     const matchesSearch = task.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
                          task.building.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -339,16 +363,13 @@ export default function Dashboard({
     return matchesSearch
   })
 
-
   type MeetingStatus = "Draft" | "In Progress" | "Finalized"
-
 
   const statusStyles: Record<MeetingStatus, string> = {
     Draft: "bg-blue-100 text-blue-800 border-blue-200",
     "In Progress": "bg-green-100 text-green-800 border-green-200",
     Finalized: "bg-purple-100 text-purple-800 border-purple-200",
   }
-
 
   const taskStatusStyles: Record<string, string> = {
     open: "bg-blue-100 text-blue-800",
@@ -357,10 +378,8 @@ export default function Dashboard({
     blocked: "bg-red-100 text-red-800",
   }
 
-
   const getActionButtons = (meeting: typeof meetings[0]) => {
     let primaryButton
-
 
     switch (meeting.status) {
       case "Draft":
@@ -401,28 +420,36 @@ export default function Dashboard({
         break
     }
 
-
     const showEdit = userCanCreateMeeting && meeting.status !== "Finalized"
-
 
     return (
       <div className="flex items-center gap-2">
         {primaryButton}
         {showEdit && (
-          <Button
-            onClick={() => handleEditMeeting(meeting)}
-            size="sm"
-            variant="ghost"
-            className="hover:bg-muted"
-            title="Edit Meeting Details"
-          >
-            <Edit2 className="h-4 w-4" />
-          </Button>
+          <>
+            <Button
+              onClick={() => handleEditMeeting(meeting)}
+              size="sm"
+              variant="ghost"
+              className="hover:bg-muted"
+              title="Edit Meeting Details"
+            >
+              <Edit2 className="h-4 w-4" />
+            </Button>
+            <Button
+              onClick={() => setMeetingToDelete(meeting)}
+              size="sm"
+              variant="ghost"
+              className="hover:bg-red-50 text-red-600 hover:text-red-700"
+              title="Delete Meeting"
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </>
         )}
       </div>
     )
   }
-
 
   if (loading) {
     return (
@@ -431,7 +458,6 @@ export default function Dashboard({
       </div>
     )
   }
-
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted">
@@ -496,7 +522,6 @@ export default function Dashboard({
         </div>
       </header>
 
-
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         <div className="mb-6 flex items-center justify-between">
           <div>
@@ -520,7 +545,6 @@ export default function Dashboard({
             </Button>
           )}
         </div>
-
 
         {/* Tabs */}
         <div className="mb-6 border-b border-border">
@@ -560,7 +584,6 @@ export default function Dashboard({
             </button>
           </div>
         </div>
-
 
         <div className="mb-6 flex gap-3">
           <div className="relative flex-1">
@@ -620,7 +643,6 @@ export default function Dashboard({
             </div>
           )}
         </div>
-
 
         {/* Meetings Tab */}
         {(activeTab === "meetings" || activeTab === "all") && (
@@ -702,7 +724,6 @@ export default function Dashboard({
           </Card>
         )}
 
-
         {/* Tasks Tab */}
         {(activeTab === "tasks" || activeTab === "all") && (
           <Card className="border-0 bg-card shadow-md">
@@ -726,6 +747,7 @@ export default function Dashboard({
                     <th className="px-6 py-4 text-sm font-semibold text-muted-foreground">Assigned To</th>
                     <th className="px-6 py-4 text-sm font-semibold text-muted-foreground">Status</th>
                     <th className="px-6 py-4 text-sm font-semibold text-muted-foreground">Due Date</th>
+                    <th className="px-6 py-4 text-sm font-semibold text-muted-foreground">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -766,11 +788,22 @@ export default function Dashboard({
                         <td className="px-6 py-4 text-sm text-muted-foreground">
                           {task.due_date ? new Date(task.due_date).toLocaleDateString() : '-'}
                         </td>
+                        <td className="px-6 py-4">
+                          <Button
+                            onClick={() => setTaskToDelete(task)}
+                            size="sm"
+                            variant="ghost"
+                            className="hover:bg-red-50 text-red-600 hover:text-red-700"
+                            title="Delete Task"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </td>
                       </tr>
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={selectedBuilding === "All" ? 6 : 5} className="px-6 py-12 text-center">
+                      <td colSpan={selectedBuilding === "All" ? 7 : 6} className="px-6 py-12 text-center">
                         <p className="text-muted-foreground">
                           {searchQuery 
                             ? `No tasks found matching "${searchQuery}"`
@@ -813,6 +846,65 @@ export default function Dashboard({
         />
       )}
 
+      {/* Delete Meeting Confirmation Modal */}
+      {meetingToDelete && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <Card className="w-full max-w-md p-6 m-4">
+            <h3 className="text-lg font-semibold text-foreground mb-2">Delete Meeting</h3>
+            <p className="text-muted-foreground mb-4">
+              Are you sure you want to delete <strong>{meetingToDelete.title}</strong>? 
+              This action cannot be undone and will also delete all associated topics, tasks, decisions, and notes.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <Button
+                onClick={() => setMeetingToDelete(null)}
+                variant="outline"
+                disabled={deleting}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleDeleteMeeting}
+                disabled={deleting}
+                className="bg-red-600 hover:bg-red-700 text-white"
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                {deleting ? "Deleting..." : "Delete Meeting"}
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* Delete Task Confirmation Modal */}
+      {taskToDelete && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <Card className="w-full max-w-md p-6 m-4">
+            <h3 className="text-lg font-semibold text-foreground mb-2">Delete Task</h3>
+            <p className="text-muted-foreground mb-4">
+              Are you sure you want to delete this task: <strong>{taskToDelete.description}</strong>? 
+              This action cannot be undone.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <Button
+                onClick={() => setTaskToDelete(null)}
+                variant="outline"
+                disabled={deleting}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleDeleteTask}
+                disabled={deleting}
+                className="bg-red-600 hover:bg-red-700 text-white"
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                {deleting ? "Deleting..." : "Delete Task"}
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
 
       {/* Task Details Modal */}
       {selectedTaskId && (
