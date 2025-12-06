@@ -18,6 +18,7 @@ import { supabase, getCurrentUser } from "@/lib/supabase"
 import { canEditMeeting, isReadOnly } from "@/lib/permissions"
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd'
 
+
 interface MeetingViewProps {
   meetingId: string
   onBack: () => void
@@ -26,6 +27,7 @@ interface MeetingViewProps {
   onDecisionClick: (topicId: number) => void
   onRegisterTopicRefresh?: (topicId: number, callback: () => void) => void
 }
+
 
 interface Topic {
   id: number
@@ -38,6 +40,7 @@ interface Topic {
   order_index?: number
 }
 
+
 interface Section {
   id: number
   title: string
@@ -46,11 +49,13 @@ interface Section {
   isExpanded: boolean
 }
 
+
 const STATUS_FLOW = [
   "working_agenda",
   "working_minutes",
   "minutes"
 ] as const
+
 
 export default function MeetingView({
   meetingId,
@@ -73,18 +78,22 @@ export default function MeetingView({
   const [showAttendeesModal, setShowAttendeesModal] = useState(false)
   const [selectedSection, setSelectedSection] = useState<{ id: number; title: string } | null>(null)
 
+
   // Section Editing/Removal State
   const [editingSection, setEditingSection] = useState<{ id: number, title: string } | null>(null)
   const [sectionRenameValue, setSectionRenameValue] = useState("")
   const [sectionToDelete, setSectionToDelete] = useState<Section | null>(null)
+
 
   const currentUser = getCurrentUser()
   const userCanEdit = currentUser ? canEditMeeting(currentUser.user_type) : false
   const userIsReadOnly = currentUser ? isReadOnly(currentUser.user_type) : false
   const editingLocked = !userCanEdit || (meeting?.status === "minutes")
 
+
   useEffect(() => { setIsMounted(true) }, [])
   useEffect(() => { if (meetingId) fetchMeetingData() }, [meetingId])
+
 
   const fetchMeetingData = async () => {
     try {
@@ -110,6 +119,60 @@ export default function MeetingView({
     }
   }
 
+
+  // NEW HELPER: Fetch open tasks from all previous meetings of same building + meeting type
+  const fetchOpenTasksFromPreviousMeetings = async () => {
+    if (!meeting) return []
+
+    try {
+      // Get all meetings of same building + meeting type (including current)
+      const { data: allMeetings, error: meetingsError } = await supabase
+        .from("meetings")
+        .select("id, meeting_date, title")
+        .eq("building_id", meeting.building_id)
+        .eq("meeting_type", meeting.meeting_type)
+        .order("meeting_date", { ascending: false })
+
+      if (meetingsError || !allMeetings) {
+        console.error("Error fetching previous meetings:", meetingsError)
+        return []
+      }
+
+      // Get all topic IDs from all these meetings
+      const meetingIds = allMeetings.map(m => m.id)
+      
+      const { data: allTopics, error: topicsError } = await supabase
+        .from("topics")
+        .select("id, title, meeting_id")
+        .in("meeting_id", meetingIds)
+
+      if (topicsError || !allTopics) {
+        console.error("Error fetching topics:", topicsError)
+        return []
+      }
+
+      const topicIds = allTopics.map(t => t.id)
+
+      // Get all open tasks from these topics
+      const { data: openTasks, error: tasksError } = await supabase
+        .from("tasks")
+        .select("*, topics!inner(id, title, meeting_id)")
+        .in("topic_id", topicIds)
+        .in("status", ["open", "in_progress"])
+
+      if (tasksError) {
+        console.error("Error fetching open tasks:", tasksError)
+        return []
+      }
+
+      return openTasks || []
+    } catch (err) {
+      console.error("Error in fetchOpenTasksFromPreviousMeetings:", err)
+      return []
+    }
+  }
+
+
   const fetchSectionsAndTopics = async () => {
     try {
       const { data: sectionsData, error: sectionsError } = await supabase
@@ -117,24 +180,30 @@ export default function MeetingView({
         .select("*")
         .eq("meeting_id", meetingId)
         .order("order_index")
+      
       if (sectionsError) {
         console.error("Error fetching sections:", sectionsError)
         return
       }
+
       const { data: topicsData, error: topicsError } = await supabase
         .from("topics")
         .select(`
           *,
           notes(count),
-          tasks(count),
           decisions(count)
         `)
         .eq("meeting_id", meetingId)
         .order("order_index")
+      
       if (topicsError) {
         console.error("Error fetching topics:", topicsError)
         return
       }
+
+      // Fetch open tasks from all previous meetings
+      const allOpenTasks = await fetchOpenTasksFromPreviousMeetings()
+
       const sectionsWithTopics: Section[] = (sectionsData || []).map((section) => ({
         id: section.id,
         title: section.title,
@@ -142,22 +211,31 @@ export default function MeetingView({
         isExpanded: false,
         topics: (topicsData || []).filter(
           (topic) => topic.section_id === section.id
-        ).map((topic) => ({
-          id: topic.id,
-          title: topic.title,
-          description: topic.description,
-          section_id: topic.section_id,
-          attachments: 0,
-          tasks: topic.tasks?.[0]?.count || 0,
-          decisions: topic.decisions?.[0]?.count || 0,
-          order_index: topic.order_index
-        }))
+        ).map((topic) => {
+          // Count tasks for THIS topic title from ALL meetings
+          const tasksForThisTopic = allOpenTasks.filter(
+            task => task.topics?.title === topic.title
+          ).length
+
+          return {
+            id: topic.id,
+            title: topic.title,
+            description: topic.description,
+            section_id: topic.section_id,
+            attachments: 0,
+            tasks: tasksForThisTopic, // Now includes open tasks from previous meetings
+            decisions: topic.decisions?.[0]?.count || 0,
+            order_index: topic.order_index
+          }
+        })
       }))
+
       setSections(sectionsWithTopics)
     } catch (err) {
       console.error("Unexpected error fetching sections/topics:", err)
     }
   }
+
 
   const handleAddTopic = (sectionId: number, sectionTitle: string) => {
     if (!userCanEdit) {
@@ -167,6 +245,7 @@ export default function MeetingView({
     setSelectedSection({ id: sectionId, title: sectionTitle })
     setShowCreateTopicModal(true)
   }
+
 
   // Section Rename/Remove Logic
   const beginSectionRename = (section: Section) => {
@@ -191,6 +270,7 @@ export default function MeetingView({
   }
   const cancelDeleteSection = () => setSectionToDelete(null)
 
+
   const updateTopic = async (id: number, updates: Partial<Topic>) => {
     if (!userCanEdit) {
       alert("You do not have permission to edit topics.")
@@ -214,6 +294,7 @@ export default function MeetingView({
     }
   }
 
+
   const deleteTopic = async (id: number) => {
     if (!userCanEdit) {
       alert("You do not have permission to delete topics.")
@@ -234,6 +315,7 @@ export default function MeetingView({
     }
   }
 
+
   const toggleSection = (sectionId: number) => {
     setSections(
       sections.map((s) =>
@@ -246,6 +328,7 @@ export default function MeetingView({
       )
     )
   }
+
 
   const onDragEnd = async (result: any) => {
     if (!result.destination) return
@@ -317,6 +400,7 @@ export default function MeetingView({
     }
   }
 
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case "working_agenda":
@@ -330,6 +414,7 @@ export default function MeetingView({
         return "bg-gray-100 text-gray-800"
     }
   }
+
 
   const getStatusText = (status: string) => {
     switch (status) {
@@ -345,6 +430,7 @@ export default function MeetingView({
     }
   }
 
+
   const canTransition = (from: string, direction: "forward" | "backward") => {
     const index = STATUS_FLOW.indexOf(from as any)
     if (direction === "forward") return index < STATUS_FLOW.length - 1
@@ -352,15 +438,18 @@ export default function MeetingView({
     return false
   }
 
+
   const nextStatus = (current: string) => {
     const index = STATUS_FLOW.indexOf(current as any)
     return index < STATUS_FLOW.length - 1 ? STATUS_FLOW[index + 1] : current
   }
 
+
   const prevStatus = (current: string) => {
     const index = STATUS_FLOW.indexOf(current as any)
     return index > 0 ? STATUS_FLOW[index - 1] : current
   }
+
 
   const updateMeetingStatus = async (targetStatus: string) => {
     try {
@@ -379,6 +468,7 @@ export default function MeetingView({
     }
   }
 
+
   const handleCreateSection = () => {
     if (!userCanEdit) {
       alert("You do not have permission to create sections.")
@@ -386,6 +476,7 @@ export default function MeetingView({
     }
     setShowCreateSectionModal(true)
   }
+
 
   const handleStartRecording = () => {
     if (!userCanEdit) {
@@ -398,6 +489,7 @@ export default function MeetingView({
     setTimerInterval(interval)
   }
 
+
   const handleStopRecording = () => {
     setIsRecording(false)
     if (timerInterval) {
@@ -405,6 +497,7 @@ export default function MeetingView({
       setTimerInterval(null)
     }
   }
+
 
   const formatDate = (dateString: string) => {
     if (!dateString) return "No date"
@@ -423,6 +516,7 @@ export default function MeetingView({
   }
   
 
+
   const formatTime = (timeString: string) => {
     if (!timeString) return null
     const [hours, minutes] = timeString.split(":")
@@ -432,6 +526,7 @@ export default function MeetingView({
     return `${displayHour}:${minutes} ${ampm}`
   }
 
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted flex items-center justify-center">
@@ -439,6 +534,7 @@ export default function MeetingView({
       </div>
     )
   }
+
 
   if (!meeting) {
     return (
@@ -448,7 +544,9 @@ export default function MeetingView({
     )
   }
 
+
   const totalTopics = sections.reduce((sum, section) => sum + section.topics.length, 0)
+
 
   return (
     <>
@@ -595,6 +693,7 @@ export default function MeetingView({
         </div>
       </header>
 
+
       {/* Attendees POPUP MODAL */}
       {showAttendeesModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
@@ -621,6 +720,7 @@ export default function MeetingView({
           </div>
         </div>
       )}
+
 
       {/* MEETING SECTIONS/TOPICS WITH DRAG AND DROP */}
       <DragDropContext onDragEnd={onDragEnd}>
@@ -766,6 +866,7 @@ export default function MeetingView({
         </Droppable>
       </DragDropContext>
 
+
       {/* Section Delete Confirmation Modal */}
       {sectionToDelete && (
         <div className="fixed inset-0 bg-black bg-opacity-40 z-50 flex items-center justify-center">
@@ -781,6 +882,7 @@ export default function MeetingView({
           </div>
         </div>
       )}
+
 
       {/* Modals for Section/Topic Creation and Editing */}
       {showCreateSectionModal && userCanEdit && (
@@ -819,7 +921,7 @@ export default function MeetingView({
           }}
           meeting={{
             id: parseInt(meetingId),
-            building_id: meeting.building_id, // <-- ADD THIS LINE!
+            building_id: meeting.building_id,
             title: meeting.title,
             meeting_date: meeting.meeting_date,
             location: meeting.location,
