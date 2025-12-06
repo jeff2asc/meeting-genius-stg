@@ -15,8 +15,7 @@ if errorlevel 1 (
 )
 
 echo.
-echo [2/3] Pushing to GitHub...
-REM Make sure .next (build) is included
+echo [2/3] Pushing to GitHub (including .next)...
 git add .next -f
 git add .
 git commit -m "Deploy %date% %time%"
@@ -29,15 +28,13 @@ if errorlevel 1 (
 )
 
 echo.
-echo [3/3] Deploying to server...
-ssh -i "C:\Users\Jeff Domingo\Videos\meetinggenius_openssh" root@45.59.114.16 ^
-  "cd /opt/meetinggenius/app && git fetch origin && git reset --hard origin/main && pm2 restart meetinggenius"
-
+echo [3/3] Local deploy done. Now run the server commands manually.
 echo.
-echo ================================
-echo Deployment Complete! (30-60 sec)
-echo ================================
-echo.
-echo App: https://app.meetinggenius.ca
+echo Next steps on SERVER:
+echo   1. ssh -i "C:\Users\Jeff Domingo\Videos\meetinggenius_openssh" root@45.59.114.16
+echo   2. cd /opt/meetinggenius/app
+echo   3. git fetch origin
+echo   4. git reset --hard origin/main
+echo   5. NODE_ENV=production PORT=3000 npx next start
 echo.
 pause
