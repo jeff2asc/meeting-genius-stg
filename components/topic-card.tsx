@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { supabase } from "@/lib/supabase"
 import TaskDetailsModal from "./TaskDetailsModal"
 
+
 interface Topic {
   id: number
   title: string
@@ -16,6 +17,7 @@ interface Topic {
   decisions: number
 }
 
+
 interface HistoryItem {
   id: number
   type: "note" | "task" | "decision"
@@ -24,6 +26,7 @@ interface HistoryItem {
   details?: string
   attachmentUrl?: string
 }
+
 
 interface TopicCardProps {
   topic: Topic
@@ -37,6 +40,7 @@ interface TopicCardProps {
   onRegisterRefresh?: (topicId: number, callback: () => void) => void
   isReadOnly?: boolean
 }
+
 
 export default function TopicCard({ 
   topic, 
@@ -64,11 +68,13 @@ export default function TopicCard({
   const [showAiResult, setShowAiResult] = useState(false)
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null)
 
+
   useEffect(() => {
     if (onRegisterRefresh) {
       onRegisterRefresh(topic.id, fetchHistory)
     }
   }, [topic.id, onRegisterRefresh])
+
 
   useEffect(() => {
     if (isExpanded) {
@@ -77,11 +83,13 @@ export default function TopicCard({
     }
   }, [topic.id, isExpanded])
 
+
   const fetchHistory = async () => {
     setLoadingHistory(true)
     try {
       const historyItems: HistoryItem[] = []
 
+      // Fetch notes (only from current topic)
       const { data: notes } = await supabase
         .from('notes')
         .select('id, content, created_at')
@@ -99,25 +107,67 @@ export default function TopicCard({
         })
       }
 
-      const { data: tasks } = await supabase
-        .from('tasks')
-        .select('id, description, assigned_name, assigned_email, status, created_at')
-        .eq('topic_id', topic.id)
-        .order('created_at', { ascending: false })
+      // ============================================
+      // NEW: Fetch tasks from ALL previous meetings with same topic title
+      // ============================================
+      
+      // Step 1: Get current meeting info
+      const { data: currentTopic } = await supabase
+        .from('topics')
+        .select('title, meeting_id, meetings!inner(building_id, meeting_type)')
+        .eq('id', topic.id)
+        .single()
 
-      if (tasks) {
-        tasks.forEach(task => {
-          const assignee = task.assigned_name || task.assigned_email || 'Unassigned'
-          historyItems.push({
-            id: task.id,
-            type: 'task',
-            content: task.description.substring(0, 100) + (task.description.length > 100 ? '...' : ''),
-            timestamp: new Date(task.created_at).toLocaleString(),
-            details: `Assigned to: ${assignee} • Status: ${task.status}`
-          })
-        })
+      if (currentTopic) {
+        const meetingInfo = currentTopic.meetings as any
+        const buildingId = meetingInfo?.building_id
+        const meetingType = meetingInfo?.meeting_type
+
+        // Step 2: Get all meetings of same building + meeting type
+        const { data: allMeetings } = await supabase
+          .from('meetings')
+          .select('id')
+          .eq('building_id', buildingId)
+          .eq('meeting_type', meetingType)
+
+        if (allMeetings) {
+          const meetingIds = allMeetings.map(m => m.id)
+
+          // Step 3: Get all topics with same title across all these meetings
+          const { data: allTopicsWithSameTitle } = await supabase
+            .from('topics')
+            .select('id')
+            .in('meeting_id', meetingIds)
+            .eq('title', currentTopic.title)
+
+          if (allTopicsWithSameTitle) {
+            const topicIds = allTopicsWithSameTitle.map(t => t.id)
+
+            // Step 4: Get all open/in-progress tasks from these topics
+            const { data: tasks } = await supabase
+              .from('tasks')
+              .select('id, description, assigned_name, assigned_email, status, created_at')
+              .in('topic_id', topicIds)
+              .in('status', ['open', 'in_progress'])
+              .order('created_at', { ascending: false })
+
+            if (tasks) {
+              tasks.forEach(task => {
+                const assignee = task.assigned_name || task.assigned_email || 'Unassigned'
+                historyItems.push({
+                  id: task.id,
+                  type: 'task',
+                  content: task.description.substring(0, 100) + (task.description.length > 100 ? '...' : ''),
+                  timestamp: new Date(task.created_at).toLocaleString(),
+                  details: `Assigned to: ${assignee} • Status: ${task.status}`
+                })
+              })
+            }
+          }
+        }
       }
 
+      // Fetch decisions (only from current topic)
       const { data: decisions } = await supabase
         .from('decisions')
         .select('id, motion_text, result, votes_for, votes_against, recorded_at')
@@ -148,6 +198,7 @@ export default function TopicCard({
     }
   }
 
+
   const fetchAiAnalysis = async () => {
     try {
       const { data } = await supabase
@@ -162,6 +213,7 @@ export default function TopicCard({
       console.error('Error fetching AI analysis:', err)
     }
   }
+
 
   const handleAiAnalysis = async () => {
     if (isReadOnly) {
@@ -229,6 +281,7 @@ export default function TopicCard({
     }
   }
 
+
   const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setEditedTitle(e.target.value)
     setHasChanges(true)
@@ -268,6 +321,7 @@ export default function TopicCard({
     setShowDeleteConfirm(false)
   }
 
+
   const getHistoryBadgeColor = (type: string) => {
     switch (type) {
       case 'note': return 'bg-note-blue/10 text-note-blue border-note-blue/20'
@@ -276,6 +330,7 @@ export default function TopicCard({
       default: return 'bg-gray-100 text-gray-600'
     }
   }
+
 
   return (
     <>
@@ -338,6 +393,7 @@ export default function TopicCard({
           </div>
         </div>
 
+
         {isExpanded && (
           <>
             <div className="p-4 border-b border-border">
@@ -398,6 +454,7 @@ export default function TopicCard({
               )}
             </div>
 
+
             {isEditing && !isReadOnly && (
               <div className="px-4 py-3 bg-muted/20 border-b border-border flex gap-2">
                 <Button onClick={handleCancel} variant="outline" className="flex-1"><X className="h-4 w-4 mr-2" />Cancel</Button>
@@ -406,6 +463,7 @@ export default function TopicCard({
                 </Button>
               </div>
             )}
+
 
             {showDeleteConfirm && !isReadOnly && (
               <div className="px-4 py-3 bg-red-50 border-b border-red-200">
@@ -421,6 +479,7 @@ export default function TopicCard({
               </div>
             )}
 
+
             {!isReadOnly && (
               <div className="flex gap-2 border-b border-border bg-muted/30 p-4">
                 <Button size="sm" className="flex-1 bg-note-blue text-white hover:bg-note-blue/90" onClick={onNoteClick}>
@@ -434,6 +493,7 @@ export default function TopicCard({
                 </Button>
               </div>
             )}
+
 
             <div className="p-4 bg-muted/20">
               <h4 className="text-sm font-semibold text-foreground mb-2">History by Type</h4>
@@ -497,6 +557,7 @@ export default function TopicCard({
           </>
         )}
       </Card>
+
 
       {selectedTaskId && (
         <TaskDetailsModal
