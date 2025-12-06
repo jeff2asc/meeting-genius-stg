@@ -1,4 +1,3 @@
-@"
 @echo off
 echo ================================
 echo Meeting Genius Git Deploy
@@ -7,7 +6,16 @@ echo.
 
 cd "C:\Users\Jeff Domingo\Videos\meeting-genius"
 
-echo [1/2] Pushing to GitHub...
+echo [1/3] Building locally...
+call npm run build
+if errorlevel 1 (
+    echo ERROR: Local build failed!
+    pause
+    exit /b 1
+)
+
+echo.
+echo [2/3] Pushing to GitHub...
 git add .
 git commit -m "Deploy %date% %time%"
 git push origin main
@@ -19,8 +27,8 @@ if errorlevel 1 (
 )
 
 echo.
-echo [2/2] Deploying to server...
-ssh -i "C:\Users\Jeff Domingo\Videos\meetinggenius_openssh" root@45.59.114.16 "cd /opt/meetinggenius/app && git pull origin main && npm install --legacy-peer-deps && npm run build && pm2 restart meetinggenius"
+echo [3/3] Deploying to server...
+ssh -i "C:\Users\Jeff Domingo\Videos\meetinggenius_openssh" root@45.59.114.16 "cd /opt/meetinggenius/app && git pull origin main && pm2 restart meetinggenius"
 
 echo.
 echo ================================
@@ -30,6 +38,3 @@ echo.
 echo App: https://app.meetinggenius.ca
 echo.
 pause
-"@ | Out-File -FilePath "C:\Users\Jeff Domingo\Videos\meeting-genius\deploy-git.bat" -Encoding ASCII -Force
-
-
