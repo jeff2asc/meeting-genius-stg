@@ -871,7 +871,7 @@ export default function MeetingView({
       {sectionToDelete && (
         <div className="fixed inset-0 bg-black bg-opacity-40 z-50 flex items-center justify-center">
           <div className="bg-white border p-6 rounded-lg shadow-lg max-w-md w-full">
-            <h2 className="text-xl font-bold mb-2">Delete Section?s</h2>
+            <h2 className="text-xl font-bold mb-2">Delete Section?</h2>
             <p className="mb-4">
               Are you sure you want to permanently delete <b>{sectionToDelete.title}</b> and all its topics? This cannot be undone.
             </p>
