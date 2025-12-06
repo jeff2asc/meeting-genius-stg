@@ -16,7 +16,7 @@ if errorlevel 1 (
 
 echo.
 echo [2/3] Pushing to GitHub...
-REM Ensure .next is included even if still in .gitignore
+REM Make sure .next (build) is included
 git add .next -f
 git add .
 git commit -m "Deploy %date% %time%"
@@ -31,7 +31,7 @@ if errorlevel 1 (
 echo.
 echo [3/3] Deploying to server...
 ssh -i "C:\Users\Jeff Domingo\Videos\meetinggenius_openssh" root@45.59.114.16 ^
-  "cd /opt/meetinggenius/app && git reset --hard origin/main && pm2 restart meetinggenius"
+  "cd /opt/meetinggenius/app && git fetch origin && git reset --hard origin/main && pm2 restart meetinggenius"
 
 echo.
 echo ================================
