@@ -33,8 +33,18 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary/20 via-background to-decision-purple/20 flex items-center justify-center p-4">
-      <Card className="w-full max-w-md p-8 shadow-2xl">
+    <div 
+      className="min-h-screen flex items-center justify-center p-4 relative"
+      style={{
+        backgroundImage: 'url(/timeisprecious.jpg)',
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        backgroundRepeat: 'no-repeat'
+      }}
+    >
+      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" />
+      
+      <Card className="w-full max-w-md p-8 shadow-2xl relative z-10 bg-card/95 backdrop-blur-md border-2">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold bg-gradient-to-r from-primary to-decision-purple bg-clip-text text-transparent">
             Meeting Genius
@@ -88,7 +98,7 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
           </Button>
 
           <p className="text-xs text-center text-muted-foreground mt-4">
-            Demo accounts - Password: <code className="bg-muted px-2 py-1 rounded">123456</code>
+            Demo accounts - Password: <span className="bg-muted px-2 py-1 rounded font-mono">123456</span>
           </p>
         </form>
       </Card>
