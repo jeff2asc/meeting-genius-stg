@@ -8,8 +8,7 @@ import {
   supabase, 
   getPreviousMeetingOfSameType,
   getSectionsFromMeeting,
-  getTopicsFromMeeting,
-  getOpenTasksFromMeeting
+  getTopicsFromMeeting
 } from "@/lib/supabase"
 
 
@@ -175,9 +174,9 @@ export default function CreateMeetingModal({ onClose, onSuccess, buildings }: Cr
 
       if (previousMeeting) {
         // ============================================
-        // PATH A: ROLLOVER from previous meeting
+        // PATH A: ROLLOVER from previous meeting (STRUCTURE ONLY - NO TASKS)
         // ============================================
-        console.log('🔄 Rolling over from previous meeting:', previousMeeting.title)
+        console.log('🔄 Rolling over structure from previous meeting:', previousMeeting.title)
 
         // Step 2.1: Get sections from previous meeting
         const prevSections = await getSectionsFromMeeting(previousMeeting.id)
@@ -214,12 +213,11 @@ export default function CreateMeetingModal({ onClose, onSuccess, buildings }: Cr
         // Step 2.4: Get topics from previous meeting
         const prevTopics = await getTopicsFromMeeting(previousMeeting.id)
 
-        // Step 2.5: Copy topics to new meeting
-        const topicIdMap: Record<number, number> = {}
+        // Step 2.5: Copy topics to new meeting (NO TASKS)
         for (const topic of prevTopics) {
           const newSectionId = topic.section_id ? sectionIdMap[topic.section_id] : null
 
-          const { data: newTopic, error: topicError } = await supabase
+          const { error: topicError } = await supabase
             .from('topics')
             .insert({
               meeting_id: meetingData.id,
@@ -229,47 +227,14 @@ export default function CreateMeetingModal({ onClose, onSuccess, buildings }: Cr
               order_index: topic.order_index,
               rolled_over_from_topic_id: topic.id
             })
-            .select()
-            .single()
 
           if (topicError) {
             console.error('Error inserting topic:', topicError)
-          } else if (newTopic) {
-            topicIdMap[topic.id] = newTopic.id
           }
         }
 
-        // Step 2.6: Get open tasks from previous meeting
-        const openTasks = await getOpenTasksFromMeeting(previousMeeting.id)
-
-        // Step 2.7: Copy open tasks to new topics
-        let rolledOverTaskCount = 0
-        for (const task of openTasks) {
-          const newTopicId = topicIdMap[task.topic_id]
-          
-          if (newTopicId) {
-            const { error: taskError } = await supabase
-              .from('tasks')
-              .insert({
-                topic_id: newTopicId,
-                description: task.description,
-                assigned_name: task.assigned_name,
-                assigned_email: task.assigned_email,
-                assignees: task.assignees,
-                due_date: task.due_date,
-                status: task.status // Keep original status (open/in_progress)
-              })
-
-            if (taskError) {
-              console.error('Error inserting task:', taskError)
-            } else {
-              rolledOverTaskCount++
-            }
-          }
-        }
-
-        // Step 2.8: Show success message with rollover info
-        console.log(`✅ Meeting created with ${rolledOverTaskCount} tasks rolled over from "${previousMeeting.title}"`)
+        // ✅ NO TASK COPYING - Tasks will be fetched dynamically when viewing the meeting
+        console.log('✅ Meeting structure created. Open tasks from previous meetings will be displayed automatically.')
         
       } else {
         // ============================================
@@ -471,7 +436,7 @@ export default function CreateMeetingModal({ onClose, onSuccess, buildings }: Cr
               name="location"
               value={formData.location}
               onChange={handleInputChange}
-              placeholder="e.g., Conference Room A or Zoom Meetings"
+              placeholder="e.g., Conference Room A or Zoom Meeting"
               className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50"
             />
           </div>
