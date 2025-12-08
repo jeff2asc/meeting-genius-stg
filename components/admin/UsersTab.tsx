@@ -29,6 +29,8 @@ interface UsersTabProps {
   isMaster: boolean
   onFilterUserTypeChange: (value: string) => void
   onFilterBuildingChange: (value: string) => void
+  onEditUser: (userId: number) => void
+  onDeleteUser: (userId: number) => void
 }
 
 export default function UsersTab({
@@ -40,16 +42,26 @@ export default function UsersTab({
   loading,
   isMaster,
   onFilterUserTypeChange,
-  onFilterBuildingChange
+  onFilterBuildingChange,
+  onEditUser,
+  onDeleteUser,
 }: UsersTabProps) {
+  // For now, assume the parent already restricts users for corporate admins
+  const canManageUser = (user: UserRow) => {
+    if (isMaster) return true
+    // corporate admin: parent should pass only same-company users;
+    // here we treat all visible users as manageable
+    return true
+  }
+
   return (
     <>
       <div className="mb-6">
         <h2 className="text-2xl font-bold text-foreground mb-2">User Management</h2>
         <p className="text-muted-foreground">
           {isMaster
-            ? 'You have full access to manage all users'
-            : 'Manage users assigned to you'}
+            ? "You have full access to manage all users"
+            : "Manage users assigned to you"}
         </p>
       </div>
 
@@ -91,7 +103,7 @@ export default function UsersTab({
             >
               <option value="all">All Buildings</option>
               <option value="unassigned">Not Assigned to Any Building</option>
-              {buildings.map(building => (
+              {buildings.map((building) => (
                 <option key={building.id} value={building.name}>
                   {building.name}
                 </option>
@@ -110,9 +122,17 @@ export default function UsersTab({
         </div>
       ) : (
         <div className="grid gap-4">
-          {filteredUsers.map((user) => (
-            <UserCard key={user.id} user={user} />
-          ))}
+          {filteredUsers.map((user) => {
+            const canManage = canManageUser(user)
+            return (
+              <UserCard
+                key={user.id}
+                user={user}
+                onEdit={canManage ? onEditUser : undefined}
+                onDelete={canManage ? onDeleteUser : undefined}
+              />
+            )
+          })}
         </div>
       )}
 
