@@ -69,7 +69,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
   const [showCreateCompanyModal, setShowCreateCompanyModal] = useState(false)
   const [showEditBuildingModal, setShowEditBuildingModal] = useState(false)
   const [selectedBuilding, setSelectedBuilding] = useState<Building | null>(null)
-  
+
   // Company modals
   const [showEditCompanyModal, setShowEditCompanyModal] = useState(false)
   const [showCompanyDetailsModal, setShowCompanyDetailsModal] = useState(false)
@@ -89,12 +89,12 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
   const [filterUserType, setFilterUserType] = useState<string>("all")
   const [filterBuilding, setFilterBuilding] = useState<string>("all")
 
-  const isMaster = currentUser?.user_type === 'master'
-  const isCorporateAdmin = currentUser?.user_type === 'corporate_administrator'
-  const canCreateUser = isMaster || currentUser?.user_type === 'property_manager' || isCorporateAdmin
-  const canCreateBuilding = isMaster || currentUser?.user_type === 'property_manager' || isCorporateAdmin
-  const userCanManageCompanies = canManageCompanies(currentUser?.user_type || '')
-  const userShouldFilterByCompany = shouldFilterByCompany(currentUser?.user_type || '')
+  const isMaster = currentUser?.user_type === "master"
+  const isCorporateAdmin = currentUser?.user_type === "corporate_administrator"
+  const canCreateUser = isMaster || currentUser?.user_type === "property_manager" || isCorporateAdmin
+  const canCreateBuilding = isMaster || currentUser?.user_type === "property_manager" || isCorporateAdmin
+  const userCanManageCompanies = canManageCompanies(currentUser?.user_type || "")
+  const userShouldFilterByCompany = shouldFilterByCompany(currentUser?.user_type || "")
 
   useEffect(() => {
     fetchCompanies()
@@ -113,62 +113,99 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
     }
   }, [buildings])
 
+  // --- USERS: EDIT / DELETE HANDLERS ---
+
+  const handleEditUser = (userId: number) => {
+    // For now just log; you can later open an EditUserModal here
+    console.log("Edit user", userId)
+    // Example next step:
+    // setSelectedUserId(userId)
+    // setShowEditUserModal(true)
+  }
+
+  const handleDeleteUser = async (userId: number) => {
+    const confirmed = window.confirm("Are you sure you want to delete this user?")
+    if (!confirmed) return
+
+    try {
+      const { error } = await supabase
+        .from("users")
+        .delete()
+        .eq("id", userId)
+
+      if (error) {
+        console.error("Error deleting user:", error)
+        alert("Failed to delete user")
+        return
+      }
+
+      // Refresh list
+      await fetchUsers()
+    } catch (err) {
+      console.error("Unexpected error deleting user:", err)
+      alert("Failed to delete user")
+    }
+  }
+
   const fetchCompanies = async () => {
     try {
       let companiesQuery = supabase
-        .from('companies')
-        .select('*')
-        .order('name')
-  
+        .from("companies")
+        .select("*")
+        .order("name")
+
       // Apply filtering based on user type
       if (isMaster) {
-        // Master sees ALL companies - no filter needed
+        // Master sees ALL companies
       } else if (isCorporateAdmin && currentUser?.company_id) {
-        // Corporate Admin sees ONLY their company
-        companiesQuery = companiesQuery.eq('id', currentUser.company_id)
+        companiesQuery = companiesQuery.eq("id", currentUser.company_id)
       }
-  
+
       const { data, error } = await companiesQuery
-  
+
       if (error) {
-        console.error('Error fetching companies:', error)
+        console.error("Error fetching companies:", error)
         return
       }
-  
+
       setCompanies(data || [])
     } catch (err) {
-      console.error('Unexpected error:', err)
+      console.error("Unexpected error:", err)
     }
   }
 
   const fetchBuildingDocuments = async () => {
     try {
       const { data, error } = await supabase
-        .from('building_documents')
-        .select('building_id')
+        .from("building_documents")
+        .select("building_id")
 
       if (error) {
-        console.error('Error fetching building documents:', error)
+        console.error("Error fetching building documents:", error)
         return
       }
 
       const documentsMap: Record<number, boolean> = {}
-      data?.forEach(doc => {
+      data?.forEach((doc) => {
         documentsMap[doc.building_id] = true
       })
 
       setBuildingDocuments(documentsMap)
     } catch (err) {
-      console.error('Unexpected error:', err)
+      console.error("Unexpected error:", err)
     }
   }
 
   const handleManageDocuments = (building: Building) => {
     const hasDocuments = buildingDocuments[building.id] || false
-    
+
     const formUrl = hasDocuments
-      ? `https://rulesengine.asccreative.com/form/8fe10f3e-bbb7-4ef0-8911-d43c27ad8666?Building Id=${building.id}&Building Name=${encodeURIComponent(building.name)}`
-      : `https://rulesengine.asccreative.com/form/6a4fe687-c1f7-43ea-b6e3-687e5e9a47fa?Building Id=${building.id}&Building Name=${encodeURIComponent(building.name)}`
+      ? `https://rulesengine.asccreative.com/form/8fe10f3e-bbb7-4ef0-8911-d43c27ad8666?Building Id=${building.id}&Building Name=${encodeURIComponent(
+          building.name
+        )}`
+      : `https://rulesengine.asccreative.com/form/6a4fe687-c1f7-43ea-b6e3-687e5e9a47fa?Building Id=${building.id}&Building Name=${encodeURIComponent(
+          building.name
+        )}`
 
     setDocumentFormUrl(formUrl)
     setShowDocumentModal(true)
@@ -177,50 +214,50 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
   const handleViewDocument = async (building: Building) => {
     try {
       const { data, error } = await supabase
-        .from('building_documents')
-        .select('rules_and_regulations')
-        .eq('building_id', building.id)
+        .from("building_documents")
+        .select("rules_and_regulations")
+        .eq("building_id", building.id)
         .single()
 
       if (error) {
-        console.error('Error fetching document:', error)
-        alert('Failed to load document')
+        console.error("Error fetching document:", error)
+        alert("Failed to load document")
         return
       }
 
       setViewingDocument({
         building: building,
-        content: data.rules_and_regulations || 'No content available'
+        content: data.rules_and_regulations || "No content available",
       })
       setShowViewDocumentModal(true)
     } catch (err) {
-      console.error('Unexpected error:', err)
-      alert('Failed to load document')
+      console.error("Unexpected error:", err)
+      alert("Failed to load document")
     }
   }
 
   const fetchPropertyManagers = async () => {
     try {
       let query = supabase
-        .from('users')
-        .select('id, name, email, company_id')
-        .eq('user_type', 'property_manager')
-        .order('name')
+        .from("users")
+        .select("id, name, email, company_id")
+        .eq("user_type", "property_manager")
+        .order("name")
 
       if (userShouldFilterByCompany && currentUser?.company_id) {
-        query = query.eq('company_id', currentUser.company_id)
+        query = query.eq("company_id", currentUser.company_id)
       }
 
       const { data, error } = await query
 
       if (error) {
-        console.error('Error fetching property managers:', error)
+        console.error("Error fetching property managers:", error)
         return
       }
 
       setPropertyManagers(data || [])
     } catch (err) {
-      console.error('Unexpected error:', err)
+      console.error("Unexpected error:", err)
     }
   }
 
@@ -229,32 +266,30 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
       setLoading(true)
 
       let usersQuery = supabase
-        .from('users')
-        .select('id, name, email, user_type, assigned_pm_id, company_id, created_at')
-        .order('created_at', { ascending: false })
+        .from("users")
+        .select("id, name, email, user_type, assigned_pm_id, company_id, created_at")
+        .order("created_at", { ascending: false })
 
       if (userShouldFilterByCompany && currentUser?.company_id) {
-        usersQuery = usersQuery.eq('company_id', currentUser.company_id)
+        usersQuery = usersQuery.eq("company_id", currentUser.company_id)
       }
 
       const { data: usersData, error: usersError } = await usersQuery
 
       if (usersError) {
-        console.error('Error fetching users:', usersError)
+        console.error("Error fetching users:", usersError)
         return
       }
 
-      console.log('👥 Admin Panel - Users fetched:', usersData)
-
       const { data: userBuildingsData } = await supabase
-        .from('user_buildings')
+        .from("user_buildings")
         .select(`
           user_id,
           building_id,
           buildings!inner(id, name)
         `)
 
-      const usersWithBuildings = (usersData || []).map(user => {
+      const usersWithBuildings = (usersData || []).map((user) => {
         const userBuildings = (userBuildingsData || [])
           .filter((ub: any) => ub.user_id === user.id)
           .map((ub: any) => ub.buildings?.name)
@@ -262,21 +297,20 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
 
         return {
           ...user,
-          buildings: userBuildings
+          buildings: userBuildings,
         }
       })
 
-      if (currentUser?.user_type === 'property_manager') {
-        const filteredUsers = usersWithBuildings.filter(user => 
-          user.assigned_pm_id === currentUser.id || user.id === currentUser.id
+      if (currentUser?.user_type === "property_manager") {
+        const filteredUsers = usersWithBuildings.filter(
+          (user) => user.assigned_pm_id === currentUser.id || user.id === currentUser.id
         )
         setUsers(filteredUsers)
       } else {
         setUsers(usersWithBuildings)
       }
-
     } catch (err) {
-      console.error('Unexpected error:', err)
+      console.error("Unexpected error:", err)
     } finally {
       setLoading(false)
     }
@@ -285,22 +319,17 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
   const fetchBuildings = async () => {
     try {
       let buildingsQuery = supabase
-        .from('buildings')
-        .select('id, name, address, manager_id, company_id, building_type, created_at')
-        .order('name')
+        .from("buildings")
+        .select("id, name, address, manager_id, company_id, building_type, created_at")
+        .order("name")
 
-      // Apply filtering based on user type
       if (isMaster) {
-        // Master sees ALL buildings - no filter needed
+        // all
       } else if (isCorporateAdmin && currentUser?.company_id) {
-        // Corporate Admin sees all buildings in their company
-        buildingsQuery = buildingsQuery.eq('company_id', currentUser.company_id)
-      } else if (currentUser?.user_type === 'property_manager') {
-        // Property Manager sees only their buildings
-        buildingsQuery = buildingsQuery.eq('manager_id', currentUser.id)
+        buildingsQuery = buildingsQuery.eq("company_id", currentUser.company_id)
+      } else if (currentUser?.user_type === "property_manager") {
+        buildingsQuery = buildingsQuery.eq("manager_id", currentUser.id)
       } else {
-        // Other users see buildings they're assigned to (handled separately)
-        // For now, empty array
         setBuildings([])
         return
       }
@@ -308,21 +337,18 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
       const { data: buildingsData, error: buildingsError } = await buildingsQuery
 
       if (buildingsError) {
-        console.error('Error fetching buildings:', buildingsError)
+        console.error("Error fetching buildings:", buildingsError)
         return
       }
 
-      console.log('🏢 Admin Panel - Buildings fetched for', currentUser?.user_type, ':', buildingsData)
-
-      // Fetch users for each building with user_type included
       const { data: userBuildingsData } = await supabase
-        .from('user_buildings')
+        .from("user_buildings")
         .select(`
           building_id,
           users!inner(id, name, email, user_type)
         `)
 
-      const buildingsWithUsers = (buildingsData || []).map(building => {
+      const buildingsWithUsers = (buildingsData || []).map((building) => {
         const buildingUsers = (userBuildingsData || [])
           .filter((ub: any) => ub.building_id === building.id)
           .map((ub: any) => ub.users)
@@ -330,13 +356,13 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
 
         return {
           ...building,
-          users: buildingUsers
+          users: buildingUsers,
         }
       })
 
       setBuildings(buildingsWithUsers)
     } catch (err) {
-      console.error('Unexpected error:', err)
+      console.error("Unexpected error:", err)
     }
   }
 
@@ -344,14 +370,14 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
     let filtered = [...users]
 
     if (filterUserType !== "all") {
-      filtered = filtered.filter(user => user.user_type === filterUserType)
+      filtered = filtered.filter((user) => user.user_type === filterUserType)
     }
 
     if (filterBuilding !== "all") {
       if (filterBuilding === "unassigned") {
-        filtered = filtered.filter(user => !user.buildings || user.buildings.length === 0)
+        filtered = filtered.filter((user) => !user.buildings || user.buildings.length === 0)
       } else {
-        filtered = filtered.filter(user => user.buildings?.includes(filterBuilding))
+        filtered = filtered.filter((user) => user.buildings?.includes(filterBuilding))
       }
     }
 
@@ -390,46 +416,42 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
 
   const handleDeleteCompany = async (company: Company) => {
     const { count: userCount } = await supabase
-      .from('users')
-      .select('*', { count: 'exact', head: true })
-      .eq('company_id', company.id)
-  
+      .from("users")
+      .select("*", { count: "exact", head: true })
+      .eq("company_id", company.id)
+
     const { count: buildingCount } = await supabase
-      .from('buildings')
-      .select('*', { count: 'exact', head: true })
-      .eq('company_id', company.id)
-  
+      .from("buildings")
+      .select("*", { count: "exact", head: true })
+      .eq("company_id", company.id)
+
     const confirmed = confirm(
       `⚠️ PERMANENT DELETE: "${company.name}"\n\n` +
-      `This will DELETE FOREVER:\n` +
-      `❌ ${userCount || 0} user(s)\n` +
-      `❌ ${buildingCount || 0} building(s)\n` +
-      `❌ All meetings, notes, tasks, decisions\n\n` +
-      `This CANNOT be undone!\n\n` +
-      `Type the company name to confirm deletion.`
+        `This will DELETE FOREVER:\n` +
+        `❌ ${userCount || 0} user(s)\n` +
+        `❌ ${buildingCount || 0} building(s)\n` +
+        `❌ All meetings, notes, tasks, decisions\n\n` +
+        `This CANNOT be undone!\n\n` +
+        `Type the company name to confirm deletion.`
     )
-    
+
     if (!confirmed) return
-  
+
     try {
-      const { error } = await supabase
-        .from('companies')
-        .delete()
-        .eq('id', company.id)
-  
+      const { error } = await supabase.from("companies").delete().eq("id", company.id)
+
       if (error) {
-        console.error('Error deleting company:', error)
-        alert('Failed to delete company')
+        console.error("Error deleting company:", error)
+        alert("Failed to delete company")
         return
       }
-  
-      console.log('✅ Company and ALL related data deleted permanently')
+
       fetchCompanies()
       fetchUsers()
       fetchBuildings()
     } catch (err) {
-      console.error('Unexpected error:', err)
-      alert('Failed to delete company')
+      console.error("Unexpected error:", err)
+      alert("Failed to delete company")
     }
   }
 
@@ -453,26 +475,19 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
   }
 
   const getAvailableUsers = () => {
-    console.log('🔍 getAvailableUsers called - currentUser:', currentUser?.user_type, currentUser?.company_id)
-    console.log('🔍 Total users available:', users.length, users)
-    
     if (isCorporateAdmin && currentUser?.company_id) {
-      console.log('🔍 Corporate Admin - returning all company users')
-      const filtered = users
-      console.log('🔍 Filtered users for Corporate Admin:', filtered)
-      return filtered
+      return users
     }
-    
-    if (currentUser?.user_type === 'property_manager') {
-      const filtered = users.filter(u => 
-        (u.assigned_pm_id === currentUser.id && u.user_type === 'user') ||
-        u.id === currentUser.id
+
+    if (currentUser?.user_type === "property_manager") {
+      const filtered = users.filter(
+        (u) =>
+          (u.assigned_pm_id === currentUser.id && u.user_type === "user") ||
+          u.id === currentUser.id
       )
-      console.log('🔍 Property Manager - filtered users:', filtered)
       return filtered
     }
-    
-    console.log('🔍 Master - returning all users')
+
     return users
   }
 
@@ -487,7 +502,9 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
               </Button>
               <div>
                 <h1 className="text-xl font-bold text-foreground">Admin Panel</h1>
-                <p className="text-sm text-muted-foreground">Manage users, buildings, companies and minutes templates</p>
+                <p className="text-sm text-muted-foreground">
+                  Manage users, buildings, companies and minutes templates
+                </p>
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -580,6 +597,8 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
             isMaster={isMaster}
             onFilterUserTypeChange={setFilterUserType}
             onFilterBuildingChange={setFilterBuilding}
+            onEditUser={handleEditUser}
+            onDeleteUser={handleDeleteUser}
           />
         )}
 
@@ -608,12 +627,11 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
         )}
 
         {activeTab === "minutes" && (
-          <MinutesTemplatesTab
-            buildings={getBuildingsList()}
-            loading={loading}
-          />
+          <MinutesTemplatesTab buildings={getBuildingsList()} loading={loading} />
         )}
       </div>
+
+
 
       {/* ALL MODALS */}
       <CreateUserModal
