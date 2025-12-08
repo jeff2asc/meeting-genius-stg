@@ -1,6 +1,6 @@
 "use client"
 
-import { User, Building2, Shield, Briefcase, UserCheck, Users } from "lucide-react"
+import { User, Building2, Shield, Briefcase, UserCheck, Users, Pencil, Trash2 } from "lucide-react"
 import { Card } from "@/components/ui/card"
 
 interface UserCardProps {
@@ -87,7 +87,7 @@ export default function UserCard({ user, onEdit, onDelete }: UserCardProps) {
           </div>
         </div>
 
-        <div className="flex flex-col items-end gap-2">
+                <div className="flex flex-col items-end gap-2">
           <div className="flex items-center gap-4">
             <span
               className={`text-xs font-medium px-3 py-1 rounded-full border ${getUserTypeBadge(
@@ -102,27 +102,32 @@ export default function UserCard({ user, onEdit, onDelete }: UserCardProps) {
           </div>
 
           {(onEdit || onDelete) && (
-            <div className="flex gap-2">
+            <div className="flex gap-1">
               {onEdit && (
                 <button
                   type="button"
                   onClick={() => onEdit(user.id)}
-                  className="text-xs px-2 py-1 rounded border border-blue-200 text-blue-700 hover:bg-blue-50"
+                  className="flex h-8 w-8 items-center justify-center rounded-full border border-blue-200 text-blue-700 hover:bg-blue-50"
+                  title="Edit user"
                 >
-                  Edit
+                  <Pencil className="h-4 w-4" />
                 </button>
               )}
               {onDelete && (
                 <button
                   type="button"
                   onClick={() => onDelete(user.id)}
-                  className="text-xs px-2 py-1 rounded border border-red-200 text-red-700 hover:bg-red-50"
+                  className="flex h-8 w-8 items-center justify-center rounded-full border border-red-200 text-red-700 hover:bg-red-50"
+                  title="Delete user"
                 >
-                  Delete
+                  <Trash2 className="h-4 w-4" />
                 </button>
               )}
             </div>
           )}
+
+
+
         </div>
       </div>
     </Card>
