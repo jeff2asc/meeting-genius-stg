@@ -11,7 +11,6 @@ import {
   getTopicsFromMeeting
 } from "@/lib/supabase"
 
-
 interface CreateMeetingModalProps {
   onClose: () => void
   onSuccess: () => void
@@ -42,7 +41,6 @@ type Topic = {
   updated_at?: string
 }
 
-
 export default function CreateMeetingModal({ onClose, onSuccess, buildings }: CreateMeetingModalProps) {
   const [formData, setFormData] = useState({
     title: "",
@@ -57,7 +55,6 @@ export default function CreateMeetingModal({ onClose, onSuccess, buildings }: Cr
   const [error, setError] = useState("")
   const [meetingTypes, setMeetingTypes] = useState<string[]>([])
   const [meetingSections, setMeetingSections] = useState<string[]>([])
-
 
   useEffect(() => {
     // Fetch company defaults when modal opens or building changes
@@ -121,7 +118,6 @@ export default function CreateMeetingModal({ onClose, onSuccess, buildings }: Cr
     // eslint-disable-next-line
   }, [formData.buildingId, buildings])
 
-
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target
     setFormData(prev => ({
@@ -129,7 +125,6 @@ export default function CreateMeetingModal({ onClose, onSuccess, buildings }: Cr
       [name]: name === "buildingId" ? parseInt(value) : value,
     }))
   }
-
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -174,7 +169,7 @@ export default function CreateMeetingModal({ onClose, onSuccess, buildings }: Cr
 
       if (previousMeeting) {
         // ============================================
-        // PATH A: ROLLOVER from previous meeting (STRUCTURE ONLY - NO TASKS)
+        // PATH A: ROLLOVER from previous meeting (STRUCTURE + ATTENDEES - NO TASKS)
         // ============================================
         console.log('🔄 Rolling over structure from previous meeting:', previousMeeting.title)
 
@@ -230,6 +225,35 @@ export default function CreateMeetingModal({ onClose, onSuccess, buildings }: Cr
 
           if (topicError) {
             console.error('Error inserting topic:', topicError)
+          }
+        }
+
+        // ============================================
+        // Step 2.6: Copy attendees from previous meeting
+        // ============================================
+        const { data: previousAttendees, error: attendeesError } = await supabase
+          .from('attendees')
+          .select('user_id, role, attendance_status')
+          .eq('meeting_id', previousMeeting.id)
+
+        if (attendeesError) {
+          console.error('Error fetching attendees from previous meeting:', attendeesError)
+        } else if (previousAttendees && previousAttendees.length > 0) {
+          const attendeesToInsert = previousAttendees.map(attendee => ({
+            meeting_id: meetingData.id,
+            user_id: attendee.user_id,
+            role: attendee.role,
+            attendance_status: 'pending' // Reset to pending for new meeting
+          }))
+
+          const { error: insertAttendeesError } = await supabase
+            .from('attendees')
+            .insert(attendeesToInsert)
+
+          if (insertAttendeesError) {
+            console.error('Error inserting attendees:', insertAttendeesError)
+          } else {
+            console.log(`✅ Rolled over ${previousAttendees.length} attendees to new meeting`)
           }
         }
 
@@ -316,7 +340,6 @@ export default function CreateMeetingModal({ onClose, onSuccess, buildings }: Cr
       setLoading(false)
     }
   }
-
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 animate-in fade-in">
