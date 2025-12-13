@@ -730,14 +730,14 @@ export default function MeetingView({
             <div
               {...provided.droppableProps}
               ref={provided.innerRef}
-              className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8 space-y-6"
+              className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8 space-y-3"
             >
               {sections.map((section, index) => (
                 <Draggable key={section.id} draggableId={section.id.toString()} index={index}>
                   {(provided: any) => (
                     <div ref={provided.innerRef} {...provided.draggableProps}>
-                      <Card className="border-0 bg-gradient-to-r from-primary/10 to-decision-purple/10 mb-3">
-                        <div className="w-full p-4 flex items-center justify-between">
+                      <Card className="border-0 bg-gradient-to-r from-primary/10 to-decision-purple/10 mb-2">
+                        <div className="w-full p-2 flex items-center justify-between">
                           <div className="flex items-center gap-3">
                             <div {...provided.dragHandleProps} onClick={() => toggleSection(section.id)} className="cursor-pointer">
                               {section.isExpanded ? (
@@ -813,7 +813,7 @@ export default function MeetingView({
                               <div
                                 {...provided.droppableProps}
                                 ref={provided.innerRef}
-                                className="space-y-4 ml-8 pb-4"
+                                className="space-y-2 ml-8 pb-2"
                               >
                                 {section.topics.length > 0 ? (
                                   section.topics.map((topic, idx) => (
