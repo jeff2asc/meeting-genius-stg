@@ -21,6 +21,7 @@ interface AttendeeManagementProps {
   status: string
   userCanEdit: boolean
   onUpdate: (attendees: Attendee[]) => void
+  onClose?: () => void  // ← NEW: Optional callback to close modal
 }
 
 export default function AttendeeManagement({
@@ -28,7 +29,8 @@ export default function AttendeeManagement({
   attendees,
   status,
   userCanEdit,
-  onUpdate
+  onUpdate,
+  onClose  // ← NEW
 }: AttendeeManagementProps) {
   const [localAttendees, setLocalAttendees] = useState<Attendee[]>(attendees || [])
 
@@ -49,18 +51,15 @@ export default function AttendeeManagement({
   }
 
   // Edit fields (Working Agenda only)
-  // Edit fields (Working Agenda only)
   const handleFieldChange = <K extends keyof Attendee>(
     index: number, 
     field: K, 
     value: Attendee[K]
   ) => {
-    const updated: Attendee[] = [...localAttendees];
-    updated[index] = { ...updated[index], [field]: value };
-    setLocalAttendees(updated);
-  };
-  
-  
+    const updated: Attendee[] = [...localAttendees]
+    updated[index] = { ...updated[index], [field]: value }
+    setLocalAttendees(updated)
+  }
 
   // Mark attendance in Working Minutes only
   const handlePresentChange = (index: number, checked: boolean) => {
@@ -69,9 +68,14 @@ export default function AttendeeManagement({
     setLocalAttendees(updated)
   }
 
-  // Save all changes
+  // Save all changes and close modal
   const handleSave = () => {
     onUpdate(localAttendees)
+    
+    // ✅ Close modal after saving
+    if (onClose) {
+      onClose()
+    }
   }
 
   const isAgenda = status === "working_agenda"
