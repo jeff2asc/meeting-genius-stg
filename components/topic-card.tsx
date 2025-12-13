@@ -1,12 +1,11 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { ChevronDown, FileText, CheckSquare, Scale, Paperclip, Edit2, Trash2, X, Check, Sparkles, Loader2, Plus } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { supabase } from "@/lib/supabase"
 import TaskDetailsModal from "./TaskDetailsModal"
-
 
 interface Topic {
   id: number
@@ -17,7 +16,6 @@ interface Topic {
   decisions: number
 }
 
-
 interface HistoryItem {
   id: number
   type: "note" | "task" | "decision"
@@ -26,7 +24,6 @@ interface HistoryItem {
   details?: string
   attachmentUrl?: string
 }
-
 
 interface TopicCardProps {
   topic: Topic
@@ -40,7 +37,6 @@ interface TopicCardProps {
   onRegisterRefresh?: (topicId: number, callback: () => void) => void
   isReadOnly?: boolean
 }
-
 
 export default function TopicCard({ 
   topic, 
@@ -68,13 +64,16 @@ export default function TopicCard({
   const [showAiResult, setShowAiResult] = useState(false)
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null)
 
+  // ← NEW: Refs for auto-save on click outside
+  const titleInputRef = useRef<HTMLInputElement>(null)
+  const descriptionTextareaRef = useRef<HTMLTextAreaElement>(null)
+  const editingContainerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (onRegisterRefresh) {
       onRegisterRefresh(topic.id, fetchHistory)
     }
   }, [topic.id, onRegisterRefresh])
-
 
   useEffect(() => {
     if (isExpanded) {
@@ -83,6 +82,22 @@ export default function TopicCard({
     }
   }, [topic.id, isExpanded])
 
+  // ← NEW: Click outside handler
+  useEffect(() => {
+    if (!isEditing) return
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (editingContainerRef.current && !editingContainerRef.current.contains(event.target as Node)) {
+        // Clicked outside - auto save if there are changes
+        if (hasChanges && !saving) {
+          handleSave()
+        }
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [isEditing, hasChanges, saving])
 
   const fetchHistory = async () => {
     setLoadingHistory(true)
@@ -198,7 +213,6 @@ export default function TopicCard({
     }
   }
 
-
   const fetchAiAnalysis = async () => {
     try {
       const { data } = await supabase
@@ -213,7 +227,6 @@ export default function TopicCard({
       console.error('Error fetching AI analysis:', err)
     }
   }
-
 
   const handleAiAnalysis = async () => {
     if (isReadOnly) {
@@ -281,16 +294,26 @@ export default function TopicCard({
     }
   }
 
-
   const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setEditedTitle(e.target.value)
     setHasChanges(true)
   }
+  
   const handleDescriptionChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setEditedDescription(e.target.value)
     setHasChanges(true)
   }
+
+  // ← NEW: Handle Enter key press
+  const handleTitleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && hasChanges && !saving) {
+      e.preventDefault()
+      handleSave()
+    }
+  }
+
   const handleSave = async () => {
+    if (saving) return
     setSaving(true)
     await onUpdate({ title: editedTitle, description: editedDescription })
     setHasChanges(false)
@@ -298,6 +321,7 @@ export default function TopicCard({
     setSaving(false)
     fetchHistory()
   }
+
   const handleEdit = () => {
     if (isReadOnly) {
       alert('You do not have permission to edit topics.')
@@ -306,12 +330,14 @@ export default function TopicCard({
     setIsEditing(true)
     setHasChanges(false)
   }
+
   const handleCancel = () => {
     setEditedTitle(topic.title)
     setEditedDescription(topic.description || "")
     setIsEditing(false)
     setHasChanges(false)
   }
+
   const handleDelete = async () => {
     if (isReadOnly) {
       alert('You do not have permission to delete topics.')
@@ -320,7 +346,6 @@ export default function TopicCard({
     await onDelete(topic.id)
     setShowDeleteConfirm(false)
   }
-
 
   const getHistoryBadgeColor = (type: string) => {
     switch (type) {
@@ -331,10 +356,9 @@ export default function TopicCard({
     }
   }
 
-
   return (
     <>
-      <Card className="border-0 bg-card shadow-md overflow-hidden">
+      <Card className="border-0 bg-card shadow-md overflow-hidden" ref={editingContainerRef}>
         <div className="border-b border-border bg-gradient-to-r from-primary/5 to-decision-purple/5 p-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3 flex-1">
@@ -347,8 +371,10 @@ export default function TopicCard({
               <span className="text-sm font-semibold text-muted-foreground">Topic {topicNumber}</span>
               {isEditing ? (
                 <input
+                  ref={titleInputRef}
                   value={editedTitle}
                   onChange={handleTitleChange}
+                  onKeyDown={handleTitleKeyDown}
                   className="flex-1 bg-background px-2 py-1 rounded border border-primary text-foreground font-semibold focus:outline-none focus:ring-2 focus:ring-primary/50"
                   placeholder="Topic title..."
                   autoFocus
@@ -393,12 +419,12 @@ export default function TopicCard({
           </div>
         </div>
 
-
         {isExpanded && (
           <>
             <div className="p-4 border-b border-border">
               {isEditing ? (
                 <textarea
+                  ref={descriptionTextareaRef}
                   value={editedDescription}
                   onChange={handleDescriptionChange}
                   placeholder="Add description here..."
@@ -454,7 +480,6 @@ export default function TopicCard({
               )}
             </div>
 
-
             {isEditing && !isReadOnly && (
               <div className="px-4 py-3 bg-muted/20 border-b border-border flex gap-2">
                 <Button onClick={handleCancel} variant="outline" className="flex-1"><X className="h-4 w-4 mr-2" />Cancel</Button>
@@ -463,7 +488,6 @@ export default function TopicCard({
                 </Button>
               </div>
             )}
-
 
             {showDeleteConfirm && !isReadOnly && (
               <div className="px-4 py-3 bg-red-50 border-b border-red-200">
@@ -479,7 +503,6 @@ export default function TopicCard({
               </div>
             )}
 
-
             {!isReadOnly && (
               <div className="flex gap-2 border-b border-border bg-muted/30 p-4">
                 <Button size="sm" className="flex-1 bg-note-blue text-white hover:bg-note-blue/90" onClick={onNoteClick}>
@@ -493,7 +516,6 @@ export default function TopicCard({
                 </Button>
               </div>
             )}
-
 
             <div className="p-4 bg-muted/20">
               <h4 className="text-sm font-semibold text-foreground mb-2">History by Type</h4>
@@ -557,7 +579,6 @@ export default function TopicCard({
           </>
         )}
       </Card>
-
 
       {selectedTaskId && (
         <TaskDetailsModal
