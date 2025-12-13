@@ -12,6 +12,7 @@ interface Company {
   created_at: string
   default_meeting_sections?: string[]
   default_meeting_types?: string[]
+  default_decision_results?: string[]  // ← NEW
 }
 
 interface EditCompanyModalProps {
@@ -30,8 +31,10 @@ export default function EditCompanyModal({
   const [companyName, setCompanyName] = useState("")
   const [meetingSections, setMeetingSections] = useState<string[]>([])
   const [meetingTypes, setMeetingTypes] = useState<string[]>([])
+  const [decisionResults, setDecisionResults] = useState<string[]>([])  // ← NEW
   const [editingSectionIdx, setEditingSectionIdx] = useState<number | null>(null)
   const [editingTypeIdx, setEditingTypeIdx] = useState<number | null>(null)
+  const [editingResultIdx, setEditingResultIdx] = useState<number | null>(null)  // ← NEW
   const [editingValue, setEditingValue] = useState("")
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -56,6 +59,12 @@ export default function EditCompanyModal({
         "SGM",
         "Special Meeting",
         "Emergency Meeting"
+      ])
+      // ← NEW: Decision Results
+      setDecisionResults(company.default_decision_results || [
+        "M/S/C",
+        "Defeated",
+        "Deferred"
       ])
     }
   }, [company])
@@ -94,6 +103,23 @@ export default function EditCompanyModal({
     }
   }
 
+  // ← NEW: Decision result editing
+  const handleAddResult = () => setDecisionResults([...decisionResults, "New Result"])
+  const handleDeleteResult = (idx: number) => setDecisionResults(decisionResults.filter((_, i) => i !== idx))
+  const handleEditResult = (idx: number) => {
+    setEditingResultIdx(idx)
+    setEditingValue(decisionResults[idx])
+  }
+  const handleSaveResultEdit = () => {
+    if (editingResultIdx !== null) {
+      const updated = [...decisionResults]
+      updated[editingResultIdx] = editingValue
+      setDecisionResults(updated)
+      setEditingResultIdx(null)
+      setEditingValue("")
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
@@ -113,6 +139,7 @@ export default function EditCompanyModal({
           name: companyName.trim(),
           default_meeting_sections: meetingSections,
           default_meeting_types: meetingTypes,
+          default_decision_results: decisionResults,  // ← NEW
           updated_at: new Date().toISOString()
         })
         .eq('id', company.id)
@@ -310,6 +337,76 @@ export default function EditCompanyModal({
             >
               <Plus className="h-4 w-4 mr-2" />
               Add Type
+            </Button>
+          </div>
+
+          {/* ← NEW: Default Decision Results */}
+          <div>
+            <label className="block text-sm font-semibold text-foreground mb-3">
+              Decision Result Options
+            </label>
+            <p className="text-xs text-muted-foreground mb-3">
+              Customize the dropdown options for decision results (e.g., M/S/C, Defeated, Deferred)
+            </p>
+            <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+              {decisionResults.map((result, idx) =>
+                editingResultIdx === idx ? (
+                  <div key={idx} className="flex items-center gap-2 p-3 bg-primary/5 border border-primary/20 rounded-lg">
+                    <input
+                      type="text"
+                      value={editingValue}
+                      onChange={e => setEditingValue(e.target.value)}
+                      className="flex-1 px-3 py-2 bg-background text-foreground rounded-md border border-border focus:outline-none focus:ring-2 focus:ring-primary/50"
+                      autoFocus
+                    />
+                    <Button 
+                      variant="default" 
+                      size="sm" 
+                      onClick={handleSaveResultEdit} 
+                      type="button"
+                      className="bg-primary hover:bg-primary/90"
+                    >
+                      <Save className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ) : (
+                  <div key={idx} className="flex items-center justify-between gap-3 p-3 bg-muted/50 hover:bg-muted rounded-lg border border-border/50 transition-colors group">
+                    <span className="flex-1 text-sm font-medium">{result}</span>
+                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        title="Edit" 
+                        type="button" 
+                        onClick={() => handleEditResult(idx)}
+                        className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary"
+                      >
+                        <Edit2 className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        title="Delete" 
+                        type="button" 
+                        onClick={() => handleDeleteResult(idx)}
+                        className="h-8 w-8 p-0 hover:bg-red-100 hover:text-red-600"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                )
+              )}
+            </div>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              type="button" 
+              onClick={handleAddResult}
+              className="w-full mt-3 border-dashed hover:bg-primary/5 hover:border-primary/50 hover:text-primary"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Add Result Option
             </Button>
           </div>
 
