@@ -2,8 +2,8 @@
 
 import type React from "react"
 
-import { useState } from "react"
-import { X, Upload } from "lucide-react"
+import { useState, useEffect } from "react"
+import { X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { supabase, getCurrentUser } from "@/lib/supabase"
@@ -17,19 +17,81 @@ interface DecisionModalProps {
 export default function DecisionModal({ topicId, onClose, onSave }: DecisionModalProps) {
   const [formData, setFormData] = useState({
     motionText: "",
-    result: "carried" as "moved" | "seconded" | "carried" | "defeated" | "deferred",
+    result: "",
     votesFor: 0,
     votesAgainst: 0,
+    votesAbstain: 0,  // ← NEW: Abstain field
   })
+  const [decisionResultOptions, setDecisionResultOptions] = useState<string[]>([
+    "M/S/C",
+    "Defeated", 
+    "Deferred"
+  ])  // ← NEW: Company-specific options
   const [fileName, setFileName] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // ← NEW: Fetch company's decision result options
+  useEffect(() => {
+    async function fetchCompanyDecisionOptions() {
+      try {
+        // Get the topic to find the meeting
+        const { data: topic } = await supabase
+          .from('topics')
+          .select('meeting_id')
+          .eq('id', topicId)
+          .single()
+
+        if (!topic) return
+
+        // Get the meeting to find the building
+        const { data: meeting } = await supabase
+          .from('meetings')
+          .select('building_id')
+          .eq('id', topic.meeting_id)
+          .single()
+
+        if (!meeting) return
+
+        // Get the building to find the company
+        const { data: building } = await supabase
+          .from('buildings')
+          .select('company_id')
+          .eq('id', meeting.building_id)
+          .single()
+
+        if (!building?.company_id) return
+
+        // Get the company's decision result options
+        const { data: company } = await supabase
+          .from('companies')
+          .select('default_decision_results')
+          .eq('id', building.company_id)
+          .single()
+
+        if (company?.default_decision_results && company.default_decision_results.length > 0) {
+          setDecisionResultOptions(company.default_decision_results)
+          setFormData(prev => ({ ...prev, result: company.default_decision_results[0] }))
+        } else {
+          // Fallback to defaults
+          setFormData(prev => ({ ...prev, result: "M/S/C" }))
+        }
+      } catch (err) {
+        console.error('Error fetching company decision options:', err)
+        setFormData(prev => ({ ...prev, result: "M/S/C" }))
+      }
+    }
+
+    fetchCompanyDecisionOptions()
+  }, [topicId])
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target
     setFormData((prev) => ({
       ...prev,
-      [name]: name === "votesFor" || name === "votesAgainst" ? parseInt(value) || 0 : value,
+      [name]: name === "votesFor" || name === "votesAgainst" || name === "votesAbstain" 
+        ? parseInt(value) || 0 
+        : value,
     }))
   }
 
@@ -61,7 +123,8 @@ export default function DecisionModal({ topicId, onClose, onSave }: DecisionModa
         result: formData.result,
         votes_for: formData.votesFor,
         votes_against: formData.votesAgainst,
-        recorded_by: currentUser.id
+        votes_abstain: formData.votesAbstain // ← NEW
+        //recorded_by: currentUser.id
       }
 
       console.log('Inserting decision with data:', insertData)
@@ -133,17 +196,19 @@ export default function DecisionModal({ topicId, onClose, onSave }: DecisionModa
               value={formData.result}
               onChange={handleInputChange}
               disabled={saving}
+              required
               className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-decision-purple/50 disabled:opacity-50"
             >
-              <option value="moved">Moved</option>
-              <option value="seconded">Seconded</option>
-              <option value="carried">Carried</option>
-              <option value="defeated">Defeated</option>
-              <option value="deferred">Deferred</option>
+              {decisionResultOptions.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
             </select>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          {/* ← NEW: 3-column grid with Abstain */}
+          <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="block text-sm font-medium text-foreground mb-2">Votes For</label>
               <input
@@ -162,6 +227,18 @@ export default function DecisionModal({ topicId, onClose, onSave }: DecisionModa
                 type="number"
                 name="votesAgainst"
                 value={formData.votesAgainst}
+                onChange={handleInputChange}
+                min="0"
+                disabled={saving}
+                className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-decision-purple/50 disabled:opacity-50"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-2">Abstain</label>
+              <input
+                type="number"
+                name="votesAbstain"
+                value={formData.votesAbstain}
                 onChange={handleInputChange}
                 min="0"
                 disabled={saving}
