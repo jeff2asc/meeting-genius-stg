@@ -123,7 +123,7 @@ export default function DecisionModal({ topicId, onClose, onSave }: DecisionModa
         result: formData.result,
         votes_for: formData.votesFor,
         votes_against: formData.votesAgainst,
-        votes_abstain: formData.votesAbstain // ← NEW
+        votes_abstain: formData.votesAbstain  // ← NEW
         //recorded_by: currentUser.id
       }
 
