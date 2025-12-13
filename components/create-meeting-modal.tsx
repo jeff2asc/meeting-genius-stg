@@ -229,31 +229,24 @@ export default function CreateMeetingModal({ onClose, onSuccess, buildings }: Cr
         }
 
         // ============================================
-        // Step 2.6: Copy attendees from previous meeting
+        // Step 2.6: Copy attendees JSONB from previous meeting
         // ============================================
-        const { data: previousAttendees, error: attendeesError } = await supabase
-          .from('attendees')
-          .select('user_id, role, attendance_status')
-          .eq('meeting_id', previousMeeting.id)
-
-        if (attendeesError) {
-          console.error('Error fetching attendees from previous meeting:', attendeesError)
-        } else if (previousAttendees && previousAttendees.length > 0) {
-          const attendeesToInsert = previousAttendees.map(attendee => ({
-            meeting_id: meetingData.id,
-            user_id: attendee.user_id,
-            role: attendee.role,
-            attendance_status: 'pending' // Reset to pending for new meeting
+        if (previousMeeting.attendees && Array.isArray(previousMeeting.attendees) && previousMeeting.attendees.length > 0) {
+          // Reset attendance status to 'pending' for all attendees
+          const attendeesForNewMeeting = previousMeeting.attendees.map((attendee: any) => ({
+            ...attendee,
+            attendance_status: 'pending' // Reset for new meeting
           }))
 
-          const { error: insertAttendeesError } = await supabase
-            .from('attendees')
-            .insert(attendeesToInsert)
+          const { error: updateAttendeesError } = await supabase
+            .from('meetings')
+            .update({ attendees: attendeesForNewMeeting })
+            .eq('id', meetingData.id)
 
-          if (insertAttendeesError) {
-            console.error('Error inserting attendees:', insertAttendeesError)
+          if (updateAttendeesError) {
+            console.error('Error copying attendees:', updateAttendeesError)
           } else {
-            console.log(`✅ Rolled over ${previousAttendees.length} attendees to new meeting`)
+            console.log(`✅ Rolled over ${attendeesForNewMeeting.length} attendees to new meeting`)
           }
         }
 

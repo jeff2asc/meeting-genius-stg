@@ -267,13 +267,16 @@ export type Database = {
 /**
  * Get the most recent finalized meeting of the same type for a building
  */
+/**
+ * Get the most recent finalized meeting of the same type for a building
+ */
 export async function getPreviousMeetingOfSameType(
   buildingId: number,
   meetingType: string
 ) {
   const { data, error } = await supabase
     .from('meetings')
-    .select('id, title, meeting_date')
+    .select('id, title, meeting_date, attendees')  // ← ADDED attendees
     .eq('building_id', buildingId)
     .eq('meeting_type', meetingType)
     .eq('status', 'minutes') // Only finalized meetings
@@ -288,6 +291,7 @@ export async function getPreviousMeetingOfSameType(
 
   return data
 }
+
 
 /**
  * Get all sections from a meeting
