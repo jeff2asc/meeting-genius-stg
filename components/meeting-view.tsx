@@ -709,6 +709,7 @@ export default function MeetingView({
                   .eq("id", meetingId)
                 await fetchMeetingData()
               }}
+              onClose={() => setShowAttendeesModal(false)}
             />
             <Button
               onClick={() => setShowAttendeesModal(false)}
