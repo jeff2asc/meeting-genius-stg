@@ -4,6 +4,8 @@ import { useState } from "react"
 import { FileText, Download, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { supabase } from "@/lib/supabase"
+import jsPDF from "jspdf"
+import html2canvas from "html2canvas"
 
 interface GenerateMinutesButtonProps {
   meetingId: string
@@ -93,22 +95,58 @@ export default function GenerateMinutesButton({ meetingId, buildingId }: Generat
       // Step 4: Generate HTML
       const minutesHtml = generateMinutesHtml(template, meeting, sections || [])
 
-      // Step 5: Open in new window for printing
-      const printWindow = window.open('', '_blank')
-      if (printWindow) {
-        printWindow.document.write(minutesHtml)
-        printWindow.document.close()
-        printWindow.focus()
-        
-        // Auto-trigger print dialog after a short delay
-        setTimeout(() => {
-          printWindow.print()
-        }, 500)
+      // Step 5: Create a temporary div to render HTML
+      const tempDiv = document.createElement('div')
+      tempDiv.innerHTML = minutesHtml
+      tempDiv.style.position = 'absolute'
+      tempDiv.style.left = '-9999px'
+      tempDiv.style.width = '8.5in'
+      tempDiv.style.padding = '20px'
+      document.body.appendChild(tempDiv)
+
+      // Step 6: Convert HTML to Canvas
+      const canvas = await html2canvas(tempDiv, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff'
+      })
+
+      // Step 7: Remove temporary div
+      document.body.removeChild(tempDiv)
+
+      // Step 8: Create PDF
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'in',
+        format: 'letter'
+      })
+
+      const imgData = canvas.toDataURL('image/png')
+      const imgWidth = 8.5
+      const imgHeight = (canvas.height * imgWidth) / canvas.width
+
+      let heightLeft = imgHeight
+      let position = 0.5
+
+      pdf.addImage(imgData, 'PNG', 0.5, position, imgWidth - 1, imgHeight)
+      heightLeft -= 7
+
+      while (heightLeft >= 0) {
+        position = heightLeft - imgHeight + 0.5
+        pdf.addPage()
+        pdf.addImage(imgData, 'PNG', 0.5, position, imgWidth - 1, imgHeight)
+        heightLeft -= 7
       }
 
+      // Step 9: Download PDF
+      const fileName = `${meeting.title}_Minutes_${new Date().toISOString().split('T')[0]}.pdf`
+      pdf.save(fileName)
+
+      alert('✅ Minutes PDF downloaded successfully!')
     } catch (err) {
       console.error('Error generating minutes:', err)
-      alert('Failed to generate minutes')
+      alert('Failed to generate PDF. Please try again.')
     } finally {
       setGenerating(false)
     }
@@ -127,8 +165,8 @@ export default function GenerateMinutesButton({ meetingId, buildingId }: Generat
         </>
       ) : (
         <>
-          <FileText className="h-4 w-4 mr-2" />
-          Generate Minutes PDF
+          <Download className="h-4 w-4 mr-2" />
+          Download Minutes PDF
         </>
       )}
     </Button>
@@ -205,17 +243,12 @@ function generateMinutesHtml(template: TemplateConfig, meeting: any, sections: a
       <meta charset="UTF-8">
       <title>${meeting.title} - Minutes</title>
       <style>
-        @media print {
-          @page { margin: 0.5in; }
-          body { margin: 0; }
-        }
         body {
           font-family: Arial, sans-serif;
           line-height: 1.6;
           color: #333;
-          max-width: 8.5in;
-          margin: 0 auto;
-          padding: 20px;
+          margin: 0;
+          padding: 0;
         }
         .section {
           margin-bottom: 30px;

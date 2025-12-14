@@ -1,4 +1,4 @@
-"use strict";(self.webpackChunk_N_E=self.webpackChunk_N_E||[]).push([[309],{5294:(e,t,r)=>{r.d(t,{JY:()=>nV,gL:()=>lO,sx:()=>n9});var n=r(2115),l=r(7650),i=r(52),a=r(4540),o=r(5889),d=r(7380),s=r(9630);let u=/[ \t]{2,}/g,c=/^[ \t]*/gm,p=e=>e.replace(u," ").replace(c,"").trim(),f=e=>p(`
+"use strict";(self.webpackChunk_N_E=self.webpackChunk_N_E||[]).push([[309],{35294:(e,t,r)=>{r.d(t,{JY:()=>nV,gL:()=>lO,sx:()=>n9});var n=r(12115),l=r(47650),i=r(52),a=r(34540),o=r(25889),d=r(27380),s=r(79630);let u=/[ \t]{2,}/g,c=/^[ \t]*/gm,p=e=>e.replace(u," ").replace(c,"").trim(),f=e=>p(`
   %c@hello-pangea/dnd
 
   %c${p(e)}
