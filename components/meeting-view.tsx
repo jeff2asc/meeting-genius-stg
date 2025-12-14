@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import GenerateMinutesButton from "./GenerateMinutesButton"
 import {
   ArrowLeft, Plus, Trash, Pencil, ChevronDown, ChevronRight, Calendar,
   Clock, MapPin, FileText, Edit2, Play, CheckCircle, ChevronLeft
@@ -618,18 +619,25 @@ export default function MeetingView({
               </div>
             </div>
             <div className="flex items-center gap-4">
-              {userCanEdit &&
-                (meeting.status === "working_agenda" || meeting.status === "working_minutes") && (
-                  <Button
-                    onClick={handleCreateSection}
-                    variant="outline"
-                    className="border-primary text-primary hover:bg-primary/10"
-                  >
-                    <Plus className="h-4 w-4 mr-2" />
-                    Create Section
-                  </Button>
-                )}
-              {isMounted && isRecording && <Timer elapsedTime={elapsedTime} />}
+  {userCanEdit &&
+    (meeting.status === "working_agenda" || meeting.status === "working_minutes") && (
+      <Button
+        onClick={handleCreateSection}
+        variant="outline"
+        className="border-primary text-primary hover:bg-primary/10"
+      >
+        <Plus className="h-4 w-4 mr-2" />
+        Create Section
+      </Button>
+    )}
+  {meeting.status === "minutes" && (
+    <GenerateMinutesButton 
+      meetingId={meetingId} 
+      buildingId={meeting.building_id} 
+    />
+  )}
+  {isMounted && isRecording && <Timer elapsedTime={elapsedTime} />}
+
               {isMounted && userCanEdit && (
                 <>
                   {!isRecording ? (
