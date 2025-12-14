@@ -44,77 +44,189 @@ ${g}`}({domain:v.host,address:w,statement:m,uri:v.href,version:"1",chainId:y,non
           *,
           topics(
             *,
-            notes(*),
-            tasks(*),
-            decisions(*)
+            notes(content, created_at),
+            tasks(description, assigned_name, assigned_email, due_date, status),
+            decisions(motion_text, result, votes_for, votes_against, votes_abstain)
           )
         `).eq("meeting_id",e).order("order_index"),A=function(e,t,r){let a=t.buildings,n=`
-    <div style="color: #333;">
-      <h1 style="text-align: center; color: #1a1a1a; border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 30px; font-size: 24px;">
-        ${aH(t.title)}
-      </h1>
+    <h1 style="text-align: center; border-bottom: 2px solid #1f2937; padding-bottom: 12px; margin-bottom: 25px;">
+      ${aH(t.title)}
+    </h1>
   `;return e.sections.forEach(e=>{var i,s,o,A;let l,d;"header"===e.id?n+=function(e,t,r){let a=e.fields.filter(e=>e.visible).sort((e,t)=>e.order-t.order),n=`
-    <div style="margin-bottom: 30px;">
-      <div style="padding: 12px; margin-bottom: 15px; background-color: #f8f9fa; font-weight: bold; font-size: 18px; border-radius: 4px;">
+    <div class="section">
+      <div class="section-header">
         ${e.icon} ${e.label}
       </div>`;return a.forEach(e=>{let a="";switch(e.id){case"building_name":a=r?.name||"N/A";break;case"meeting_type":a=t.meeting_type||"N/A";break;case"meeting_date":a=t.meeting_date?new Date(t.meeting_date+"T00:00:00Z").toLocaleDateString("en-US",{weekday:"long",year:"numeric",month:"long",day:"numeric",timeZone:"UTC"}):"N/A";break;case"start_time":a=t.start_time||"N/A";break;case"location":a=t.location||"N/A";break;case"strata_plan":a=t.strata_plan_number||"N/A"}n+=`
-      <div style="margin-bottom: 8px; line-height: 1.6;">
-        <strong>${aH(e.label)}:</strong> ${aH(a)}
+      <div class="field-row">
+        <span class="field-label">${aH(e.label)}:</span>
+        <span class="field-value">${aH(a)}</span>
       </div>`}),n+="</div>"}(e,t,a):"attendees"===e.id?n+=(i=e,s=t.attendees||[],l=`
-    <div style="margin-bottom: 30px;">
-      <div style="padding: 12px; margin-bottom: 15px; background-color: #f8f9fa; font-weight: bold; font-size: 18px; border-radius: 4px;">
+    <div class="section">
+      <div class="section-header">
         ${i.icon} ${i.label}
       </div>
-      <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+      <table>
         <thead>
-          <tr style="background-color: #f3f4f6;">
-            <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Name</th>
-            <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Role</th>
-            <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Status</th>
+          <tr>
+            <th>Name</th>
+            <th>Role</th>
+            <th>Status</th>
           </tr>
         </thead>
         <tbody>`,s.forEach(e=>{l+=`
       <tr>
-        <td style="border: 1px solid #ddd; padding: 8px;">${aH(e.name)}</td>
-        <td style="border: 1px solid #ddd; padding: 8px;">${aH(e.role||"-")}</td>
-        <td style="border: 1px solid #ddd; padding: 8px;">${e.present?"✓ Present":"✗ Absent"}</td>
+        <td>${aH(e.name)}</td>
+        <td>${aH(e.role||"-")}</td>
+        <td>${e.present?"✓ Present":"✗ Absent"}</td>
       </tr>`}),l+="</tbody></table></div>"):"topics"===e.id?n+=(o=r,d=`
-    <div style="margin-bottom: 30px;">
-      <div style="padding: 12px; margin-bottom: 15px; background-color: #f8f9fa; font-weight: bold; font-size: 18px; border-radius: 4px;">
+    <div class="section">
+      <div class="section-header">
         📝 Topics & Discussion
-      </div>`,o.forEach((e,t)=>{d+=`<h3 style="margin: 20px 0 10px 0; font-size: 16px;">${t+1}. ${aH(e.title)}</h3>`,e.topics&&e.topics.length>0&&e.topics.forEach((e,r)=>{d+=`
-          <div style="margin-bottom: 20px; padding: 15px; border: 1px solid #ddd; background: #fafafa; border-radius: 4px;">
-            <div style="font-weight: bold; margin-bottom: 10px; font-size: 15px;">
-              ${t+1}.${r+1} ${aH(e.title)}
-            </div>`,e.description&&(d+=`<div style="margin-bottom: 10px; color: #555;">${aH(e.description)}</div>`),e.notes&&e.notes.length>0&&e.notes.forEach(e=>{d+=`<div style="margin: 10px 0; padding: 10px; border-left: 4px solid #3b82f6; background: white;"><strong>📝 Note:</strong> ${aH(e.content)}</div>`}),e.tasks&&e.tasks.length>0&&e.tasks.forEach(e=>{let t=e.assigned_name||e.assigned_email||"Unassigned",r=e.due_date?` (Due: ${new Date(e.due_date).toLocaleDateString()})`:"";d+=`<div style="margin: 10px 0; padding: 10px; border-left: 4px solid #10b981; background: white;"><strong>✓ Task:</strong> ${aH(e.description)} - Assigned to: ${aH(t)}${r}</div>`}),e.decisions&&e.decisions.length>0&&e.decisions.forEach(e=>{let t=null!==e.votes_for?` (For: ${e.votes_for||0}, Against: ${e.votes_against||0}, Abstain: ${e.votes_abstain||0})`:"";d+=`<div style="margin: 10px 0; padding: 10px; border-left: 4px solid #8b5cf6; background: white;"><strong>⚖️ Decision:</strong> ${aH(e.motion_text)} - <strong>Result:</strong> ${aH(e.result||"N/A")}${t}</div>`}),d+="</div>"})}),d+="</div>"):"footer"===e.id&&(n+=(A=e,`
-    <div style="margin-top: 40px;">
-      <div style="padding: 12px; margin-bottom: 15px; background-color: #f8f9fa; font-weight: bold; font-size: 18px; border-radius: 4px;">
+      </div>`,o.forEach((e,t)=>{d+=`<h2>${t+1}. ${aH(e.title)}</h2>`,e.topics&&e.topics.length>0?e.topics.forEach((e,r)=>{d+=`
+          <div class="topic-box">
+            <div class="topic-title">${t+1}.${r+1} ${aH(e.title)}</div>`,e.description&&(d+=`<div class="topic-description">${aH(e.description)}</div>`),e.notes&&e.notes.length>0&&e.notes.forEach(e=>{d+=`<div class="item item-note"><span class="item-label">📝 Note:</span>${aH(e.content)}</div>`}),e.tasks&&e.tasks.length>0&&e.tasks.forEach(e=>{let t=e.assigned_name||e.assigned_email||"Unassigned",r=e.due_date?` (Due: ${new Date(e.due_date).toLocaleDateString()})`:"";d+=`<div class="item item-task"><span class="item-label">✓ Task:</span>${aH(e.description)} - Assigned: ${aH(t)}${r}</div>`}),e.decisions&&e.decisions.length>0&&e.decisions.forEach(e=>{let t=null!==e.votes_for?` (For: ${e.votes_for||0}, Against: ${e.votes_against||0}, Abstain: ${e.votes_abstain||0})`:"";d+=`<div class="item item-decision"><span class="item-label">⚖️ Decision:</span>${aH(e.motion_text)} - Result: ${aH(e.result||"N/A")}${t}</div>`}),d+="</div>"}):d+='<p style="padding: 15px; color: #6b7280; font-style: italic;">No topics recorded for this section.</p>'}),d+="</div>"):"footer"===e.id&&(n+=(A=e,`
+    <div class="footer-signatures">
+      <div class="section-header">
         ${A.icon} ${A.label}
       </div>
-      <div style="margin-bottom: 20px; line-height: 2;">
-        <div><strong>Meeting Adjourned:</strong> _______________________</div>
-        <div><strong>Minutes Prepared By:</strong> _______________________</div>
-        <div><strong>Signature:</strong> _______________________</div>
-        <div><strong>Date:</strong> _______________________</div>
+      <div class="signature-line">
+        <strong>Meeting Adjourned:</strong> ________________________________
       </div>
-    </div>`))}),n+="</div>"}(n,i,o||[]),l=document.createElement("iframe");l.style.position="absolute",l.style.left="-9999px",l.style.width="816px",l.style.height="1056px",document.body.appendChild(l);let d=l.contentDocument||l.contentWindow?.document;if(!d)throw Error("Cannot access iframe document");d.open(),d.write(`
+      <div class="signature-line">
+        <strong>Minutes Prepared By:</strong> ________________________________
+      </div>
+      <div class="signature-line">
+        <strong>Signature:</strong> ________________________________
+      </div>
+      <div class="signature-line">
+        <strong>Date:</strong> ________________________________
+      </div>
+    </div>`))}),n}(n,i,o||[]),l=document.createElement("iframe");l.style.position="absolute",l.style.left="-9999px",l.style.width="210mm",l.style.border="none",document.body.appendChild(l);let d=l.contentDocument||l.contentWindow?.document;if(!d)throw Error("Cannot access iframe document");d.open(),d.write(`
         <!DOCTYPE html>
         <html>
         <head>
           <meta charset="UTF-8">
           <style>
-            * { margin: 0; padding: 0; box-sizing: border-box; }
+            @page { 
+              size: letter; 
+              margin: 0.75in; 
+            }
+            * { 
+              margin: 0; 
+              padding: 0; 
+              box-sizing: border-box; 
+            }
             body { 
-              font-family: Arial, sans-serif; 
-              width: 816px; 
-              padding: 40px;
+              font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+              font-size: 11pt;
+              line-height: 1.5;
+              color: #333;
               background: white;
+              padding: 0;
+              margin: 0;
+            }
+            h1 { 
+              font-size: 20pt; 
+              margin-bottom: 20px;
+              page-break-after: avoid;
+            }
+            h2 { 
+              font-size: 14pt; 
+              margin: 15px 0 10px 0;
+              page-break-after: avoid;
+            }
+            h3 { 
+              font-size: 12pt; 
+              margin: 12px 0 8px 0;
+              page-break-after: avoid;
+            }
+            .section { 
+              margin-bottom: 25px;
+              page-break-inside: avoid;
+            }
+            .section-header {
+              background-color: #f0f4f8;
+              padding: 10px 15px;
+              border-left: 4px solid #2563eb;
+              margin-bottom: 12px;
+              font-size: 14pt;
+              font-weight: bold;
+            }
+            .field-row {
+              padding: 5px 0;
+              display: flex;
+            }
+            .field-label {
+              font-weight: 600;
+              min-width: 160px;
+              color: #1f2937;
+            }
+            .field-value {
+              color: #4b5563;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              margin: 10px 0;
+            }
+            th {
+              background-color: #e5e7eb;
+              padding: 8px 12px;
+              text-align: left;
+              font-weight: 600;
+              border: 1px solid #d1d5db;
+            }
+            td {
+              padding: 8px 12px;
+              border: 1px solid #d1d5db;
+            }
+            .topic-box {
+              border: 1px solid #e5e7eb;
+              border-radius: 6px;
+              padding: 15px;
+              margin-bottom: 15px;
+              background: #fafbfc;
+              page-break-inside: avoid;
+            }
+            .topic-title {
+              font-weight: bold;
+              font-size: 12pt;
+              color: #1f2937;
+              margin-bottom: 8px;
+            }
+            .topic-description {
+              color: #6b7280;
+              margin-bottom: 10px;
+              line-height: 1.6;
+            }
+            .item {
+              margin: 8px 0;
+              padding: 10px 12px;
+              border-left: 3px solid;
+              background: white;
+              font-size: 10pt;
+            }
+            .item-note { border-color: #3b82f6; }
+            .item-task { border-color: #10b981; }
+            .item-decision { border-color: #8b5cf6; }
+            .item-label {
+              font-weight: 600;
+              margin-right: 5px;
+            }
+            .footer-signatures {
+              margin-top: 30px;
+              padding-top: 20px;
+              border-top: 1px solid #e5e7eb;
+            }
+            .signature-line {
+              margin: 15px 0;
+              padding: 8px 0;
             }
           </style>
         </head>
         <body>${A}</body>
         </html>
-      `),d.close(),await new Promise(e=>setTimeout(e,1e3));let c=await (0,aR.default)(d.body,{scale:2,backgroundColor:"#ffffff",logging:!1,width:816,height:d.body.scrollHeight});document.body.removeChild(l);let u=new aP.Ay({orientation:"portrait",unit:"px",format:[816,1056]}),p=c.toDataURL("image/png",1),h=c.height,f=h,m=0;for(u.addImage(p,"PNG",0,m,816,h),f-=1056;f>0;)m=f-h,u.addPage(),u.addImage(p,"PNG",0,m,816,h),f-=1056;let g=`${i.title.replace(/[^a-z0-9]/gi,"_")}_Minutes_${new Date().toISOString().split("T")[0]}.pdf`;u.save(g),alert("✅ Minutes PDF downloaded successfully!")}catch(e){console.error("Error generating minutes:",e),alert("Failed to generate PDF. Please try again.")}finally{a(!1)}};return(0,v.jsx)(eV,{onClick:n,disabled:r,className:"bg-gradient-to-r from-primary to-decision-purple text-white",children:r?(0,v.jsxs)(v.Fragment,{children:[(0,v.jsx)(aO,{className:"h-4 w-4 mr-2 animate-spin"}),"Generating..."]}):(0,v.jsxs)(v.Fragment,{children:[(0,v.jsx)(aD,{className:"h-4 w-4 mr-2"}),"Download Minutes PDF"]})})}function aH(e){if(!e)return"";let t=document.createElement("div");return t.textContent=e,t.innerHTML}let aV=N("ArrowLeft",[["path",{d:"m12 19-7-7 7-7",key:"1l729n"}],["path",{d:"M19 12H5",key:"x3x0zl"}]]),aK=N("ChevronLeft",[["path",{d:"m15 18-6-6 6-6",key:"1wnfg3"}]]),az=N("MapPin",[["path",{d:"M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0",key:"1r0f0z"}],["circle",{cx:"12",cy:"10",r:"3",key:"ilqhr7"}]]),aG=N("ChevronRight",[["path",{d:"m9 18 6-6-6-6",key:"mthhwq"}]]),aq=N("Pencil",[["path",{d:"M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z",key:"1a8usu"}],["path",{d:"m15 5 4 4",key:"1mk7zo"}]]),aW=N("Trash",[["path",{d:"M3 6h18",key:"d0wm0j"}],["path",{d:"M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6",key:"4alrt4"}],["path",{d:"M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2",key:"v07s0e"}]]),a$=q("inline-flex items-center justify-center rounded-md border px-2 py-0.5 text-xs font-medium w-fit whitespace-nowrap shrink-0 [&>svg]:size-3 gap-1 [&>svg]:pointer-events-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive transition-[color,box-shadow] overflow-hidden",{variants:{variant:{default:"border-transparent bg-primary text-primary-foreground [a&]:hover:bg-primary/90",secondary:"border-transparent bg-secondary text-secondary-foreground [a&]:hover:bg-secondary/90",destructive:"border-transparent bg-destructive text-white [a&]:hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/60",outline:"text-foreground [a&]:hover:bg-accent [a&]:hover:text-accent-foreground"}},defaultVariants:{variant:"default"}});function aY({className:e,variant:t,asChild:r=!1,...a}){let n=r?M:"span";return(0,v.jsx)(n,{"data-slot":"badge",className:eM(a$({variant:t}),e),...a})}let aX=N("Paperclip",[["path",{d:"m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48",key:"1u3ebp"}]]),aJ=N("Scale",[["path",{d:"m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z",key:"7g6ntu"}],["path",{d:"m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z",key:"ijws7r"}],["path",{d:"M7 21h10",key:"1b0cd5"}],["path",{d:"M12 3v18",key:"108xh3"}],["path",{d:"M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2",key:"3gwbw2"}]]),aZ=N("Sparkles",[["path",{d:"M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z",key:"4pj2yx"}],["path",{d:"M20 3v4",key:"1olli1"}],["path",{d:"M22 5h-4",key:"1gvqau"}],["path",{d:"M4 17v2",key:"vumght"}],["path",{d:"M5 18H3",key:"zchphs"}]]),a1=N("Check",[["path",{d:"M20 6 9 17l-5-5",key:"1gmf2c"}]]);function a0({topic:e,topicNumber:t,meetingId:r,onUpdate:a,onDelete:n,onTaskClick:i,onNoteClick:s,onDecisionClick:o,onRegisterRefresh:A,isReadOnly:l=!1}){let[d,c]=(0,b.useState)(!0),[u,p]=(0,b.useState)(!1),[h,f]=(0,b.useState)(e.title),[m,g]=(0,b.useState)(e.description||""),[w,y]=(0,b.useState)(!1),[x,B]=(0,b.useState)(!1),[C,_]=(0,b.useState)(!1),[N,E]=(0,b.useState)([]),[F,Q]=(0,b.useState)(!1),[T,L]=(0,b.useState)(!1),[O,D]=(0,b.useState)(null),[P,R]=(0,b.useState)(!1),[M,H]=(0,b.useState)(null),V=(0,b.useRef)(null),K=(0,b.useRef)(null),z=(0,b.useRef)(null),G=async()=>{Q(!0);try{let t=[],{data:r}=await aN.from("notes").select("id, content, created_at").eq("topic_id",e.id).order("created_at",{ascending:!1});r&&r.forEach(e=>{t.push({id:e.id,type:"note",content:e.content.substring(0,100)+(e.content.length>100?"...":""),timestamp:new Date(e.created_at).toLocaleString()})});let{data:a}=await aN.from("topics").select("title, meeting_id, meetings!inner(building_id, meeting_type)").eq("id",e.id).single();if(a){let e=a.meetings,r=e?.building_id,n=e?.meeting_type,{data:i}=await aN.from("meetings").select("id").eq("building_id",r).eq("meeting_type",n);if(i){let e=i.map(e=>e.id),{data:r}=await aN.from("topics").select("id").in("meeting_id",e).eq("title",a.title);if(r){let e=r.map(e=>e.id),{data:a}=await aN.from("tasks").select("id, description, assigned_name, assigned_email, status, created_at").in("topic_id",e).in("status",["open","in_progress"]).order("created_at",{ascending:!1});a&&a.forEach(e=>{let r=e.assigned_name||e.assigned_email||"Unassigned";t.push({id:e.id,type:"task",content:e.description.substring(0,100)+(e.description.length>100?"...":""),timestamp:new Date(e.created_at).toLocaleString(),details:`Assigned to: ${r} • Status: ${e.status}`})})}}}let{data:n}=await aN.from("decisions").select("id, motion_text, result, votes_for, votes_against, recorded_at").eq("topic_id",e.id).order("recorded_at",{ascending:!1});n&&n.forEach(e=>{let r=null!==e.votes_for||null!==e.votes_against?` • Votes: ${e.votes_for||0} for, ${e.votes_against||0} against`:"";t.push({id:e.id,type:"decision",content:e.motion_text.substring(0,100)+(e.motion_text.length>100?"...":""),timestamp:new Date(e.recorded_at).toLocaleString(),details:`Result: ${e.result||"N/A"}${r}`})}),t.sort((e,t)=>new Date(t.timestamp).getTime()-new Date(e.timestamp).getTime()),E(t)}catch(e){console.error("Error fetching history:",e)}finally{Q(!1)}},q=async()=>{try{let{data:t}=await aN.from("ai_analyses").select("analysis_result").eq("topic_id",e.id).order("created_at",{ascending:!1}).limit(1).single();t&&D(t.analysis_result)}catch(e){console.error("Error fetching AI analysis:",e)}},W=async()=>{if(l){alert("You do not have permission to analyze topics.");return}if(!e.description||""===e.description.trim()){alert("Please add a description first before analyzing with AI");return}L(!0),R(!1);try{let{data:t,error:r}=await aN.from("topics").select(`
+      `),d.close(),await new Promise(e=>setTimeout(e,1500));let c=new aP.Ay({orientation:"portrait",unit:"mm",format:"letter"}),u=c.internal.pageSize.getWidth(),p=c.internal.pageSize.getHeight(),h=await (0,aR.default)(d.body,{scale:2,backgroundColor:"#ffffff",logging:!1,useCORS:!0,windowWidth:793.700787411});document.body.removeChild(l);let f=h.toDataURL("image/jpeg",.95),m=u-20,g=h.height*m/h.width,v=g,b=10;for(c.addImage(f,"JPEG",10,b,m,g),v-=p-20;v>0;)b=v-g+10,c.addPage(),c.addImage(f,"JPEG",10,b,m,g),v-=p-20;let w=`${i.title.replace(/[^a-z0-9]/gi,"_")}_Minutes_${new Date().toISOString().split("T")[0]}.pdf`;c.save(w),alert("✅ Minutes PDF downloaded successfully!")}catch(e){console.error("Error generating minutes:",e),alert("Failed to generate PDF. Please try again.")}finally{a(!1)}};return(0,v.jsx)(eV,{onClick:n,disabled:r,className:"bg-gradient-to-r from-primary to-decision-purple text-white",children:r?(0,v.jsxs)(v.Fragment,{children:[(0,v.jsx)(aO,{className:"h-4 w-4 mr-2 animate-spin"}),"Generating..."]}):(0,v.jsxs)(v.Fragment,{children:[(0,v.jsx)(aD,{className:"h-4 w-4 mr-2"}),"Download Minutes PDF"]})})}function aH(e){return e?String(e).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#039;"):""}let aV=N("ArrowLeft",[["path",{d:"m12 19-7-7 7-7",key:"1l729n"}],["path",{d:"M19 12H5",key:"x3x0zl"}]]),aK=N("ChevronLeft",[["path",{d:"m15 18-6-6 6-6",key:"1wnfg3"}]]),az=N("MapPin",[["path",{d:"M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0",key:"1r0f0z"}],["circle",{cx:"12",cy:"10",r:"3",key:"ilqhr7"}]]),aG=N("ChevronRight",[["path",{d:"m9 18 6-6-6-6",key:"mthhwq"}]]),aq=N("Pencil",[["path",{d:"M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z",key:"1a8usu"}],["path",{d:"m15 5 4 4",key:"1mk7zo"}]]),aW=N("Trash",[["path",{d:"M3 6h18",key:"d0wm0j"}],["path",{d:"M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6",key:"4alrt4"}],["path",{d:"M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2",key:"v07s0e"}]]),a$=q("inline-flex items-center justify-center rounded-md border px-2 py-0.5 text-xs font-medium w-fit whitespace-nowrap shrink-0 [&>svg]:size-3 gap-1 [&>svg]:pointer-events-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive transition-[color,box-shadow] overflow-hidden",{variants:{variant:{default:"border-transparent bg-primary text-primary-foreground [a&]:hover:bg-primary/90",secondary:"border-transparent bg-secondary text-secondary-foreground [a&]:hover:bg-secondary/90",destructive:"border-transparent bg-destructive text-white [a&]:hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/60",outline:"text-foreground [a&]:hover:bg-accent [a&]:hover:text-accent-foreground"}},defaultVariants:{variant:"default"}});function aY({className:e,variant:t,asChild:r=!1,...a}){let n=r?M:"span";return(0,v.jsx)(n,{"data-slot":"badge",className:eM(a$({variant:t}),e),...a})}let aX=N("Paperclip",[["path",{d:"m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48",key:"1u3ebp"}]]),aJ=N("Scale",[["path",{d:"m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z",key:"7g6ntu"}],["path",{d:"m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z",key:"ijws7r"}],["path",{d:"M7 21h10",key:"1b0cd5"}],["path",{d:"M12 3v18",key:"108xh3"}],["path",{d:"M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2",key:"3gwbw2"}]]),aZ=N("Sparkles",[["path",{d:"M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z",key:"4pj2yx"}],["path",{d:"M20 3v4",key:"1olli1"}],["path",{d:"M22 5h-4",key:"1gvqau"}],["path",{d:"M4 17v2",key:"vumght"}],["path",{d:"M5 18H3",key:"zchphs"}]]),a1=N("Check",[["path",{d:"M20 6 9 17l-5-5",key:"1gmf2c"}]]);function a0({topic:e,topicNumber:t,meetingId:r,onUpdate:a,onDelete:n,onTaskClick:i,onNoteClick:s,onDecisionClick:o,onRegisterRefresh:A,isReadOnly:l=!1}){let[d,c]=(0,b.useState)(!0),[u,p]=(0,b.useState)(!1),[h,f]=(0,b.useState)(e.title),[m,g]=(0,b.useState)(e.description||""),[w,y]=(0,b.useState)(!1),[x,B]=(0,b.useState)(!1),[C,_]=(0,b.useState)(!1),[N,E]=(0,b.useState)([]),[F,Q]=(0,b.useState)(!1),[T,L]=(0,b.useState)(!1),[O,D]=(0,b.useState)(null),[P,R]=(0,b.useState)(!1),[M,H]=(0,b.useState)(null),V=(0,b.useRef)(null),K=(0,b.useRef)(null),z=(0,b.useRef)(null),G=async()=>{Q(!0);try{let t=[],{data:r}=await aN.from("notes").select("id, content, created_at").eq("topic_id",e.id).order("created_at",{ascending:!1});r&&r.forEach(e=>{t.push({id:e.id,type:"note",content:e.content.substring(0,100)+(e.content.length>100?"...":""),timestamp:new Date(e.created_at).toLocaleString()})});let{data:a}=await aN.from("topics").select("title, meeting_id, meetings!inner(building_id, meeting_type)").eq("id",e.id).single();if(a){let e=a.meetings,r=e?.building_id,n=e?.meeting_type,{data:i}=await aN.from("meetings").select("id").eq("building_id",r).eq("meeting_type",n);if(i){let e=i.map(e=>e.id),{data:r}=await aN.from("topics").select("id").in("meeting_id",e).eq("title",a.title);if(r){let e=r.map(e=>e.id),{data:a}=await aN.from("tasks").select("id, description, assigned_name, assigned_email, status, created_at").in("topic_id",e).in("status",["open","in_progress"]).order("created_at",{ascending:!1});a&&a.forEach(e=>{let r=e.assigned_name||e.assigned_email||"Unassigned";t.push({id:e.id,type:"task",content:e.description.substring(0,100)+(e.description.length>100?"...":""),timestamp:new Date(e.created_at).toLocaleString(),details:`Assigned to: ${r} • Status: ${e.status}`})})}}}let{data:n}=await aN.from("decisions").select("id, motion_text, result, votes_for, votes_against, recorded_at").eq("topic_id",e.id).order("recorded_at",{ascending:!1});n&&n.forEach(e=>{let r=null!==e.votes_for||null!==e.votes_against?` • Votes: ${e.votes_for||0} for, ${e.votes_against||0} against`:"";t.push({id:e.id,type:"decision",content:e.motion_text.substring(0,100)+(e.motion_text.length>100?"...":""),timestamp:new Date(e.recorded_at).toLocaleString(),details:`Result: ${e.result||"N/A"}${r}`})}),t.sort((e,t)=>new Date(t.timestamp).getTime()-new Date(e.timestamp).getTime()),E(t)}catch(e){console.error("Error fetching history:",e)}finally{Q(!1)}},q=async()=>{try{let{data:t}=await aN.from("ai_analyses").select("analysis_result").eq("topic_id",e.id).order("created_at",{ascending:!1}).limit(1).single();t&&D(t.analysis_result)}catch(e){console.error("Error fetching AI analysis:",e)}},W=async()=>{if(l){alert("You do not have permission to analyze topics.");return}if(!e.description||""===e.description.trim()){alert("Please add a description first before analyzing with AI");return}L(!0),R(!1);try{let{data:t,error:r}=await aN.from("topics").select(`
           meeting_id,
           meetings!inner(
             building_id,
