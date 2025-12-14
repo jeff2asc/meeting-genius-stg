@@ -37,21 +37,20 @@ export default function GenerateMinutesButton({ meetingId, buildingId }: Generat
   const handleGenerateMinutes = async () => {
     setGenerating(true)
     try {
-      // Step 1: Fetch template
+      // Step 1: Fetch template with proper headers
       const { data: templateData, error: templateError } = await supabase
         .from('minutes_templates')
-        .select('blocks')
+        .select('*')
         .eq('building_id', buildingId)
-        .single()
+        .maybeSingle()
 
-      if (templateError && templateError.code !== 'PGRST116') {
+      if (templateError) {
         console.error('Error fetching template:', templateError)
-        alert('Failed to load template')
-        setGenerating(false)
-        return
       }
 
-      const template: TemplateConfig = templateData?.blocks || getDefaultTemplate()
+      const template: TemplateConfig = templateData?.blocks?.sections 
+        ? templateData.blocks 
+        : getDefaultTemplate()
 
       // Step 2: Fetch meeting data
       const { data: meeting, error: meetingError } = await supabase
@@ -100,16 +99,22 @@ export default function GenerateMinutesButton({ meetingId, buildingId }: Generat
       tempDiv.innerHTML = minutesHtml
       tempDiv.style.position = 'absolute'
       tempDiv.style.left = '-9999px'
-      tempDiv.style.width = '8.5in'
+      tempDiv.style.width = '816px' // 8.5 inches at 96 DPI
       tempDiv.style.padding = '20px'
+      tempDiv.style.backgroundColor = '#ffffff'
       document.body.appendChild(tempDiv)
+
+      // Wait for fonts and images to load
+      await new Promise(resolve => setTimeout(resolve, 500))
 
       // Step 6: Convert HTML to Canvas
       const canvas = await html2canvas(tempDiv, {
         scale: 2,
         useCORS: true,
         logging: false,
-        backgroundColor: '#ffffff'
+        backgroundColor: '#ffffff',
+        windowWidth: 816,
+        windowHeight: tempDiv.scrollHeight
       })
 
       // Step 7: Remove temporary div
@@ -118,29 +123,31 @@ export default function GenerateMinutesButton({ meetingId, buildingId }: Generat
       // Step 8: Create PDF
       const pdf = new jsPDF({
         orientation: 'portrait',
-        unit: 'in',
-        format: 'letter'
+        unit: 'px',
+        format: [816, 1056] // Letter size at 96 DPI
       })
 
       const imgData = canvas.toDataURL('image/png')
-      const imgWidth = 8.5
-      const imgHeight = (canvas.height * imgWidth) / canvas.width
-
+      const imgWidth = 816
+      const pageHeight = 1056
+      const imgHeight = canvas.height
       let heightLeft = imgHeight
-      let position = 0.5
+      let position = 0
 
-      pdf.addImage(imgData, 'PNG', 0.5, position, imgWidth - 1, imgHeight)
-      heightLeft -= 7
+      // Add first page
+      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight)
+      heightLeft -= pageHeight
 
-      while (heightLeft >= 0) {
-        position = heightLeft - imgHeight + 0.5
+      // Add additional pages if needed
+      while (heightLeft > 0) {
+        position = heightLeft - imgHeight
         pdf.addPage()
-        pdf.addImage(imgData, 'PNG', 0.5, position, imgWidth - 1, imgHeight)
-        heightLeft -= 7
+        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight)
+        heightLeft -= pageHeight
       }
 
       // Step 9: Download PDF
-      const fileName = `${meeting.title}_Minutes_${new Date().toISOString().split('T')[0]}.pdf`
+      const fileName = `${meeting.title.replace(/[^a-z0-9]/gi, '_')}_Minutes_${new Date().toISOString().split('T')[0]}.pdf`
       pdf.save(fileName)
 
       alert('✅ Minutes PDF downloaded successfully!')
@@ -232,98 +239,35 @@ function getDefaultTemplate(): TemplateConfig {
   }
 }
 
+// Convert any CSS color to hex (fix for oklch issue)
+function convertToHex(color: string): string {
+  // If already hex, return as is
+  if (color.startsWith('#')) return color
+  
+  // Common color name mappings
+  const colorMap: Record<string, string> = {
+    'white': '#ffffff',
+    'black': '#000000',
+    'transparent': '#ffffff'
+  }
+  
+  if (colorMap[color.toLowerCase()]) {
+    return colorMap[color.toLowerCase()]
+  }
+  
+  // Default to white if we can't parse
+  return '#ffffff'
+}
+
 // Generate HTML for minutes
 function generateMinutesHtml(template: TemplateConfig, meeting: any, sections: any[]): string {
   const building = meeting.buildings
 
   let html = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="UTF-8">
-      <title>${meeting.title} - Minutes</title>
-      <style>
-        body {
-          font-family: Arial, sans-serif;
-          line-height: 1.6;
-          color: #333;
-          margin: 0;
-          padding: 0;
-        }
-        .section {
-          margin-bottom: 30px;
-          page-break-inside: avoid;
-        }
-        .section-header {
-          padding: 12px;
-          margin-bottom: 15px;
-          border-radius: 4px;
-          font-weight: bold;
-          font-size: 18px;
-        }
-        .field-row {
-          display: flex;
-          margin-bottom: 8px;
-        }
-        .field-label {
-          font-weight: bold;
-          width: 180px;
-          flex-shrink: 0;
-        }
-        .field-value {
-          flex: 1;
-        }
-        .topic {
-          margin-bottom: 25px;
-          padding: 15px;
-          border: 1px solid #ddd;
-          border-radius: 4px;
-          background: #fafafa;
-        }
-        .topic-title {
-          font-weight: bold;
-          font-size: 16px;
-          margin-bottom: 10px;
-          color: #1a1a1a;
-        }
-        .topic-description {
-          margin-bottom: 15px;
-          color: #555;
-        }
-        .note, .task, .decision {
-          margin: 10px 0;
-          padding: 10px;
-          border-left: 4px solid;
-          background: #fff;
-        }
-        .note { border-color: #3b82f6; }
-        .task { border-color: #10b981; }
-        .decision { border-color: #8b5cf6; }
-        .attendee-table {
-          width: 100%;
-          border-collapse: collapse;
-          margin-top: 10px;
-        }
-        .attendee-table th, .attendee-table td {
-          border: 1px solid #ddd;
-          padding: 8px;
-          text-align: left;
-        }
-        .attendee-table th {
-          background-color: #f3f4f6;
-          font-weight: bold;
-        }
-        h1 {
-          text-align: center;
-          color: #1a1a1a;
-          border-bottom: 2px solid #333;
-          padding-bottom: 10px;
-          margin-bottom: 30px;
-        }
-      </style>
-    </head>
-    <body>
-      <h1>${meeting.title}</h1>
+    <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+      <h1 style="text-align: center; color: #1a1a1a; border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 30px;">
+        ${meeting.title}
+      </h1>
   `
 
   // Render sections according to template
@@ -334,28 +278,24 @@ function generateMinutesHtml(template: TemplateConfig, meeting: any, sections: a
       html += renderAttendees(templateSection, meeting.attendees || [])
     } else if (templateSection.id === 'topics') {
       html += renderTopics(sections)
-    } else if (templateSection.id === 'decisions') {
-      // Decisions are rendered within topics
     } else if (templateSection.id === 'footer') {
       html += renderFooter(templateSection, meeting)
     }
   })
 
-  html += `
-    </body>
-    </html>
-  `
-
+  html += `</div>`
   return html
 }
 
 function renderHeader(section: TemplateSection, meeting: any, building: any): string {
   const visibleFields = section.fields.filter(f => f.visible).sort((a, b) => a.order - b.order)
+  const bgColor = convertToHex(section.backgroundColor)
   
-  let html = `<div class="section">
-    <div class="section-header" style="background-color: ${section.backgroundColor}">
-      ${section.icon} ${section.label}
-    </div>`
+  let html = `
+    <div style="margin-bottom: 30px;">
+      <div style="padding: 12px; margin-bottom: 15px; border-radius: 4px; font-weight: bold; font-size: 18px; background-color: ${bgColor};">
+        ${section.icon} ${section.label}
+      </div>`
 
   visibleFields.forEach(field => {
     let value = ''
@@ -387,9 +327,9 @@ function renderHeader(section: TemplateSection, meeting: any, building: any): st
     }
 
     html += `
-      <div class="field-row">
-        <div class="field-label">${field.label}:</div>
-        <div class="field-value">${value}</div>
+      <div style="display: flex; margin-bottom: 8px;">
+        <div style="font-weight: bold; width: 180px;">${field.label}:</div>
+        <div style="flex: 1;">${value}</div>
       </div>`
   })
 
@@ -398,63 +338,66 @@ function renderHeader(section: TemplateSection, meeting: any, building: any): st
 }
 
 function renderAttendees(section: TemplateSection, attendees: any[]): string {
-  const present = attendees.filter(a => a.present)
-  const absent = attendees.filter(a => !a.present)
+  const bgColor = convertToHex(section.backgroundColor)
 
-  let html = `<div class="section">
-    <div class="section-header" style="background-color: ${section.backgroundColor}">
-      ${section.icon} ${section.label}
-    </div>
-    <table class="attendee-table">
-      <thead>
-        <tr>
-          <th>Name</th>
-          <th>Role</th>
-          <th>Status</th>
-        </tr>
-      </thead>
-      <tbody>`
+  let html = `
+    <div style="margin-bottom: 30px;">
+      <div style="padding: 12px; margin-bottom: 15px; border-radius: 4px; font-weight: bold; font-size: 18px; background-color: ${bgColor};">
+        ${section.icon} ${section.label}
+      </div>
+      <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+        <thead>
+          <tr>
+            <th style="border: 1px solid #ddd; padding: 8px; text-align: left; background-color: #f3f4f6; font-weight: bold;">Name</th>
+            <th style="border: 1px solid #ddd; padding: 8px; text-align: left; background-color: #f3f4f6; font-weight: bold;">Role</th>
+            <th style="border: 1px solid #ddd; padding: 8px; text-align: left; background-color: #f3f4f6; font-weight: bold;">Status</th>
+          </tr>
+        </thead>
+        <tbody>`
 
   attendees.forEach(attendee => {
     html += `
       <tr>
-        <td>${attendee.name}</td>
-        <td>${attendee.role || '-'}</td>
-        <td>${attendee.present ? '✓ Present' : '✗ Absent'}</td>
+        <td style="border: 1px solid #ddd; padding: 8px;">${attendee.name}</td>
+        <td style="border: 1px solid #ddd; padding: 8px;">${attendee.role || '-'}</td>
+        <td style="border: 1px solid #ddd; padding: 8px;">${attendee.present ? '✓ Present' : '✗ Absent'}</td>
       </tr>`
   })
 
   html += `
-      </tbody>
-    </table>
-  </div>`
+        </tbody>
+      </table>
+    </div>`
 
   return html
 }
 
 function renderTopics(sections: any[]): string {
-  let html = `<div class="section">
-    <div class="section-header" style="background-color: #ffffff">
-      📝 Topics & Discussion
-    </div>`
+  let html = `
+    <div style="margin-bottom: 30px;">
+      <div style="padding: 12px; margin-bottom: 15px; border-radius: 4px; font-weight: bold; font-size: 18px; background-color: #ffffff;">
+        📝 Topics & Discussion
+      </div>`
 
   sections.forEach((section, sIdx) => {
-    html += `<h3>${sIdx + 1}. ${section.title}</h3>`
+    html += `<h3 style="margin-top: 20px; margin-bottom: 10px;">${sIdx + 1}. ${section.title}</h3>`
 
     if (section.topics && section.topics.length > 0) {
       section.topics.forEach((topic: any, tIdx: number) => {
         html += `
-          <div class="topic">
-            <div class="topic-title">${sIdx + 1}.${tIdx + 1} ${topic.title}</div>`
+          <div style="margin-bottom: 25px; padding: 15px; border: 1px solid #ddd; border-radius: 4px; background: #fafafa;">
+            <div style="font-weight: bold; font-size: 16px; margin-bottom: 10px; color: #1a1a1a;">
+              ${sIdx + 1}.${tIdx + 1} ${topic.title}
+            </div>`
 
         if (topic.description) {
-          html += `<div class="topic-description">${topic.description}</div>`
+          html += `<div style="margin-bottom: 15px; color: #555;">${topic.description}</div>`
         }
 
         // Notes
         if (topic.notes && topic.notes.length > 0) {
           topic.notes.forEach((note: any) => {
-            html += `<div class="note"><strong>📝 Note:</strong> ${note.content}</div>`
+            html += `<div style="margin: 10px 0; padding: 10px; border-left: 4px solid #3b82f6; background: #fff;"><strong>📝 Note:</strong> ${note.content}</div>`
           })
         }
 
@@ -463,7 +406,7 @@ function renderTopics(sections: any[]): string {
           topic.tasks.forEach((task: any) => {
             const assignee = task.assigned_name || task.assigned_email || 'Unassigned'
             const dueDate = task.due_date ? ` (Due: ${new Date(task.due_date).toLocaleDateString()})` : ''
-            html += `<div class="task"><strong>✓ Task:</strong> ${task.description} - Assigned to: ${assignee}${dueDate}</div>`
+            html += `<div style="margin: 10px 0; padding: 10px; border-left: 4px solid #10b981; background: #fff;"><strong>✓ Task:</strong> ${task.description} - Assigned to: ${assignee}${dueDate}</div>`
           })
         }
 
@@ -471,7 +414,7 @@ function renderTopics(sections: any[]): string {
         if (topic.decisions && topic.decisions.length > 0) {
           topic.decisions.forEach((decision: any) => {
             const votes = decision.votes_for !== null ? ` (For: ${decision.votes_for || 0}, Against: ${decision.votes_against || 0}, Abstain: ${decision.votes_abstain || 0})` : ''
-            html += `<div class="decision"><strong>⚖️ Decision:</strong> ${decision.motion_text} - <strong>Result:</strong> ${decision.result}${votes}</div>`
+            html += `<div style="margin: 10px 0; padding: 10px; border-left: 4px solid #8b5cf6; background: #fff;"><strong>⚖️ Decision:</strong> ${decision.motion_text} - <strong>Result:</strong> ${decision.result}${votes}</div>`
           })
         }
 
@@ -485,27 +428,30 @@ function renderTopics(sections: any[]): string {
 }
 
 function renderFooter(section: TemplateSection, meeting: any): string {
-  let html = `<div class="section">
-    <div class="section-header" style="background-color: ${section.backgroundColor}">
-      ${section.icon} ${section.label}
-    </div>
-    <div class="field-row">
-      <div class="field-label">Meeting Adjourned:</div>
-      <div class="field-value">_______________________</div>
-    </div>
-    <div class="field-row">
-      <div class="field-label">Minutes Prepared By:</div>
-      <div class="field-value">_______________________</div>
-    </div>
-    <div class="field-row">
-      <div class="field-label">Signature:</div>
-      <div class="field-value">_______________________</div>
-    </div>
-    <div class="field-row">
-      <div class="field-label">Date:</div>
-      <div class="field-value">_______________________</div>
-    </div>
-  </div>`
+  const bgColor = convertToHex(section.backgroundColor)
+  
+  let html = `
+    <div style="margin-bottom: 30px;">
+      <div style="padding: 12px; margin-bottom: 15px; border-radius: 4px; font-weight: bold; font-size: 18px; background-color: ${bgColor};">
+        ${section.icon} ${section.label}
+      </div>
+      <div style="display: flex; margin-bottom: 8px;">
+        <div style="font-weight: bold; width: 180px;">Meeting Adjourned:</div>
+        <div style="flex: 1;">_______________________</div>
+      </div>
+      <div style="display: flex; margin-bottom: 8px;">
+        <div style="font-weight: bold; width: 180px;">Minutes Prepared By:</div>
+        <div style="flex: 1;">_______________________</div>
+      </div>
+      <div style="display: flex; margin-bottom: 8px;">
+        <div style="font-weight: bold; width: 180px;">Signature:</div>
+        <div style="flex: 1;">_______________________</div>
+      </div>
+      <div style="display: flex; margin-bottom: 8px;">
+        <div style="font-weight: bold; width: 180px;">Date:</div>
+        <div style="flex: 1;">_______________________</div>
+      </div>
+    </div>`
 
   return html
 }
