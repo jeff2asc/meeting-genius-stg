@@ -37,16 +37,12 @@ export default function GenerateMinutesButton({ meetingId, buildingId }: Generat
   const handleGenerateMinutes = async () => {
     setGenerating(true)
     try {
-      // Step 1: Fetch template with proper headers
-      const { data: templateData, error: templateError } = await supabase
+      // Step 1: Fetch template
+      const { data: templateData } = await supabase
         .from('minutes_templates')
         .select('*')
         .eq('building_id', buildingId)
         .maybeSingle()
-
-      if (templateError) {
-        console.error('Error fetching template:', templateError)
-      }
 
       const template: TemplateConfig = templateData?.blocks?.sections 
         ? templateData.blocks 
@@ -63,14 +59,13 @@ export default function GenerateMinutesButton({ meetingId, buildingId }: Generat
         .single()
 
       if (meetingError || !meeting) {
-        console.error('Error fetching meeting:', meetingError)
         alert('Failed to load meeting data')
         setGenerating(false)
         return
       }
 
       // Step 3: Fetch sections and topics
-      const { data: sections, error: sectionsError } = await supabase
+      const { data: sections } = await supabase
         .from('sections')
         .select(`
           *,
@@ -84,61 +79,75 @@ export default function GenerateMinutesButton({ meetingId, buildingId }: Generat
         .eq('meeting_id', meetingId)
         .order('order_index')
 
-      if (sectionsError) {
-        console.error('Error fetching sections:', sectionsError)
-        alert('Failed to load sections')
-        setGenerating(false)
-        return
-      }
-
       // Step 4: Generate HTML
       const minutesHtml = generateMinutesHtml(template, meeting, sections || [])
 
-      // Step 5: Create a temporary div to render HTML
-      const tempDiv = document.createElement('div')
-      tempDiv.innerHTML = minutesHtml
-      tempDiv.style.position = 'absolute'
-      tempDiv.style.left = '-9999px'
-      tempDiv.style.width = '816px' // 8.5 inches at 96 DPI
-      tempDiv.style.padding = '20px'
-      tempDiv.style.backgroundColor = '#ffffff'
-      document.body.appendChild(tempDiv)
+      // Step 5: Create isolated iframe
+      const iframe = document.createElement('iframe')
+      iframe.style.position = 'absolute'
+      iframe.style.left = '-9999px'
+      iframe.style.width = '816px'
+      iframe.style.height = '1056px'
+      document.body.appendChild(iframe)
 
-      // Wait for fonts and images to load
-      await new Promise(resolve => setTimeout(resolve, 500))
+      const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document
+      if (!iframeDoc) throw new Error('Cannot access iframe document')
 
-      // Step 6: Convert HTML to Canvas
-      const canvas = await html2canvas(tempDiv, {
+      iframeDoc.open()
+      iframeDoc.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { 
+              font-family: Arial, sans-serif; 
+              width: 816px; 
+              padding: 40px;
+              background: white;
+            }
+          </style>
+        </head>
+        <body>${minutesHtml}</body>
+        </html>
+      `)
+      iframeDoc.close()
+
+      // Wait for content to render
+      await new Promise(resolve => setTimeout(resolve, 1000))
+
+      // Step 6: Capture iframe content
+      const canvas = await html2canvas(iframeDoc.body, {
         scale: 2,
-        useCORS: true,
-        logging: false,
         backgroundColor: '#ffffff',
-        windowWidth: 816,
-        windowHeight: tempDiv.scrollHeight
+        logging: false,
+        width: 816,
+        height: iframeDoc.body.scrollHeight
       })
 
-      // Step 7: Remove temporary div
-      document.body.removeChild(tempDiv)
+      // Step 7: Remove iframe
+      document.body.removeChild(iframe)
 
       // Step 8: Create PDF
       const pdf = new jsPDF({
         orientation: 'portrait',
         unit: 'px',
-        format: [816, 1056] // Letter size at 96 DPI
+        format: [816, 1056]
       })
 
-      const imgData = canvas.toDataURL('image/png')
+      const imgData = canvas.toDataURL('image/png', 1.0)
       const imgWidth = 816
-      const pageHeight = 1056
       const imgHeight = canvas.height
+      const pageHeight = 1056
       let heightLeft = imgHeight
       let position = 0
 
-      // Add first page
+      // First page
       pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight)
       heightLeft -= pageHeight
 
-      // Add additional pages if needed
+      // Additional pages
       while (heightLeft > 0) {
         position = heightLeft - imgHeight
         pdf.addPage()
@@ -146,7 +155,7 @@ export default function GenerateMinutesButton({ meetingId, buildingId }: Generat
         heightLeft -= pageHeight
       }
 
-      // Step 9: Download PDF
+      // Step 9: Download
       const fileName = `${meeting.title.replace(/[^a-z0-9]/gi, '_')}_Minutes_${new Date().toISOString().split('T')[0]}.pdf`
       pdf.save(fileName)
 
@@ -180,7 +189,6 @@ export default function GenerateMinutesButton({ meetingId, buildingId }: Generat
   )
 }
 
-// Default template if none exists
 function getDefaultTemplate(): TemplateConfig {
   return {
     sections: [
@@ -239,38 +247,16 @@ function getDefaultTemplate(): TemplateConfig {
   }
 }
 
-// Convert any CSS color to hex (fix for oklch issue)
-function convertToHex(color: string): string {
-  // If already hex, return as is
-  if (color.startsWith('#')) return color
-  
-  // Common color name mappings
-  const colorMap: Record<string, string> = {
-    'white': '#ffffff',
-    'black': '#000000',
-    'transparent': '#ffffff'
-  }
-  
-  if (colorMap[color.toLowerCase()]) {
-    return colorMap[color.toLowerCase()]
-  }
-  
-  // Default to white if we can't parse
-  return '#ffffff'
-}
-
-// Generate HTML for minutes
 function generateMinutesHtml(template: TemplateConfig, meeting: any, sections: any[]): string {
   const building = meeting.buildings
 
   let html = `
-    <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-      <h1 style="text-align: center; color: #1a1a1a; border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 30px;">
-        ${meeting.title}
+    <div style="color: #333;">
+      <h1 style="text-align: center; color: #1a1a1a; border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 30px; font-size: 24px;">
+        ${escapeHtml(meeting.title)}
       </h1>
   `
 
-  // Render sections according to template
   template.sections.forEach(templateSection => {
     if (templateSection.id === 'header') {
       html += renderHeader(templateSection, meeting, building)
@@ -279,7 +265,7 @@ function generateMinutesHtml(template: TemplateConfig, meeting: any, sections: a
     } else if (templateSection.id === 'topics') {
       html += renderTopics(sections)
     } else if (templateSection.id === 'footer') {
-      html += renderFooter(templateSection, meeting)
+      html += renderFooter(templateSection)
     }
   })
 
@@ -287,13 +273,19 @@ function generateMinutesHtml(template: TemplateConfig, meeting: any, sections: a
   return html
 }
 
+function escapeHtml(text: string): string {
+  if (!text) return ''
+  const div = document.createElement('div')
+  div.textContent = text
+  return div.innerHTML
+}
+
 function renderHeader(section: TemplateSection, meeting: any, building: any): string {
   const visibleFields = section.fields.filter(f => f.visible).sort((a, b) => a.order - b.order)
-  const bgColor = convertToHex(section.backgroundColor)
   
   let html = `
     <div style="margin-bottom: 30px;">
-      <div style="padding: 12px; margin-bottom: 15px; border-radius: 4px; font-weight: bold; font-size: 18px; background-color: ${bgColor};">
+      <div style="padding: 12px; margin-bottom: 15px; background-color: #f8f9fa; font-weight: bold; font-size: 18px; border-radius: 4px;">
         ${section.icon} ${section.label}
       </div>`
 
@@ -327,9 +319,8 @@ function renderHeader(section: TemplateSection, meeting: any, building: any): st
     }
 
     html += `
-      <div style="display: flex; margin-bottom: 8px;">
-        <div style="font-weight: bold; width: 180px;">${field.label}:</div>
-        <div style="flex: 1;">${value}</div>
+      <div style="margin-bottom: 8px; line-height: 1.6;">
+        <strong>${escapeHtml(field.label)}:</strong> ${escapeHtml(value)}
       </div>`
   })
 
@@ -338,19 +329,17 @@ function renderHeader(section: TemplateSection, meeting: any, building: any): st
 }
 
 function renderAttendees(section: TemplateSection, attendees: any[]): string {
-  const bgColor = convertToHex(section.backgroundColor)
-
   let html = `
     <div style="margin-bottom: 30px;">
-      <div style="padding: 12px; margin-bottom: 15px; border-radius: 4px; font-weight: bold; font-size: 18px; background-color: ${bgColor};">
+      <div style="padding: 12px; margin-bottom: 15px; background-color: #f8f9fa; font-weight: bold; font-size: 18px; border-radius: 4px;">
         ${section.icon} ${section.label}
       </div>
       <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
         <thead>
-          <tr>
-            <th style="border: 1px solid #ddd; padding: 8px; text-align: left; background-color: #f3f4f6; font-weight: bold;">Name</th>
-            <th style="border: 1px solid #ddd; padding: 8px; text-align: left; background-color: #f3f4f6; font-weight: bold;">Role</th>
-            <th style="border: 1px solid #ddd; padding: 8px; text-align: left; background-color: #f3f4f6; font-weight: bold;">Status</th>
+          <tr style="background-color: #f3f4f6;">
+            <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Name</th>
+            <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Role</th>
+            <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Status</th>
           </tr>
         </thead>
         <tbody>`
@@ -358,63 +347,56 @@ function renderAttendees(section: TemplateSection, attendees: any[]): string {
   attendees.forEach(attendee => {
     html += `
       <tr>
-        <td style="border: 1px solid #ddd; padding: 8px;">${attendee.name}</td>
-        <td style="border: 1px solid #ddd; padding: 8px;">${attendee.role || '-'}</td>
+        <td style="border: 1px solid #ddd; padding: 8px;">${escapeHtml(attendee.name)}</td>
+        <td style="border: 1px solid #ddd; padding: 8px;">${escapeHtml(attendee.role || '-')}</td>
         <td style="border: 1px solid #ddd; padding: 8px;">${attendee.present ? '✓ Present' : '✗ Absent'}</td>
       </tr>`
   })
 
-  html += `
-        </tbody>
-      </table>
-    </div>`
-
+  html += `</tbody></table></div>`
   return html
 }
 
 function renderTopics(sections: any[]): string {
   let html = `
     <div style="margin-bottom: 30px;">
-      <div style="padding: 12px; margin-bottom: 15px; border-radius: 4px; font-weight: bold; font-size: 18px; background-color: #ffffff;">
+      <div style="padding: 12px; margin-bottom: 15px; background-color: #f8f9fa; font-weight: bold; font-size: 18px; border-radius: 4px;">
         📝 Topics & Discussion
       </div>`
 
   sections.forEach((section, sIdx) => {
-    html += `<h3 style="margin-top: 20px; margin-bottom: 10px;">${sIdx + 1}. ${section.title}</h3>`
+    html += `<h3 style="margin: 20px 0 10px 0; font-size: 16px;">${sIdx + 1}. ${escapeHtml(section.title)}</h3>`
 
     if (section.topics && section.topics.length > 0) {
       section.topics.forEach((topic: any, tIdx: number) => {
         html += `
-          <div style="margin-bottom: 25px; padding: 15px; border: 1px solid #ddd; border-radius: 4px; background: #fafafa;">
-            <div style="font-weight: bold; font-size: 16px; margin-bottom: 10px; color: #1a1a1a;">
-              ${sIdx + 1}.${tIdx + 1} ${topic.title}
+          <div style="margin-bottom: 20px; padding: 15px; border: 1px solid #ddd; background: #fafafa; border-radius: 4px;">
+            <div style="font-weight: bold; margin-bottom: 10px; font-size: 15px;">
+              ${sIdx + 1}.${tIdx + 1} ${escapeHtml(topic.title)}
             </div>`
 
         if (topic.description) {
-          html += `<div style="margin-bottom: 15px; color: #555;">${topic.description}</div>`
+          html += `<div style="margin-bottom: 10px; color: #555;">${escapeHtml(topic.description)}</div>`
         }
 
-        // Notes
         if (topic.notes && topic.notes.length > 0) {
           topic.notes.forEach((note: any) => {
-            html += `<div style="margin: 10px 0; padding: 10px; border-left: 4px solid #3b82f6; background: #fff;"><strong>📝 Note:</strong> ${note.content}</div>`
+            html += `<div style="margin: 10px 0; padding: 10px; border-left: 4px solid #3b82f6; background: white;"><strong>📝 Note:</strong> ${escapeHtml(note.content)}</div>`
           })
         }
 
-        // Tasks
         if (topic.tasks && topic.tasks.length > 0) {
           topic.tasks.forEach((task: any) => {
             const assignee = task.assigned_name || task.assigned_email || 'Unassigned'
             const dueDate = task.due_date ? ` (Due: ${new Date(task.due_date).toLocaleDateString()})` : ''
-            html += `<div style="margin: 10px 0; padding: 10px; border-left: 4px solid #10b981; background: #fff;"><strong>✓ Task:</strong> ${task.description} - Assigned to: ${assignee}${dueDate}</div>`
+            html += `<div style="margin: 10px 0; padding: 10px; border-left: 4px solid #10b981; background: white;"><strong>✓ Task:</strong> ${escapeHtml(task.description)} - Assigned to: ${escapeHtml(assignee)}${dueDate}</div>`
           })
         }
 
-        // Decisions
         if (topic.decisions && topic.decisions.length > 0) {
           topic.decisions.forEach((decision: any) => {
             const votes = decision.votes_for !== null ? ` (For: ${decision.votes_for || 0}, Against: ${decision.votes_against || 0}, Abstain: ${decision.votes_abstain || 0})` : ''
-            html += `<div style="margin: 10px 0; padding: 10px; border-left: 4px solid #8b5cf6; background: #fff;"><strong>⚖️ Decision:</strong> ${decision.motion_text} - <strong>Result:</strong> ${decision.result}${votes}</div>`
+            html += `<div style="margin: 10px 0; padding: 10px; border-left: 4px solid #8b5cf6; background: white;"><strong>⚖️ Decision:</strong> ${escapeHtml(decision.motion_text)} - <strong>Result:</strong> ${escapeHtml(decision.result || 'N/A')}${votes}</div>`
           })
         }
 
@@ -427,31 +409,17 @@ function renderTopics(sections: any[]): string {
   return html
 }
 
-function renderFooter(section: TemplateSection, meeting: any): string {
-  const bgColor = convertToHex(section.backgroundColor)
-  
-  let html = `
-    <div style="margin-bottom: 30px;">
-      <div style="padding: 12px; margin-bottom: 15px; border-radius: 4px; font-weight: bold; font-size: 18px; background-color: ${bgColor};">
+function renderFooter(section: TemplateSection): string {
+  return `
+    <div style="margin-top: 40px;">
+      <div style="padding: 12px; margin-bottom: 15px; background-color: #f8f9fa; font-weight: bold; font-size: 18px; border-radius: 4px;">
         ${section.icon} ${section.label}
       </div>
-      <div style="display: flex; margin-bottom: 8px;">
-        <div style="font-weight: bold; width: 180px;">Meeting Adjourned:</div>
-        <div style="flex: 1;">_______________________</div>
-      </div>
-      <div style="display: flex; margin-bottom: 8px;">
-        <div style="font-weight: bold; width: 180px;">Minutes Prepared By:</div>
-        <div style="flex: 1;">_______________________</div>
-      </div>
-      <div style="display: flex; margin-bottom: 8px;">
-        <div style="font-weight: bold; width: 180px;">Signature:</div>
-        <div style="flex: 1;">_______________________</div>
-      </div>
-      <div style="display: flex; margin-bottom: 8px;">
-        <div style="font-weight: bold; width: 180px;">Date:</div>
-        <div style="flex: 1;">_______________________</div>
+      <div style="margin-bottom: 20px; line-height: 2;">
+        <div><strong>Meeting Adjourned:</strong> _______________________</div>
+        <div><strong>Minutes Prepared By:</strong> _______________________</div>
+        <div><strong>Signature:</strong> _______________________</div>
+        <div><strong>Date:</strong> _______________________</div>
       </div>
     </div>`
-
-  return html
 }
