@@ -60,11 +60,13 @@ export default function BuildingDetailsModal({
   const [propertyManagers, setPropertyManagers] = useState<User[]>([])
   const [submitting, setSubmitting] = useState(false)
 
+  // inline “add user” state (like CompanyDetailsModal)
   const [showAddUserForm, setShowAddUserForm] = useState(false)
   const [newUserName, setNewUserName] = useState("")
   const [newUserEmail, setNewUserEmail] = useState("")
   const [newUserPassword, setNewUserPassword] = useState("")
   const [creatingUser, setCreatingUser] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (isOpen && building) {
@@ -105,36 +107,28 @@ export default function BuildingDetailsModal({
     }
   }
 
+  // Create user inline in this company & assign to building
   const handleCreateNewUser = async () => {
     if (!building) return
 
     if (!newUserName.trim() || !newUserEmail.trim() || !newUserPassword.trim()) {
-      alert("Please fill in name, email, and password")
+      setError("Name, email and password are required")
       return
     }
 
     setCreatingUser(true)
+    setError(null)
 
     try {
-      // 1) Create auth user so they can log in
-      const { data: authResult, error: authError } = await supabase.auth.admin.createUser({
-        email: newUserEmail.trim(),
-        password: newUserPassword.trim(),
-        email_confirm: true,
-      })
-
-      if (authError || !authResult?.user) {
-        console.error("Error creating auth user:", authError)
-        alert("Failed to create login account for user")
-        return
-      }
-
-      // 2) Create app-level user row
+      // Mirror the pattern from CompanyDetailsModal: insert into users with a password_hash
       const { data: newUser, error: userError } = await supabase
         .from("users")
         .insert({
           name: newUserName.trim(),
-          email: newUserEmail.trim(),
+          email: newUserEmail.toLowerCase().trim(),
+          // placeholder hash, same idea as in CompanyDetailsModal
+          password_hash:
+            "$2a$10$rXqvFZnPzAMcLzCP2L4dxu7L6Y3Y5KjGNQQF6xZ4Y5Y5Y5Y5Y5Y5Y5",
           user_type: "user",
           company_id: building.company_id,
           assigned_pm_id: managerId,
@@ -144,11 +138,12 @@ export default function BuildingDetailsModal({
 
       if (userError || !newUser) {
         console.error("Error creating user:", userError)
-        alert("Failed to create user record: " + (userError?.message || "Unknown error"))
+        setError("Failed to create user. Email may already exist.")
+        setCreatingUser(false)
         return
       }
 
-      // 3) Attach to this building
+      // Attach new user to this building
       const { error: assignError } = await supabase
         .from("user_buildings")
         .insert({
@@ -158,23 +153,22 @@ export default function BuildingDetailsModal({
 
       if (assignError) {
         console.error("Error assigning user to building:", assignError)
-        alert("User created but failed to assign to building")
+        setError("User created but failed to assign to building.")
+        setCreatingUser(false)
         return
       }
 
       setSelectedUsers((prev) => [...prev, newUser.id])
 
-      // Reset form
       setNewUserName("")
       setNewUserEmail("")
       setNewUserPassword("")
       setShowAddUserForm(false)
 
-      alert(`User "${newUser.name}" created and assigned to building.`)
-      onSuccess()
+      await onSuccess()
     } catch (err) {
       console.error("Unexpected error:", err)
-      alert("Failed to create user")
+      setError("Unexpected error creating user.")
     } finally {
       setCreatingUser(false)
     }
@@ -236,8 +230,7 @@ export default function BuildingDetailsModal({
         }
       }
 
-      alert("Building updated successfully!")
-      onSuccess()
+      await onSuccess()
       onClose()
     } catch (err) {
       console.error("Unexpected error:", err)
@@ -253,6 +246,7 @@ export default function BuildingDetailsModal({
     )
   }
 
+  // Only users from the same company can be assigned
   const filteredAvailableUsers = building
     ? availableUsers.filter(
         (user) => !building.company_id || user.company_id === building.company_id
@@ -402,6 +396,12 @@ export default function BuildingDetailsModal({
                 </Button>
               </div>
 
+              {error && (
+                <p className="text-sm text-red-500">
+                  {error}
+                </p>
+              )}
+
               {showAddUserForm && (
                 <Card className="p-4 bg-muted/50 border-2 border-primary/20">
                   <h4 className="font-medium text-sm mb-3">Create New User</h4>
@@ -450,6 +450,7 @@ export default function BuildingDetailsModal({
                           setNewUserName("")
                           setNewUserEmail("")
                           setNewUserPassword("")
+                          setError(null)
                         }}
                         variant="outline"
                         size="sm"
