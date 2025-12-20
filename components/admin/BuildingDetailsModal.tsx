@@ -16,13 +16,12 @@ import {
 import { supabase } from "@/lib/supabase"
 
 interface User {
-    id: number
-    name: string
-    email: string
-    user_type: string
-    company_id: number | null 
-  }
-  
+  id: number
+  name: string
+  email: string
+  user_type: string
+  company_id: number | null
+}
 
 interface Building {
   id: number
@@ -60,11 +59,11 @@ export default function BuildingDetailsModal({
   const [selectedUsers, setSelectedUsers] = useState<number[]>([])
   const [propertyManagers, setPropertyManagers] = useState<User[]>([])
   const [submitting, setSubmitting] = useState(false)
+
   const [showAddUserForm, setShowAddUserForm] = useState(false)
-  
-  // New user form states
   const [newUserName, setNewUserName] = useState("")
   const [newUserEmail, setNewUserEmail] = useState("")
+  const [newUserPassword, setNewUserPassword] = useState("")
   const [creatingUser, setCreatingUser] = useState(false)
 
   useEffect(() => {
@@ -80,42 +79,57 @@ export default function BuildingDetailsModal({
   }, [isOpen, building])
 
   const fetchPropertyManagers = async () => {
+    if (!building) return
+
     try {
       let query = supabase
         .from("users")
-        .select("id, name, email, user_type, company_id") // ✅ add company_id here
+        .select("id, name, email, user_type, company_id")
         .eq("user_type", "property_manager")
         .order("name")
-  
-      if (building?.company_id) {
+
+      if (building.company_id) {
         query = query.eq("company_id", building.company_id)
       }
-  
+
       const { data, error } = await query
-  
+
       if (error) {
         console.error("Error fetching property managers:", error)
         return
       }
-  
-      // data now has company_id, so it matches User
-      setPropertyManagers(data || [])
+
+      setPropertyManagers((data || []) as User[])
     } catch (err) {
       console.error("Unexpected error:", err)
     }
   }
-  
 
   const handleCreateNewUser = async () => {
-    if (!newUserName.trim() || !newUserEmail.trim() || !building) {
-      alert("Please fill in all fields")
+    if (!building) return
+
+    if (!newUserName.trim() || !newUserEmail.trim() || !newUserPassword.trim()) {
+      alert("Please fill in name, email, and password")
       return
     }
 
     setCreatingUser(true)
 
     try {
-      // Create the new user with the building's company_id
+      // 1) Create auth user so they can log in
+      const { data: authResult, error: authError } = await supabase.auth.admin.createUser({
+        email: newUserEmail.trim(),
+        password: newUserPassword.trim(),
+        email_confirm: true,
+      })
+
+      if (authError || !authResult?.user) {
+        console.error("Error creating auth user:", authError)
+        alert("Failed to create login account for user")
+        return
+      }
+
+      // 2) Create app-level user row
       const { data: newUser, error: userError } = await supabase
         .from("users")
         .insert({
@@ -128,13 +142,13 @@ export default function BuildingDetailsModal({
         .select()
         .single()
 
-      if (userError) {
+      if (userError || !newUser) {
         console.error("Error creating user:", userError)
-        alert("Failed to create user: " + userError.message)
+        alert("Failed to create user record: " + (userError?.message || "Unknown error"))
         return
       }
 
-      // Automatically assign the new user to this building
+      // 3) Attach to this building
       const { error: assignError } = await supabase
         .from("user_buildings")
         .insert({
@@ -148,16 +162,16 @@ export default function BuildingDetailsModal({
         return
       }
 
-      // Update local state
-      setSelectedUsers([...selectedUsers, newUser.id])
+      setSelectedUsers((prev) => [...prev, newUser.id])
 
       // Reset form
       setNewUserName("")
       setNewUserEmail("")
+      setNewUserPassword("")
       setShowAddUserForm(false)
 
-      alert(`✅ User "${newUser.name}" created and assigned to building!`)
-      onSuccess() // Refresh parent data
+      alert(`User "${newUser.name}" created and assigned to building.`)
+      onSuccess()
     } catch (err) {
       console.error("Unexpected error:", err)
       alert("Failed to create user")
@@ -239,10 +253,11 @@ export default function BuildingDetailsModal({
     )
   }
 
-  // Filter available users to only show those in the same company as the building
-  const filteredAvailableUsers = availableUsers.filter(
-    (user) => !building?.company_id || user.company_id === building.company_id
-  )
+  const filteredAvailableUsers = building
+    ? availableUsers.filter(
+        (user) => !building.company_id || user.company_id === building.company_id
+      )
+    : []
 
   if (!isOpen || !building) return null
 
@@ -410,6 +425,16 @@ export default function BuildingDetailsModal({
                         placeholder="Enter user email"
                       />
                     </div>
+                    <div>
+                      <Label htmlFor="newUserPassword">Password *</Label>
+                      <Input
+                        id="newUserPassword"
+                        type="password"
+                        value={newUserPassword}
+                        onChange={(e) => setNewUserPassword(e.target.value)}
+                        placeholder="Enter temporary password"
+                      />
+                    </div>
                     <div className="flex gap-2">
                       <Button
                         onClick={handleCreateNewUser}
@@ -424,6 +449,7 @@ export default function BuildingDetailsModal({
                           setShowAddUserForm(false)
                           setNewUserName("")
                           setNewUserEmail("")
+                          setNewUserPassword("")
                         }}
                         variant="outline"
                         size="sm"
@@ -446,8 +472,9 @@ export default function BuildingDetailsModal({
               ) : (
                 <>
                   <p className="text-sm text-muted-foreground">
-                    Select users to assign to this building (showing {filteredAvailableUsers.length}{" "}
-                    users from company {building.company_id || "N/A"}):
+                    Select users to assign to this building (showing{" "}
+                    {filteredAvailableUsers.length} users from company{" "}
+                    {building.company_id || "N/A"}):
                   </p>
                   <div className="border border-border rounded-lg max-h-[400px] overflow-y-auto">
                     {filteredAvailableUsers.map((user) => (
