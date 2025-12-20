@@ -1,10 +1,28 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { X, Building2, Settings, Users, FileText, Edit2, Trash2, Upload, Eye, Home } from "lucide-react"
+import { X, Building2, Users, FileText, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { supabase } from "@/lib/supabase"
+
+interface User {
+    id: number
+    name: string
+    email: string
+    user_type: string
+    company_id: number | null 
+  }
+  
 
 interface Building {
   id: number
@@ -13,18 +31,8 @@ interface Building {
   manager_id: number
   company_id: number | null
   building_type?: string
-  logo_url?: string | null
-  header_text?: string | null
-  footer_text?: string | null
-  primary_color?: string
   created_at: string
-}
-
-interface User {
-  id: number
-  name: string
-  email: string
-  user_type: string
+  users?: Array<{ id: number; name: string; email: string; user_type: string }>
 }
 
 interface BuildingDetailsModalProps {
@@ -35,571 +43,461 @@ interface BuildingDetailsModalProps {
   availableUsers: User[]
 }
 
-type Tab = "overview" | "settings" | "users" | "documents"
+type TabType = "details" | "users" | "documents"
 
 export default function BuildingDetailsModal({
   isOpen,
   onClose,
   onSuccess,
   building,
-  availableUsers
+  availableUsers,
 }: BuildingDetailsModalProps) {
-  const [activeTab, setActiveTab] = useState<Tab>("overview")
-  const [loading, setLoading] = useState(true)
+  const [activeTab, setActiveTab] = useState<TabType>("details")
+  const [buildingName, setBuildingName] = useState("")
+  const [buildingAddress, setBuildingAddress] = useState("")
+  const [buildingType, setBuildingType] = useState("")
+  const [managerId, setManagerId] = useState<number | null>(null)
+  const [selectedUsers, setSelectedUsers] = useState<number[]>([])
+  const [propertyManagers, setPropertyManagers] = useState<User[]>([])
+  const [submitting, setSubmitting] = useState(false)
+  const [showAddUserForm, setShowAddUserForm] = useState(false)
   
-  // Building data
-  const [buildingUsers, setBuildingUsers] = useState<User[]>([])
-  const [propertyManager, setPropertyManager] = useState<User | null>(null)
-  const [company, setCompany] = useState<{ id: number; name: string } | null>(null)
-  const [meetingsCount, setMeetingsCount] = useState(0)
-  const [hasDocument, setHasDocument] = useState(false)
-  
-  // Settings form
-  const [editMode, setEditMode] = useState(false)
-  const [formData, setFormData] = useState({
-    name: "",
-    address: "",
-    building_type: "Strata/Condo" as 'Strata/Condo' | 'Rental' | 'Housing Co-op'
-  })
-  
-  // Users management
-  const [selectedUserIds, setSelectedUserIds] = useState<number[]>([])
-  const [savingUsers, setSavingUsers] = useState(false)
-  
-  // General state
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  // New user form states
+  const [newUserName, setNewUserName] = useState("")
+  const [newUserEmail, setNewUserEmail] = useState("")
+  const [creatingUser, setCreatingUser] = useState(false)
 
   useEffect(() => {
-    if (building && isOpen) {
-      fetchBuildingData()
+    if (isOpen && building) {
+      setBuildingName(building.name)
+      setBuildingAddress(building.address || "")
+      setBuildingType(building.building_type || "Strata/Condo")
+      setManagerId(building.manager_id)
+      setSelectedUsers(building.users?.map((u) => u.id) || [])
+      setActiveTab("details")
+      fetchPropertyManagers()
     }
-  }, [building, isOpen])
+  }, [isOpen, building])
 
-  const fetchBuildingData = async () => {
-    if (!building) return
-
-    setLoading(true)
+  const fetchPropertyManagers = async () => {
     try {
-      // Fetch building users
-      const { data: userBuildingsData } = await supabase
-        .from('user_buildings')
-        .select('user_id')
-        .eq('building_id', building.id)
-
-      const userIds = userBuildingsData?.map(ub => ub.user_id) || []
-      setSelectedUserIds(userIds)
-
-      if (userIds.length > 0) {
-        const { data: usersData } = await supabase
-          .from('users')
-          .select('id, name, email, user_type')
-          .in('id', userIds)
-        
-        setBuildingUsers(usersData || [])
-      } else {
-        setBuildingUsers([])
+      let query = supabase
+        .from("users")
+        .select("id, name, email, user_type, company_id") // ✅ add company_id here
+        .eq("user_type", "property_manager")
+        .order("name")
+  
+      if (building?.company_id) {
+        query = query.eq("company_id", building.company_id)
       }
-
-      // Fetch property manager
-      if (building.manager_id) {
-        const { data: managerData } = await supabase
-          .from('users')
-          .select('id, name, email, user_type')
-          .eq('id', building.manager_id)
-          .single()
-        
-        setPropertyManager(managerData)
+  
+      const { data, error } = await query
+  
+      if (error) {
+        console.error("Error fetching property managers:", error)
+        return
       }
-
-      // Fetch company
-      if (building.company_id) {
-        const { data: companyData } = await supabase
-          .from('companies')
-          .select('id, name')
-          .eq('id', building.company_id)
-          .single()
-        
-        setCompany(companyData)
-      }
-
-      // Count meetings
-      const { count } = await supabase
-        .from('meetings')
-        .select('*', { count: 'exact', head: true })
-        .eq('building_id', building.id)
-      
-      setMeetingsCount(count || 0)
-
-      // Check for documents
-      setHasDocument(!!(building as any).rules_document)
-
-      // Set form data
-      setFormData({
-        name: building.name,
-        address: building.address || "",
-        building_type: (building.building_type as any) || "Strata/Condo"
-      })
-
+  
+      // data now has company_id, so it matches User
+      setPropertyManagers(data || [])
     } catch (err) {
-      console.error('Error fetching building data:', err)
-    } finally {
-      setLoading(false)
+      console.error("Unexpected error:", err)
     }
   }
+  
 
-  const handleUpdateSettings = async () => {
-    if (!building) return
+  const handleCreateNewUser = async () => {
+    if (!newUserName.trim() || !newUserEmail.trim() || !building) {
+      alert("Please fill in all fields")
+      return
+    }
 
-    setSaving(true)
-    setError(null)
+    setCreatingUser(true)
 
     try {
-      const { error: updateError } = await supabase
-        .from('buildings')
-        .update({
-          name: formData.name.trim(),
-          address: formData.address.trim() || null,
-          building_type: formData.building_type
+      // Create the new user with the building's company_id
+      const { data: newUser, error: userError } = await supabase
+        .from("users")
+        .insert({
+          name: newUserName.trim(),
+          email: newUserEmail.trim(),
+          user_type: "user",
+          company_id: building.company_id,
+          assigned_pm_id: managerId,
         })
-        .eq('id', building.id)
+        .select()
+        .single()
 
-      if (updateError) {
-        setError('Failed to update building')
-        setSaving(false)
+      if (userError) {
+        console.error("Error creating user:", userError)
+        alert("Failed to create user: " + userError.message)
         return
       }
 
-      setEditMode(false)
-      onSuccess()
-      await fetchBuildingData()
+      // Automatically assign the new user to this building
+      const { error: assignError } = await supabase
+        .from("user_buildings")
+        .insert({
+          user_id: newUser.id,
+          building_id: building.id,
+        })
+
+      if (assignError) {
+        console.error("Error assigning user to building:", assignError)
+        alert("User created but failed to assign to building")
+        return
+      }
+
+      // Update local state
+      setSelectedUsers([...selectedUsers, newUser.id])
+
+      // Reset form
+      setNewUserName("")
+      setNewUserEmail("")
+      setShowAddUserForm(false)
+
+      alert(`✅ User "${newUser.name}" created and assigned to building!`)
+      onSuccess() // Refresh parent data
     } catch (err) {
-      setError('An unexpected error occurred')
+      console.error("Unexpected error:", err)
+      alert("Failed to create user")
     } finally {
-      setSaving(false)
+      setCreatingUser(false)
     }
   }
 
-  const handleSaveUsers = async () => {
-    if (!building) return
+  const handleSubmit = async () => {
+    if (!buildingName.trim() || !managerId || !building) {
+      alert("Please fill in all required fields")
+      return
+    }
 
-    setSavingUsers(true)
-    setError(null)
+    setSubmitting(true)
 
     try {
-      // Delete existing assignments
-      await supabase
-        .from('user_buildings')
-        .delete()
-        .eq('building_id', building.id)
+      const { error: updateError } = await supabase
+        .from("buildings")
+        .update({
+          name: buildingName.trim(),
+          address: buildingAddress.trim() || null,
+          building_type: buildingType,
+          manager_id: managerId,
+        })
+        .eq("id", building.id)
 
-      // Insert new assignments
-      if (selectedUserIds.length > 0) {
-        const assignments = selectedUserIds.map(userId => ({
-          user_id: userId,
-          building_id: building.id
-        }))
+      if (updateError) {
+        console.error("Error updating building:", updateError)
+        alert("Failed to update building")
+        return
+      }
 
-        const { error: insertError } = await supabase
-          .from('user_buildings')
-          .insert(assignments)
+      const currentUserIds = building.users?.map((u) => u.id) || []
+      const usersToAdd = selectedUsers.filter((id) => !currentUserIds.includes(id))
+      const usersToRemove = currentUserIds.filter((id) => !selectedUsers.includes(id))
 
-        if (insertError) {
-          setError('Failed to update user assignments')
-          setSavingUsers(false)
-          return
+      if (usersToRemove.length > 0) {
+        const { error: deleteError } = await supabase
+          .from("user_buildings")
+          .delete()
+          .eq("building_id", building.id)
+          .in("user_id", usersToRemove)
+
+        if (deleteError) {
+          console.error("Error removing users:", deleteError)
         }
       }
 
-      await fetchBuildingData()
+      if (usersToAdd.length > 0) {
+        const insertData = usersToAdd.map((userId) => ({
+          building_id: building.id,
+          user_id: userId,
+        }))
+
+        const { error: insertError } = await supabase
+          .from("user_buildings")
+          .insert(insertData)
+
+        if (insertError) {
+          console.error("Error adding users:", insertError)
+        }
+      }
+
+      alert("Building updated successfully!")
       onSuccess()
+      onClose()
     } catch (err) {
-      setError('An unexpected error occurred')
+      console.error("Unexpected error:", err)
+      alert("Failed to update building")
     } finally {
-      setSavingUsers(false)
+      setSubmitting(false)
     }
   }
 
-  const toggleUser = (userId: number) => {
-    setSelectedUserIds(prev =>
-      prev.includes(userId)
-        ? prev.filter(id => id !== userId)
-        : [...prev, userId]
+  const toggleUserSelection = (userId: number) => {
+    setSelectedUsers((prev) =>
+      prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId]
     )
   }
 
-  const getUserTypeBadge = (userType: string) => {
-    const badges: Record<string, { color: string; label: string }> = {
-      master: { color: 'bg-red-100 text-red-800', label: 'Master' },
-      corporate_administrator: { color: 'bg-purple-100 text-purple-800', label: 'Corp Admin' },
-      property_manager: { color: 'bg-blue-100 text-blue-800', label: 'PM' },
-      user: { color: 'bg-green-100 text-green-800', label: 'User' },
-      vendor: { color: 'bg-orange-100 text-orange-800', label: 'Vendor' },
-      attendee: { color: 'bg-gray-100 text-gray-800', label: 'Attendee' }
-    }
-
-    const badge = badges[userType] || { color: 'bg-gray-100 text-gray-800', label: userType }
-
-    return (
-      <span className={`text-xs px-2 py-1 rounded ${badge.color}`}>
-        {badge.label}
-      </span>
-    )
-  }
-
-  const getBuildingTypeColor = (type: string) => {
-    switch (type) {
-      case 'Strata/Condo':
-        return 'bg-blue-100 text-blue-800'
-      case 'Rental':
-        return 'bg-green-100 text-green-800'
-      case 'Housing Co-op':
-        return 'bg-purple-100 text-purple-800'
-      default:
-        return 'bg-gray-100 text-gray-800'
-    }
-  }
+  // Filter available users to only show those in the same company as the building
+  const filteredAvailableUsers = availableUsers.filter(
+    (user) => !building?.company_id || user.company_id === building.company_id
+  )
 
   if (!isOpen || !building) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 animate-in fade-in overflow-y-auto p-4">
-      <Card className="w-full max-w-5xl border-0 rounded-2xl shadow-2xl my-8 max-h-[90vh] overflow-hidden flex flex-col">
-        <div className="flex items-center justify-between border-b border-border bg-gradient-to-r from-primary/5 to-decision-purple/5 p-6">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <Card className="w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+        {/* Header */}
+        <div className="p-6 border-b border-border flex items-center justify-between bg-gradient-to-r from-primary/10 to-decision-purple/10">
           <div>
-            <h2 className="text-xl font-bold text-foreground flex items-center gap-2">
-              <Building2 className="h-6 w-6 text-primary" />
-              {building.name}
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              Manage building details, users, and documents
-            </p>
+            <h2 className="text-2xl font-bold text-foreground">Building Details</h2>
+            <p className="text-sm text-muted-foreground mt-1">{building.name}</p>
           </div>
-          <button
-            onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center rounded hover:bg-muted transition-colors"
-          >
+          <Button variant="ghost" size="icon" onClick={onClose}>
             <X className="h-5 w-5" />
-          </button>
+          </Button>
         </div>
 
         {/* Tabs */}
-        <div className="border-b border-border px-6">
-          <div className="flex gap-4">
-            <button
-              onClick={() => setActiveTab("overview")}
-              className={`pb-3 px-1 font-medium text-sm transition-colors ${
-                activeTab === "overview"
-                  ? "border-b-2 border-primary text-primary"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              Overview
-            </button>
-            <button
-              onClick={() => setActiveTab("settings")}
-              className={`pb-3 px-1 font-medium text-sm transition-colors ${
-                activeTab === "settings"
-                  ? "border-b-2 border-primary text-primary"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <Settings className="h-4 w-4 inline mr-2" />
-              Settings
-            </button>
-            <button
-              onClick={() => setActiveTab("users")}
-              className={`pb-3 px-1 font-medium text-sm transition-colors ${
-                activeTab === "users"
-                  ? "border-b-2 border-primary text-primary"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <Users className="h-4 w-4 inline mr-2" />
-              Users ({buildingUsers.length})
-            </button>
-            <button
-              onClick={() => setActiveTab("documents")}
-              className={`pb-3 px-1 font-medium text-sm transition-colors ${
-                activeTab === "documents"
-                  ? "border-b-2 border-primary text-primary"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <FileText className="h-4 w-4 inline mr-2" />
-              Documents
-            </button>
-          </div>
+        <div className="flex gap-4 px-6 pt-4 border-b border-border">
+          <button
+            onClick={() => setActiveTab("details")}
+            className={`pb-3 px-1 font-medium text-sm transition-colors flex items-center gap-2 ${
+              activeTab === "details"
+                ? "text-primary border-b-2 border-primary"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <Building2 className="h-4 w-4" />
+            Details
+          </button>
+          <button
+            onClick={() => setActiveTab("users")}
+            className={`pb-3 px-1 font-medium text-sm transition-colors flex items-center gap-2 ${
+              activeTab === "users"
+                ? "text-primary border-b-2 border-primary"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <Users className="h-4 w-4" />
+            Users ({selectedUsers.length})
+          </button>
+          <button
+            onClick={() => setActiveTab("documents")}
+            className={`pb-3 px-1 font-medium text-sm transition-colors flex items-center gap-2 ${
+              activeTab === "documents"
+                ? "text-primary border-b-2 border-primary"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <FileText className="h-4 w-4" />
+            Documents
+          </button>
         </div>
 
-        <div className="p-6 overflow-y-auto flex-1">
-          {loading ? (
-            <div className="text-center py-12">
-              <p className="text-muted-foreground">Loading...</p>
-            </div>
-          ) : (
-            <>
-              {/* Overview Tab */}
-              {activeTab === "overview" && (
-                <div className="space-y-6">
-                  {/* Stats Cards */}
-                  <div className="grid grid-cols-3 gap-4">
-                    <Card className="p-4 bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200">
-                      <div className="flex items-center gap-3">
-                        <div className="p-3 bg-blue-500 rounded-lg">
-                          <Users className="h-6 w-6 text-white" />
-                        </div>
-                        <div>
-                          <p className="text-2xl font-bold text-blue-900">{buildingUsers.length}</p>
-                          <p className="text-sm text-blue-700">Users</p>
-                        </div>
-                      </div>
-                    </Card>
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-6">
+          {activeTab === "details" && (
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="buildingName">Building Name *</Label>
+                <Input
+                  id="buildingName"
+                  value={buildingName}
+                  onChange={(e) => setBuildingName(e.target.value)}
+                  placeholder="Enter building name"
+                />
+              </div>
 
-                    <Card className="p-4 bg-gradient-to-br from-green-50 to-green-100 border-green-200">
-                      <div className="flex items-center gap-3">
-                        <div className="p-3 bg-green-500 rounded-lg">
-                          <FileText className="h-6 w-6 text-white" />
-                        </div>
-                        <div>
-                          <p className="text-2xl font-bold text-green-900">{meetingsCount}</p>
-                          <p className="text-sm text-green-700">Meetings</p>
-                        </div>
-                      </div>
-                    </Card>
+              <div>
+                <Label htmlFor="buildingAddress">Address</Label>
+                <Input
+                  id="buildingAddress"
+                  value={buildingAddress}
+                  onChange={(e) => setBuildingAddress(e.target.value)}
+                  placeholder="Enter building address"
+                />
+              </div>
 
-                    <Card className="p-4 bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200">
-                      <div className="flex items-center gap-3">
-                        <div className="p-3 bg-purple-500 rounded-lg">
-                          <Home className="h-6 w-6 text-white" />
-                        </div>
-                        <div>
-                          <p className="text-2xl font-bold text-purple-900">
-                            <span className={`text-base px-2 py-1 rounded ${getBuildingTypeColor(formData.building_type)}`}>
-                              {formData.building_type}
-                            </span>
-                          </p>
-                          <p className="text-sm text-purple-700">Type</p>
-                        </div>
-                      </div>
-                    </Card>
-                  </div>
+              <div>
+                <Label htmlFor="buildingType">Building Type *</Label>
+                <Select value={buildingType} onValueChange={setBuildingType}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select building type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Strata/Condo">Strata/Condo</SelectItem>
+                    <SelectItem value="Rental">Rental Building</SelectItem>
+                    <SelectItem value="Housing Co-op">Housing Co-op</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
 
-                  {/* Building Info */}
-                  <div className="grid grid-cols-2 gap-4">
-                    <Card className="p-4">
-                      <h3 className="font-semibold text-foreground mb-3">Building Details</h3>
-                      <div className="space-y-2">
-                        <div>
-                          <p className="text-xs text-muted-foreground">Address</p>
-                          <p className="text-sm text-foreground">{building.address || "No address set"}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground">Property Manager</p>
-                          <p className="text-sm text-foreground">{propertyManager?.name || "Not assigned"}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground">Company</p>
-                          <p className="text-sm text-foreground">{company?.name || "Not assigned"}</p>
-                        </div>
-                      </div>
-                    </Card>
+              <div>
+                <Label htmlFor="manager">Property Manager *</Label>
+                <Select
+                  value={managerId?.toString() || ""}
+                  onValueChange={(value) => setManagerId(parseInt(value))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select property manager" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {propertyManagers.map((pm) => (
+                      <SelectItem key={pm.id} value={pm.id.toString()}>
+                        {pm.name} ({pm.email})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
-                    <Card className="p-4">
-                      <h3 className="font-semibold text-foreground mb-3">Recent Activity</h3>
-                      <div className="space-y-2">
-                        <div>
-                          <p className="text-xs text-muted-foreground">Created</p>
-                          <p className="text-sm text-foreground">{new Date(building.created_at).toLocaleDateString()}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground">Total Meetings</p>
-                          <p className="text-sm text-foreground">{meetingsCount}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground">Documents</p>
-                          <p className="text-sm text-foreground">{hasDocument ? "✓ Rules uploaded" : "No documents"}</p>
-                        </div>
-                      </div>
-                    </Card>
-                  </div>
+              <div className="bg-muted/50 p-4 rounded-lg">
+                <h3 className="font-medium text-sm text-muted-foreground mb-2">Metadata</h3>
+                <div className="space-y-1 text-sm">
+                  <p>
+                    <span className="font-medium">Building ID:</span> {building.id}
+                  </p>
+                  <p>
+                    <span className="font-medium">Company ID:</span>{" "}
+                    {building.company_id || "None"}
+                  </p>
+                  <p>
+                    <span className="font-medium">Created:</span>{" "}
+                    {new Date(building.created_at).toLocaleDateString()}
+                  </p>
                 </div>
-              )}
+              </div>
+            </div>
+          )}
 
-              {/* Settings Tab */}
-              {activeTab === "settings" && (
-                <div className="space-y-4">
-                  {error && (
-                    <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded text-sm">
-                      {error}
+          {activeTab === "users" && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold text-foreground">Manage Building Users</h3>
+                <Button
+                  onClick={() => setShowAddUserForm(!showAddUserForm)}
+                  size="sm"
+                  className="bg-gradient-to-r from-primary to-decision-purple"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add New User
+                </Button>
+              </div>
+
+              {showAddUserForm && (
+                <Card className="p-4 bg-muted/50 border-2 border-primary/20">
+                  <h4 className="font-medium text-sm mb-3">Create New User</h4>
+                  <div className="space-y-3">
+                    <div>
+                      <Label htmlFor="newUserName">Name *</Label>
+                      <Input
+                        id="newUserName"
+                        value={newUserName}
+                        onChange={(e) => setNewUserName(e.target.value)}
+                        placeholder="Enter user name"
+                      />
                     </div>
-                  )}
-
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-lg font-semibold text-foreground">Building Settings</h3>
-                    {!editMode ? (
+                    <div>
+                      <Label htmlFor="newUserEmail">Email *</Label>
+                      <Input
+                        id="newUserEmail"
+                        type="email"
+                        value={newUserEmail}
+                        onChange={(e) => setNewUserEmail(e.target.value)}
+                        placeholder="Enter user email"
+                      />
+                    </div>
+                    <div className="flex gap-2">
                       <Button
-                        onClick={() => setEditMode(true)}
+                        onClick={handleCreateNewUser}
+                        disabled={creatingUser}
                         size="sm"
-                        className="bg-blue-600 hover:bg-blue-700 text-white"
+                        className="bg-gradient-to-r from-primary to-decision-purple"
                       >
-                        <Edit2 className="h-4 w-4 mr-2" />
-                        Edit Settings
+                        {creatingUser ? "Creating..." : "Create & Assign User"}
                       </Button>
-                    ) : null}
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-foreground mb-2">
-                      Building Name *
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.name}
-                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                      disabled={!editMode}
-                      className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-foreground mb-2">
-                      Address
-                    </label>
-                    <textarea
-                      value={formData.address}
-                      onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                      disabled={!editMode}
-                      rows={2}
-                      className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none disabled:opacity-50"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-foreground mb-2">
-                      Building Type *
-                    </label>
-                    <select
-                      value={formData.building_type}
-                      onChange={(e) => setFormData({ ...formData, building_type: e.target.value as any })}
-                      disabled={!editMode}
-                      className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
-                    >
-                      <option value="Strata/Condo">Strata/Condo</option>
-                      <option value="Rental">Rental Building</option>
-                      <option value="Housing Co-op">Housing Co-op</option>
-                    </select>
-                  </div>
-
-                  {editMode && (
-                    <div className="flex gap-2 pt-4">
                       <Button
                         onClick={() => {
-                          setEditMode(false)
-                          setFormData({
-                            name: building.name,
-                            address: building.address || "",
-                            building_type: (building.building_type as any) || "Strata/Condo"
-                          })
-                          setError(null)
+                          setShowAddUserForm(false)
+                          setNewUserName("")
+                          setNewUserEmail("")
                         }}
                         variant="outline"
-                        className="flex-1"
-                        disabled={saving}
+                        size="sm"
                       >
                         Cancel
                       </Button>
-                      <Button
-                        onClick={handleUpdateSettings}
-                        className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
-                        disabled={saving}
-                      >
-                        {saving ? "Saving..." : "Save Changes"}
-                      </Button>
                     </div>
-                  )}
-                </div>
+                    <p className="text-xs text-muted-foreground">
+                      User will be created with company ID: {building.company_id || "None"} and
+                      automatically assigned to this building.
+                    </p>
+                  </div>
+                </Card>
               )}
 
-              {/* Users Tab */}
-              {activeTab === "users" && (
-                <div className="space-y-4">
-                  {error && (
-                    <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded text-sm">
-                      {error}
-                    </div>
-                  )}
-
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-semibold text-foreground">Manage Building Users</h3>
-                    <Button
-                      onClick={handleSaveUsers}
-                      size="sm"
-                      className="bg-blue-600 hover:bg-blue-700 text-white"
-                      disabled={savingUsers}
-                    >
-                      {savingUsers ? "Saving..." : "Save Changes"}
-                    </Button>
-                  </div>
-
-                  <div className="border border-border rounded p-4 space-y-2 max-h-96 overflow-y-auto">
-                    {availableUsers.length === 0 ? (
-                      <p className="text-sm text-muted-foreground text-center py-8">No users available</p>
-                    ) : (
-                      availableUsers.map((user) => (
-                        <label
-                          key={user.id}
-                          className="flex items-center gap-3 cursor-pointer hover:bg-muted p-3 rounded transition-colors"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={selectedUserIds.includes(user.id)}
-                            onChange={() => toggleUser(user.id)}
-                            disabled={savingUsers}
-                            className="h-4 w-4 rounded border-border cursor-pointer"
-                          />
-                          <div className="flex-1">
-                            <p className="text-sm font-medium text-foreground">{user.name}</p>
-                            <p className="text-xs text-muted-foreground">{user.email}</p>
-                          </div>
-                          {getUserTypeBadge(user.user_type)}
-                        </label>
-                      ))
-                    )}
-                  </div>
-
-                  <p className="text-xs text-muted-foreground">
-                    {selectedUserIds.length} user{selectedUserIds.length !== 1 ? 's' : ''} selected
+              {filteredAvailableUsers.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-8">
+                  No users available in this company. Create a new user above.
+                </p>
+              ) : (
+                <>
+                  <p className="text-sm text-muted-foreground">
+                    Select users to assign to this building (showing {filteredAvailableUsers.length}{" "}
+                    users from company {building.company_id || "N/A"}):
                   </p>
-                </div>
+                  <div className="border border-border rounded-lg max-h-[400px] overflow-y-auto">
+                    {filteredAvailableUsers.map((user) => (
+                      <label
+                        key={user.id}
+                        className="flex items-center gap-3 p-3 hover:bg-muted cursor-pointer border-b border-border last:border-b-0"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedUsers.includes(user.id)}
+                          onChange={() => toggleUserSelection(user.id)}
+                          className="h-4 w-4"
+                        />
+                        <div className="flex-1">
+                          <p className="font-medium text-sm">{user.name}</p>
+                          <p className="text-xs text-muted-foreground">{user.email}</p>
+                        </div>
+                        <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">
+                          {user.user_type}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </>
               )}
+            </div>
+          )}
 
-              {/* Documents Tab */}
-              {activeTab === "documents" && (
-                <div className="space-y-4">
-                  <h3 className="text-lg font-semibold text-foreground">Building Documents</h3>
-                  
-                  <Card className="p-6 text-center">
-                    <FileText className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                    <p className="text-muted-foreground mb-4">
-                      {hasDocument ? "Document management coming soon" : "No documents uploaded yet"}
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      Use the "Manage Documents" button in the Buildings tab for now
-                    </p>
-                  </Card>
-                </div>
-              )}
-            </>
+          {activeTab === "documents" && (
+            <div className="text-center py-12">
+              <FileText className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+              <h3 className="font-medium text-foreground mb-2">Documents</h3>
+              <p className="text-sm text-muted-foreground">
+                Document management will be available here
+              </p>
+            </div>
           )}
         </div>
 
-        <div className="border-t border-border p-6 bg-muted/20">
-          <Button 
-            onClick={onClose} 
-            className="w-full bg-gradient-to-r from-primary to-decision-purple text-primary-foreground"
+        {/* Footer */}
+        <div className="p-6 border-t border-border flex justify-end gap-3">
+          <Button variant="outline" onClick={onClose} disabled={submitting}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleSubmit}
+            disabled={submitting}
+            className="bg-gradient-to-r from-primary to-decision-purple"
           >
-            Close
+            {submitting ? "Saving..." : "Save Changes"}
           </Button>
         </div>
       </Card>
