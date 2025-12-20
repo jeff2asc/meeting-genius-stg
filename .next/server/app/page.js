@@ -89,7 +89,7 @@ ${g}`}({domain:v.host,address:w,statement:m,uri:v.href,version:"1",chainId:y,non
     <div class="section">
       <div class="section-header">
         📝 Topics & Discussion
-      </div>`,o.forEach((e,t)=>{d+=`<h2>${t+1}. ${aK(e.title)}</h2>`,e.topics&&e.topics.length>0?e.topics.forEach((e,r)=>{d+=`
+      </div>`,o.forEach((e,t)=>{let r="string"==typeof e.title?e.title:"",a=r.replace(/^\s*\d+(\.\d+)*\s*[\).\-\:]*\s*/,"");d+=`<h2>${t+1}. ${aK(a||r)}</h2>`,e.topics&&e.topics.length>0?e.topics.forEach((e,r)=>{d+=`
           <div class="topic-box">
             <div class="topic-title">${t+1}.${r+1} ${aK(e.title)}</div>`,e.description&&(d+=`<div class="topic-description">${aK(e.description)}</div>`),e.notes&&e.notes.length>0&&e.notes.forEach(e=>{d+=`<div class="item item-note"><span class="item-label">📝 Note:</span>${aK(e.content)}</div>`}),e.tasks&&e.tasks.length>0&&e.tasks.forEach(e=>{let t=e.assigned_name||e.assigned_email||"Unassigned",r=e.due_date?` (Due: ${new Date(e.due_date).toLocaleDateString()})`:"";d+=`<div class="item item-task"><span class="item-label">✓ Task:</span>${aK(e.description)} - Assigned: ${aK(t)}${r}</div>`}),e.decisions&&e.decisions.length>0&&e.decisions.forEach(e=>{let t=null!==e.votes_for?` (For: ${e.votes_for||0}, Against: ${e.votes_against||0}, Abstain: ${e.votes_abstain||0})`:"";d+=`<div class="item item-decision"><span class="item-label">⚖️ Decision:</span>${aK(e.motion_text)} - Result: ${aK(e.result||"N/A")}${t}</div>`}),d+="</div>"}):d+='<p style="padding: 15px; color: #6b7280; font-style: italic;">No topics recorded for this section.</p>'}),d+="</div>"):"footer"===e.id&&(n+=(A=e,`
     <div class="footer-signatures">

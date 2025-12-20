@@ -477,7 +477,12 @@ function renderTopics(sections: any[]): string {
       </div>`
 
   sections.forEach((section, sIdx) => {
-    html += `<h2>${sIdx + 1}. ${escapeHtml(section.title)}</h2>`
+    // Normalize section title by removing any leading number / dot / space
+const rawTitle = typeof section.title === "string" ? section.title : ""
+const cleanedTitle = rawTitle.replace(/^\s*\d+(\.\d+)*\s*[\).\-\:]*\s*/,"")
+
+html += `<h2>${sIdx + 1}. ${escapeHtml(cleanedTitle || rawTitle)}</h2>`
+
 
     if (section.topics && section.topics.length > 0) {
       section.topics.forEach((topic: any, tIdx: number) => {
