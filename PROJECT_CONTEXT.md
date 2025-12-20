@@ -79,6 +79,8 @@ Multi-tenant company management table.
 
 **Purpose**: Stores company information and default configurations for meetings.
 
+**Note**: The database schema currently implements `default_meeting_sections` and `default_meeting_types`. The `default_decision_results` field may need to be added to the schema if decision result customization is required.
+
 ---
 
 ### 2. **users**
@@ -92,6 +94,7 @@ User accounts with role-based access.
   password_hash: string
   user_type: 'master' | 'property_manager' | 'user' | 'vendor' | 'attendee' | 'corporate_administrator'
   company_id: number | null (foreign key → companies.id)
+  assigned_pm_id: number | null (foreign key → users.id, references property_manager)
   smtp_config: any | null
   created_at: timestamp
   updated_at: timestamp
@@ -99,6 +102,10 @@ User accounts with role-based access.
 ```
 
 **Purpose**: Stores all user accounts with their roles and company associations.
+
+**Key Fields**:
+- `assigned_pm_id`: Links regular users to their assigned property manager (used for filtering and access control)
+- `company_id`: Associates user with a company for multi-tenant isolation
 
 **User Types**:
 - `master`: Full system access across all companies
@@ -265,6 +272,8 @@ Action items/tasks from topics.
 - `completed`: Task is finished
 - `blocked`: Task is blocked and cannot proceed
 
+**Note**: The database schema currently defines status as `'open' | 'in_progress' | 'completed'`, but the application supports `'blocked'` status in the UI. Ensure the database enum includes all four statuses.
+
 **Assignees Structure** (JSONB):
 ```json
 [
@@ -296,6 +305,8 @@ Decisions/motions recorded for topics.
 ```
 
 **Purpose**: Records formal decisions, motions, and voting results.
+
+**Note**: The database schema may not include `votes_abstain` field in all implementations. Check actual schema if abstain votes are needed.
 
 ---
 
@@ -362,8 +373,22 @@ Customizable templates for generating minutes PDFs.
 
 ---
 
-### Additional Tables (Referenced but not fully defined in code)
-- **user_buildings**: Junction table linking users to buildings (many-to-many relationship)
+### 12. **user_buildings**
+Junction table linking users to buildings (many-to-many relationship).
+
+```typescript
+{
+  user_id: number (foreign key → users.id)
+  building_id: number (foreign key → buildings.id)
+}
+```
+
+**Purpose**: Establishes many-to-many relationship between users and buildings. Used to assign users to specific buildings they can access. Property managers see buildings via `manager_id` in buildings table, while regular users see buildings via this junction table.
+
+**Usage**:
+- When a user is assigned to a building, a record is created in this table
+- Dashboard filters buildings for regular users based on entries in this table
+- Admin panel allows assigning/removing users from buildings
 
 ---
 
@@ -462,11 +487,28 @@ All permission checks are centralized in `lib/permissions.ts`:
 - Timestamp tracking
 
 ### 6. **Admin Panel**
-- User management (create, edit, assign to companies/buildings)
-- Building management (create, edit, configure templates)
-- Company management (create, edit, set defaults)
-- Document management (upload/view building documents)
-- Minutes templates management
+- **User Management**:
+  - Create users with company and building assignment
+  - Assign users to property managers via `assigned_pm_id`
+  - Assign users to buildings via `user_buildings` junction table
+  - Filter users by type, company, building
+  - Inline user creation from BuildingDetailsModal and CompanyDetailsModal
+- **Building Management**:
+  - Create buildings with property manager assignment
+  - Edit building details (name, address, type, manager)
+  - Assign/unassign users to buildings
+  - Inline user creation when assigning to buildings
+  - View building users and metadata
+- **Company Management**:
+  - Create companies with default configurations
+  - Edit company details and defaults
+  - View company statistics (users, buildings, admins)
+  - Manage buildings within company (create, delete)
+  - Manage users within company (create, filter, delete)
+  - Manage corporate administrators
+  - Inline creation of property managers, users, and administrators
+- **Document Management**: Upload/view building documents
+- **Minutes Templates Management**: Customize PDF templates per building
 
 ### 7. **Multi-Tenancy**
 - Company-level isolation
@@ -551,15 +593,23 @@ app/page.tsx (Root)
 
 #### **Admin Components** (`components/admin/`)
 
-- `CreateUserModal.tsx`: Create users
-- `CreateBuildingModal.tsx`: Create buildings
-- `EditBuildingModal.tsx`: Edit buildings
+- `CreateUserModal.tsx`: Create users with company and building assignment
+- `CreateBuildingModal.tsx`: Create buildings with property manager assignment
+- `EditBuildingModal.tsx`: Edit building details
+- `BuildingDetailsModal.tsx`: **Comprehensive building management modal** with tabs:
+  - **Details Tab**: Edit building name, address, type, and property manager
+  - **Users Tab**: Assign/unassign users to building, create new users inline
+  - **Documents Tab**: Document management (placeholder for future implementation)
 - `CreateCompanyModal.tsx`: Create companies
-- `EditCompanyModal.tsx`: Edit companies
-- `CompanyDetailsModal.tsx`: View company details
-- `UsersTab.tsx`: User management interface
-- `BuildingsTab.tsx`: Building management interface
-- `CompaniesTab.tsx`: Company management interface
+- `EditCompanyModal.tsx`: Edit company details and defaults
+- `CompanyDetailsModal.tsx`: **Enhanced company management modal** with tabs:
+  - **Overview Tab**: Company statistics (users, buildings, admins count)
+  - **Buildings Tab**: View all buildings, create buildings inline, create property managers inline, delete buildings
+  - **Users Tab**: View all company users with filtering by type, create users inline, delete users
+  - **Administrators Tab**: View corporate administrators, create administrators inline, delete administrators
+- `UsersTab.tsx`: User management interface with filtering
+- `BuildingsTab.tsx`: Building management interface with user assignment
+- `CompaniesTab.tsx`: Company management interface with statistics
 - `MinutesTemplatesTab.tsx`: Template management for PDF minutes
 - `DocumentManagementModal.tsx`: Upload/view documents
 - `ViewDocumentModal.tsx`: View document content
@@ -683,13 +733,17 @@ working_agenda → agenda → working_minutes → minutes
 ### 6. **User Access Control**
 
 1. User logs in
-2. System checks `user_type` and `company_id`
+2. System checks `user_type`, `company_id`, and `assigned_pm_id`
 3. Dashboard filters buildings based on:
    - **master**: All buildings
-   - **corporate_administrator**: Buildings in their company
-   - **property_manager**: Buildings they manage
-   - **user**: Buildings assigned to them
+   - **corporate_administrator**: Buildings in their company (`company_id` filter)
+   - **property_manager**: Buildings they manage (`manager_id` filter)
+   - **user**: Buildings assigned via `user_buildings` junction table
    - **vendor/attendee**: Limited access
+4. Admin panel filters users based on:
+   - **master**: All users
+   - **corporate_administrator**: Users in their company
+   - **property_manager**: Users assigned to them (`assigned_pm_id` filter) or themselves
 
 ### 7. **Generating PDF Minutes**
 
@@ -720,6 +774,53 @@ working_agenda → agenda → working_minutes → minutes
    - Update task status (open, in_progress, completed, blocked)
 4. Notes are stored in `task_notes` table linked to task
 5. Each note tracks creator and creation timestamp
+
+### 9. **Building Management Workflow**
+
+1. User opens BuildingDetailsModal from BuildingsTab
+2. Modal displays three tabs:
+   - **Details Tab**: Edit building name, address, building type, and property manager
+   - **Users Tab**: 
+     - View all users assigned to the building
+     - Select/deselect users from company to assign/unassign
+     - Create new users inline (automatically assigned to building and company)
+   - **Documents Tab**: Placeholder for future document management
+3. Changes are saved to `buildings` table and `user_buildings` junction table
+4. Building users are fetched via join query on `user_buildings` table
+
+### 10. **Company Management Workflow**
+
+1. User opens CompanyDetailsModal from CompaniesTab
+2. Modal displays four tabs:
+   - **Overview Tab**: 
+     - Statistics cards showing total users, corporate admins, and buildings
+     - List of all company users
+   - **Buildings Tab**:
+     - View all buildings in company
+     - Create buildings inline with property manager selection
+     - Create property managers inline (automatically assigned to company)
+     - Delete buildings
+   - **Users Tab**:
+     - View all company users with filtering by type
+     - Create users inline with user type selection
+     - Delete users
+   - **Administrators Tab**:
+     - View corporate administrators
+     - Create administrators inline
+     - Delete administrators
+3. All inline creations automatically assign users to the company
+4. Property managers created inline are automatically available for building assignment
+
+### 11. **User-Building Assignment**
+
+1. Users can be assigned to buildings via `user_buildings` junction table
+2. Assignment happens in:
+   - BuildingDetailsModal → Users tab (select existing users)
+   - BuildingDetailsModal → Users tab (create new user inline)
+   - CreateUserModal (during user creation)
+3. Users see only buildings they're assigned to (unless they're property managers or higher)
+4. Property managers see buildings via `buildings.manager_id` relationship
+5. Regular users see buildings via `user_buildings` junction table entries
 
 ---
 
@@ -818,8 +919,20 @@ if (currentUser.user_type === 'master') {
   query = query.eq('manager_id', currentUser.id)
 } else {
   // Filter by user_buildings junction table
+  const { data: userBuildings } = await supabase
+    .from('user_buildings')
+    .select('building_id')
+    .eq('user_id', currentUser.id)
+  const buildingIds = userBuildings?.map(ub => ub.building_id) || []
+  query = query.in('id', buildingIds)
 }
 ```
+
+**User-Building Assignment**:
+- Users are assigned to buildings via the `user_buildings` junction table
+- Property managers see buildings via `buildings.manager_id`
+- Regular users see buildings via `user_buildings` entries
+- Users can be assigned to a property manager via `users.assigned_pm_id`
 
 ### 2. **Company Defaults**
 
@@ -1014,20 +1127,23 @@ if (!canCreateMeeting(currentUser?.user_type)) {
 ## Summary
 
 This is a comprehensive meeting management system with:
-- **11 main database tables** (companies, users, buildings, meetings, sections, topics, notes, tasks, decisions, task_notes, minutes_templates)
+- **12 main database tables** (companies, users, buildings, meetings, sections, topics, notes, tasks, decisions, task_notes, minutes_templates, user_buildings)
 - **6 user types** with granular permissions
 - **Multi-tenant architecture** (company → building → meeting hierarchy)
 - **Full CRUD operations** for all entities
 - **Meeting rollover** functionality
 - **Task and decision tracking** with task notes
 - **PDF minutes generation** with customizable templates
-- **Admin panel** for system management
+- **Comprehensive admin panel** with inline creation capabilities
+- **User-building assignment** via junction table
+- **Property manager assignment** for users
+- **Enhanced company and building management** modals with tabbed interfaces
 - **Modern React/Next.js** architecture with TypeScript
 
 The system is designed for property management companies to manage their meeting workflows from agenda creation through minutes finalization and PDF generation.
 
 ---
 
-**Last Updated**: December 2024 (Updated with PDF generation, task notes, and new components)
+**Last Updated**: January 2025 (Updated with BuildingDetailsModal, CompanyDetailsModal enhancements, user_buildings table, assigned_pm_id field, and inline creation features)
 **Version**: Current production codebase
 

@@ -587,19 +587,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
 
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         {activeTab === "users" && (
-          <UsersTab
-            users={users}
-            filteredUsers={filteredUsers}
-            buildings={getBuildingsList()}
-            filterUserType={filterUserType}
-            filterBuilding={filterBuilding}
-            loading={loading}
-            isMaster={isMaster}
-            onFilterUserTypeChange={setFilterUserType}
-            onFilterBuildingChange={setFilterBuilding}
-            onEditUser={handleEditUser}
-            onDeleteUser={handleDeleteUser}
-          />
+          <UsersTab currentUser={currentUser} />
         )}
 
         {activeTab === "buildings" && (
