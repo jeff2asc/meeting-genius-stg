@@ -1,6 +1,6 @@
 "use client"
 
-import { Building2, MapPin, Edit2, FileText, Users } from "lucide-react"
+import { Building2, MapPin, FileText, Edit2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -19,10 +19,9 @@ interface Building {
 interface BuildingCardProps {
   building: Building
   hasDocuments: boolean
-  onEdit: (building: Building) => void
+  onViewDetails: (building: Building) => void
   onViewDocument: (building: Building) => void
   onManageDocuments: (building: Building) => void
-  onViewUsers: (building: Building) => void
 }
 
 const getBuildingTypeColor = (type: string) => {
@@ -41,10 +40,9 @@ const getBuildingTypeColor = (type: string) => {
 export default function BuildingCard({
   building,
   hasDocuments,
-  onEdit,
+  onViewDetails,
   onViewDocument,
-  onManageDocuments,
-  onViewUsers
+  onManageDocuments
 }: BuildingCardProps) {
   return (
     <Card className="p-4 hover:shadow-md transition-shadow">
@@ -92,24 +90,15 @@ export default function BuildingCard({
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {/* View Details Button - Replaces Edit + View Users */}
           <Button
             size="sm"
             variant="outline"
-            onClick={() => onEdit(building)}
+            onClick={() => onViewDetails(building)}
+            className="border-primary/30 text-primary hover:bg-primary/10"
           >
-            <Edit2 className="h-4 w-4 mr-2" />
-            Edit
-          </Button>
-
-          {/* View Users Button */}
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => onViewUsers(building)}
-            className="border-blue-200 text-blue-700 hover:bg-blue-50"
-          >
-            <Users className="h-4 w-4 mr-2" />
-            View Users
+            <Building2 className="h-4 w-4 mr-2" />
+            View Details
           </Button>
           
           {/* Document Management Buttons */}
