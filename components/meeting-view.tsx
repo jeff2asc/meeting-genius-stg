@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import GenerateAgendaButton from "./GenerateAgendaButton"
 import GenerateMinutesButton from "./GenerateMinutesButton"
 import {
   ArrowLeft, Plus, Trash, Pencil, ChevronDown, ChevronRight, Calendar,
@@ -552,154 +553,168 @@ export default function MeetingView({
   return (
     <>
       <header className="border-b border-border bg-card shadow-sm sticky top-0 z-40">
-        <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-4">
-              <Button variant="ghost" size="icon" onClick={onBack} className="hover:bg-muted">
-                <ArrowLeft className="h-5 w-5" />
+  <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
+    <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center gap-4">
+        <Button variant="ghost" size="icon" onClick={onBack} className="hover:bg-muted">
+          <ArrowLeft className="h-5 w-5" />
+        </Button>
+        <div>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl font-bold text-foreground">{meeting.title}</h1>
+            {userCanEdit && meeting.status === "working_agenda" && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setShowEditMeetingModal(true)}
+                className="hover:bg-muted border border-blue-500"
+                title="Edit Meeting"
+              >
+                <Edit2 className="h-4 w-4" />
               </Button>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h1 className="text-xl font-bold text-foreground">{meeting.title}</h1>
-                  {userCanEdit && meeting.status === "working_agenda" && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => setShowEditMeetingModal(true)}
-                      className="hover:bg-muted border border-blue-500"
-                      title="Edit Meeting"
-                    >
-                      <Edit2 className="h-4 w-4" />
-                    </Button>
-                  )}
-                  <Badge variant="outline" className={getStatusColor(meeting.status)}>
-                    {getStatusText(meeting.status)}
-                  </Badge>
-                  {userCanEdit && (
-                    <>
-                      {canTransition(meeting.status, "backward") && (
-                        <Button
-                          variant="outline"
-                          onClick={() => updateMeetingStatus(prevStatus(meeting.status))}
-                          className="bg-gray-100 border border-gray-400 ml-2"
-                        >
-                          <ChevronLeft className="h-4 w-4" />
-                          Back to {getStatusText(prevStatus(meeting.status))}
-                        </Button>
-                      )}
-                      {canTransition(meeting.status, "forward") && (
-                        <Button
-                          onClick={() => updateMeetingStatus(nextStatus(meeting.status))}
-                          className="bg-green-600 text-white ml-2"
-                        >
-                          {meeting.status === "working_agenda" && (
-                            <>
-                              <Play className="h-4 w-4 mr-2" />
-                              Start Meeting
-                            </>
-                          )}
-                          {meeting.status === "working_minutes" && (
-                            <>
-                              <CheckCircle className="h-4 w-4 mr-2" />
-                              End Meeting
-                            </>
-                          )}
-                        </Button>
-                      )}
-                    </>
-                  )}
+            )}
+            <Badge variant="outline" className={getStatusColor(meeting.status)}>
+              {getStatusText(meeting.status)}
+            </Badge>
+            {userCanEdit && (
+              <>
+                {canTransition(meeting.status, "backward") && (
                   <Button
-                    onClick={() => setShowAttendeesModal(true)}
                     variant="outline"
+                    onClick={() => updateMeetingStatus(prevStatus(meeting.status))}
+                    className="bg-gray-100 border border-gray-400 ml-2"
                   >
-                    View Attendee
+                    <ChevronLeft className="h-4 w-4" />
+                    Back to {getStatusText(prevStatus(meeting.status))}
                   </Button>
-                </div>
-                <p className="text-sm text-muted-foreground">{meeting.building}</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-4">
-  {userCanEdit &&
-    (meeting.status === "working_agenda" || meeting.status === "working_minutes") && (
-      <Button
-        onClick={handleCreateSection}
-        variant="outline"
-        className="border-primary text-primary hover:bg-primary/10"
-      >
-        <Plus className="h-4 w-4 mr-2" />
-        Create Section
-      </Button>
-    )}
-  {meeting.status === "minutes" && (
-    <GenerateMinutesButton 
-      meetingId={meetingId} 
-      buildingId={meeting.building_id} 
-    />
-  )}
-  {isMounted && isRecording && <Timer elapsedTime={elapsedTime} />}
-
-              {isMounted && userCanEdit && (
-                <>
-                  {!isRecording ? (
-                    <Button
-                      onClick={handleStartRecording}
-                      className="bg-red-500 hover:bg-red-600 text-white"
-                    >
-                      <span className="flex items-center gap-2">
-                        <span className="h-3 w-3 rounded-full bg-white"></span>
-                        Start Recording
-                      </span>
-                    </Button>
-                  ) : (
-                    <Button
-                      onClick={handleStopRecording}
-                      variant="outline"
-                      className="border-red-500 text-red-500 hover:bg-red-50"
-                    >
-                      <span className="flex items-center gap-2">
-                        <span className="h-3 w-3 rounded-sm bg-red-500"></span>
-                        Stop Recording
-                      </span>
-                    </Button>
-                  )}
-                </>
-              )}
-            </div>
+                )}
+                {canTransition(meeting.status, "forward") && (
+                  <Button
+                    onClick={() => updateMeetingStatus(nextStatus(meeting.status))}
+                    className="bg-green-600 text-white ml-2"
+                  >
+                    {meeting.status === "working_agenda" && (
+                      <>
+                        <Play className="h-4 w-4 mr-2" />
+                        Start Meeting
+                      </>
+                    )}
+                    {meeting.status === "working_minutes" && (
+                      <>
+                        <CheckCircle className="h-4 w-4 mr-2" />
+                        End Meeting
+                      </>
+                    )}
+                  </Button>
+                )}
+              </>
+            )}
+            <Button
+              onClick={() => setShowAttendeesModal(true)}
+              variant="outline"
+            >
+              View Attendee
+            </Button>
           </div>
-          <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
-            {meeting.meeting_type && (
-              <div className="flex items-center gap-1">
-                <FileText className="h-4 w-4" />
-                <span>{meeting.meeting_type}</span>
-              </div>
-            )}
-            {meeting.meeting_date && (
-              <div className="flex items-center gap-1">
-                <Calendar className="h-4 w-4" />
-                <span>{formatDate(meeting.meeting_date)}</span>
-              </div>
-            )}
-            {meeting.start_time && (
-              <div className="flex items-center gap-1">
-                <Clock className="h-4 w-4" />
-                <span>{formatTime(meeting.start_time)}</span>
-              </div>
-            )}
-            {meeting.location && (
-              <div className="flex items-center gap-1">
-                <MapPin className="h-4 w-4" />
-                <span>{meeting.location}</span>
-              </div>
-            )}
-            {meeting.strata_plan_number && (
-              <div className="flex items-center gap-1">
-                <FileText className="h-4 w-4" />
-                <span>Plan: {meeting.strata_plan_number}</span>
-              </div>
-            )}
-          </div>
+          <p className="text-sm text-muted-foreground">{meeting.building}</p>
         </div>
-      </header>
+      </div>
+      
+      <div className="flex items-center gap-4">
+        {userCanEdit &&
+          (meeting.status === "working_agenda" || meeting.status === "working_minutes") && (
+            <Button
+              onClick={handleCreateSection}
+              variant="outline"
+              className="border-primary text-primary hover:bg-primary/10"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Create Section
+            </Button>
+          )}
+
+        {/* Download Agenda Button - Shows for working_agenda and agenda statuses */}
+        {(meeting.status === "working_agenda" || meeting.status === "agenda") && (
+          <GenerateAgendaButton 
+            meetingId={parseInt(meetingId)} 
+            meetingStatus={meeting.status}
+          />
+        )}
+        
+        {/* Generate Minutes Button - Shows only for finalized meetings */}
+        {meeting.status === "minutes" && (
+          <GenerateMinutesButton 
+            meetingId={meetingId} 
+            buildingId={meeting.building_id} 
+          />
+        )}
+        
+        {isMounted && isRecording && <Timer elapsedTime={elapsedTime} />}
+
+        {isMounted && userCanEdit && (
+          <>
+            {!isRecording ? (
+              <Button
+                onClick={handleStartRecording}
+                className="bg-red-500 hover:bg-red-600 text-white"
+              >
+                <span className="flex items-center gap-2">
+                  <span className="h-3 w-3 rounded-full bg-white"></span>
+                  Start Recording
+                </span>
+              </Button>
+            ) : (
+              <Button
+                onClick={handleStopRecording}
+                variant="outline"
+                className="border-red-500 text-red-500 hover:bg-red-50"
+              >
+                <span className="flex items-center gap-2">
+                  <span className="h-3 w-3 rounded-sm bg-red-500"></span>
+                  Stop Recording
+                </span>
+              </Button>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+    
+    <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
+      {meeting.meeting_type && (
+        <div className="flex items-center gap-1">
+          <FileText className="h-4 w-4" />
+          <span>{meeting.meeting_type}</span>
+        </div>
+      )}
+      {meeting.meeting_date && (
+        <div className="flex items-center gap-1">
+          <Calendar className="h-4 w-4" />
+          <span>{formatDate(meeting.meeting_date)}</span>
+        </div>
+      )}
+      {meeting.start_time && (
+        <div className="flex items-center gap-1">
+          <Clock className="h-4 w-4" />
+          <span>{formatTime(meeting.start_time)}</span>
+        </div>
+      )}
+      {meeting.location && (
+        <div className="flex items-center gap-1">
+          <MapPin className="h-4 w-4" />
+          <span>{meeting.location}</span>
+        </div>
+      )}
+      {meeting.strata_plan_number && (
+        <div className="flex items-center gap-1">
+          <FileText className="h-4 w-4" />
+          <span>Plan: {meeting.strata_plan_number}</span>
+        </div>
+      )}
+    </div>
+  </div>
+</header>
+
 
 
       {/* Attendees POPUP MODAL */}
