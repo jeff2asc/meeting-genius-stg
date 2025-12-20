@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { X, Users, Building2, UserCheck, Home, Plus, Trash2 } from "lucide-react"
+import { X, Users, Building2, UserCheck, Home, Plus, Trash2, UserCog } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { supabase } from "@/lib/supabase"
@@ -32,7 +32,7 @@ interface Building {
   manager_id: number | null
 }
 
-type Tab = "overview" | "buildings" | "admins"
+type Tab = "overview" | "buildings" | "admins" | "users"
 
 export default function CompanyDetailsModal({
   isOpen,
@@ -65,6 +65,15 @@ export default function CompanyDetailsModal({
   const [newAdminEmail, setNewAdminEmail] = useState("")
   const [newAdminPassword, setNewAdminPassword] = useState("")
   const [savingAdmin, setSavingAdmin] = useState(false)
+
+  // ⭐ NEW: Add User State (for Users tab)
+  const [showAddUser, setShowAddUser] = useState(false)
+  const [newUserName, setNewUserName] = useState("")
+  const [newUserEmail, setNewUserEmail] = useState("")
+  const [newUserPassword, setNewUserPassword] = useState("")
+  const [newUserType, setNewUserType] = useState<string>("user")
+  const [savingUser, setSavingUser] = useState(false)
+  const [userTypeFilter, setUserTypeFilter] = useState<string>("all")
 
   const [error, setError] = useState<string | null>(null)
 
@@ -157,6 +166,7 @@ export default function CompanyDetailsModal({
 
       // Refresh and auto-select
       await fetchPropertyManagers()
+      await fetchCompanyData()
       setSelectedManagerId(newUser.id)
       setNewPMName("")
       setNewPMEmail("")
@@ -277,6 +287,49 @@ export default function CompanyDetailsModal({
     }
   }
 
+  // ⭐ NEW: Handle Add User (for Users tab)
+  const handleAddUser = async () => {
+    if (!newUserName.trim() || !newUserEmail.trim() || !newUserPassword.trim()) {
+      setError("All fields are required")
+      return
+    }
+
+    setSavingUser(true)
+    setError(null)
+
+    try {
+      const { error: insertError } = await supabase
+        .from('users')
+        .insert({
+          name: newUserName.trim(),
+          email: newUserEmail.toLowerCase().trim(),
+          password_hash: '$2a$10$rXqvFZnPzAMcLzCP2L4dxu7L6Y3Y5KjGNQQF6xZ4Y5Y5Y5Y5Y5Y5Y5',
+          user_type: newUserType,
+          company_id: company?.id
+        })
+
+      if (insertError) {
+        console.error('Error adding user:', insertError)
+        setError('Failed to add user. Email may already exist.')
+        setSavingUser(false)
+        return
+      }
+
+      setNewUserName("")
+      setNewUserEmail("")
+      setNewUserPassword("")
+      setNewUserType("user")
+      setShowAddUser(false)
+      await fetchCompanyData()
+      await fetchPropertyManagers()
+    } catch (err) {
+      console.error('Unexpected error:', err)
+      setError('An unexpected error occurred')
+    } finally {
+      setSavingUser(false)
+    }
+  }
+
   const handleDeleteUser = async (userId: number) => {
     if (!confirm('Are you sure you want to delete this user? This action cannot be undone.')) {
       return
@@ -326,9 +379,16 @@ export default function CompanyDetailsModal({
     return manager ? manager.name : "Unknown manager"
   }
 
+  // ⭐ NEW: Filter users by type
+  const getFilteredUsers = () => {
+    if (userTypeFilter === "all") return users
+    return users.filter(u => u.user_type === userTypeFilter)
+  }
+
   if (!isOpen || !company) return null
 
   const corporateAdmins = users.filter(u => u.user_type === 'corporate_administrator')
+  const filteredUsers = getFilteredUsers()
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 animate-in fade-in overflow-y-auto p-4">
@@ -337,7 +397,7 @@ export default function CompanyDetailsModal({
           <div>
             <h2 className="text-xl font-bold text-foreground">{company.name}</h2>
             <p className="text-sm text-muted-foreground">
-              Manage company buildings and administrators
+              Manage company buildings, users, and administrators
             </p>
           </div>
           <button
@@ -348,7 +408,7 @@ export default function CompanyDetailsModal({
           </button>
         </div>
 
-        {/* Tabs */}
+        {/* ⭐ UPDATED: Tabs - Added Users tab */}
         <div className="border-b border-border px-6">
           <div className="flex gap-4">
             <button
@@ -371,6 +431,17 @@ export default function CompanyDetailsModal({
             >
               <Building2 className="h-4 w-4 inline mr-2" />
               Buildings ({buildings.length})
+            </button>
+            <button
+              onClick={() => setActiveTab("users")}
+              className={`pb-3 px-1 font-medium text-sm transition-colors ${
+                activeTab === "users"
+                  ? "border-b-2 border-primary text-primary"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Users className="h-4 w-4 inline mr-2" />
+              Users ({users.length})
             </button>
             <button
               onClick={() => setActiveTab("admins")}
@@ -643,6 +714,165 @@ export default function CompanyDetailsModal({
                             >
                               <Trash2 className="h-4 w-4" />
                             </Button>
+                          </div>
+                        </Card>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ⭐ NEW: Users Tab */}
+              {activeTab === "users" && (
+                <div className="space-y-4">
+                  {error && (
+                    <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded text-sm">
+                      {error}
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-semibold text-foreground">All Company Users</h3>
+                    <Button
+                      onClick={() => setShowAddUser(!showAddUser)}
+                      size="sm"
+                      className="bg-blue-600 hover:bg-blue-700 text-white"
+                    >
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add User
+                    </Button>
+                  </div>
+
+                  {/* User Type Filter */}
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={() => setUserTypeFilter("all")}
+                      size="sm"
+                      variant={userTypeFilter === "all" ? "default" : "outline"}
+                    >
+                      All ({users.length})
+                    </Button>
+                    <Button
+                      onClick={() => setUserTypeFilter("property_manager")}
+                      size="sm"
+                      variant={userTypeFilter === "property_manager" ? "default" : "outline"}
+                    >
+                      Property Managers ({users.filter(u => u.user_type === 'property_manager').length})
+                    </Button>
+                    <Button
+                      onClick={() => setUserTypeFilter("user")}
+                      size="sm"
+                      variant={userTypeFilter === "user" ? "default" : "outline"}
+                    >
+                      Users ({users.filter(u => u.user_type === 'user').length})
+                    </Button>
+                    <Button
+                      onClick={() => setUserTypeFilter("vendor")}
+                      size="sm"
+                      variant={userTypeFilter === "vendor" ? "default" : "outline"}
+                    >
+                      Vendors ({users.filter(u => u.user_type === 'vendor').length})
+                    </Button>
+                  </div>
+
+                  {showAddUser && (
+                    <Card className="p-4 bg-blue-50 border-blue-200">
+                      <h4 className="font-semibold text-foreground mb-3">New User</h4>
+                      <div className="space-y-3">
+                        <input
+                          type="text"
+                          value={newUserName}
+                          onChange={(e) => setNewUserName(e.target.value)}
+                          placeholder="Full Name *"
+                          className="w-full px-3 py-2 bg-white border border-border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        <input
+                          type="email"
+                          value={newUserEmail}
+                          onChange={(e) => setNewUserEmail(e.target.value)}
+                          placeholder="Email Address *"
+                          className="w-full px-3 py-2 bg-white border border-border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        <input
+                          type="text"
+                          value={newUserPassword}
+                          onChange={(e) => setNewUserPassword(e.target.value)}
+                          placeholder="Temporary Password *"
+                          className="w-full px-3 py-2 bg-white border border-border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        <select
+                          value={newUserType}
+                          onChange={(e) => setNewUserType(e.target.value)}
+                          className="w-full px-3 py-2 bg-white border border-border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value="user">User</option>
+                          <option value="property_manager">Property Manager</option>
+                          <option value="vendor">Vendor</option>
+                          <option value="attendee">Attendee</option>
+                        </select>
+                        <div className="flex gap-2">
+                          <Button
+                            onClick={() => {
+                              setShowAddUser(false)
+                              setNewUserName("")
+                              setNewUserEmail("")
+                              setNewUserPassword("")
+                              setNewUserType("user")
+                              setError(null)
+                            }}
+                            variant="outline"
+                            size="sm"
+                            className="flex-1"
+                            disabled={savingUser}
+                          >
+                            Cancel
+                          </Button>
+                          <Button
+                            onClick={handleAddUser}
+                            size="sm"
+                            className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
+                            disabled={savingUser}
+                          >
+                            {savingUser ? "Adding..." : "Add User"}
+                          </Button>
+                        </div>
+                      </div>
+                    </Card>
+                  )}
+
+                  {filteredUsers.length === 0 ? (
+                    <div className="text-center py-12 border-2 border-dashed border-border rounded-lg">
+                      <UserCog className="h-12 w-12 mx-auto text-muted-foreground mb-2" />
+                      <p className="text-muted-foreground">
+                        {userTypeFilter === "all" ? "No users yet" : `No ${userTypeFilter.replace('_', ' ')}s yet`}
+                      </p>
+                      <p className="text-sm text-muted-foreground">Click "Add User" to create one</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {filteredUsers.map((user) => (
+                        <Card key={user.id} className="p-4 hover:shadow-sm transition-shadow">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className="p-2 bg-blue-100 rounded-full">
+                                <UserCog className="h-5 w-5 text-blue-600" />
+                              </div>
+                              <div>
+                                <p className="font-semibold text-foreground">{user.name}</p>
+                                <p className="text-sm text-muted-foreground">{user.email}</p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {getUserTypeBadge(user.user_type)}
+                              <Button
+                                onClick={() => handleDeleteUser(user.id)}
+                                size="sm"
+                                variant="ghost"
+                                className="text-red-600 hover:bg-red-50"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
                           </div>
                         </Card>
                       ))}

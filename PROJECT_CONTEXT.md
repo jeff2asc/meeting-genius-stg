@@ -50,6 +50,8 @@
 - **Charts**: Recharts
 - **Notifications**: Sonner (toast notifications)
 - **Analytics**: Vercel Analytics
+- **PDF Generation**: jspdf (^3.0.4)
+- **HTML to Canvas**: html2canvas (^1.4.1)
 
 ---
 
@@ -245,7 +247,7 @@ Action items/tasks from topics.
   assigned_email: string | null
   assignees: any | null (JSONB array of assignee objects)
   due_date: date | null
-  status: 'open' | 'in_progress' | 'completed'
+  status: 'open' | 'in_progress' | 'completed' | 'blocked'
   external_update_token: string | null
   token_expires_at: timestamp | null
   created_by: number | null (foreign key → users.id)
@@ -256,6 +258,12 @@ Action items/tasks from topics.
 ```
 
 **Purpose**: Tracks action items. Supports multiple assignees via JSONB array.
+
+**Status Options**:
+- `open`: Task is newly created
+- `in_progress`: Task is being worked on
+- `completed`: Task is finished
+- `blocked`: Task is blocked and cannot proceed
 
 **Assignees Structure** (JSONB):
 ```json
@@ -288,6 +296,69 @@ Decisions/motions recorded for topics.
 ```
 
 **Purpose**: Records formal decisions, motions, and voting results.
+
+---
+
+### 10. **task_notes**
+Notes attached to individual tasks (separate from topic notes).
+
+```typescript
+{
+  id: number (primary key, auto-increment)
+  task_id: number (foreign key → tasks.id)
+  content: string
+  created_by: number | null (foreign key → users.id)
+  created_at: timestamp
+}
+```
+
+**Purpose**: Allows users to add notes and updates to specific tasks, tracking progress and communication.
+
+---
+
+### 11. **minutes_templates**
+Customizable templates for generating minutes PDFs.
+
+```typescript
+{
+  id: number (primary key, auto-increment)
+  building_id: number (foreign key → buildings.id)
+  blocks: any (JSONB - Template configuration)
+  created_at: timestamp
+  updated_at: timestamp
+}
+```
+
+**Purpose**: Stores customizable templates for PDF minutes generation. Each building can have its own template configuration.
+
+**Template Structure** (JSONB):
+```json
+{
+  "sections": [
+    {
+      "id": "header",
+      "label": "Header",
+      "icon": "📋",
+      "backgroundColor": "#f8fafc",
+      "fields": [
+        {
+          "id": "building_name",
+          "label": "Building Name",
+          "visible": true,
+          "order": 1
+        }
+      ]
+    }
+  ]
+}
+```
+
+**Template Sections**:
+- `header`: Building name, meeting type, date, time, location, strata plan
+- `attendees`: Present, absent, regrets
+- `topics`: Discussion topics with descriptions, notes, tasks, and decisions
+- `decisions`: Motions, results, vote counts
+- `footer`: Adjournment, signatures, next meeting date
 
 ---
 
@@ -373,9 +444,11 @@ All permission checks are centralized in `lib/permissions.ts`:
 ### 3. **Task Management**
 - Create tasks from topics
 - Assign to multiple people (from meeting attendees or manual entry)
-- Track status: open → in_progress → completed
+- Track status: open → in_progress → completed → blocked
 - Due date tracking
 - External update tokens for vendor access
+- Task notes: Add notes and updates to individual tasks
+- Task details modal: View full task information with notes history
 
 ### 4. **Decision Recording**
 - Record motions/resolutions
@@ -407,6 +480,14 @@ All permission checks are centralized in `lib/permissions.ts`:
 - View all tasks
 - Search functionality
 - Meeting status indicators
+
+### 9. **PDF Minutes Generation**
+- Generate professional PDF minutes from finalized meetings
+- Customizable templates per building
+- Includes all meeting data: header, attendees, topics, notes, tasks, decisions
+- Template editor in admin panel
+- Uses html2canvas and jsPDF for PDF generation
+- Available when meeting status is "minutes" (finalized)
 
 ---
 
@@ -448,6 +529,7 @@ app/page.tsx (Root)
    - Status progression controls
    - Attendee management
    - Section/topic creation modals
+   - Generate Minutes PDF button (when status is "minutes")
 
 4. **`components/admin-panel.tsx`**
    - Admin interface with tabs
@@ -459,11 +541,13 @@ app/page.tsx (Root)
 - `components/create-meeting-modal.tsx`: Create new meetings with rollover support
 - `components/EditMeetingModal.tsx`: Edit meeting details
 - `components/task-modal.tsx`: Create/edit tasks
+- `components/TaskDetailsModal.tsx`: View task details with notes and status updates
 - `components/note-modal.tsx`: Add/edit notes
 - `components/decision-modal.tsx`: Record decisions
 - `components/create-section-modal.tsx`: Create sections
 - `components/create-topic-modal.tsx`: Create topics
 - `components/AttendeeManagement.tsx`: Manage meeting attendees
+- `components/GenerateMinutesButton.tsx`: Generate PDF minutes from finalized meetings
 
 #### **Admin Components** (`components/admin/`)
 
@@ -476,10 +560,13 @@ app/page.tsx (Root)
 - `UsersTab.tsx`: User management interface
 - `BuildingsTab.tsx`: Building management interface
 - `CompaniesTab.tsx`: Company management interface
-- `MinutesTemplatesTab.tsx`: Template management
+- `MinutesTemplatesTab.tsx`: Template management for PDF minutes
 - `DocumentManagementModal.tsx`: Upload/view documents
 - `ViewDocumentModal.tsx`: View document content
 - `AssignUsersToCompanyModal.tsx`: Assign users to companies
+- `UserCard.tsx`: Card component for displaying user information
+- `BuildingCard.tsx`: Card component for displaying building information
+- `CompanyCard.tsx`: Card component for displaying company information
 
 #### **UI Components** (`components/ui/`)
 
@@ -604,6 +691,36 @@ working_agenda → agenda → working_minutes → minutes
    - **user**: Buildings assigned to them
    - **vendor/attendee**: Limited access
 
+### 7. **Generating PDF Minutes**
+
+1. Meeting must be finalized (status: "minutes")
+2. User clicks "Download Minutes PDF" button in meeting view
+3. System fetches building's minutes template from `minutes_templates` table
+4. If no template exists, uses default template
+5. System fetches all meeting data:
+   - Meeting details (title, date, type, location, etc.)
+   - Attendees (present/absent)
+   - Sections and topics
+   - Notes for each topic
+   - Tasks for each topic
+   - Decisions for each topic
+6. Generates HTML from template and data
+7. Creates isolated iframe for rendering
+8. Converts HTML to canvas using html2canvas
+9. Creates multi-page PDF using jsPDF
+10. Downloads PDF with filename: `{meeting_title}_Minutes_{date}.pdf`
+
+### 8. **Task Notes Management**
+
+1. User opens task details modal (from dashboard or meeting view)
+2. System displays task information: description, status, assignees, due date
+3. User can:
+   - View all notes attached to the task
+   - Add new notes with timestamp and creator tracking
+   - Update task status (open, in_progress, completed, blocked)
+4. Notes are stored in `task_notes` table linked to task
+5. Each note tracks creator and creation timestamp
+
 ---
 
 ## File Structure
@@ -626,7 +743,13 @@ meeting-genius/
 │   │   ├── UsersTab.tsx
 │   │   ├── BuildingsTab.tsx
 │   │   ├── CompaniesTab.tsx
-│   │   └── ...
+│   │   ├── MinutesTemplatesTab.tsx
+│   │   ├── UserCard.tsx
+│   │   ├── BuildingCard.tsx
+│   │   ├── CompanyCard.tsx
+│   │   ├── DocumentManagementModal.tsx
+│   │   ├── ViewDocumentModal.tsx
+│   │   └── AssignUsersToCompanyModal.tsx
 │   │
 │   ├── ui/                      # shadcn/ui components
 │   │   ├── button.tsx
@@ -640,11 +763,13 @@ meeting-genius/
 │   ├── create-meeting-modal.tsx  # Create meeting
 │   ├── EditMeetingModal.tsx      # Edit meeting
 │   ├── task-modal.tsx            # Task creation/editing
+│   ├── TaskDetailsModal.tsx      # Task details with notes
 │   ├── note-modal.tsx            # Note creation/editing
 │   ├── decision-modal.tsx        # Decision recording
 │   ├── create-section-modal.tsx  # Create section
 │   ├── create-topic-modal.tsx    # Create topic
 │   ├── AttendeeManagement.tsx   # Attendee management
+│   ├── GenerateMinutesButton.tsx # Generate PDF minutes
 │   ├── topic-card.tsx            # Topic display
 │   ├── task-card.tsx             # Task display
 │   ├── meeting-card.tsx          # Meeting display
@@ -735,7 +860,13 @@ Meeting status controls what actions are available:
 - `working_agenda`: Can edit everything
 - `agenda`: Can start meeting, begin minutes
 - `working_minutes`: Can record decisions, tasks, notes
-- `minutes`: Read-only, finalized
+- `minutes`: Read-only, finalized, can generate PDF minutes
+
+Task status options:
+- `open`: Newly created task
+- `in_progress`: Task being worked on
+- `completed`: Task finished
+- `blocked`: Task is blocked
 
 ### 7. **External Task Updates**
 
@@ -767,6 +898,24 @@ All database types defined in `lib/supabase.ts` as `Database` type:
 - Ensures type safety
 - Auto-completion in IDE
 - Prevents typos in table/column names
+
+### 11. **PDF Minutes Generation**
+
+The system can generate professional PDF minutes from finalized meetings:
+- Uses `GenerateMinutesButton` component
+- Fetches template from `minutes_templates` table (building-specific)
+- Falls back to default template if none exists
+- Generates HTML from meeting data (sections, topics, notes, tasks, decisions)
+- Converts HTML to canvas using html2canvas
+- Creates multi-page PDF using jsPDF
+- Downloads PDF with meeting title and date in filename
+- Available only when meeting status is "minutes" (finalized)
+
+**Template Configuration**:
+- Managed in Admin Panel → Minutes Templates tab
+- Each building can have custom template
+- Template defines which sections and fields to include
+- Fields can be shown/hidden and reordered
 
 ---
 
@@ -865,19 +1014,20 @@ if (!canCreateMeeting(currentUser?.user_type)) {
 ## Summary
 
 This is a comprehensive meeting management system with:
-- **9 main database tables** (companies, users, buildings, meetings, sections, topics, notes, tasks, decisions)
+- **11 main database tables** (companies, users, buildings, meetings, sections, topics, notes, tasks, decisions, task_notes, minutes_templates)
 - **6 user types** with granular permissions
 - **Multi-tenant architecture** (company → building → meeting hierarchy)
 - **Full CRUD operations** for all entities
 - **Meeting rollover** functionality
-- **Task and decision tracking**
+- **Task and decision tracking** with task notes
+- **PDF minutes generation** with customizable templates
 - **Admin panel** for system management
 - **Modern React/Next.js** architecture with TypeScript
 
-The system is designed for property management companies to manage their meeting workflows from agenda creation through minutes finalization.
+The system is designed for property management companies to manage their meeting workflows from agenda creation through minutes finalization and PDF generation.
 
 ---
 
-**Last Updated**: Based on codebase analysis
+**Last Updated**: December 2024 (Updated with PDF generation, task notes, and new components)
 **Version**: Current production codebase
 
