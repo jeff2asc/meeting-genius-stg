@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { FileText, Download, Loader2 } from "lucide-react"
+import { Download, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { supabase } from "@/lib/supabase"
 import jsPDF from "jspdf"
@@ -31,7 +31,10 @@ interface TemplateConfig {
   sections: TemplateSection[]
 }
 
-export default function GenerateMinutesButton({ meetingId, buildingId }: GenerateMinutesButtonProps) {
+export default function GenerateMinutesButton({
+  meetingId,
+  buildingId,
+}: GenerateMinutesButtonProps) {
   const [generating, setGenerating] = useState(false)
 
   const handleGenerateMinutes = async () => {
@@ -39,35 +42,37 @@ export default function GenerateMinutesButton({ meetingId, buildingId }: Generat
     try {
       // Step 1: Fetch template
       const { data: templateData } = await supabase
-        .from('minutes_templates')
-        .select('*')
-        .eq('building_id', buildingId)
+        .from("minutes_templates")
+        .select("*")
+        .eq("building_id", buildingId)
         .maybeSingle()
 
-      const template: TemplateConfig = templateData?.blocks?.sections 
-        ? templateData.blocks 
-        : getDefaultTemplate()
+      const template: TemplateConfig =
+        templateData?.blocks?.sections ? templateData.blocks : getDefaultTemplate()
 
       // Step 2: Fetch meeting data
       const { data: meeting, error: meetingError } = await supabase
-        .from('meetings')
-        .select(`
+        .from("meetings")
+        .select(
+          `
           *,
           buildings(name, address)
-        `)
-        .eq('id', meetingId)
+        `
+        )
+        .eq("id", meetingId)
         .single()
 
       if (meetingError || !meeting) {
-        alert('Failed to load meeting data')
+        alert("Failed to load meeting data")
         setGenerating(false)
         return
       }
 
       // Step 3: Fetch sections and topics
       const { data: sections } = await supabase
-        .from('sections')
-        .select(`
+        .from("sections")
+        .select(
+          `
           *,
           topics(
             *,
@@ -75,23 +80,24 @@ export default function GenerateMinutesButton({ meetingId, buildingId }: Generat
             tasks(description, assigned_name, assigned_email, due_date, status),
             decisions(motion_text, result, votes_for, votes_against, votes_abstain)
           )
-        `)
-        .eq('meeting_id', meetingId)
-        .order('order_index')
+        `
+        )
+        .eq("meeting_id", meetingId)
+        .order("order_index")
 
       // Step 4: Generate HTML
       const minutesHtml = generateMinutesHtml(template, meeting, sections || [])
 
       // Step 5: Create isolated iframe
-      const iframe = document.createElement('iframe')
-      iframe.style.position = 'absolute'
-      iframe.style.left = '-9999px'
-      iframe.style.width = '210mm' // A4 width
-      iframe.style.border = 'none'
+      const iframe = document.createElement("iframe")
+      iframe.style.position = "absolute"
+      iframe.style.left = "-9999px"
+      iframe.style.width = "210mm"
+      iframe.style.border = "none"
       document.body.appendChild(iframe)
 
       const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document
-      if (!iframeDoc) throw new Error('Cannot access iframe document')
+      if (!iframeDoc) throw new Error("Cannot access iframe document")
 
       iframeDoc.open()
       iframeDoc.write(`
@@ -223,56 +229,84 @@ export default function GenerateMinutesButton({ meetingId, buildingId }: Generat
       iframeDoc.close()
 
       // Wait for fonts and layout
-      await new Promise(resolve => setTimeout(resolve, 1500))
+      await new Promise((resolve) => setTimeout(resolve, 1500))
 
-      // Step 6: Generate PDF using jsPDF directly
+      // Step 6: Generate PDF using jsPDF with proper canvas slicing
       const pdf = new jsPDF({
-        orientation: 'portrait',
-        unit: 'mm',
-        format: 'letter'
+        orientation: "portrait",
+        unit: "mm",
+        format: "letter",
       })
 
       const pageWidth = pdf.internal.pageSize.getWidth()
       const pageHeight = pdf.internal.pageSize.getHeight()
+      const margin = 10
+      const usablePageHeight = pageHeight - margin * 2
 
-      // Capture content with html2canvas
       const canvas = await html2canvas(iframeDoc.body, {
         scale: 2,
-        backgroundColor: '#ffffff',
+        backgroundColor: "#ffffff",
         logging: false,
         useCORS: true,
-        windowWidth: 210 * 3.7795275591, // mm to pixels
+        windowWidth: 210 * 3.7795275591,
       })
 
       document.body.removeChild(iframe)
 
-      const imgData = canvas.toDataURL('image/jpeg', 0.95)
-      const imgWidth = pageWidth - 20 // margins
-      const imgHeight = (canvas.height * imgWidth) / canvas.width
-      
-      let heightLeft = imgHeight
-      let position = 10 // top margin
+      const fullWidth = canvas.width
+      const fullHeight = canvas.height
 
-      // Add first page
-      pdf.addImage(imgData, 'JPEG', 10, position, imgWidth, imgHeight)
-      heightLeft -= (pageHeight - 20)
+      // How many canvas pixels fit into one PDF page in height
+      const pageCanvasHeight = (usablePageHeight * canvas.width) / (pageWidth - margin * 2)
 
-      // Add more pages if needed
-      while (heightLeft > 0) {
-        position = heightLeft - imgHeight + 10
-        pdf.addPage()
-        pdf.addImage(imgData, 'JPEG', 10, position, imgWidth, imgHeight)
-        heightLeft -= (pageHeight - 20)
+      let renderedHeight = 0
+      let pageIndex = 0
+
+      while (renderedHeight < fullHeight) {
+        // Create a temporary canvas for each page slice
+        const pageCanvas = document.createElement("canvas")
+        pageCanvas.width = fullWidth
+        pageCanvas.height = Math.min(pageCanvasHeight, fullHeight - renderedHeight)
+
+        const pageCtx = pageCanvas.getContext("2d")
+        if (!pageCtx) break
+
+        pageCtx.drawImage(
+          canvas,
+          0,
+          renderedHeight,
+          fullWidth,
+          pageCanvas.height,
+          0,
+          0,
+          fullWidth,
+          pageCanvas.height
+        )
+
+        const imgData = pageCanvas.toDataURL("image/jpeg", 0.95)
+
+        if (pageIndex > 0) {
+          pdf.addPage()
+        }
+
+        const imgWidth = pageWidth - margin * 2
+        const imgHeight = (pageCanvas.height * imgWidth) / fullWidth
+
+        pdf.addImage(imgData, "JPEG", margin, margin, imgWidth, imgHeight)
+
+        renderedHeight += pageCanvasHeight
+        pageIndex++
       }
 
-      // Download
-      const fileName = `${meeting.title.replace(/[^a-z0-9]/gi, '_')}_Minutes_${new Date().toISOString().split('T')[0]}.pdf`
+      const fileName = `${meeting.title.replace(/[^a-z0-9]/gi, "_")}_Minutes_${
+        new Date().toISOString().split("T")[0]
+      }.pdf`
       pdf.save(fileName)
 
-      alert('✅ Minutes PDF downloaded successfully!')
+      alert("✅ Minutes PDF downloaded successfully!")
     } catch (err) {
-      console.error('Error generating minutes:', err)
-      alert('Failed to generate PDF. Please try again.')
+      console.error("Error generating minutes:", err)
+      alert("Failed to generate PDF. Please try again.")
     } finally {
       setGenerating(false)
     }
@@ -313,8 +347,8 @@ function getDefaultTemplate(): TemplateConfig {
           { id: "meeting_date", label: "Meeting Date", visible: true, order: 3 },
           { id: "start_time", label: "Start Time", visible: true, order: 4 },
           { id: "location", label: "Location", visible: true, order: 5 },
-          { id: "strata_plan", label: "Strata Plan Number", visible: true, order: 6 }
-        ]
+          { id: "strata_plan", label: "Strata Plan Number", visible: true, order: 6 },
+        ],
       },
       {
         id: "attendees",
@@ -324,22 +358,22 @@ function getDefaultTemplate(): TemplateConfig {
         fields: [
           { id: "present", label: "Present", visible: true, order: 1 },
           { id: "absent", label: "Absent", visible: true, order: 2 },
-          { id: "regrets", label: "Regrets", visible: true, order: 3 }
-        ]
+          { id: "regrets", label: "Regrets", visible: true, order: 3 },
+        ],
       },
       {
         id: "topics",
         label: "Topics & Notes",
         icon: "📝",
         backgroundColor: "#ffffff",
-        fields: []
+        fields: [],
       },
       {
         id: "decisions",
         label: "Decisions & Votes",
         icon: "⚖️",
         backgroundColor: "#ffffff",
-        fields: []
+        fields: [],
       },
       {
         id: "footer",
@@ -350,10 +384,10 @@ function getDefaultTemplate(): TemplateConfig {
           { id: "adjournment", label: "Meeting Adjourned", visible: true, order: 1 },
           { id: "next_meeting", label: "Next Meeting Date", visible: true, order: 2 },
           { id: "prepared_by", label: "Minutes Prepared By", visible: true, order: 3 },
-          { id: "signatures", label: "Signatures", visible: true, order: 4 }
-        ]
-      }
-    ]
+          { id: "signatures", label: "Signatures", visible: true, order: 4 },
+        ],
+      },
+    ],
   }
 }
 
@@ -366,14 +400,14 @@ function generateMinutesHtml(template: TemplateConfig, meeting: any, sections: a
     </h1>
   `
 
-  template.sections.forEach(templateSection => {
-    if (templateSection.id === 'header') {
+  template.sections.forEach((templateSection) => {
+    if (templateSection.id === "header") {
       html += renderHeader(templateSection, meeting, building)
-    } else if (templateSection.id === 'attendees') {
+    } else if (templateSection.id === "attendees") {
       html += renderAttendees(templateSection, meeting.attendees || [])
-    } else if (templateSection.id === 'topics') {
+    } else if (templateSection.id === "topics") {
       html += renderTopics(sections)
-    } else if (templateSection.id === 'footer') {
+    } else if (templateSection.id === "footer") {
       html += renderFooter(templateSection)
     }
   })
@@ -382,50 +416,52 @@ function generateMinutesHtml(template: TemplateConfig, meeting: any, sections: a
 }
 
 function escapeHtml(text: string): string {
-  if (!text) return ''
+  if (!text) return ""
   return String(text)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;')
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;")
 }
 
 function renderHeader(section: TemplateSection, meeting: any, building: any): string {
-  const visibleFields = section.fields.filter(f => f.visible).sort((a, b) => a.order - b.order)
-  
+  const visibleFields = section.fields.filter((f) => f.visible).sort((a, b) => a.order - b.order)
+
   let html = `
     <div class="section">
       <div class="section-header">
         ${section.icon} ${section.label}
       </div>`
 
-  visibleFields.forEach(field => {
-    let value = ''
+  visibleFields.forEach((field) => {
+    let value = ""
     switch (field.id) {
-      case 'building_name':
-        value = building?.name || 'N/A'
+      case "building_name":
+        value = building?.name || "N/A"
         break
-      case 'meeting_type':
-        value = meeting.meeting_type || 'N/A'
+      case "meeting_type":
+        value = meeting.meeting_type || "N/A"
         break
-      case 'meeting_date':
-        value = meeting.meeting_date ? new Date(meeting.meeting_date + 'T00:00:00Z').toLocaleDateString('en-US', { 
-          weekday: 'long', 
-          year: 'numeric', 
-          month: 'long', 
-          day: 'numeric',
-          timeZone: 'UTC'
-        }) : 'N/A'
+      case "meeting_date":
+        value = meeting.meeting_date
+          ? new Date(meeting.meeting_date + "T00:00:00Z").toLocaleDateString("en-US", {
+              weekday: "long",
+              year: "numeric",
+              month: "long",
+              day: "numeric",
+              timeZone: "UTC",
+            })
+          : "N/A"
         break
-      case 'start_time':
-        value = meeting.start_time || 'N/A'
+      case "start_time":
+        value = meeting.start_time || "N/A"
         break
-      case 'location':
-        value = meeting.location || 'N/A'
+      case "location":
+        value = meeting.location || "N/A"
         break
-      case 'strata_plan':
-        value = meeting.strata_plan_number || 'N/A'
+      case "strata_plan":
+        value = meeting.strata_plan_number || "N/A"
         break
     }
 
@@ -456,12 +492,12 @@ function renderAttendees(section: TemplateSection, attendees: any[]): string {
         </thead>
         <tbody>`
 
-  attendees.forEach(attendee => {
+  attendees.forEach((attendee) => {
     html += `
       <tr>
         <td>${escapeHtml(attendee.name)}</td>
-        <td>${escapeHtml(attendee.role || '-')}</td>
-        <td>${attendee.present ? '✓ Present' : '✗ Absent'}</td>
+        <td>${escapeHtml(attendee.role || "-")}</td>
+        <td>${attendee.present ? "✓ Present" : "✗ Absent"}</td>
       </tr>`
   })
 
@@ -477,12 +513,10 @@ function renderTopics(sections: any[]): string {
       </div>`
 
   sections.forEach((section, sIdx) => {
-    // Normalize section title by removing any leading number / dot / space
-const rawTitle = typeof section.title === "string" ? section.title : ""
-const cleanedTitle = rawTitle.replace(/^\s*\d+(\.\d+)*\s*[\).\-\:]*\s*/,"")
+    const rawTitle = typeof section.title === "string" ? section.title : ""
+    const cleanedTitle = rawTitle.replace(/^\s*\d+(\.\d+)*\s*[\).\-\:]*\s*/, "")
 
-html += `<h2>${sIdx + 1}. ${escapeHtml(cleanedTitle || rawTitle)}</h2>`
-
+    html += `<h2>${sIdx + 1}. ${escapeHtml(cleanedTitle || rawTitle)}</h2>`
 
     if (section.topics && section.topics.length > 0) {
       section.topics.forEach((topic: any, tIdx: number) => {
@@ -496,22 +530,35 @@ html += `<h2>${sIdx + 1}. ${escapeHtml(cleanedTitle || rawTitle)}</h2>`
 
         if (topic.notes && topic.notes.length > 0) {
           topic.notes.forEach((note: any) => {
-            html += `<div class="item item-note"><span class="item-label">📝 Note:</span>${escapeHtml(note.content)}</div>`
+            html += `<div class="item item-note"><span class="item-label">📝 Note:</span>${escapeHtml(
+              note.content
+            )}</div>`
           })
         }
 
         if (topic.tasks && topic.tasks.length > 0) {
           topic.tasks.forEach((task: any) => {
-            const assignee = task.assigned_name || task.assigned_email || 'Unassigned'
-            const dueDate = task.due_date ? ` (Due: ${new Date(task.due_date).toLocaleDateString()})` : ''
-            html += `<div class="item item-task"><span class="item-label">✓ Task:</span>${escapeHtml(task.description)} - Assigned: ${escapeHtml(assignee)}${dueDate}</div>`
+            const assignee = task.assigned_name || task.assigned_email || "Unassigned"
+            const dueDate = task.due_date
+              ? ` (Due: ${new Date(task.due_date).toLocaleDateString()})`
+              : ""
+            html += `<div class="item item-task"><span class="item-label">✓ Task:</span>${escapeHtml(
+              task.description
+            )} - Assigned: ${escapeHtml(assignee)}${dueDate}</div>`
           })
         }
 
         if (topic.decisions && topic.decisions.length > 0) {
           topic.decisions.forEach((decision: any) => {
-            const votes = decision.votes_for !== null ? ` (For: ${decision.votes_for || 0}, Against: ${decision.votes_against || 0}, Abstain: ${decision.votes_abstain || 0})` : ''
-            html += `<div class="item item-decision"><span class="item-label">⚖️ Decision:</span>${escapeHtml(decision.motion_text)} - Result: ${escapeHtml(decision.result || 'N/A')}${votes}</div>`
+            const votes =
+              decision.votes_for !== null
+                ? ` (For: ${decision.votes_for || 0}, Against: ${
+                    decision.votes_against || 0
+                  }, Abstain: ${decision.votes_abstain || 0})`
+                : ""
+            html += `<div class="item item-decision"><span class="item-label">⚖️ Decision:</span>${escapeHtml(
+              decision.motion_text
+            )} - Result: ${escapeHtml(decision.result || "N/A")}${votes}</div>`
           })
         }
 
