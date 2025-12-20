@@ -5,7 +5,6 @@ import { FileDown, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { supabase } from "@/lib/supabase"
 import jsPDF from "jspdf"
-import html2canvas from "html2canvas"
 
 interface GenerateAgendaButtonProps {
   meetingId: number
@@ -74,11 +73,8 @@ export default function GenerateAgendaButton({
 
       if (topicsError) throw topicsError
 
-      // Generate HTML for agenda
-      const agendaHTML = generateAgendaHTML(meeting, sections || [], topics || [])
-
-      // Create PDF
-      await convertHTMLToPDF(agendaHTML, meeting)
+      // Generate PDF directly using jsPDF
+      await generatePDF(meeting, sections || [], topics || [])
 
     } catch (error) {
       console.error("Error generating agenda:", error)
@@ -88,7 +84,13 @@ export default function GenerateAgendaButton({
     }
   }
 
-  const generateAgendaHTML = (meeting: any, sections: Section[], topics: Topic[]) => {
+  const generatePDF = async (meeting: any, sections: Section[], topics: Topic[]) => {
+    const pdf = new jsPDF("p", "mm", "a4")
+    const pageWidth = pdf.internal.pageSize.getWidth()
+    const pageHeight = pdf.internal.pageSize.getHeight()
+    const margin = 20
+    let yPosition = margin
+
     const building = meeting.buildings
     const meetingDate = new Date(meeting.meeting_date).toLocaleDateString("en-US", {
       weekday: "long",
@@ -96,6 +98,79 @@ export default function GenerateAgendaButton({
       month: "long",
       day: "numeric"
     })
+
+    // Helper function to add new page if needed
+    const checkPageBreak = (spaceNeeded: number) => {
+      if (yPosition + spaceNeeded > pageHeight - margin) {
+        pdf.addPage()
+        yPosition = margin
+        return true
+      }
+      return false
+    }
+
+    // Helper to add wrapped text
+    const addWrappedText = (text: string, x: number, fontSize: number, maxWidth: number, color: string = "#000000") => {
+      pdf.setFontSize(fontSize)
+      pdf.setTextColor(color)
+      const lines = pdf.splitTextToSize(text, maxWidth)
+      lines.forEach((line: string) => {
+        checkPageBreak(fontSize * 0.5)
+        pdf.text(line, x, yPosition)
+        yPosition += fontSize * 0.5
+      })
+    }
+
+    // Header
+    pdf.setFillColor(37, 99, 235) // Blue
+    pdf.rect(0, 0, pageWidth, 40, "F")
+    
+    pdf.setFontSize(24)
+    pdf.setTextColor("#FFFFFF")
+    pdf.setFont("helvetica", "bold")
+    pdf.text("MEETING AGENDA", pageWidth / 2, 20, { align: "center" })
+    
+    pdf.setFontSize(16)
+    pdf.text(building?.name || "Building", pageWidth / 2, 32, { align: "center" })
+    
+    yPosition = 55
+
+    // Meeting Details Box
+    pdf.setFillColor(243, 244, 246)
+    pdf.rect(margin, yPosition, pageWidth - 2 * margin, 50, "F")
+    
+    pdf.setFontSize(10)
+    pdf.setTextColor("#374151")
+    pdf.setFont("helvetica", "bold")
+    
+    let detailY = yPosition + 10
+    const addDetail = (label: string, value: string) => {
+      pdf.setFont("helvetica", "bold")
+      pdf.text(label, margin + 5, detailY)
+      pdf.setFont("helvetica", "normal")
+      pdf.text(value, margin + 50, detailY)
+      detailY += 8
+    }
+
+    addDetail("Meeting Type:", meeting.meeting_type || "Council Meeting")
+    addDetail("Date:", meetingDate)
+    if (meeting.start_time) addDetail("Time:", meeting.start_time)
+    if (meeting.location) addDetail("Location:", meeting.location)
+    if (building?.address) addDetail("Building Address:", building.address)
+
+    yPosition = detailY + 10
+
+    // Agenda Items Header
+    checkPageBreak(20)
+    pdf.setFontSize(16)
+    pdf.setTextColor("#1e40af")
+    pdf.setFont("helvetica", "bold")
+    pdf.text("Agenda Items", margin, yPosition)
+    yPosition += 2
+    pdf.setDrawColor(147, 197, 253)
+    pdf.setLineWidth(1)
+    pdf.line(margin, yPosition, pageWidth - margin, yPosition)
+    yPosition += 10
 
     // Group topics by section
     const topicsBySection = topics.reduce((acc, topic) => {
@@ -105,171 +180,127 @@ export default function GenerateAgendaButton({
       return acc
     }, {} as Record<string | number, Topic[]>)
 
-    let agendaContent = `
-      <div style="font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 40px; background: white;">
-        <!-- Header -->
-        <div style="text-align: center; margin-bottom: 40px; border-bottom: 3px solid #2563eb; padding-bottom: 20px;">
-          <h1 style="font-size: 32px; color: #1e40af; margin: 0 0 10px 0;">MEETING AGENDA</h1>
-          <h2 style="font-size: 24px; color: #374151; margin: 0;">${building?.name || "Building"}</h2>
-        </div>
-
-        <!-- Meeting Details -->
-        <div style="background: #f3f4f6; padding: 20px; border-radius: 8px; margin-bottom: 30px;">
-          <table style="width: 100%; border-collapse: collapse;">
-            <tr>
-              <td style="padding: 8px; font-weight: bold; color: #374151;">Meeting Type:</td>
-              <td style="padding: 8px; color: #6b7280;">${meeting.meeting_type || "Council Meeting"}</td>
-            </tr>
-            <tr>
-              <td style="padding: 8px; font-weight: bold; color: #374151;">Date:</td>
-              <td style="padding: 8px; color: #6b7280;">${meetingDate}</td>
-            </tr>
-            ${meeting.start_time ? `
-            <tr>
-              <td style="padding: 8px; font-weight: bold; color: #374151;">Time:</td>
-              <td style="padding: 8px; color: #6b7280;">${meeting.start_time}</td>
-            </tr>
-            ` : ""}
-            ${meeting.location ? `
-            <tr>
-              <td style="padding: 8px; font-weight: bold; color: #374151;">Location:</td>
-              <td style="padding: 8px; color: #6b7280;">${meeting.location}</td>
-            </tr>
-            ` : ""}
-            ${building?.address ? `
-            <tr>
-              <td style="padding: 8px; font-weight: bold; color: #374151;">Building Address:</td>
-              <td style="padding: 8px; color: #6b7280;">${building.address}</td>
-            </tr>
-            ` : ""}
-          </table>
-        </div>
-
-        <!-- Agenda Items -->
-        <div style="margin-top: 30px;">
-          <h3 style="font-size: 20px; color: #1e40af; margin-bottom: 20px; border-bottom: 2px solid #93c5fd; padding-bottom: 10px;">Agenda Items</h3>
-    `
-
     let itemNumber = 1
 
     // Add sections with topics
     sections.forEach((section) => {
       const sectionTopics = topicsBySection[section.id] || []
       
-      agendaContent += `
-        <div style="margin-bottom: 30px;">
-          <h4 style="font-size: 18px; color: #2563eb; margin: 20px 0 10px 0; font-weight: bold;">
-            ${itemNumber}. ${section.title}
-          </h4>
-      `
+      checkPageBreak(15)
+      pdf.setFontSize(14)
+      pdf.setTextColor("#2563eb")
+      pdf.setFont("helvetica", "bold")
+      pdf.text(`${itemNumber}. ${section.title}`, margin, yPosition)
+      yPosition += 8
 
       if (sectionTopics.length > 0) {
-        agendaContent += `<div style="margin-left: 20px;">`
         sectionTopics.forEach((topic: Topic, idx: number) => {
-          agendaContent += `
-            <div style="margin-bottom: 15px; padding: 10px; background: #f9fafb; border-left: 3px solid #60a5fa; border-radius: 4px;">
-              <p style="margin: 0; font-weight: bold; color: #374151;">
-                ${itemNumber}.${idx + 1} ${topic.title}
-              </p>
-              ${topic.description ? `
-                <p style="margin: 8px 0 0 0; color: #6b7280; font-size: 14px;">
-                  ${topic.description}
-                </p>
-              ` : ""}
-            </div>
-          `
+          checkPageBreak(20)
+          
+          // Topic box
+          pdf.setFillColor(249, 250, 251)
+          const boxHeight = topic.description ? 20 : 12
+          pdf.rect(margin + 5, yPosition - 5, pageWidth - 2 * margin - 10, boxHeight, "F")
+          
+          // Blue left border
+          pdf.setFillColor(96, 165, 250)
+          pdf.rect(margin + 5, yPosition - 5, 2, boxHeight, "F")
+          
+          // Topic title
+          pdf.setFontSize(11)
+          pdf.setTextColor("#374151")
+          pdf.setFont("helvetica", "bold")
+          pdf.text(`${itemNumber}.${idx + 1} ${topic.title}`, margin + 10, yPosition)
+          yPosition += 6
+          
+          // Topic description
+          if (topic.description) {
+            pdf.setFontSize(9)
+            pdf.setFont("helvetica", "normal")
+            pdf.setTextColor("#6b7280")
+            const descLines = pdf.splitTextToSize(topic.description, pageWidth - 2 * margin - 20)
+            descLines.forEach((line: string) => {
+              checkPageBreak(5)
+              pdf.text(line, margin + 10, yPosition)
+              yPosition += 4
+            })
+          }
+          
+          yPosition += 8
         })
-        agendaContent += `</div>`
       }
 
-      agendaContent += `</div>`
       itemNumber++
+      yPosition += 5
     })
 
     // Add unsectioned topics if any
     const unsectionedTopics = topicsBySection["unsectioned"] || []
     if (unsectionedTopics.length > 0) {
-      agendaContent += `
-        <div style="margin-bottom: 30px;">
-          <h4 style="font-size: 18px; color: #2563eb; margin: 20px 0 10px 0;">Other Items</h4>
-          <div style="margin-left: 20px;">
-      `
+      checkPageBreak(15)
+      pdf.setFontSize(14)
+      pdf.setTextColor("#2563eb")
+      pdf.setFont("helvetica", "bold")
+      pdf.text("Other Items", margin, yPosition)
+      yPosition += 8
+
       unsectionedTopics.forEach((topic: Topic, idx: number) => {
-        agendaContent += `
-          <div style="margin-bottom: 15px; padding: 10px; background: #f9fafb; border-left: 3px solid #60a5fa; border-radius: 4px;">
-            <p style="margin: 0; font-weight: bold; color: #374151;">
-              ${itemNumber}.${idx + 1} ${topic.title}
-            </p>
-            ${topic.description ? `
-              <p style="margin: 8px 0 0 0; color: #6b7280; font-size: 14px;">
-                ${topic.description}
-              </p>
-            ` : ""}
-          </div>
-        `
+        checkPageBreak(20)
+        
+        pdf.setFillColor(249, 250, 251)
+        const boxHeight = topic.description ? 20 : 12
+        pdf.rect(margin + 5, yPosition - 5, pageWidth - 2 * margin - 10, boxHeight, "F")
+        
+        pdf.setFillColor(96, 165, 250)
+        pdf.rect(margin + 5, yPosition - 5, 2, boxHeight, "F")
+        
+        pdf.setFontSize(11)
+        pdf.setTextColor("#374151")
+        pdf.setFont("helvetica", "bold")
+        pdf.text(`${itemNumber}.${idx + 1} ${topic.title}`, margin + 10, yPosition)
+        yPosition += 6
+        
+        if (topic.description) {
+          pdf.setFontSize(9)
+          pdf.setFont("helvetica", "normal")
+          pdf.setTextColor("#6b7280")
+          const descLines = pdf.splitTextToSize(topic.description, pageWidth - 2 * margin - 20)
+          descLines.forEach((line: string) => {
+            checkPageBreak(5)
+            pdf.text(line, margin + 10, yPosition)
+            yPosition += 4
+          })
+        }
+        
+        yPosition += 8
       })
-      agendaContent += `</div></div>`
     }
 
-    agendaContent += `
-        </div>
+    // Footer
+    const footerY = pageHeight - 15
+    pdf.setDrawColor(229, 231, 235)
+    pdf.setLineWidth(0.5)
+    pdf.line(margin, footerY, pageWidth - margin, footerY)
+    
+    pdf.setFontSize(8)
+    pdf.setTextColor("#9ca3af")
+    pdf.setFont("helvetica", "normal")
+    pdf.text(
+      `Generated on ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}`,
+      pageWidth / 2,
+      footerY + 5,
+      { align: "center" }
+    )
+    pdf.text(
+      "Meeting Genius - Meeting Management System",
+      pageWidth / 2,
+      footerY + 10,
+      { align: "center" }
+    )
 
-        <!-- Footer -->
-        <div style="margin-top: 50px; padding-top: 20px; border-top: 2px solid #e5e7eb; text-align: center; color: #9ca3af; font-size: 12px;">
-          <p style="margin: 0;">Generated on ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}</p>
-          <p style="margin: 5px 0 0 0;">Meeting Genius - Meeting Management System</p>
-        </div>
-      </div>
-    `
-
-    return agendaContent
-  }
-
-  const convertHTMLToPDF = async (html: string, meeting: any) => {
-    // Create temporary container
-    const container = document.createElement("div")
-    container.innerHTML = html
-    container.style.position = "absolute"
-    container.style.left = "-9999px"
-    container.style.width = "800px"
-    document.body.appendChild(container)
-
-    try {
-      // Convert to canvas
-      const canvas = await html2canvas(container, {
-        scale: 2,
-        useCORS: true,
-        logging: false
-      })
-
-      // Create PDF
-      const pdf = new jsPDF("p", "mm", "a4")
-      const imgWidth = 210 // A4 width in mm
-      const pageHeight = 297 // A4 height in mm
-      const imgHeight = (canvas.height * imgWidth) / canvas.width
-      let heightLeft = imgHeight
-      let position = 0
-
-      // Add first page
-      pdf.addImage(canvas.toDataURL("image/png"), "PNG", 0, position, imgWidth, imgHeight)
-      heightLeft -= pageHeight
-
-      // Add additional pages if needed
-      while (heightLeft > 0) {
-        position = heightLeft - imgHeight
-        pdf.addPage()
-        pdf.addImage(canvas.toDataURL("image/png"), "PNG", 0, position, imgWidth, imgHeight)
-        heightLeft -= pageHeight
-      }
-
-      // Download PDF
-      const fileName = `${meeting.title || "Meeting"}_Agenda_${new Date().toISOString().split("T")[0]}.pdf`
-      pdf.save(fileName)
-
-    } finally {
-      // Cleanup
-      document.body.removeChild(container)
-    }
+    // Download PDF
+    const fileName = `${meeting.title || "Meeting"}_Agenda_${new Date().toISOString().split("T")[0]}.pdf`
+    pdf.save(fileName)
   }
 
   return (
