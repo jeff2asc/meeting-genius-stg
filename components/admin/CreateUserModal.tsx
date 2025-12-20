@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -14,6 +14,7 @@ interface CreateUserModalProps {
   propertyManagers: Array<{ id: number; name: string; email: string; company_id?: number | null }>
   buildings: Array<{ id: number; name: string }>
   companies: Company[]
+  userId?: number | null  // ADD THIS
 }
 
 export default function CreateUserModal({
@@ -23,7 +24,8 @@ export default function CreateUserModal({
   currentUser,
   propertyManagers,
   buildings,
-  companies
+  companies,
+  userId = null  // ADD THIS
 }: CreateUserModalProps) {
   const [userFormData, setUserFormData] = useState({
     name: "",
@@ -39,11 +41,69 @@ export default function CreateUserModal({
 
   const isMaster = currentUser?.user_type === 'master'
   const isCorporateAdmin = currentUser?.user_type === 'corporate_administrator'
+  const isEditMode = !!userId
+
+  // Fetch user data when editing
+  useEffect(() => {
+    if (userId && isOpen) {
+      fetchUserData()
+    } else if (!userId && isOpen) {
+      resetForm()
+    }
+  }, [userId, isOpen])
+
+  const fetchUserData = async () => {
+    try {
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', userId)
+        .single()
+
+      if (userError) throw userError
+
+      if (userData) {
+        setUserFormData({
+          name: userData.name || "",
+          email: userData.email || "",
+          password: "", // Don't prefill password for security
+          userType: userData.user_type || "user",
+          assignedPmId: userData.assigned_pm_id || 0,
+          companyId: userData.company_id || 0,
+        })
+
+        // Fetch user's buildings
+        const { data: userBuildings } = await supabase
+          .from('user_buildings')
+          .select('building_id')
+          .eq('user_id', userId)
+
+        if (userBuildings) {
+          setSelectedUserBuildings(userBuildings.map(ub => ub.building_id))
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching user:', err)
+      setError('Failed to load user data')
+    }
+  }
+
+  const resetForm = () => {
+    setUserFormData({
+      name: "",
+      email: "",
+      password: "",
+      userType: "user",
+      assignedPmId: 0,
+      companyId: 0,
+    })
+    setSelectedUserBuildings([])
+    setError(null)
+  }
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target
     
-    // Parse numeric fields as integers
     if (name === 'assignedPmId' || name === 'companyId') {
       setUserFormData(prev => ({ ...prev, [name]: parseInt(value) || 0 }))
     } else {
@@ -63,13 +123,19 @@ export default function CreateUserModal({
     e.preventDefault()
     setError(null)
 
-    if (!userFormData.name.trim() || !userFormData.email.trim() || !userFormData.password.trim()) {
-      setError("All fields are required")
+    if (!userFormData.name.trim() || !userFormData.email.trim()) {
+      setError("Name and email are required")
+      return
+    }
+
+    // Only require password for new users
+    if (!isEditMode && !userFormData.password.trim()) {
+      setError("Password is required for new users")
       return
     }
 
     // Validation for Master creating corporate_administrator or property_manager
-    if (isMaster) {
+    if (isMaster && !isEditMode) {
       if (userFormData.userType === 'corporate_administrator' || userFormData.userType === 'property_manager') {
         if (!userFormData.companyId || userFormData.companyId === 0) {
           setError("Please select a company for this user")
@@ -90,8 +156,7 @@ export default function CreateUserModal({
       }
     }
 
-    // Allow Corporate Admin to create Property Manager WITHOUT buildings
-    if (isCorporateAdmin) {
+    if (isCorporateAdmin && !isEditMode) {
       if (userFormData.userType === 'property_manager' && selectedUserBuildings.length === 0) {
         console.log('⚠️ Creating Property Manager without buildings - they can be assigned later via Admin Panel')
       }
@@ -100,99 +165,132 @@ export default function CreateUserModal({
     setSaving(true)
 
     try {
-      // ✅ FIXED: Determine company_id based on user type - NOW INCLUDES REGULAR USERS
-      let companyIdToAssign = null
-      
-      if (isMaster) {
-        // Master manually selects company for corporate_administrator and property_manager
-        if (userFormData.userType === 'corporate_administrator' || userFormData.userType === 'property_manager') {
-          companyIdToAssign = userFormData.companyId
-          console.log('🏢 Master assigning company_id:', companyIdToAssign, 'to', userFormData.userType)
-        }
-        // ✅ NEW: Master creating regular user - inherit company_id from selected PM
-        else if (userFormData.userType === 'user' && userFormData.assignedPmId) {
-          const selectedPM = propertyManagers.find(pm => pm.id === userFormData.assignedPmId)
-          companyIdToAssign = selectedPM?.company_id || null
-          console.log('🏢 Master creating user - inheriting company_id:', companyIdToAssign, 'from PM:', selectedPM?.name)
-        }
-      } else if (isCorporateAdmin) {
-        // ✅ UPDATED: Corporate Admin assigns their company to BOTH property_manager AND regular users
-        if (userFormData.userType === 'property_manager' || userFormData.userType === 'user') {
-          companyIdToAssign = currentUser.company_id
-          console.log('🏢 Corporate Admin assigning their company_id:', companyIdToAssign, 'to', userFormData.userType)
-        }
-      } else if (currentUser?.user_type === 'property_manager') {
-        // ✅ NEW: Property Manager assigns their company to regular users
-        if (userFormData.userType === 'user') {
-          companyIdToAssign = currentUser.company_id
-          console.log('🏢 Property Manager assigning their company_id:', companyIdToAssign, 'to user')
-        }
-      }
-
-      console.log('📋 Creating user with data:', {
-        name: userFormData.name.trim(),
-        email: userFormData.email.toLowerCase().trim(),
-        user_type: userFormData.userType,
-        company_id: companyIdToAssign,
-        assigned_pm_id: isMaster && userFormData.userType === 'user' ? userFormData.assignedPmId : null
-      })
-
-      const { data: newUser, error: userError } = await supabase
-        .from('users')
-        .insert({
+      if (isEditMode) {
+        // UPDATE existing user
+        const updateData: any = {
           name: userFormData.name.trim(),
           email: userFormData.email.toLowerCase().trim(),
-          password_hash: '$2a$10$rXqvFZnPzAMcLzCP2L4dxu7L6Y3Y5KjGNQQF6xZ4Y5Y5Y5Y5Y5Y5Y5',
-          user_type: isMaster ? userFormData.userType : (isCorporateAdmin && userFormData.userType === 'property_manager' ? 'property_manager' : 'user'),
-          company_id: companyIdToAssign,
-          assigned_pm_id: isMaster && userFormData.userType === 'user' 
-            ? userFormData.assignedPmId 
-            : (currentUser?.user_type === 'property_manager' ? currentUser.id : null)
-        })
-        .select()
-        .single()
+          user_type: userFormData.userType,
+          company_id: userFormData.companyId || null,
+          assigned_pm_id: userFormData.assignedPmId || null,
+        }
 
-      if (userError) {
-        console.error('❌ Error creating user:', userError)
-        setError('Failed to create user. Email may already exist.')
-        setSaving(false)
-        return
-      }
+        // Only update password if provided
+        if (userFormData.password.trim()) {
+          updateData.password_hash = '$2a$10$rXqvFZnPzAMcLzCP2L4dxu7L6Y3Y5KjGNQQF6xZ4Y5Y5Y5Y5Y5Y5Y5'
+        }
 
-      console.log('✅ User created successfully:', newUser)
+        const { error: updateError } = await supabase
+          .from('users')
+          .update(updateData)
+          .eq('id', userId)
 
-      if (selectedUserBuildings.length > 0) {
-        const buildingAssignments = selectedUserBuildings.map(buildingId => ({
-          user_id: newUser.id,
-          building_id: buildingId
-        }))
-
-        const { error: buildingsError } = await supabase
-          .from('user_buildings')
-          .insert(buildingAssignments)
-
-        if (buildingsError) {
-          console.error('Error assigning buildings:', buildingsError)
-          setError('User created but failed to assign buildings')
+        if (updateError) {
+          console.error('❌ Error updating user:', updateError)
+          setError('Failed to update user. Email may already exist.')
           setSaving(false)
           return
         }
 
-        console.log('✅ Buildings assigned successfully')
-      } else if (userFormData.userType === 'property_manager') {
-        console.log('ℹ️ Property Manager created without buildings - assign later via Admin Panel')
+        console.log('✅ User updated successfully')
+
+        // Update building assignments
+        // First, delete existing assignments
+        await supabase
+          .from('user_buildings')
+          .delete()
+          .eq('user_id', userId)
+
+        // Then add new assignments
+        if (selectedUserBuildings.length > 0) {
+          const buildingAssignments = selectedUserBuildings.map(buildingId => ({
+            user_id: userId,
+            building_id: buildingId
+          }))
+
+          const { error: buildingsError } = await supabase
+            .from('user_buildings')
+            .insert(buildingAssignments)
+
+          if (buildingsError) {
+            console.error('Error updating buildings:', buildingsError)
+          }
+        }
+
+      } else {
+        // CREATE new user (existing logic)
+        let companyIdToAssign = null
+        
+        if (isMaster) {
+          if (userFormData.userType === 'corporate_administrator' || userFormData.userType === 'property_manager') {
+            companyIdToAssign = userFormData.companyId
+            console.log('🏢 Master assigning company_id:', companyIdToAssign, 'to', userFormData.userType)
+          }
+          else if (userFormData.userType === 'user' && userFormData.assignedPmId) {
+            const selectedPM = propertyManagers.find(pm => pm.id === userFormData.assignedPmId)
+            companyIdToAssign = selectedPM?.company_id || null
+            console.log('🏢 Master creating user - inheriting company_id:', companyIdToAssign, 'from PM:', selectedPM?.name)
+          }
+        } else if (isCorporateAdmin) {
+          if (userFormData.userType === 'property_manager' || userFormData.userType === 'user') {
+            companyIdToAssign = currentUser.company_id
+            console.log('🏢 Corporate Admin assigning their company_id:', companyIdToAssign, 'to', userFormData.userType)
+          }
+        } else if (currentUser?.user_type === 'property_manager') {
+          if (userFormData.userType === 'user') {
+            companyIdToAssign = currentUser.company_id
+            console.log('🏢 Property Manager assigning their company_id:', companyIdToAssign, 'to user')
+          }
+        }
+
+        const { data: newUser, error: userError } = await supabase
+          .from('users')
+          .insert({
+            name: userFormData.name.trim(),
+            email: userFormData.email.toLowerCase().trim(),
+            password_hash: '$2a$10$rXqvFZnPzAMcLzCP2L4dxu7L6Y3Y5KjGNQQF6xZ4Y5Y5Y5Y5Y5Y5Y5',
+            user_type: isMaster ? userFormData.userType : (isCorporateAdmin && userFormData.userType === 'property_manager' ? 'property_manager' : 'user'),
+            company_id: companyIdToAssign,
+            assigned_pm_id: isMaster && userFormData.userType === 'user' 
+              ? userFormData.assignedPmId 
+              : (currentUser?.user_type === 'property_manager' ? currentUser.id : null)
+          })
+          .select()
+          .single()
+
+        if (userError) {
+          console.error('❌ Error creating user:', userError)
+          setError('Failed to create user. Email may already exist.')
+          setSaving(false)
+          return
+        }
+
+        console.log('✅ User created successfully:', newUser)
+
+        if (selectedUserBuildings.length > 0) {
+          const buildingAssignments = selectedUserBuildings.map(buildingId => ({
+            user_id: newUser.id,
+            building_id: buildingId
+          }))
+
+          const { error: buildingsError } = await supabase
+            .from('user_buildings')
+            .insert(buildingAssignments)
+
+          if (buildingsError) {
+            console.error('Error assigning buildings:', buildingsError)
+            setError('User created but failed to assign buildings')
+            setSaving(false)
+            return
+          }
+
+          console.log('✅ Buildings assigned successfully')
+        } else if (userFormData.userType === 'property_manager') {
+          console.log('ℹ️ Property Manager created without buildings - assign later via Admin Panel')
+        }
       }
 
-      // Reset form
-      setUserFormData({
-        name: "",
-        email: "",
-        password: "",
-        userType: "user",
-        assignedPmId: 0,
-        companyId: 0,
-      })
-      setSelectedUserBuildings([])
+      resetForm()
       onSuccess()
       onClose()
 
@@ -211,9 +309,13 @@ export default function CreateUserModal({
       <Card className="w-full max-w-2xl border-0 rounded-2xl shadow-2xl my-8">
         <div className="flex items-center justify-between border-b border-border bg-gradient-to-r from-primary/5 to-decision-purple/5 p-6">
           <div>
-            <h2 className="text-xl font-bold text-foreground">Create New User</h2>
+            <h2 className="text-xl font-bold text-foreground">
+              {isEditMode ? 'Edit User' : 'Create New User'}
+            </h2>
             <p className="text-sm text-muted-foreground">
-              {isMaster ? 'Create any user type' : isCorporateAdmin ? 'Create a Property Manager or User' : 'Create a User for your team'}
+              {isEditMode 
+                ? 'Update user information and permissions' 
+                : isMaster ? 'Create any user type' : isCorporateAdmin ? 'Create a Property Manager or User' : 'Create a User for your team'}
             </p>
           </div>
           <button
@@ -274,7 +376,6 @@ export default function CreateUserModal({
             </div>
           )}
 
-          {/* Company Selection - Master only, for corporate_administrator and property_manager */}
           {isMaster && (userFormData.userType === 'corporate_administrator' || userFormData.userType === 'property_manager') && (
             <div>
               <label className="block text-sm font-medium text-foreground mb-2">
@@ -335,20 +436,20 @@ export default function CreateUserModal({
 
           <div>
             <label className="block text-sm font-medium text-foreground mb-2">
-              Temporary Password *
+              {isEditMode ? 'New Password (leave blank to keep current)' : 'Temporary Password *'}
             </label>
             <input
               type="text"
               name="password"
               value={userFormData.password}
               onChange={handleInputChange}
-              placeholder="e.g., welcome123"
-              required
+              placeholder={isEditMode ? "Leave blank to keep current password" : "e.g., welcome123"}
+              required={!isEditMode}
               disabled={saving}
               className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
             />
             <p className="text-xs text-muted-foreground mt-1">
-              User will use this password to login
+              {isEditMode ? 'Only enter a password if you want to change it' : 'User will use this password to login'}
             </p>
           </div>
 
@@ -381,7 +482,7 @@ export default function CreateUserModal({
           {(userFormData.userType === 'property_manager' || (!isMaster && !isCorporateAdmin)) && (
             <div>
               <label className="block text-sm font-medium text-foreground mb-2">
-                Assign Buildings {isMaster && userFormData.userType === 'property_manager' && '*'}
+                Assign Buildings {isMaster && userFormData.userType === 'property_manager' && !isEditMode && '*'}
                 {isCorporateAdmin && userFormData.userType === 'property_manager' && ' (Optional)'}
               </label>
               <div className="border border-border rounded p-4 space-y-2 max-h-48 overflow-y-auto">
@@ -410,7 +511,7 @@ export default function CreateUserModal({
                 )}
               </div>
               <p className="text-xs text-muted-foreground mt-1">
-                {isMaster && userFormData.userType === 'property_manager' 
+                {isMaster && userFormData.userType === 'property_manager' && !isEditMode
                   ? 'Property Managers need at least one building'
                   : isCorporateAdmin && userFormData.userType === 'property_manager'
                   ? '✅ You can create the Property Manager now and assign buildings later via Admin Panel → Buildings tab'
@@ -434,7 +535,7 @@ export default function CreateUserModal({
               className="flex-1 bg-gradient-to-r from-primary to-decision-purple text-primary-foreground hover:opacity-90"
               disabled={saving}
             >
-              {saving ? "Creating..." : "Create User"}
+              {saving ? (isEditMode ? "Updating..." : "Creating...") : (isEditMode ? "Update User" : "Create User")}
             </Button>
           </div>
         </form>

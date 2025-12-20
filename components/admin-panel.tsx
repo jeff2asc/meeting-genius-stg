@@ -70,6 +70,10 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
   const [showEditBuildingModal, setShowEditBuildingModal] = useState(false)
   const [selectedBuilding, setSelectedBuilding] = useState<Building | null>(null)
 
+  // Edit User Modal States
+  const [showEditUserModal, setShowEditUserModal] = useState(false)
+  const [editingUserId, setEditingUserId] = useState<number | null>(null)
+
   // Company modals
   const [showEditCompanyModal, setShowEditCompanyModal] = useState(false)
   const [showCompanyDetailsModal, setShowCompanyDetailsModal] = useState(false)
@@ -116,11 +120,9 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
   // --- USERS: EDIT / DELETE HANDLERS ---
 
   const handleEditUser = (userId: number) => {
-    // For now just log; you can later open an EditUserModal here
     console.log("Edit user", userId)
-    // Example next step:
-    // setSelectedUserId(userId)
-    // setShowEditUserModal(true)
+    setEditingUserId(userId)
+    setShowEditUserModal(true)
   }
 
   const handleDeleteUser = async (userId: number) => {
@@ -631,8 +633,6 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
         )}
       </div>
 
-
-
       {/* ALL MODALS */}
       <CreateUserModal
         isOpen={showCreateUserModal}
@@ -643,6 +643,27 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
         buildings={getBuildingsList()}
         companies={companies}
       />
+
+      {/* Edit User Modal - reuses CreateUserModal with userId */}
+      {showEditUserModal && editingUserId && (
+        <CreateUserModal
+          isOpen={showEditUserModal}
+          onClose={() => {
+            setShowEditUserModal(false)
+            setEditingUserId(null)
+          }}
+          onSuccess={() => {
+            setShowEditUserModal(false)
+            setEditingUserId(null)
+            handleCreateUserSuccess()
+          }}
+          currentUser={currentUser}
+          propertyManagers={propertyManagers}
+          buildings={getBuildingsList()}
+          companies={companies}
+          userId={editingUserId}
+        />
+      )}
 
       <CreateBuildingModal
         isOpen={showCreateBuildingModal}
