@@ -10,7 +10,7 @@ import { canManageCompanies, shouldFilterByCompany } from "@/lib/permissions"
 // Import all the separated components
 import CreateUserModal from "./admin/CreateUserModal"
 import CreateBuildingModal from "./admin/CreateBuildingModal"
-import EditBuildingModal from "./admin/EditBuildingModal"
+import BuildingDetailsModal from "./admin/BuildingDetailsModal"
 import DocumentManagementModal from "./admin/DocumentManagementModal"
 import ViewDocumentModal from "./admin/ViewDocumentModal"
 import UsersTab from "./admin/UsersTab"
@@ -67,7 +67,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
   const [showCreateUserModal, setShowCreateUserModal] = useState(false)
   const [showCreateBuildingModal, setShowCreateBuildingModal] = useState(false)
   const [showCreateCompanyModal, setShowCreateCompanyModal] = useState(false)
-  const [showEditBuildingModal, setShowEditBuildingModal] = useState(false)
+  const [showBuildingDetailsModal, setShowBuildingDetailsModal] = useState(false)
   const [selectedBuilding, setSelectedBuilding] = useState<Building | null>(null)
 
   // Company modals
@@ -384,9 +384,9 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
     setFilteredUsers(filtered)
   }
 
-  const handleEditBuilding = (building: Building) => {
+  const handleViewBuildingDetails = (building: Building) => {
     setSelectedBuilding(building)
-    setShowEditBuildingModal(true)
+    setShowBuildingDetailsModal(true)
   }
 
   const handleCreateUserSuccess = () => {
@@ -399,7 +399,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
     fetchUsers()
   }
 
-  const handleEditBuildingSuccess = () => {
+  const handleBuildingDetailsSuccess = () => {
     setSelectedBuilding(null)
     fetchBuildings()
     fetchUsers()
@@ -608,7 +608,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
             buildingDocuments={buildingDocuments}
             loading={loading}
             isMaster={isMaster}
-            onEditBuilding={handleEditBuilding}
+            onViewDetails={handleViewBuildingDetails}
             onViewDocument={handleViewDocument}
             onManageDocuments={handleManageDocuments}
           />
@@ -631,8 +631,6 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
         )}
       </div>
 
-
-
       {/* ALL MODALS */}
       <CreateUserModal
         isOpen={showCreateUserModal}
@@ -652,13 +650,13 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
         availableUsers={getAvailableUsers()}
       />
 
-      <EditBuildingModal
-        isOpen={showEditBuildingModal}
+      <BuildingDetailsModal
+        isOpen={showBuildingDetailsModal}
         onClose={() => {
-          setShowEditBuildingModal(false)
+          setShowBuildingDetailsModal(false)
           setSelectedBuilding(null)
         }}
-        onSuccess={handleEditBuildingSuccess}
+        onSuccess={handleBuildingDetailsSuccess}
         building={selectedBuilding}
         availableUsers={getAvailableUsers()}
       />

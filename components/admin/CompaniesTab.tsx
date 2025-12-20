@@ -15,9 +15,10 @@ interface CompaniesTabProps {
   onEdit: (company: Company) => void
   onDelete: (company: Company) => void
   onViewDetails: (company: Company) => void
-  onAssignUsers: (company: Company) => void
+  onAssignUsers: (company: Company) => void  // ✅ ADD THIS LINE
   onRefresh: () => void
 }
+
 
 export default function CompaniesTab({
   companies,
@@ -25,7 +26,6 @@ export default function CompaniesTab({
   onEdit,
   onDelete,
   onViewDetails,
-  onAssignUsers,
   onRefresh
 }: CompaniesTabProps) {
   const [companiesWithCounts, setCompaniesWithCounts] = useState<CompanyWithCounts[]>([])
@@ -93,7 +93,6 @@ export default function CompaniesTab({
               onEdit={onEdit}
               onDelete={handleDelete}
               onViewDetails={onViewDetails}
-              onAssignUsers={onAssignUsers}
             />
           ))}
         </div>
