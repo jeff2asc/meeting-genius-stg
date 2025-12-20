@@ -15,15 +15,14 @@ interface CompanyCardProps {
   onEdit: (company: Company) => void
   onDelete: (company: Company) => void
   onViewDetails: (company: Company) => void
-  onAssignUsers: (company: Company) => void
+  
 }
 
 export default function CompanyCard({
   company,
   onEdit,
   onDelete,
-  onViewDetails,
-  onAssignUsers
+  onViewDetails
 }: CompanyCardProps) {
   return (
     <Card className="p-4 hover:shadow-md transition-shadow">
@@ -58,15 +57,7 @@ export default function CompanyCard({
             Details
           </Button>
           
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => onAssignUsers(company)}
-            title="Assign Users"
-          >
-            <Users className="h-4 w-4 mr-2" />
-            Manage Users
-          </Button>
+         
 
           <Button
             size="sm"
