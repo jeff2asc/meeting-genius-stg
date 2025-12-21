@@ -1,12 +1,9 @@
 import { createClient } from '@supabase/supabase-js'
 
-
 const supabaseUrl = 'https://iehrlogqpsebhubbafxo.supabase.co'
 const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImllaHJsb2dxcHNlYmh1YmJhZnhvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA4OTMzNjIsImV4cCI6MjA3NjQ2OTM2Mn0.f00dmQAb0jNDni5hB_8seuHJwz_S3skkepmc_fIrEOk'
 
-
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
-
 
 // Company interface -- updated to include new fields
 export interface Company {
@@ -14,10 +11,17 @@ export interface Company {
   name: string
   created_at: string
   updated_at: string
-  default_meeting_sections?: string[]    // <-- ADDED
-  default_meeting_types?: string[]       // <-- ADDED
+  default_meeting_sections?: string[]
+  default_meeting_types?: string[]
+  // ⭐ SMTP fields added
+  smtp_host?: string | null
+  smtp_port?: number | null
+  smtp_user?: string | null
+  smtp_password?: string | null
+  smtp_from_name?: string | null
+  smtp_from_email?: string | null
+  smtp_use_tls?: boolean | null
 }
-
 
 // User interface - with all 6 user types + company_id
 export interface User {
@@ -27,7 +31,6 @@ export interface User {
   user_type: 'master' | 'property_manager' | 'user' | 'vendor' | 'attendee' | 'corporate_administrator'
   company_id?: number | null
 }
-
 
 // Get current user from localStorage
 export function getCurrentUser(): User | null {
@@ -41,14 +44,12 @@ export function getCurrentUser(): User | null {
   }
 }
 
-
 // Set current user in localStorage
 export function setCurrentUser(user: User) {
   if (typeof window !== 'undefined') {
     localStorage.setItem('current_user', JSON.stringify(user))
   }
 }
-
 
 // Clear current user (logout)
 export function clearCurrentUser() {
@@ -57,12 +58,10 @@ export function clearCurrentUser() {
   }
 }
 
-
 // Check if user is logged in
 export function isLoggedIn(): boolean {
   return getCurrentUser() !== null
 }
-
 
 // Database type -- updated for companies table fields
 export type Database = {
@@ -74,13 +73,29 @@ export type Database = {
           name: string
           created_at: string
           updated_at: string
-          default_meeting_sections: string[] | null    // <-- ADDED
-          default_meeting_types: string[] | null       // <-- ADDED
+          default_meeting_sections: string[] | null
+          default_meeting_types: string[] | null
+          // ⭐ SMTP fields added
+          smtp_host: string | null
+          smtp_port: number | null
+          smtp_user: string | null
+          smtp_password: string | null
+          smtp_from_name: string | null
+          smtp_from_email: string | null
+          smtp_use_tls: boolean | null
         }
         Insert: {
           name: string
-          default_meeting_sections?: string[] | null    // <-- ADDED
-          default_meeting_types?: string[] | null       // <-- ADDED
+          default_meeting_sections?: string[] | null
+          default_meeting_types?: string[] | null
+          // ⭐ SMTP fields optional on insert
+          smtp_host?: string | null
+          smtp_port?: number | null
+          smtp_user?: string | null
+          smtp_password?: string | null
+          smtp_from_name?: string | null
+          smtp_from_email?: string | null
+          smtp_use_tls?: boolean | null
         }
       }
       users: {
@@ -259,14 +274,10 @@ export type Database = {
   }
 }
 
-
 // ============================================
 // ROLLOVER HELPER FUNCTIONS
 // ============================================
 
-/**
- * Get the most recent finalized meeting of the same type for a building
- */
 /**
  * Get the most recent finalized meeting of the same type for a building
  */
@@ -276,7 +287,7 @@ export async function getPreviousMeetingOfSameType(
 ) {
   const { data, error } = await supabase
     .from('meetings')
-    .select('id, title, meeting_date, attendees')  // ← ADDED attendees
+    .select('id, title, meeting_date, attendees')
     .eq('building_id', buildingId)
     .eq('meeting_type', meetingType)
     .eq('status', 'minutes') // Only finalized meetings
@@ -291,7 +302,6 @@ export async function getPreviousMeetingOfSameType(
 
   return data
 }
-
 
 /**
  * Get all sections from a meeting
@@ -363,10 +373,6 @@ export async function getOpenTasksFromMeeting(meetingId: number) {
 /**
  * Get company default sections
  */
-/**
- * Get company default sections
- */
-
 export async function getCompanyDefaultSections(companyId: number) {
   const { data, error } = await supabase
     .from('companies')

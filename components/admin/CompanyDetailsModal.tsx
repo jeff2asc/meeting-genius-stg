@@ -576,6 +576,123 @@ export default function CompanyDetailsModal({
                       </div>
                     </Card>
                   </div>
+                  <Card className="p-4 bg-muted/40 border-border">
+      <h3 className="text-sm font-semibold text-foreground mb-2">
+        SMTP Settings (Optional)
+      </h3>
+      <p className="text-xs text-muted-foreground mb-3">
+        Configure email account for sending tasks and notifications. Leave blank to use system default.
+      </p>
+
+      <div className="grid gap-3 md:grid-cols-2">
+        <div>
+          <label className="block text-xs font-medium text-foreground mb-1">
+            SMTP Host
+          </label>
+          <input
+            type="text"
+            value={smtpHost}
+            onChange={(e) => setSmtpHost(e.target.value)}
+            className="w-full px-2 py-1.5 rounded border border-border text-sm bg-background"
+            placeholder="smtp.gmail.com"
+          />
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-foreground mb-1">
+            SMTP Port
+          </label>
+          <input
+            type="number"
+            value={smtpPort}
+            onChange={(e) =>
+              setSmtpPort(e.target.value ? Number(e.target.value) : "")
+            }
+            className="w-full px-2 py-1.5 rounded border border-border text-sm bg-background"
+            placeholder="587"
+          />
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-foreground mb-1">
+            SMTP Username
+          </label>
+          <input
+            type="text"
+            value={smtpUser}
+            onChange={(e) => setSmtpUser(e.target.value)}
+            className="w-full px-2 py-1.5 rounded border border-border text-sm bg-background"
+            placeholder="jeffreydomingo509@gmail.com"
+          />
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-foreground mb-1">
+            SMTP Password / App Password
+          </label>
+          <input
+            type="password"
+            value={smtpPassword}
+            onChange={(e) => setSmtpPassword(e.target.value)}
+            className="w-full px-2 py-1.5 rounded border border-border text-sm bg-background"
+            placeholder="App password"
+          />
+          <p className="text-[10px] text-muted-foreground mt-1">
+            Leave blank to keep existing password.
+          </p>
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-foreground mb-1">
+            From Name
+          </label>
+          <input
+            type="text"
+            value={smtpFromName}
+            onChange={(e) => setSmtpFromName(e.target.value)}
+            className="w-full px-2 py-1.5 rounded border border-border text-sm bg-background"
+            placeholder="Ocean View Towers Management"
+          />
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-foreground mb-1">
+            From Email
+          </label>
+          <input
+            type="email"
+            value={smtpFromEmail}
+            onChange={(e) => setSmtpFromEmail(e.target.value)}
+            className="w-full px-2 py-1.5 rounded border border-border text-sm bg-background"
+            placeholder="jeffreydomingo509@gmail.com"
+          />
+        </div>
+      </div>
+
+      <div className="mt-3 flex items-center gap-2">
+        <input
+          id="smtp_use_tls"
+          type="checkbox"
+          checked={smtpUseTls}
+          onChange={(e) => setSmtpUseTls(e.target.checked)}
+          className="h-4 w-4"
+        />
+        <label htmlFor="smtp_use_tls" className="text-xs text-foreground">
+          Use TLS (recommended for Gmail on port 587)
+        </label>
+      </div>
+
+      <div className="mt-4 flex justify-end">
+        <Button
+          size="sm"
+          onClick={handleSaveSmtp}
+          disabled={savingSmtp}
+          className="bg-gradient-to-r from-primary to-decision-purple text-primary-foreground"
+        >
+          {savingSmtp ? "Saving..." : "Save SMTP Settings"}
+        </Button>
+      </div>
+    </Card>
 
                   <div>
                     <h3 className="text-lg font-semibold text-foreground mb-3">All Users</h3>
