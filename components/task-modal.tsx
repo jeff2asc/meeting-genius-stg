@@ -204,75 +204,85 @@ export default function TaskModal({ topicId, onClose, onSave }: TaskModalProps) 
       console.log('✅ Task saved successfully:', data)
 
       // Send email notification if enabled
-      if (formData.sendNotification && meetingId) {
-        try {
-          // Get company_id through building_id
-          const { data: meetingData, error: meetingError } = await supabase
-            .from('meetings')
-            .select('buildings(company_id)')
-            .eq('id', meetingId)
-            .single()
-      
-          const companyId = meetingData?.buildings?.[0]?.company_id
-      
-          if (!meetingError && companyId) {
-            // Send email to each assignee
-            for (const assignee of assignees) {
-              const updateLink = `${window.location.origin}/task-update/${externalToken}`
-              
-              const emailHtml = `
-                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-                  <h2 style="color: #2563eb;">New Task Assigned</h2>
-                  <p>Hi ${assignee.name},</p>
-                  <p>You have been assigned a new task:</p>
-                  <div style="background: #f3f4f6; padding: 15px; border-radius: 8px; margin: 20px 0;">
-                    <strong>Task:</strong> ${formData.description}
-                    ${formData.dueDate ? `<br><strong>Due Date:</strong> ${new Date(formData.dueDate).toLocaleDateString()}` : ''}
-                  </div>
-                  <p>You can update the task status using the link below:</p>
-                  <a href="${updateLink}" style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin: 10px 0;">Update Task Status</a>
-                  <p style="color: #6b7280; font-size: 14px; margin-top: 30px;">This link will expire in 90 days.</p>
-                </div>
-              `
-      
-              const response = await fetch('/api/send-email', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  companyId: companyId,
-                  to: assignee.email,
-                  subject: `New Task Assigned: ${formData.description.substring(0, 50)}${formData.description.length > 50 ? '...' : ''}`,
-                  html: emailHtml
-                })
-              })
-      
-              const result = await response.json()
-              
-              if (response.ok) {
-                console.log(`✅ Email sent to ${assignee.email}`)
-              } else {
-                console.error(`❌ Failed to send email to ${assignee.email}:`, result.error)
-              }
-            }
-          } else {
-            console.error('⚠️ Could not find company_id for meeting:', meetingError)
-          }
-        } catch (emailError) {
-          console.error('⚠️ Email notification failed (task still created):', emailError)
+if (formData.sendNotification && meetingId) {
+  console.log('📧 About to send emails. meetingId =', meetingId)
+  try {
+    // Get company_id through building_id
+    const { data: meetingData, error: meetingError } = await supabase
+      .from('meetings')
+      .select('buildings(company_id)')
+      .eq('id', meetingId)
+      .single()
+
+    console.log('📧 meetingData =', meetingData, 'meetingError =', meetingError)
+
+    const companyId = meetingData?.buildings?.[0]?.company_id
+    console.log('📧 companyId =', companyId)
+
+    if (!meetingError && companyId) {
+      // Send email to each assignee
+      for (const assignee of assignees) {
+        console.log('📧 Sending email to', assignee.email)
+
+        const updateLink = `${window.location.origin}/task-update/${externalToken}`
+        
+        const emailHtml = `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #2563eb;">New Task Assigned</h2>
+            <p>Hi ${assignee.name},</p>
+            <p>You have been assigned a new task:</p>
+            <div style="background: #f3f4f6; padding: 15px; border-radius: 8px; margin: 20px 0;">
+              <strong>Task:</strong> ${formData.description}
+              ${formData.dueDate ? `<br><strong>Due Date:</strong> ${new Date(formData.dueDate).toLocaleDateString()}` : ''}
+            </div>
+            <p>You can update the task status using the link below:</p>
+            <a href="${updateLink}" style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin: 10px 0;">Update Task Status</a>
+            <p style="color: #6b7280; font-size: 14px; margin-top: 30px;">This link will expire in 90 days.</p>
+          </div>
+        `
+
+        const response = await fetch('/api/send-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            companyId: companyId,
+            to: assignee.email,
+            subject: `New Task Assigned: ${formData.description.substring(0, 50)}${formData.description.length > 50 ? '...' : ''}`,
+            html: emailHtml
+          })
+        })
+
+        const result = await response.json()
+        
+        if (response.ok) {
+          console.log(`✅ Email sent to ${assignee.email}`)
+        } else {
+          console.error(`❌ Failed to send email to ${assignee.email}:`, result.error)
         }
       }
-      
-      if (onSave) {
-        onSave()
-      }
-      
-      onClose()
-      } catch (err) {
-        console.error('💥 Unexpected error:', err)
-        setError('An unexpected error occurred')
-        setSaving(false)
-      }
-      }
+    } else {
+      console.error('⚠️ Could not find company_id for meeting:', meetingError)
+    }
+  } catch (emailError) {
+    console.error('⚠️ Email notification failed (task still created):', emailError)
+  }
+} else {
+  console.log('📧 Skipping email. sendNotification =', formData.sendNotification, 'meetingId =', meetingId)
+}
+
+// keep the rest of handleSubmit as is:
+if (onSave) {
+  onSave()
+}
+
+onClose()
+} catch (err) {
+  console.error('💥 Unexpected error:', err)
+  setError('An unexpected error occurred')
+  setSaving(false)
+}
+}
+
       
       
 
