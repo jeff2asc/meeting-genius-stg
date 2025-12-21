@@ -204,19 +204,20 @@ export default function TaskModal({ topicId, onClose, onSave }: TaskModalProps) 
       console.log('✅ Task saved successfully:', data)
 
       // Send email notification if enabled
+// Send email notification if enabled
 if (formData.sendNotification && meetingId) {
   console.log('📧 About to send emails. meetingId =', meetingId)
   try {
-    // Get company_id through building_id
+    // Get company_id through building_id (1‑to‑1 relation)
     const { data: meetingData, error: meetingError } = await supabase
       .from('meetings')
-      .select('buildings(company_id)')
+      .select('buildings!inner(company_id)')
       .eq('id', meetingId)
       .single()
 
     console.log('📧 meetingData =', meetingData, 'meetingError =', meetingError)
 
-    const companyId = meetingData?.buildings?.[0]?.company_id
+    const companyId = (meetingData as any)?.buildings?.company_id
     console.log('📧 companyId =', companyId)
 
     if (!meetingError && companyId) {
@@ -225,7 +226,7 @@ if (formData.sendNotification && meetingId) {
         console.log('📧 Sending email to', assignee.email)
 
         const updateLink = `${window.location.origin}/task-update/${externalToken}`
-        
+
         const emailHtml = `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <h2 style="color: #2563eb;">New Task Assigned</h2>
@@ -245,7 +246,7 @@ if (formData.sendNotification && meetingId) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            companyId: companyId,
+            companyId,
             to: assignee.email,
             subject: `New Task Assigned: ${formData.description.substring(0, 50)}${formData.description.length > 50 ? '...' : ''}`,
             html: emailHtml
@@ -253,7 +254,7 @@ if (formData.sendNotification && meetingId) {
         })
 
         const result = await response.json()
-        
+
         if (response.ok) {
           console.log(`✅ Email sent to ${assignee.email}`)
         } else {
@@ -269,6 +270,7 @@ if (formData.sendNotification && meetingId) {
 } else {
   console.log('📧 Skipping email. sendNotification =', formData.sendNotification, 'meetingId =', meetingId)
 }
+
 
 // keep the rest of handleSubmit as is:
 if (onSave) {
