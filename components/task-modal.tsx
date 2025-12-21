@@ -33,6 +33,7 @@ export default function TaskModal({ topicId, onClose, onSave }: TaskModalProps) 
   const [newAssigneeEmail, setNewAssigneeEmail] = useState("")
   const [meetingAttendees, setMeetingAttendees] = useState<Assignee[]>([])
   const [meetingId, setMeetingId] = useState<number | null>(null)
+  
 
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -205,14 +206,16 @@ export default function TaskModal({ topicId, onClose, onSave }: TaskModalProps) 
       // Send email notification if enabled
       if (formData.sendNotification && meetingId) {
         try {
-          // Get company_id from meeting
+          // Get company_id through building_id
           const { data: meetingData, error: meetingError } = await supabase
             .from('meetings')
-            .select('company_id')
+            .select('buildings(company_id)')
             .eq('id', meetingId)
             .single()
-
-          if (!meetingError && meetingData?.company_id) {
+      
+          const companyId = meetingData?.buildings?.[0]?.company_id
+      
+          if (!meetingError && companyId) {
             // Send email to each assignee
             for (const assignee of assignees) {
               const updateLink = `${window.location.origin}/task-update/${externalToken}`
@@ -231,18 +234,18 @@ export default function TaskModal({ topicId, onClose, onSave }: TaskModalProps) 
                   <p style="color: #6b7280; font-size: 14px; margin-top: 30px;">This link will expire in 90 days.</p>
                 </div>
               `
-
+      
               const response = await fetch('/api/send-email', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                  companyId: meetingData.company_id,
+                  companyId: companyId,
                   to: assignee.email,
                   subject: `New Task Assigned: ${formData.description.substring(0, 50)}${formData.description.length > 50 ? '...' : ''}`,
                   html: emailHtml
                 })
               })
-
+      
               const result = await response.json()
               
               if (response.ok) {
@@ -251,23 +254,27 @@ export default function TaskModal({ topicId, onClose, onSave }: TaskModalProps) 
                 console.error(`❌ Failed to send email to ${assignee.email}:`, result.error)
               }
             }
+          } else {
+            console.error('⚠️ Could not find company_id for meeting:', meetingError)
           }
         } catch (emailError) {
           console.error('⚠️ Email notification failed (task still created):', emailError)
         }
       }
-
+      
       if (onSave) {
         onSave()
       }
-
+      
       onClose()
-    } catch (err) {
-      console.error('💥 Unexpected error:', err)
-      setError('An unexpected error occurred')
-      setSaving(false)
-    }
-  }
+      } catch (err) {
+        console.error('💥 Unexpected error:', err)
+        setError('An unexpected error occurred')
+        setSaving(false)
+      }
+      }
+      
+      
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 animate-in fade-in">
