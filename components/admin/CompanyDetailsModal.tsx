@@ -10,7 +10,15 @@ interface Company {
   id: number
   name: string
   created_at: string
+  smtp_host: string | null
+  smtp_port: number | null
+  smtp_user: string | null
+  smtp_password: string | null
+  smtp_from_name: string | null
+  smtp_from_email: string | null
+  smtp_use_tls: boolean | null
 }
+
 
 interface CompanyDetailsModalProps {
   isOpen: boolean
@@ -75,14 +83,36 @@ export default function CompanyDetailsModal({
   const [savingUser, setSavingUser] = useState(false)
   const [userTypeFilter, setUserTypeFilter] = useState<string>("all")
 
+    // SMTP form state
+    const [smtpHost, setSmtpHost] = useState("")
+    const [smtpPort, setSmtpPort] = useState<number | "">("")
+    const [smtpUser, setSmtpUser] = useState("")
+    const [smtpPassword, setSmtpPassword] = useState("")
+    const [smtpFromName, setSmtpFromName] = useState("")
+    const [smtpFromEmail, setSmtpFromEmail] = useState("")
+    const [smtpUseTls, setSmtpUseTls] = useState(true)
+    const [savingSmtp, setSavingSmtp] = useState(false)
+  
+
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (company && isOpen) {
+      setActiveTab("overview")
       fetchCompanyData()
       fetchPropertyManagers()
+
+      // Init SMTP form from company
+      setSmtpHost(company.smtp_host || "")
+      setSmtpPort(company.smtp_port ?? "")
+      setSmtpUser(company.smtp_user || "")
+      setSmtpPassword("") // never prefill password
+      setSmtpFromName(company.smtp_from_name || "")
+      setSmtpFromEmail(company.smtp_from_email || "")
+      setSmtpUseTls(company.smtp_use_tls ?? true)
     }
   }, [company, isOpen])
+
 
   const fetchCompanyData = async () => {
     if (!company) return
@@ -329,6 +359,48 @@ export default function CompanyDetailsModal({
       setSavingUser(false)
     }
   }
+
+  const handleSaveSmtp = async () => {
+    if (!company) return
+
+    setSavingSmtp(true)
+    setError(null)
+
+    try {
+      const updatePayload: any = {
+        smtp_host: smtpHost.trim() || null,
+        smtp_port: smtpPort === "" ? null : Number(smtpPort),
+        smtp_user: smtpUser.trim() || null,
+        smtp_from_name: smtpFromName.trim() || null,
+        smtp_from_email: smtpFromEmail.trim() || null,
+        smtp_use_tls: smtpUseTls,
+      }
+
+      // Only update password if user typed something
+      if (smtpPassword.trim()) {
+        updatePayload.smtp_password = smtpPassword.trim()
+      }
+
+      const { error } = await supabase
+        .from("companies")
+        .update(updatePayload)
+        .eq("id", company.id)
+
+      if (error) {
+        console.error("Error saving SMTP:", error)
+        setError("Failed to save SMTP settings")
+        return
+      }
+
+      alert("✅ SMTP settings saved")
+    } catch (err) {
+      console.error("Unexpected error saving SMTP:", err)
+      setError("An unexpected error occurred")
+    } finally {
+      setSavingSmtp(false)
+    }
+  }
+
 
   const handleDeleteUser = async (userId: number) => {
     if (!confirm('Are you sure you want to delete this user? This action cannot be undone.')) {
