@@ -1,10 +1,11 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { X, Plus, User, Calendar, CheckCircle, Clock, FileText, Edit2 } from "lucide-react"
+import { X, Plus, User, Calendar, CheckCircle, Clock, FileText, Edit2, Paperclip, Download, Trash2, Upload } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { supabase, getCurrentUser } from "@/lib/supabase"
+import { supabase, getCurrentUser, TaskAttachment } from "@/lib/supabase"
+import { toast } from "sonner"
 
 interface TaskDetailsModalProps {
   taskId: number
@@ -41,9 +42,11 @@ interface TaskData {
 export default function TaskDetailsModal({ taskId, onClose, onUpdate }: TaskDetailsModalProps) {
   const [task, setTask] = useState<TaskData | null>(null)
   const [notes, setNotes] = useState<TaskNote[]>([])
+  const [attachments, setAttachments] = useState<TaskAttachment[]>([])
   const [newNote, setNewNote] = useState("")
   const [loading, setLoading] = useState(true)
   const [savingNote, setSavingNote] = useState(false)
+  const [uploadingFile, setUploadingFile] = useState(false)
   const [isEditingStatus, setIsEditingStatus] = useState(false)
   const [selectedStatus, setSelectedStatus] = useState("")
 
@@ -59,6 +62,7 @@ export default function TaskDetailsModal({ taskId, onClose, onUpdate }: TaskDeta
   useEffect(() => {
     fetchTaskDetails()
     fetchTaskNotes()
+    fetchTaskAttachments()
   }, [taskId])
 
   const fetchTaskDetails = async () => {
@@ -116,6 +120,26 @@ export default function TaskDetailsModal({ taskId, onClose, onUpdate }: TaskDeta
     }
   }
 
+  // ⭐ NEW: Fetch task attachments
+  const fetchTaskAttachments = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('task_attachments')
+        .select('*')
+        .eq('task_id', taskId)
+        .order('created_at', { ascending: false })
+
+      if (error) {
+        console.error('Error fetching attachments:', error)
+        return
+      }
+
+      setAttachments(data || [])
+    } catch (err) {
+      console.error('Unexpected error:', err)
+    }
+  }
+
   const handleAddNote = async () => {
     if (!newNote.trim()) return
 
@@ -131,18 +155,139 @@ export default function TaskDetailsModal({ taskId, onClose, onUpdate }: TaskDeta
 
       if (error) {
         console.error('Error adding note:', error)
-        alert('Failed to add note')
+        toast.error('Failed to add note')
         return
       }
 
       setNewNote("")
       await fetchTaskNotes()
+      toast.success('Note added successfully')
       if (onUpdate) onUpdate()
     } catch (err) {
       console.error('Unexpected error:', err)
+      toast.error('Failed to add note')
     } finally {
       setSavingNote(false)
     }
+  }
+
+  // ⭐ NEW: Handle file upload
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    // Validate file size (10MB max)
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('File size must be less than 10MB')
+      return
+    }
+
+    setUploadingFile(true)
+    try {
+      // Upload to Supabase Storage
+      const fileExt = file.name.split('.').pop()
+      const fileName = `${Date.now()}_${file.name}`
+      const filePath = `${taskId}/${fileName}`
+
+      const { error: uploadError } = await supabase.storage
+        .from('task-attachments')
+        .upload(filePath, file)
+
+      if (uploadError) {
+        console.error('Error uploading file:', uploadError)
+        toast.error('Failed to upload file')
+        return
+      }
+
+      // Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('task-attachments')
+        .getPublicUrl(filePath)
+
+      // Save to database
+      const { error: dbError } = await supabase
+        .from('task_attachments')
+        .insert({
+          task_id: taskId,
+          filename: file.name,
+          file_url: publicUrl,
+          file_size: file.size,
+          mime_type: file.type,
+          uploaded_by: currentUser?.id
+        })
+
+      if (dbError) {
+        console.error('Error saving attachment:', dbError)
+        toast.error('Failed to save attachment')
+        return
+      }
+
+      toast.success('File uploaded successfully')
+      await fetchTaskAttachments()
+      if (onUpdate) onUpdate()
+    } catch (err) {
+      console.error('Unexpected error:', err)
+      toast.error('Failed to upload file')
+    } finally {
+      setUploadingFile(false)
+      // Reset file input
+      event.target.value = ''
+    }
+  }
+
+  // ⭐ NEW: Handle file deletion
+  const handleDeleteAttachment = async (attachment: TaskAttachment) => {
+    if (!confirm(`Delete ${attachment.filename}?`)) return
+
+    try {
+      // Extract file path from URL
+      const urlParts = attachment.file_url.split('/task-attachments/')
+      const filePath = urlParts[1]
+
+      // Delete from storage
+      const { error: storageError } = await supabase.storage
+        .from('task-attachments')
+        .remove([filePath])
+
+      if (storageError) {
+        console.error('Error deleting file from storage:', storageError)
+      }
+
+      // Delete from database
+      const { error: dbError } = await supabase
+        .from('task_attachments')
+        .delete()
+        .eq('id', attachment.id)
+
+      if (dbError) {
+        console.error('Error deleting attachment:', dbError)
+        toast.error('Failed to delete attachment')
+        return
+      }
+
+      toast.success('Attachment deleted')
+      await fetchTaskAttachments()
+      if (onUpdate) onUpdate()
+    } catch (err) {
+      console.error('Unexpected error:', err)
+      toast.error('Failed to delete attachment')
+    }
+  }
+
+  // ⭐ NEW: Format file size
+  const formatFileSize = (bytes: number) => {
+    if (bytes < 1024) return bytes + ' B'
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
+  }
+
+  // ⭐ NEW: Get file type badge color
+  const getFileTypeBadge = (mimeType: string) => {
+    if (mimeType.includes('pdf')) return 'bg-red-100 text-red-800'
+    if (mimeType.includes('word') || mimeType.includes('document')) return 'bg-blue-100 text-blue-800'
+    if (mimeType.includes('image')) return 'bg-purple-100 text-purple-800'
+    if (mimeType.includes('text')) return 'bg-gray-100 text-gray-800'
+    return 'bg-gray-100 text-gray-800'
   }
 
   const handleStatusChange = async (newStatus: string) => {
@@ -154,16 +299,18 @@ export default function TaskDetailsModal({ taskId, onClose, onUpdate }: TaskDeta
 
       if (error) {
         console.error('Error updating status:', error)
-        alert('Failed to update status')
+        toast.error('Failed to update status')
         return
       }
 
       setSelectedStatus(newStatus)
       setIsEditingStatus(false)
       await fetchTaskDetails()
+      toast.success('Status updated')
       if (onUpdate) onUpdate()
     } catch (err) {
       console.error('Unexpected error:', err)
+      toast.error('Failed to update status')
     }
   }
 
@@ -306,6 +453,84 @@ export default function TaskDetailsModal({ taskId, onClose, onUpdate }: TaskDeta
             <div className="flex items-center gap-2">
               <Clock className="h-4 w-4" />
               <span>Created by {task.creator_name} on {new Date(task.created_at).toLocaleString()}</span>
+            </div>
+          </div>
+
+          {/* ⭐ NEW: Attachments Section */}
+          <div className="border-t border-border pt-6">
+            <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
+              <Paperclip className="h-5 w-5" />
+              Attachments ({attachments.length})
+            </h3>
+
+            {/* Upload Button */}
+            <div className="mb-4">
+              <label htmlFor="file-upload">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={uploadingFile}
+                  className="cursor-pointer"
+                  onClick={() => document.getElementById('file-upload')?.click()}
+                >
+                  <Upload className="h-4 w-4 mr-2" />
+                  {uploadingFile ? "Uploading..." : "Upload File"}
+                </Button>
+              </label>
+              <input
+                id="file-upload"
+                type="file"
+                className="hidden"
+                onChange={handleFileUpload}
+                disabled={uploadingFile}
+                accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png"
+              />
+              <p className="text-xs text-muted-foreground mt-2">
+                Supported: PDF, DOC, DOCX, TXT, Images (Max 10MB)
+              </p>
+            </div>
+
+            {/* Attachments List */}
+            <div className="space-y-2">
+              {attachments.length > 0 ? (
+                attachments.map(attachment => (
+                  <div key={attachment.id} className="flex items-center justify-between bg-muted/30 border border-border rounded-lg p-3">
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <Paperclip className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-sm truncate">{attachment.filename}</div>
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <span className={`px-2 py-0.5 rounded ${getFileTypeBadge(attachment.mime_type)}`}>
+                            {attachment.mime_type.split('/')[1].toUpperCase()}
+                          </span>
+                          <span>{formatFileSize(attachment.file_size)}</span>
+                          <span>•</span>
+                          <span>{new Date(attachment.created_at).toLocaleDateString()}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => window.open(attachment.file_url, '_blank')}
+                      >
+                        <Download className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDeleteAttachment(attachment)}
+                        className="text-destructive hover:text-destructive"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className="text-center text-muted-foreground py-8">No attachments yet. Upload one above!</p>
+              )}
             </div>
           </div>
 

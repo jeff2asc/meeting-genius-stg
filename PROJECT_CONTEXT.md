@@ -53,6 +53,9 @@
 - **PDF Generation**: jspdf (^3.0.4)
 - **HTML to Canvas**: html2canvas (^1.4.1)
 - **Email**: nodemailer (^7.0.11) - For sending emails via SMTP
+- **Document Processing**: 
+  - react-pdftotext (^1.3.4) - Extract text from PDF files
+  - mammoth (^1.11.0) - Extract text from DOCX files
 
 ---
 
@@ -411,6 +414,60 @@ Junction table linking users to buildings (many-to-many relationship).
 
 ---
 
+### 13. **building_documents**
+Stores documents associated with buildings for AI analysis and reference.
+
+```typescript
+{
+  id: number (primary key, auto-increment)
+  building_id: number (foreign key → buildings.id)
+  document_type: string (e.g., "rules", "bylaws", "policies")
+  filename: string
+  file_url: string (URL to file in Supabase storage)
+  file_size: number (bytes)
+  mime_type: string (e.g., "application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+  created_at: timestamp
+  updated_at: timestamp
+}
+```
+
+**Purpose**: Stores building-related documents (rules, bylaws, policies) that can be extracted and used for AI analysis of meeting topics.
+
+**Storage**:
+- Files are stored in Supabase Storage bucket: `building-documents`
+- File path format: `{building_id}/{timestamp}_{filename}`
+- Supported file types: PDF, DOC, DOCX, plain text
+- Maximum file size: 10MB
+
+**Usage**:
+- Documents are uploaded via BuildingDetailsModal → Documents tab
+- Documents are extracted using `documentExtractor.ts` utility
+- Extracted text is sent to AI analysis webhook for topic analysis
+
+---
+
+### 14. **ai_analyses**
+Stores AI analysis results for topics and tasks.
+
+```typescript
+{
+  id: number (primary key, auto-increment)
+  topic_id: number | null (foreign key → topics.id)
+  task_id: number | null (foreign key → tasks.id)
+  analysis_result: string (JSON or text)
+  created_at: timestamp
+}
+```
+
+**Purpose**: Stores AI-generated analysis results for meeting topics and tasks. Analysis is performed by external n8n webhook that processes topic descriptions along with extracted building documents.
+
+**Usage**:
+- AI analysis is triggered from TopicCard or TaskCard
+- Analysis includes topic description and extracted building documents
+- Results are stored and displayed in the topic/task card
+
+---
+
 ## User Types & Permissions System
 
 The system uses a centralized permission checking system located in `lib/permissions.ts`.
@@ -519,6 +576,10 @@ All permission checks are centralized in `lib/permissions.ts`:
   - Assign/unassign users to buildings
   - Inline user creation when assigning to buildings
   - View building users and metadata
+  - **Document Management**: Upload, view, and delete building documents (PDF, DOC, DOCX)
+    - Documents stored in Supabase Storage
+    - Documents categorized by type (rules, bylaws, policies, etc.)
+    - Documents used for AI analysis of meeting topics
 - **Company Management**:
   - Create companies with default configurations
   - Edit company details and defaults (meeting sections, types, decision results)
@@ -562,6 +623,33 @@ All permission checks are centralized in `lib/permissions.ts`:
   - Supports HTML and plain text emails
   - Used for task assignments and notifications
 - **Company-Level Email**: Each company has independent email configuration
+
+### 11. **Document Management & AI Analysis**
+- **Document Upload & Storage**:
+  - Upload building documents via BuildingDetailsModal → Documents tab
+  - Supports PDF, DOC, DOCX, and plain text files
+  - Files stored in Supabase Storage (`building-documents` bucket)
+  - Maximum file size: 10MB
+  - Documents categorized by type (rules, bylaws, policies, etc.)
+- **Document Text Extraction**:
+  - `lib/documentExtractor.ts` utility extracts text from documents
+  - Supports PDF (react-pdftotext), DOCX (mammoth), and plain text
+  - Extracted text used for AI analysis context
+- **AI Analysis Integration**:
+  - AI analysis available for topics and tasks
+  - Triggered from TopicCard or TaskCard "Analyze with AI" button
+  - Sends topic description and extracted building documents to n8n webhook
+  - Webhook URL: `https://rulesengine.asccreative.com/webhook/843afc5f-abe0-4bb4-bb9f-369d2657c4d0`
+  - Analysis results stored in `ai_analyses` table
+  - Results displayed in topic/task card with expandable view
+- **Workflow**:
+  1. User uploads documents to building via Documents tab
+  2. User adds description to topic
+  3. User clicks "Analyze with AI" button
+  4. System extracts text from all building documents
+  5. System sends topic + documents to n8n webhook
+  6. AI processes and returns analysis
+  7. Analysis stored and displayed in topic card
 
 ---
 
@@ -631,7 +719,10 @@ app/page.tsx (Root)
 - `BuildingDetailsModal.tsx`: **Comprehensive building management modal** with tabs:
   - **Details Tab**: Edit building name, address, type, and property manager
   - **Users Tab**: Assign/unassign users to building, create new users inline
-  - **Documents Tab**: Document management (placeholder for future implementation)
+  - **Documents Tab**: **Full document management** - Upload, view, and delete building documents (PDF, DOC, DOCX)
+    - Documents stored in Supabase Storage
+    - Documents categorized by type
+    - Documents used for AI analysis context
 - `CreateCompanyModal.tsx`: Create companies
 - `EditCompanyModal.tsx`: Edit company details and defaults (meeting sections, types, decision results)
 - `CompanyDetailsModal.tsx`: **Enhanced company management modal** with tabs:
@@ -661,8 +752,8 @@ All shadcn/ui style components:
 #### **Card Components**
 
 - `components/meeting-card.tsx`: Meeting display card
-- `components/topic-card.tsx`: Topic display with actions
-- `components/task-card.tsx`: Task display card
+- `components/topic-card.tsx`: Topic display with actions, **AI analysis integration**
+- `components/task-card.tsx`: Task display card, **AI analysis integration**
 
 #### **Utility Components**
 
@@ -856,6 +947,34 @@ working_agenda → agenda → working_minutes → minutes
 4. Property managers see buildings via `buildings.manager_id` relationship
 5. Regular users see buildings via `user_buildings` junction table entries
 
+### 12. **Document Upload & Management**
+
+1. User opens BuildingDetailsModal → Documents tab
+2. User selects document type (rules, bylaws, policies, etc.)
+3. User selects file (PDF, DOC, DOCX, or TXT, max 10MB)
+4. File is uploaded to Supabase Storage (`building-documents` bucket)
+5. Document metadata is saved to `building_documents` table
+6. Document appears in documents list with type badge and download link
+7. User can delete documents (removes from storage and database)
+
+### 13. **AI Analysis Workflow**
+
+1. User adds description to a topic in meeting view
+2. User clicks "Analyze with AI" button in TopicCard
+3. System fetches building ID from topic's meeting
+4. System calls `fetchAndExtractBuildingDocuments(buildingId)`:
+   - Fetches all documents for building from `building_documents` table
+   - Extracts text from each document (PDF, DOCX, or TXT)
+   - Returns array of documents with extracted text
+5. System sends POST request to n8n webhook with:
+   - Topic ID, title, description
+   - Building ID and name
+   - Array of extracted building documents
+6. n8n webhook processes request and stores analysis in `ai_analyses` table
+7. System polls for analysis result from `ai_analyses` table
+8. Analysis result displayed in expandable section in TopicCard
+9. Same workflow available for tasks via TaskCard
+
 ---
 
 ## File Structure
@@ -916,6 +1035,7 @@ meeting-genius/
 │   ├── supabase.ts              # Supabase client & types
 │   ├── auth.ts                   # Authentication functions
 │   ├── permissions.ts            # Permission system
+│   ├── documentExtractor.ts      # Document text extraction utility (PDF, DOCX, TXT)
 │   └── utils.ts                  # Utility functions
 │
 ├── app/
@@ -1001,9 +1121,10 @@ Uses `@hello-pangea/dnd` for reordering:
 Several fields use JSONB for flexible data:
 - `meetings.attendees`: Array of attendee objects
 - `tasks.assignees`: Array of assignee objects
-- `buildings.rules_document`: Document content
+- `buildings.rules_document`: Document content (legacy, now using building_documents table)
 - `buildings.agenda_template`: Template content
 - `buildings.minutes_template`: Template content
+- `ai_analyses.analysis_result`: AI analysis result (JSON or text)
 
 ### 5. **Meeting Rollover Logic**
 
@@ -1186,15 +1307,16 @@ if (!canCreateMeeting(currentUser?.user_type)) {
 6. **Performance**: Optimize queries, add pagination
 7. **Security**: Implement Row Level Security (RLS) in Supabase
 8. **Real-time**: Add Supabase real-time subscriptions for live updates
-9. **File Storage**: Implement proper file storage for audio files and documents
-10. **Email Notifications**: Implement email sending for task assignments
+9. **File Storage**: Implement proper file storage for audio files (document storage now implemented via Supabase Storage)
+10. **Email Notifications**: Implement email sending for task assignments (now implemented)
+11. **AI Analysis**: Enhance AI analysis with more context and better prompts
 
 ---
 
 ## Summary
 
 This is a comprehensive meeting management system with:
-- **12 main database tables** (companies, users, buildings, meetings, sections, topics, notes, tasks, decisions, task_notes, minutes_templates, user_buildings)
+- **14 main database tables** (companies, users, buildings, meetings, sections, topics, notes, tasks, decisions, task_notes, minutes_templates, user_buildings, building_documents, ai_analyses)
 - **6 user types** with granular permissions
 - **Multi-tenant architecture** (company → building → meeting hierarchy)
 - **Full CRUD operations** for all entities
@@ -1211,14 +1333,17 @@ The system is designed for property management companies to manage their meeting
 
 ---
 
-**Last Updated**: January 2025 (Updated with SMTP email configuration, default_decision_results field, email API endpoint, and enhanced company management features)
+**Last Updated**: January 2025 (Updated with document management, AI analysis integration, building_documents table, and document extraction utilities)
 **Version**: Current production codebase
 
 **Recent Updates**:
-- Added SMTP email configuration to companies table (7 new fields)
-- Implemented email sending API endpoint (`/api/send-email`)
-- Added `default_decision_results` field for customizable decision options
-- Enhanced CompanyDetailsModal with SMTP configuration in Overview tab
-- Updated EditCompanyModal to manage decision result options
-- Added `votes_abstain` support in decision recording (may need schema update)
+- Added `building_documents` table for storing building-related documents
+- Implemented document upload/management in BuildingDetailsModal → Documents tab
+- Created `documentExtractor.ts` utility for extracting text from PDF, DOCX, and plain text files
+- Added AI analysis feature for topics and tasks
+- Integrated n8n webhook for AI analysis processing
+- Added `ai_analyses` table for storing AI analysis results
+- Documents are extracted and sent to AI webhook along with topic descriptions
+- Added document processing dependencies: react-pdftotext, mammoth
+- AI analysis results displayed in TopicCard and TaskCard components
 
