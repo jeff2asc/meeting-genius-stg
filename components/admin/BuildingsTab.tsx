@@ -164,13 +164,11 @@ export default function BuildingsTab({
             
             return (
               <BuildingCard
-                key={building.id}
-                building={building}
-                hasDocuments={hasDocuments}
-                onViewDetails={onViewDetails}
-                onViewDocument={onViewDocument}
-                onManageDocuments={onManageDocuments}
-              />
+              key={building.id}
+              building={building}
+              onViewDetails={onViewDetails}  // ✅ Keep only this
+            />
+            
             )
           })}
         </div>

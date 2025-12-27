@@ -1,11 +1,12 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { X, Building2, Users, FileText, Plus } from "lucide-react"
+import { X, Building2, Users, FileText, Plus, Upload, Trash2, ExternalLink, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Badge } from "@/components/ui/badge"
 import {
   Select,
   SelectContent,
@@ -60,7 +61,7 @@ export default function BuildingDetailsModal({
   const [propertyManagers, setPropertyManagers] = useState<User[]>([])
   const [submitting, setSubmitting] = useState(false)
 
-  // inline “add user” state (like CompanyDetailsModal)
+  // inline "add user" state
   const [showAddUserForm, setShowAddUserForm] = useState(false)
   const [newUserName, setNewUserName] = useState("")
   const [newUserEmail, setNewUserEmail] = useState("")
@@ -107,7 +108,6 @@ export default function BuildingDetailsModal({
     }
   }
 
-  // Create user inline in this company & assign to building
   const handleCreateNewUser = async () => {
     if (!building) return
 
@@ -120,13 +120,11 @@ export default function BuildingDetailsModal({
     setError(null)
 
     try {
-      // Mirror the pattern from CompanyDetailsModal: insert into users with a password_hash
       const { data: newUser, error: userError } = await supabase
         .from("users")
         .insert({
           name: newUserName.trim(),
           email: newUserEmail.toLowerCase().trim(),
-          // placeholder hash, same idea as in CompanyDetailsModal
           password_hash:
             "$2a$10$rXqvFZnPzAMcLzCP2L4dxu7L6Y3Y5KjGNQQF6xZ4Y5Y5Y5Y5Y5Y5Y5",
           user_type: "user",
@@ -143,7 +141,6 @@ export default function BuildingDetailsModal({
         return
       }
 
-      // Attach new user to this building
       const { error: assignError } = await supabase
         .from("user_buildings")
         .insert({
@@ -246,7 +243,6 @@ export default function BuildingDetailsModal({
     )
   }
 
-  // Only users from the same company can be assigned
   const filteredAvailableUsers = building
     ? availableUsers.filter(
         (user) => !building.company_id || user.company_id === building.company_id
@@ -505,13 +501,7 @@ export default function BuildingDetailsModal({
           )}
 
           {activeTab === "documents" && (
-            <div className="text-center py-12">
-              <FileText className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-              <h3 className="font-medium text-foreground mb-2">Documents</h3>
-              <p className="text-sm text-muted-foreground">
-                Document management will be available here
-              </p>
-            </div>
+            <DocumentsTab building={building} onSuccess={onSuccess} />
           )}
         </div>
 
@@ -529,6 +519,317 @@ export default function BuildingDetailsModal({
           </Button>
         </div>
       </Card>
+    </div>
+  )
+}
+
+// ============================================
+// Documents Tab Component
+// ============================================
+
+interface DocumentsTabProps {
+  building: Building
+  onSuccess: () => void
+}
+
+function DocumentsTab({ building, onSuccess }: DocumentsTabProps) {
+  const [documents, setDocuments] = useState<any[]>([])
+  const [uploading, setUploading] = useState(false)
+  const [selectedDocType, setSelectedDocType] = useState("rules")
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    fetchDocuments()
+  }, [])
+
+  const fetchDocuments = async () => {
+    setLoading(true)
+    try {
+      const { data, error } = await supabase
+        .from('building_documents')
+        .select('*')
+        .eq('building_id', building.id)
+        .order('created_at', { ascending: false })
+
+      if (error) {
+        console.error('Error fetching documents:', error)
+        return
+      }
+
+      setDocuments(data || [])
+    } catch (err) {
+      console.error('Unexpected error fetching documents:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      const validTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']
+      if (!validTypes.includes(file.type)) {
+        alert('Please select a PDF, DOC, or DOCX file')
+        return
+      }
+
+      if (file.size > 10 * 1024 * 1024) {
+        alert('File size must be less than 10MB')
+        return
+      }
+
+      setSelectedFile(file)
+    }
+  }
+
+  const handleUpload = async () => {
+    if (!selectedFile) {
+      alert('Please select a file')
+      return
+    }
+
+    setUploading(true)
+
+    try {
+      const fileName = `${building.id}/${Date.now()}_${selectedFile.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`
+
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('building-documents')
+        .upload(fileName, selectedFile, {
+          cacheControl: '3600',
+          upsert: false
+        })
+
+      if (uploadError) {
+        console.error('Upload error:', uploadError)
+        throw new Error('Failed to upload file to storage')
+      }
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('building-documents')
+        .getPublicUrl(fileName)
+
+      const { error: dbError } = await supabase
+        .from('building_documents')
+        .insert({
+          building_id: building.id,
+          document_type: selectedDocType,
+          filename: selectedFile.name,
+          file_url: publicUrl,
+          file_size: selectedFile.size,
+          mime_type: selectedFile.type,
+        })
+
+      if (dbError) {
+        console.error('Database error:', dbError)
+        throw new Error('Failed to save document metadata')
+      }
+
+      alert('Document uploaded successfully!')
+      setSelectedFile(null)
+      await fetchDocuments()
+      await onSuccess()
+
+    } catch (error: any) {
+      console.error('Upload error:', error)
+      alert(error.message || 'Upload failed')
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const handleDelete = async (docId: number, fileUrl: string) => {
+    if (!confirm('Are you sure you want to delete this document?')) return
+
+    try {
+      const filePath = fileUrl.split('/building-documents/')[1]
+      if (filePath) {
+        await supabase.storage
+          .from('building-documents')
+          .remove([filePath])
+      }
+
+      const { error: dbError } = await supabase
+        .from('building_documents')
+        .delete()
+        .eq('id', docId)
+
+      if (dbError) {
+        throw new Error('Failed to delete document')
+      }
+
+      alert('Document deleted successfully')
+      await fetchDocuments()
+      await onSuccess()
+
+    } catch (error: any) {
+      console.error('Delete error:', error)
+      alert(error.message || 'Delete failed')
+    }
+  }
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes < 1024) return bytes + ' B'
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB'
+    return (bytes / (1024 * 1024)).toFixed(2) + ' MB'
+  }
+
+  const getDocumentTypeColor = (type: string) => {
+    switch (type) {
+      case 'statute':
+        return 'bg-blue-100 text-blue-800 border-blue-200'
+      case 'rules':
+        return 'bg-green-100 text-green-800 border-green-200'
+      case 'bylaws':
+        return 'bg-purple-100 text-purple-800 border-purple-200'
+      default:
+        return 'bg-gray-100 text-gray-800 border-gray-200'
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Upload Section */}
+      <Card className="p-6 bg-gradient-to-br from-primary/5 to-decision-purple/5 border-primary/20">
+        <h3 className="font-semibold text-lg mb-4 flex items-center gap-2">
+          <Upload className="h-5 w-5 text-primary" />
+          Upload New Document
+        </h3>
+
+        <div className="space-y-4">
+          <div>
+            <Label htmlFor="docType" className="text-sm font-medium">
+              Document Type *
+            </Label>
+            <Select value={selectedDocType} onValueChange={setSelectedDocType}>
+              <SelectTrigger id="docType" className="mt-1">
+                <SelectValue placeholder="Select document type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="statute">Statute</SelectItem>
+                <SelectItem value="rules">Rules & Regulations</SelectItem>
+                <SelectItem value="bylaws">Bylaws</SelectItem>
+                <SelectItem value="other">Other</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div>
+            <Label htmlFor="fileUpload" className="text-sm font-medium">
+              Select File (PDF, DOC, DOCX) *
+            </Label>
+            <Input
+              id="fileUpload"
+              type="file"
+              accept=".pdf,.doc,.docx"
+              onChange={handleFileSelect}
+              disabled={uploading}
+              className="mt-1"
+            />
+            {selectedFile && (
+              <p className="text-sm text-muted-foreground mt-2">
+                Selected: <span className="font-medium">{selectedFile.name}</span> 
+                ({formatFileSize(selectedFile.size)})
+              </p>
+            )}
+          </div>
+
+          <Button 
+            onClick={handleUpload} 
+            disabled={uploading || !selectedFile}
+            className="w-full bg-gradient-to-r from-primary to-decision-purple hover:opacity-90"
+          >
+            {uploading ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Uploading...
+              </>
+            ) : (
+              <>
+                <FileText className="h-4 w-4 mr-2" />
+                Upload Document
+              </>
+            )}
+          </Button>
+
+          <p className="text-xs text-muted-foreground">
+            Maximum file size: 10MB. Supported formats: PDF, DOC, DOCX
+          </p>
+        </div>
+      </Card>
+
+      {/* Documents List */}
+      <div>
+        <h3 className="font-semibold text-lg mb-4 flex items-center gap-2">
+          <FileText className="h-5 w-5 text-primary" />
+          Uploaded Documents ({documents.length})
+        </h3>
+
+        {loading ? (
+          <div className="text-center py-12">
+            <Loader2 className="h-8 w-8 border-4 text-primary animate-spin mx-auto mb-4" />
+            <p className="text-sm text-muted-foreground">Loading documents...</p>
+          </div>
+        ) : documents.length === 0 ? (
+          <Card className="p-12 text-center border-2 border-dashed">
+            <FileText className="h-16 w-16 mx-auto text-muted-foreground/30 mb-4" />
+            <h4 className="font-medium text-foreground mb-2">No Documents Yet</h4>
+            <p className="text-sm text-muted-foreground max-w-md mx-auto">
+              Upload building statutes, rules, regulations, or bylaws using the form above. 
+              These documents will be used for AI-powered meeting descriptions.
+            </p>
+          </Card>
+        ) : (
+          <div className="space-y-3">
+            {documents.map((doc) => (
+              <Card key={doc.id} className="p-4 hover:shadow-md transition-shadow">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3 flex-1">
+                    <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-primary/10">
+                      <FileText className="h-5 w-5 text-primary" />
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Badge 
+                          variant="outline" 
+                          className={`text-xs capitalize ${getDocumentTypeColor(doc.document_type)}`}
+                        >
+                          {doc.document_type}
+                        </Badge>
+                        <p className="font-medium text-sm">{doc.filename}</p>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Uploaded {new Date(doc.created_at).toLocaleDateString()}
+                        {doc.file_size && ` • ${formatFileSize(doc.file_size)}`}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      asChild
+                    >
+                      <a href={doc.file_url} target="_blank" rel="noopener noreferrer">
+                        <ExternalLink className="h-4 w-4 mr-1" />
+                        View
+                      </a>
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => handleDelete(doc.id, doc.file_url)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

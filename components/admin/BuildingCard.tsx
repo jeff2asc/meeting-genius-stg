@@ -1,6 +1,6 @@
 "use client"
 
-import { Building2, MapPin, FileText, Edit2 } from "lucide-react"
+import { Building2, MapPin } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -18,10 +18,7 @@ interface Building {
 
 interface BuildingCardProps {
   building: Building
-  hasDocuments: boolean
   onViewDetails: (building: Building) => void
-  onViewDocument: (building: Building) => void
-  onManageDocuments: (building: Building) => void
 }
 
 const getBuildingTypeColor = (type: string) => {
@@ -39,10 +36,7 @@ const getBuildingTypeColor = (type: string) => {
 
 export default function BuildingCard({
   building,
-  hasDocuments,
-  onViewDetails,
-  onViewDocument,
-  onManageDocuments
+  onViewDetails
 }: BuildingCardProps) {
   return (
     <Card className="p-4 hover:shadow-md transition-shadow">
@@ -90,7 +84,7 @@ export default function BuildingCard({
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {/* View Details Button - Replaces Edit + View Users */}
+          {/* View Details Button - Opens BuildingDetailsModal with Documents tab */}
           <Button
             size="sm"
             variant="outline"
@@ -100,37 +94,6 @@ export default function BuildingCard({
             <Building2 className="h-4 w-4 mr-2" />
             View Details
           </Button>
-          
-          {/* Document Management Buttons */}
-          {hasDocuments ? (
-            <>
-              <Button
-                size="sm"
-                onClick={() => onViewDocument(building)}
-                className="bg-blue-600 hover:bg-blue-700 text-white"
-              >
-                <FileText className="h-4 w-4 mr-2" />
-                View Document
-              </Button>
-              <Button
-                size="sm"
-                onClick={() => onManageDocuments(building)}
-                className="bg-green-600 hover:bg-green-700 text-white"
-              >
-                <Edit2 className="h-4 w-4 mr-2" />
-                Update Document
-              </Button>
-            </>
-          ) : (
-            <Button
-              size="sm"
-              onClick={() => onManageDocuments(building)}
-              className="bg-purple-600 hover:bg-purple-700 text-white"
-            >
-              <FileText className="h-4 w-4 mr-2" />
-              Add Document
-            </Button>
-          )}
           
           <p className="text-sm text-muted-foreground whitespace-nowrap ml-2">
             {new Date(building.created_at).toLocaleDateString()}

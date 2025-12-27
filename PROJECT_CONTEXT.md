@@ -52,6 +52,7 @@
 - **Analytics**: Vercel Analytics
 - **PDF Generation**: jspdf (^3.0.4)
 - **HTML to Canvas**: html2canvas (^1.4.1)
+- **Email**: nodemailer (^7.0.11) - For sending emails via SMTP
 
 ---
 
@@ -69,6 +70,14 @@ Multi-tenant company management table.
   default_meeting_sections: string[] | null  // Array of default section names
   default_meeting_types: string[] | null      // Array of default meeting types
   default_decision_results: string[] | null   // Array of decision result options (e.g., ["M/S/C", "Defeated", "Deferred"])
+  // SMTP Email Configuration
+  smtp_host: string | null                    // SMTP server hostname
+  smtp_port: number | null                    // SMTP server port (e.g., 587, 465)
+  smtp_user: string | null                    // SMTP username/email
+  smtp_password: string | null                // SMTP password
+  smtp_from_name: string | null               // Display name for sender
+  smtp_from_email: string | null              // From email address
+  smtp_use_tls: boolean | null               // Use TLS encryption
 }
 ```
 
@@ -77,9 +86,13 @@ Multi-tenant company management table.
 - **Meeting Types**: "Council Meeting", "AGM", "SGM", "Special Meeting", "Emergency Meeting"
 - **Decision Results**: "M/S/C", "Defeated", "Deferred"
 
-**Purpose**: Stores company information and default configurations for meetings.
+**Purpose**: Stores company information, default configurations for meetings, and SMTP email settings for sending emails.
 
-**Note**: The database schema currently implements `default_meeting_sections` and `default_meeting_types`. The `default_decision_results` field may need to be added to the schema if decision result customization is required.
+**SMTP Configuration**:
+- Companies can configure their own SMTP settings for sending emails
+- Used by the email API (`/api/send-email`) to send notifications and task assignments
+- Managed in CompanyDetailsModal → Overview tab
+- Settings include host, port, authentication, and TLS configuration
 
 ---
 
@@ -306,7 +319,13 @@ Decisions/motions recorded for topics.
 
 **Purpose**: Records formal decisions, motions, and voting results.
 
-**Note**: The database schema may not include `votes_abstain` field in all implementations. Check actual schema if abstain votes are needed.
+**Decision Result Options**:
+- Companies can customize decision result options via `default_decision_results` field
+- Options are used in decision modal dropdown
+- Default options: "M/S/C", "Defeated", "Deferred"
+- Customizable in EditCompanyModal
+
+**Note**: The `votes_abstain` field is used in the application (decision-modal, GenerateMinutesButton) but may need to be added to the database schema if not already present.
 
 ---
 
@@ -478,8 +497,9 @@ All permission checks are centralized in `lib/permissions.ts`:
 ### 4. **Decision Recording**
 - Record motions/resolutions
 - Track voting results (for, against, abstain)
-- Company-specific decision result options
+- Company-specific decision result options (customizable in EditCompanyModal)
 - Link decisions to topics
+- Decision result dropdown uses company's `default_decision_results` configuration
 
 ### 5. **Notes System**
 - Add notes to topics
@@ -501,7 +521,8 @@ All permission checks are centralized in `lib/permissions.ts`:
   - View building users and metadata
 - **Company Management**:
   - Create companies with default configurations
-  - Edit company details and defaults
+  - Edit company details and defaults (meeting sections, types, decision results)
+  - Configure SMTP email settings per company
   - View company statistics (users, buildings, admins)
   - Manage buildings within company (create, delete)
   - Manage users within company (create, filter, delete)
@@ -530,6 +551,17 @@ All permission checks are centralized in `lib/permissions.ts`:
 - Template editor in admin panel
 - Uses html2canvas and jsPDF for PDF generation
 - Available when meeting status is "minutes" (finalized)
+
+### 10. **Email Configuration & Sending**
+- **SMTP Configuration**: Companies can configure their own SMTP settings
+  - Managed in CompanyDetailsModal → Overview tab
+  - Settings include: host, port, username, password, from name/email, TLS
+- **Email API**: `/api/send-email` endpoint for sending emails
+  - Uses company's SMTP configuration
+  - Verifies SMTP connection before sending
+  - Supports HTML and plain text emails
+  - Used for task assignments and notifications
+- **Company-Level Email**: Each company has independent email configuration
 
 ---
 
@@ -601,9 +633,11 @@ app/page.tsx (Root)
   - **Users Tab**: Assign/unassign users to building, create new users inline
   - **Documents Tab**: Document management (placeholder for future implementation)
 - `CreateCompanyModal.tsx`: Create companies
-- `EditCompanyModal.tsx`: Edit company details and defaults
+- `EditCompanyModal.tsx`: Edit company details and defaults (meeting sections, types, decision results)
 - `CompanyDetailsModal.tsx`: **Enhanced company management modal** with tabs:
-  - **Overview Tab**: Company statistics (users, buildings, admins count)
+  - **Overview Tab**: 
+    - Company statistics (users, buildings, admins count)
+    - **SMTP Email Configuration**: Configure company email settings (host, port, credentials, TLS)
   - **Buildings Tab**: View all buildings, create buildings inline, create property managers inline, delete buildings
   - **Users Tab**: View all company users with filtering by type, create users inline, delete users
   - **Administrators Tab**: View corporate administrators, create administrators inline, delete administrators
@@ -884,6 +918,11 @@ meeting-genius/
 │   ├── permissions.ts            # Permission system
 │   └── utils.ts                  # Utility functions
 │
+├── app/
+│   ├── api/
+│   │   └── send-email/
+│   │       └── route.ts          # Email sending API endpoint (uses company SMTP)
+│
 ├── hooks/
 │   ├── use-mobile.ts            # Mobile detection hook
 │   └── use-toast.ts             # Toast notifications
@@ -939,9 +978,16 @@ if (currentUser.user_type === 'master') {
 Companies can set default configurations:
 - `default_meeting_sections`: Default section names when creating meetings
 - `default_meeting_types`: Available meeting types
-- `default_decision_results`: Decision result options
+- `default_decision_results`: Decision result options (customizable dropdown in decision modal)
 
 These are used when creating new meetings. If a company doesn't have defaults set, the system falls back to standard defaults (see companies table documentation above).
+
+**SMTP Email Configuration**:
+- Companies can configure SMTP settings for sending emails
+- Managed in CompanyDetailsModal → Overview tab
+- Settings include: `smtp_host`, `smtp_port`, `smtp_user`, `smtp_password`, `smtp_from_name`, `smtp_from_email`, `smtp_use_tls`
+- Used by `/api/send-email` endpoint for sending task assignments and notifications
+- Each company has independent email configuration
 
 ### 3. **Drag and Drop**
 
@@ -1011,6 +1057,8 @@ All database types defined in `lib/supabase.ts` as `Database` type:
 - Ensures type safety
 - Auto-completion in IDE
 - Prevents typos in table/column names
+- Includes SMTP fields in companies table
+- Includes default_decision_results in companies table
 
 ### 11. **PDF Minutes Generation**
 
@@ -1029,6 +1077,25 @@ The system can generate professional PDF minutes from finalized meetings:
 - Each building can have custom template
 - Template defines which sections and fields to include
 - Fields can be shown/hidden and reordered
+
+### 12. **Email Sending System**
+
+The system includes email functionality for sending notifications:
+- **API Endpoint**: `/app/api/send-email/route.ts`
+- **SMTP Configuration**: Per-company SMTP settings stored in `companies` table
+- **Email Sending**:
+  - Uses Nodemailer library
+  - Verifies SMTP connection before sending
+  - Supports HTML and plain text emails
+  - Uses company's configured SMTP settings
+- **Configuration Management**:
+  - Managed in CompanyDetailsModal → Overview tab
+  - Includes: host, port, username, password, from name/email, TLS settings
+  - Password field is never prefilled for security
+- **Use Cases**:
+  - Task assignment notifications
+  - Meeting invitations
+  - Other system notifications
 
 ---
 
@@ -1144,6 +1211,14 @@ The system is designed for property management companies to manage their meeting
 
 ---
 
-**Last Updated**: January 2025 (Updated with BuildingDetailsModal, CompanyDetailsModal enhancements, user_buildings table, assigned_pm_id field, and inline creation features)
+**Last Updated**: January 2025 (Updated with SMTP email configuration, default_decision_results field, email API endpoint, and enhanced company management features)
 **Version**: Current production codebase
+
+**Recent Updates**:
+- Added SMTP email configuration to companies table (7 new fields)
+- Implemented email sending API endpoint (`/api/send-email`)
+- Added `default_decision_results` field for customizable decision options
+- Enhanced CompanyDetailsModal with SMTP configuration in Overview tab
+- Updated EditCompanyModal to manage decision result options
+- Added `votes_abstain` support in decision recording (may need schema update)
 
