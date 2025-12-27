@@ -1,11 +1,12 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { X, Plus, User, Calendar, CheckCircle, Clock, FileText, Edit2, Paperclip, Download, Trash2, Upload } from "lucide-react"
+import { X, Plus, User, Calendar, CheckCircle, Clock, FileText, Edit2, Paperclip, Download, Trash2, Upload, Sparkles } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { supabase, getCurrentUser, TaskAttachment } from "@/lib/supabase"
 import { toast } from "sonner"
+import { fetchAndExtractBuildingDocuments, fetchAndExtractTaskAttachments } from "@/lib/documentExtractor"
 
 interface TaskDetailsModalProps {
   taskId: number
@@ -28,6 +29,7 @@ interface TaskNote {
 
 interface TaskData {
   id: number
+  topic_id: number
   description: string
   assignees: Assignee[]
   assigned_name: string
@@ -43,12 +45,15 @@ export default function TaskDetailsModal({ taskId, onClose, onUpdate }: TaskDeta
   const [task, setTask] = useState<TaskData | null>(null)
   const [notes, setNotes] = useState<TaskNote[]>([])
   const [attachments, setAttachments] = useState<TaskAttachment[]>([])
+  const [aiAnalysis, setAiAnalysis] = useState<string | null>(null)
   const [newNote, setNewNote] = useState("")
   const [loading, setLoading] = useState(true)
   const [savingNote, setSavingNote] = useState(false)
   const [uploadingFile, setUploadingFile] = useState(false)
+  const [analyzingWithAI, setAnalyzingWithAI] = useState(false)
   const [isEditingStatus, setIsEditingStatus] = useState(false)
   const [selectedStatus, setSelectedStatus] = useState("")
+  const [showAiAnalysis, setShowAiAnalysis] = useState(false)
 
   const currentUser = getCurrentUser()
 
@@ -63,6 +68,7 @@ export default function TaskDetailsModal({ taskId, onClose, onUpdate }: TaskDeta
     fetchTaskDetails()
     fetchTaskNotes()
     fetchTaskAttachments()
+    fetchAIAnalysis()
   }, [taskId])
 
   const fetchTaskDetails = async () => {
@@ -120,7 +126,6 @@ export default function TaskDetailsModal({ taskId, onClose, onUpdate }: TaskDeta
     }
   }
 
-  // ⭐ NEW: Fetch task attachments
   const fetchTaskAttachments = async () => {
     try {
       const { data, error } = await supabase
@@ -137,6 +142,126 @@ export default function TaskDetailsModal({ taskId, onClose, onUpdate }: TaskDeta
       setAttachments(data || [])
     } catch (err) {
       console.error('Unexpected error:', err)
+    }
+  }
+
+  // ⭐ NEW: Fetch AI analysis
+  const fetchAIAnalysis = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('task_analyses')
+        .select('*')
+        .eq('task_id', taskId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single()
+
+      if (error && error.code !== 'PGRST116') {
+        console.error('Error fetching AI analysis:', error)
+        return
+      }
+
+      if (data) {
+        setAiAnalysis(data.analysis_result)
+      }
+    } catch (err) {
+      console.error('Unexpected error:', err)
+    }
+  }
+
+  // ⭐ NEW: Handle AI Analysis
+  const handleAnalyzeWithAI = async () => {
+    if (!task) return
+
+    setAnalyzingWithAI(true)
+    toast.info('Analyzing task with AI...')
+
+    try {
+      // Get building ID from task -> topic -> meeting -> building
+      const { data: topic, error: topicError } = await supabase
+        .from('topics')
+        .select('meeting_id')
+        .eq('id', task.topic_id)
+        .single()
+
+      if (topicError) {
+        console.error('Error fetching topic:', topicError)
+        toast.error('Failed to fetch topic information')
+        return
+      }
+
+      const { data: meeting, error: meetingError } = await supabase
+        .from('meetings')
+        .select('building_id')
+        .eq('id', topic.meeting_id)
+        .single()
+
+      if (meetingError) {
+        console.error('Error fetching meeting:', meetingError)
+        toast.error('Failed to fetch meeting information')
+        return
+      }
+
+      const { data: building, error: buildingError } = await supabase
+        .from('buildings')
+        .select('id, name')
+        .eq('id', meeting.building_id)
+        .single()
+
+      if (buildingError) {
+        console.error('Error fetching building:', buildingError)
+        toast.error('Failed to fetch building information')
+        return
+      }
+
+      console.log('Fetching building documents for building ID:', building.id)
+
+      // Extract building documents
+      const buildingDocuments = await fetchAndExtractBuildingDocuments(building.id)
+      console.log(`Extracted ${buildingDocuments.length} building documents`)
+
+      // Extract task attachments
+      const taskAttachments = await fetchAndExtractTaskAttachments(taskId)
+      console.log(`Extracted ${taskAttachments.length} task attachments`)
+
+      // Prepare payload for n8n webhook
+      const payload = {
+        task_id: taskId,
+        task_description: task.description,
+        building_id: building.id,
+        building_name: building.name,
+        building_documents: buildingDocuments,
+        task_attachments: taskAttachments
+      }
+
+      console.log('Sending payload to n8n webhook:', payload)
+
+      // Send to n8n webhook
+      const response = await fetch('https://rulesengine.asccreative.com/webhook/ac3f411b-401a-4a97-ae07-f241dbc2d1ed', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload)
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to analyze task')
+      }
+
+      const result = await response.json()
+      console.log('n8n response:', result)
+
+      toast.success('AI analysis complete!')
+      
+      // Fetch the updated analysis
+      await fetchAIAnalysis()
+      setShowAiAnalysis(true)
+    } catch (err) {
+      console.error('Error analyzing task:', err)
+      toast.error('Failed to analyze task with AI')
+    } finally {
+      setAnalyzingWithAI(false)
     }
   }
 
@@ -171,7 +296,6 @@ export default function TaskDetailsModal({ taskId, onClose, onUpdate }: TaskDeta
     }
   }
 
-  // ⭐ NEW: Handle file upload
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
@@ -235,7 +359,6 @@ export default function TaskDetailsModal({ taskId, onClose, onUpdate }: TaskDeta
     }
   }
 
-  // ⭐ NEW: Handle file deletion
   const handleDeleteAttachment = async (attachment: TaskAttachment) => {
     if (!confirm(`Delete ${attachment.filename}?`)) return
 
@@ -274,14 +397,12 @@ export default function TaskDetailsModal({ taskId, onClose, onUpdate }: TaskDeta
     }
   }
 
-  // ⭐ NEW: Format file size
   const formatFileSize = (bytes: number) => {
     if (bytes < 1024) return bytes + ' B'
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
   }
 
-  // ⭐ NEW: Get file type badge color
   const getFileTypeBadge = (mimeType: string) => {
     if (mimeType.includes('pdf')) return 'bg-red-100 text-red-800'
     if (mimeType.includes('word') || mimeType.includes('document')) return 'bg-blue-100 text-blue-800'
@@ -369,9 +490,47 @@ export default function TaskDetailsModal({ taskId, onClose, onUpdate }: TaskDeta
         <div className="p-6 space-y-6">
           {/* Task Description */}
           <div>
-            <h3 className="text-sm font-medium text-muted-foreground mb-2">Description</h3>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-medium text-muted-foreground">Description</h3>
+              {/* ⭐ NEW: AI Analysis Button */}
+              <Button
+                onClick={handleAnalyzeWithAI}
+                disabled={analyzingWithAI}
+                size="sm"
+                variant="outline"
+                className="gap-2"
+              >
+                <Sparkles className="h-4 w-4" />
+                {analyzingWithAI ? "Analyzing..." : "Analyze with AI"}
+              </Button>
+            </div>
             <p className="text-foreground bg-muted/30 p-4 rounded-lg">{task.description}</p>
           </div>
+
+          {/* ⭐ NEW: AI Analysis Results */}
+          {aiAnalysis && (
+            <div className="border-t border-border pt-6">
+              <button
+                onClick={() => setShowAiAnalysis(!showAiAnalysis)}
+                className="flex items-center justify-between w-full mb-2 hover:opacity-80 transition-opacity"
+              >
+                <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
+                  <Sparkles className="h-5 w-5 text-purple-600" />
+                  AI Analysis
+                </h3>
+                <span className="text-sm text-muted-foreground">
+                  {showAiAnalysis ? 'Hide' : 'Show'}
+                </span>
+              </button>
+              {showAiAnalysis && (
+                <div className="bg-gradient-to-br from-purple-50 to-blue-50 border border-purple-200 rounded-lg p-4">
+                  <div className="prose prose-sm max-w-none">
+                    <div className="whitespace-pre-wrap text-sm text-foreground">{aiAnalysis}</div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Status */}
           <div>
@@ -456,7 +615,7 @@ export default function TaskDetailsModal({ taskId, onClose, onUpdate }: TaskDeta
             </div>
           </div>
 
-          {/* ⭐ NEW: Attachments Section */}
+          {/* Attachments Section */}
           <div className="border-t border-border pt-6">
             <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
               <Paperclip className="h-5 w-5" />

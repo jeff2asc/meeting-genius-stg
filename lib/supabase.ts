@@ -1,12 +1,9 @@
 import { createClient } from '@supabase/supabase-js'
 
-
 const supabaseUrl = 'https://iehrlogqpsebhubbafxo.supabase.co'
 const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImllaHJsb2dxcHNlYmh1YmJhZnhvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA4OTMzNjIsImV4cCI6MjA3NjQ2OTM2Mn0.f00dmQAb0jNDni5hB_8seuHJwz_S3skkepmc_fIrEOk'
 
-
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
-
 
 // Company interface -- updated to include new fields
 export interface Company {
@@ -26,7 +23,6 @@ export interface Company {
   smtp_use_tls?: boolean | null
 }
 
-
 // User interface - with all 6 user types + company_id
 export interface User {
   id: number
@@ -36,8 +32,7 @@ export interface User {
   company_id?: number | null
 }
 
-
-// ⭐ NEW: TaskAttachment interface
+// ⭐ TaskAttachment interface
 export interface TaskAttachment {
   id: number
   task_id: number
@@ -50,6 +45,14 @@ export interface TaskAttachment {
   updated_at: string
 }
 
+// ⭐ NEW: TaskAnalysis interface
+export interface TaskAnalysis {
+  id: number
+  task_id: number
+  task_description: string
+  analysis_result: string
+  created_at: string
+}
 
 // Get current user from localStorage
 export function getCurrentUser(): User | null {
@@ -63,14 +66,12 @@ export function getCurrentUser(): User | null {
   }
 }
 
-
 // Set current user in localStorage
 export function setCurrentUser(user: User) {
   if (typeof window !== 'undefined') {
     localStorage.setItem('current_user', JSON.stringify(user))
   }
 }
-
 
 // Clear current user (logout)
 export function clearCurrentUser() {
@@ -79,12 +80,10 @@ export function clearCurrentUser() {
   }
 }
 
-
 // Check if user is logged in
 export function isLoggedIn(): boolean {
   return getCurrentUser() !== null
 }
-
 
 // Database type -- updated for companies table fields
 export type Database = {
@@ -293,7 +292,7 @@ export type Database = {
           recorded_by?: number | null
         }
       }
-      // ⭐ NEW: task_attachments table
+      // ⭐ task_attachments table
       task_attachments: {
         Row: {
           id: number
@@ -315,15 +314,28 @@ export type Database = {
           uploaded_by?: number | null
         }
       }
+      // ⭐ NEW: task_analyses table
+      task_analyses: {
+        Row: {
+          id: number
+          task_id: number
+          task_description: string
+          analysis_result: string
+          created_at: string
+        }
+        Insert: {
+          task_id: number
+          task_description: string
+          analysis_result: string
+        }
+      }
     }
   }
 }
 
-
 // ============================================
 // ROLLOVER HELPER FUNCTIONS
 // ============================================
-
 
 /**
  * Get the most recent finalized meeting of the same type for a building
@@ -342,16 +354,13 @@ export async function getPreviousMeetingOfSameType(
     .limit(1)
     .single()
 
-
   if (error && error.code !== 'PGRST116') { // PGRST116 = no rows found
     console.error('Error fetching previous meeting:', error)
     return null
   }
 
-
   return data
 }
-
 
 /**
  * Get all sections from a meeting
@@ -363,16 +372,13 @@ export async function getSectionsFromMeeting(meetingId: number) {
     .eq('meeting_id', meetingId)
     .order('order_index')
 
-
   if (error) {
     console.error('Error fetching sections:', error)
     return []
   }
 
-
   return data || []
 }
-
 
 /**
  * Get all topics from a meeting
@@ -384,16 +390,13 @@ export async function getTopicsFromMeeting(meetingId: number) {
     .eq('meeting_id', meetingId)
     .order('order_index')
 
-
   if (error) {
     console.error('Error fetching topics:', error)
     return []
   }
 
-
   return data || []
 }
-
 
 /**
  * Get all open tasks from a meeting (via topics)
@@ -405,14 +408,11 @@ export async function getOpenTasksFromMeeting(meetingId: number) {
     .select('id')
     .eq('meeting_id', meetingId)
 
-
   if (topicsError || !topics || topics.length === 0) {
     return []
   }
 
-
   const topicIds = topics.map(t => t.id)
-
 
   // Then get open tasks from those topics
   const { data: tasks, error: tasksError } = await supabase
@@ -421,16 +421,13 @@ export async function getOpenTasksFromMeeting(meetingId: number) {
     .in('topic_id', topicIds)
     .in('status', ['open', 'in_progress']) // Only incomplete tasks
 
-
   if (tasksError) {
     console.error('Error fetching open tasks:', tasksError)
     return []
   }
 
-
   return tasks || []
 }
-
 
 /**
  * Get company default sections
@@ -442,12 +439,10 @@ export async function getCompanyDefaultSections(companyId: number) {
     .eq('id', companyId)
     .single()
 
-
   if (error) {
     console.error('Error fetching company defaults:', error)
     return null
   }
-
 
   return data?.default_meeting_sections || null
 }
