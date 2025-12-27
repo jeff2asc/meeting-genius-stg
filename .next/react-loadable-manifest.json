@@ -1,16 +1,4 @@
 {
-  "lib\\documentExtractor.ts -> mammoth": {
-    "id": 80059,
-    "files": [
-      "static/chunks/59.685af7c0c35ac06c.js"
-    ]
-  },
-  "lib\\documentExtractor.ts -> pdfjs-dist": {
-    "id": 13824,
-    "files": [
-      "static/chunks/9b0008ae.8a31ab37dafaec72.js"
-    ]
-  },
   "node_modules\\@supabase\\auth-js\\dist\\module\\lib\\helpers.js -> @supabase/node-fetch": {
     "id": 92410,
     "files": []
@@ -35,7 +23,7 @@
     "id": 34137,
     "files": [
       "static/chunks/bc98253f.fdffbd48dc845d22.js",
-      "static/chunks/121.097eed556538034a.js"
+      "static/chunks/121.dcf5508c611e8d33.js"
     ]
   },
   "node_modules\\jspdf\\dist\\jspdf.es.min.js -> dompurify": {

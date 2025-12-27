@@ -1,4 +1,6 @@
 import { supabase } from './supabase'
+import pdfToText from 'react-pdftotext'
+import mammoth from 'mammoth'
 
 interface BuildingDocument {
   type: string
@@ -6,34 +8,23 @@ interface BuildingDocument {
   text: string
 }
 
-async function extractTextFromPDF(arrayBuffer: ArrayBuffer): Promise<string> {
-  // Dynamic import only on client side
-  const pdfjsLib = await import('pdfjs-dist')
-  pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`
-  
+async function extractTextFromPDF(fileUrl: string): Promise<string> {
   try {
-    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
-    let fullText = ''
-    
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i)
-      const textContent = await page.getTextContent()
-      const pageText = textContent.items.map((item: any) => item.str).join(' ')
-      fullText += pageText + '\n\n'
-    }
-    
-    return fullText.trim()
+    const response = await fetch(fileUrl)
+    const blob = await response.blob()
+    const file = new File([blob], 'document.pdf', { type: 'application/pdf' })
+    const text = await pdfToText(file)
+    return text
   } catch (error) {
     console.error('Error extracting PDF text:', error)
     throw error
   }
 }
 
-async function extractTextFromDOCX(arrayBuffer: ArrayBuffer): Promise<string> {
-  // Dynamic import only on client side
-  const mammoth = await import('mammoth')
-  
+async function extractTextFromDOCX(fileUrl: string): Promise<string> {
   try {
+    const response = await fetch(fileUrl)
+    const arrayBuffer = await response.arrayBuffer()
     const result = await mammoth.extractRawText({ arrayBuffer })
     return result.value
   } catch (error) {
@@ -42,20 +33,8 @@ async function extractTextFromDOCX(arrayBuffer: ArrayBuffer): Promise<string> {
   }
 }
 
-async function extractTextFromTXT(arrayBuffer: ArrayBuffer): Promise<string> {
-  try {
-    const decoder = new TextDecoder('utf-8')
-    return decoder.decode(arrayBuffer)
-  } catch (error) {
-    console.error('Error extracting TXT text:', error)
-    throw error
-  }
-}
-
 export async function fetchAndExtractBuildingDocuments(buildingId: number): Promise<BuildingDocument[]> {
-  // Only run on client side
   if (typeof window === 'undefined') {
-    console.log('Skipping document extraction on server side')
     return []
   }
 
@@ -83,26 +62,17 @@ export async function fetchAndExtractBuildingDocuments(buildingId: number): Prom
         try {
           console.log(`Processing document: ${doc.filename} (${doc.mime_type})`)
           
-          const response = await fetch(doc.file_url)
-          if (!response.ok) {
-            console.error(`Failed to download ${doc.filename}`)
-            return null
-          }
-
-          const arrayBuffer = await response.arrayBuffer()
           let extractedText = ''
 
-          const normalizedType = doc.mime_type?.toLowerCase() || ''
-
-          if (normalizedType === 'application/pdf') {
-            extractedText = await extractTextFromPDF(arrayBuffer)
+          if (doc.mime_type === 'application/pdf') {
+            extractedText = await extractTextFromPDF(doc.file_url)
           } else if (
-            normalizedType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
-            normalizedType === 'application/msword'
+            doc.mime_type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
           ) {
-            extractedText = await extractTextFromDOCX(arrayBuffer)
-          } else if (normalizedType === 'text/plain') {
-            extractedText = await extractTextFromTXT(arrayBuffer)
+            extractedText = await extractTextFromDOCX(doc.file_url)
+          } else if (doc.mime_type === 'text/plain') {
+            const response = await fetch(doc.file_url)
+            extractedText = await response.text()
           } else {
             console.warn(`Unsupported file type: ${doc.mime_type}`)
             return null
