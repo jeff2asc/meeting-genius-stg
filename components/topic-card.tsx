@@ -5,6 +5,7 @@ import { ChevronDown, FileText, CheckSquare, Scale, Paperclip, Edit2, Trash2, X,
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { supabase } from "@/lib/supabase"
+import { fetchAndExtractBuildingDocuments } from "@/lib/documentExtractor"
 import TaskDetailsModal from "./TaskDetailsModal"
 
 interface Topic {
@@ -64,7 +65,6 @@ export default function TopicCard({
   const [showAiResult, setShowAiResult] = useState(false)
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null)
 
-  // ← NEW: Refs for auto-save on click outside
   const titleInputRef = useRef<HTMLInputElement>(null)
   const descriptionTextareaRef = useRef<HTMLTextAreaElement>(null)
   const editingContainerRef = useRef<HTMLDivElement>(null)
@@ -82,13 +82,11 @@ export default function TopicCard({
     }
   }, [topic.id, isExpanded])
 
-  // ← NEW: Click outside handler
   useEffect(() => {
     if (!isEditing) return
 
     const handleClickOutside = (event: MouseEvent) => {
       if (editingContainerRef.current && !editingContainerRef.current.contains(event.target as Node)) {
-        // Clicked outside - auto save if there are changes
         if (hasChanges && !saving) {
           handleSave()
         }
@@ -104,7 +102,6 @@ export default function TopicCard({
     try {
       const historyItems: HistoryItem[] = []
 
-      // Fetch notes (only from current topic)
       const { data: notes } = await supabase
         .from('notes')
         .select('id, content, created_at')
@@ -122,11 +119,6 @@ export default function TopicCard({
         })
       }
 
-      // ============================================
-      // NEW: Fetch tasks from ALL previous meetings with same topic title
-      // ============================================
-      
-      // Step 1: Get current meeting info
       const { data: currentTopic } = await supabase
         .from('topics')
         .select('title, meeting_id, meetings!inner(building_id, meeting_type)')
@@ -138,7 +130,6 @@ export default function TopicCard({
         const buildingId = meetingInfo?.building_id
         const meetingType = meetingInfo?.meeting_type
 
-        // Step 2: Get all meetings of same building + meeting type
         const { data: allMeetings } = await supabase
           .from('meetings')
           .select('id')
@@ -148,7 +139,6 @@ export default function TopicCard({
         if (allMeetings) {
           const meetingIds = allMeetings.map(m => m.id)
 
-          // Step 3: Get all topics with same title across all these meetings
           const { data: allTopicsWithSameTitle } = await supabase
             .from('topics')
             .select('id')
@@ -158,7 +148,6 @@ export default function TopicCard({
           if (allTopicsWithSameTitle) {
             const topicIds = allTopicsWithSameTitle.map(t => t.id)
 
-            // Step 4: Get all open/in-progress tasks from these topics
             const { data: tasks } = await supabase
               .from('tasks')
               .select('id, description, assigned_name, assigned_email, status, created_at')
@@ -182,7 +171,6 @@ export default function TopicCard({
         }
       }
 
-      // Fetch decisions (only from current topic)
       const { data: decisions } = await supabase
         .from('decisions')
         .select('id, motion_text, result, votes_for, votes_against, recorded_at')
@@ -237,8 +225,10 @@ export default function TopicCard({
       alert('Please add a description first before analyzing with AI')
       return
     }
+    
     setAnalyzingAI(true)
     setShowAiResult(false)
+    
     try {
       const { data: topicData, error: topicError } = await supabase
         .from('topics')
@@ -267,6 +257,13 @@ export default function TopicCard({
         setAnalyzingAI(false)
         return
       }
+
+      // 🔥 NEW: Fetch and extract building documents
+      console.log('Fetching building documents for building ID:', buildingId)
+      const buildingDocuments = await fetchAndExtractBuildingDocuments(buildingId)
+      console.log(`Fetched ${buildingDocuments.length} building documents`)
+
+      // 🔥 NEW: Send documents to n8n
       const response = await fetch('https://rulesengine.asccreative.com/webhook/843afc5f-abe0-4bb4-bb9f-369d2657c4d0', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -276,8 +273,10 @@ export default function TopicCard({
           building_id: buildingId,
           building_name: buildingName,
           description: topic.description,
+          building_documents: buildingDocuments, // 🔥 NEW: Include extracted documents
         }),
       })
+
       if (response.ok) {
         await new Promise(resolve => setTimeout(resolve, 2000))
         await fetchAiAnalysis()
@@ -304,7 +303,6 @@ export default function TopicCard({
     setHasChanges(true)
   }
 
-  // ← NEW: Handle Enter key press
   const handleTitleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && hasChanges && !saving) {
       e.preventDefault()
