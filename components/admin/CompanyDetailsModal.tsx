@@ -1,8 +1,9 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { X, Users, Building2, UserCheck, Home, Plus, Trash2, UserCog } from "lucide-react"
+import { X, Users, Building2, UserCheck, Home, Plus, Trash2, UserCog, Image as ImageIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import LogoTab from "./LogoTab"
 import { Card } from "@/components/ui/card"
 import { supabase } from "@/lib/supabase"
 
@@ -12,6 +13,7 @@ interface Company {
   created_at: string
   smtp_host: string | null
   smtp_port: number | null
+  logo_url: string | null
   smtp_user: string | null
   smtp_password: string | null
   smtp_from_name: string | null
@@ -40,7 +42,7 @@ interface Building {
   manager_id: number | null
 }
 
-type Tab = "overview" | "buildings" | "admins" | "users"
+type Tab = "overview" | "buildings" | "admins" | "users" | "logo"
 
 export default function CompanyDetailsModal({
   isOpen,
@@ -164,6 +166,26 @@ export default function CompanyDetailsModal({
     
     setPropertyManagers(data || [])
   }
+  const fetchCompanyDetails = async () => {
+    if (!company) return
+    
+    const { data, error } = await supabase
+      .from('companies')
+      .select('*')
+      .eq('id', company.id)
+      .single()
+    
+    if (error) {
+      console.error('Error fetching company details:', error)
+      return
+    }
+    
+    // Update the company object with latest data
+    if (data) {
+      Object.assign(company, data)
+    }
+  }
+  
 
   const handleCreatePM = async () => {
     if (!newPMName.trim() || !newPMEmail.trim() || !newPMPassword.trim()) {
@@ -526,6 +548,18 @@ export default function CompanyDetailsModal({
               <UserCheck className="h-4 w-4 inline mr-2" />
               Administrators ({corporateAdmins.length})
             </button>
+            <button
+  onClick={() => setActiveTab("logo")}
+  className={`pb-3 px-1 font-medium text-sm transition-colors ${
+    activeTab === "logo"
+      ? "border-b-2 border-primary text-primary"
+      : "text-muted-foreground hover:text-foreground"
+  }`}
+>
+  <ImageIcon className="h-4 w-4 inline mr-2" />
+  Logo
+</button>
+
           </div>
         </div>
 
@@ -1078,6 +1112,7 @@ export default function CompanyDetailsModal({
                       {error}
                     </div>
                   )}
+                  
 
                   <div className="flex items-center justify-between">
                     <h3 className="text-lg font-semibold text-foreground">Corporate Administrators</h3>
@@ -1180,6 +1215,14 @@ export default function CompanyDetailsModal({
                   )}
                 </div>
               )}
+              {/* ⭐ Logo Tab - SEPARATE FROM ADMINISTRATORS */}
+{activeTab === "logo" && company && (
+  <LogoTab
+    companyId={company.id}
+    currentLogoUrl={company.logo_url}
+    onLogoUpdate={fetchCompanyDetails}
+  />
+)}
             </>
           )}
         </div>
