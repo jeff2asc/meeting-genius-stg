@@ -44,6 +44,9 @@ export default function Dashboard({
   // Task Details Modal state
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null)
 
+  // Company logo state
+  const [companyLogo, setCompanyLogo] = useState<string | null>(null)
+
   // Delete Confirmation States
   const [meetingToDelete, setMeetingToDelete] = useState<any>(null)
   const [taskToDelete, setTaskToDelete] = useState<any>(null)
@@ -51,6 +54,7 @@ export default function Dashboard({
 
   useEffect(() => {
     fetchBuildings()
+    fetchCompanyLogo()
   }, [])
 
   useEffect(() => {
@@ -59,6 +63,45 @@ export default function Dashboard({
       fetchTasks()
     }
   }, [selectedBuilding, selectedMeetingType])
+
+  const fetchCompanyLogo = async () => {
+    try {
+      const currentUser = getCurrentUser()
+      if (!currentUser) return
+
+      // Master users: show Meeting Genius logo
+      if (currentUser.user_type === 'master') {
+        setCompanyLogo('/MG2 logo.png')
+        return
+      }
+
+      // Other users: show company logo if exists
+      if (currentUser.company_id) {
+        const { data, error } = await supabase
+          .from('companies')
+          .select('logo_url')
+          .eq('id', currentUser.company_id)
+          .single()
+
+        if (error) {
+          console.error('Error fetching company logo:', error)
+          setCompanyLogo('/MG2 logo.png') // Fallback
+          return
+        }
+
+        if (data?.logo_url) {
+          setCompanyLogo(data.logo_url)
+        } else {
+          setCompanyLogo('/MG2 logo.png') // Fallback to Meeting Genius
+        }
+      } else {
+        setCompanyLogo('/MG2 logo.png') // Fallback
+      }
+    } catch (err) {
+      console.error('Error fetching company logo:', err)
+      setCompanyLogo('/MG2 logo.png')
+    }
+  }
 
   const fetchBuildings = async () => {
     try {
@@ -472,6 +515,14 @@ export default function Dashboard({
               />
             </div>
             <div className="flex items-center gap-4">
+              {/* Company Logo - Right side */}
+              {companyLogo && (
+                <img 
+                  src={companyLogo} 
+                  alt="Company Logo" 
+                  className="h-10 w-10 rounded-full object-cover border-2 border-border shadow-sm"
+                />
+              )}
               <div className="relative">
                 <Button
                   variant="outline"
