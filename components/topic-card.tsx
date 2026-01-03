@@ -386,18 +386,7 @@ export default function TopicCard({
             </div>
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-2">
-                <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                  <Paperclip className="h-4 w-4" />
-                  {topic.attachments}
-                </div>
-                <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                  <CheckSquare className="h-4 w-4" />
-                  {topic.tasks}
-                </div>
-                <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                  <Scale className="h-4 w-4" />
-                  {topic.decisions}
-                </div>
+              
               </div>
               {!isEditing && !isReadOnly && (
                 <div className="flex items-center gap-1">
