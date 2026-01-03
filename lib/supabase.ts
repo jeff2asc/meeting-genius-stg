@@ -45,7 +45,20 @@ export interface TaskAttachment {
   updated_at: string
 }
 
-// ⭐ NEW: TaskAnalysis interface
+// ⭐ NEW: TopicAttachment interface
+export interface TopicAttachment {
+  id: number
+  topic_id: number
+  filename: string
+  file_url: string
+  file_size: number
+  mime_type: string
+  uploaded_by: number | null
+  created_at: string
+  updated_at: string
+}
+
+// ⭐ TaskAnalysis interface
 export interface TaskAnalysis {
   id: number
   task_id: number
@@ -314,7 +327,29 @@ export type Database = {
           uploaded_by?: number | null
         }
       }
-      // ⭐ NEW: task_analyses table
+      // ⭐ NEW: topic_attachments table
+      topic_attachments: {
+        Row: {
+          id: number
+          topic_id: number
+          filename: string
+          file_url: string
+          file_size: number
+          mime_type: string
+          uploaded_by: number | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          topic_id: number
+          filename: string
+          file_url: string
+          file_size: number
+          mime_type: string
+          uploaded_by?: number | null
+        }
+      }
+      // ⭐ task_analyses table
       task_analyses: {
         Row: {
           id: number

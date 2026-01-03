@@ -2,20 +2,23 @@ import { supabase } from './supabase'
 import pdfToText from 'react-pdftotext'
 import mammoth from 'mammoth'
 
-
 interface BuildingDocument {
   type: string
   filename: string
   text: string
 }
 
-
-// ⭐ NEW: Task attachment interface
+// ⭐ Task attachment interface
 interface TaskAttachment {
   filename: string
   text: string
 }
 
+// ⭐ NEW: Topic attachment interface
+interface TopicAttachment {
+  filename: string
+  text: string
+}
 
 async function extractTextFromPDF(fileUrl: string): Promise<string> {
   try {
@@ -30,7 +33,6 @@ async function extractTextFromPDF(fileUrl: string): Promise<string> {
   }
 }
 
-
 async function extractTextFromDOCX(fileUrl: string): Promise<string> {
   try {
     const response = await fetch(fileUrl)
@@ -43,8 +45,7 @@ async function extractTextFromDOCX(fileUrl: string): Promise<string> {
   }
 }
 
-
-// ⭐ NEW: Generic text extraction function (reusable)
+// ⭐ Generic text extraction function (reusable)
 async function extractTextFromFile(fileUrl: string, mimeType: string): Promise<string> {
   try {
     if (mimeType === 'application/pdf') {
@@ -70,12 +71,10 @@ async function extractTextFromFile(fileUrl: string, mimeType: string): Promise<s
   }
 }
 
-
 export async function fetchAndExtractBuildingDocuments(buildingId: number): Promise<BuildingDocument[]> {
   if (typeof window === 'undefined') {
     return []
   }
-
 
   try {
     const { data: documents, error: dbError } = await supabase
@@ -84,21 +83,17 @@ export async function fetchAndExtractBuildingDocuments(buildingId: number): Prom
       .eq('building_id', buildingId)
       .order('created_at', { ascending: false })
 
-
     if (dbError) {
       console.error('Error fetching building documents:', dbError)
       return []
     }
-
 
     if (!documents || documents.length === 0) {
       console.log('No documents found for building ID:', buildingId)
       return []
     }
 
-
     console.log(`Found ${documents.length} documents for building ID ${buildingId}`)
-
 
     const extractedDocuments = await Promise.all(
       documents.map(async (doc) => {
@@ -107,15 +102,12 @@ export async function fetchAndExtractBuildingDocuments(buildingId: number): Prom
           
           const extractedText = await extractTextFromFile(doc.file_url, doc.mime_type)
 
-
           if (!extractedText || extractedText.trim().length === 0) {
             console.warn(`No text extracted from ${doc.filename}`)
             return null
           }
 
-
           console.log(`Successfully extracted ${extractedText.length} characters from ${doc.filename}`)
-
 
           return {
             type: doc.document_type,
@@ -129,9 +121,7 @@ export async function fetchAndExtractBuildingDocuments(buildingId: number): Prom
       })
     )
 
-
     const validDocuments = extractedDocuments.filter((doc): doc is BuildingDocument => doc !== null)
-
 
     console.log(`Successfully processed ${validDocuments.length} out of ${documents.length} documents`)
     
@@ -142,13 +132,11 @@ export async function fetchAndExtractBuildingDocuments(buildingId: number): Prom
   }
 }
 
-
-// ⭐ NEW: Fetch and extract task attachments
+// ⭐ Fetch and extract task attachments
 export async function fetchAndExtractTaskAttachments(taskId: number): Promise<TaskAttachment[]> {
   if (typeof window === 'undefined') {
     return []
   }
-
 
   try {
     const { data: attachments, error: dbError } = await supabase
@@ -157,21 +145,17 @@ export async function fetchAndExtractTaskAttachments(taskId: number): Promise<Ta
       .eq('task_id', taskId)
       .order('created_at', { ascending: false })
 
-
     if (dbError) {
       console.error('Error fetching task attachments:', dbError)
       return []
     }
-
 
     if (!attachments || attachments.length === 0) {
       console.log('No attachments found for task ID:', taskId)
       return []
     }
 
-
     console.log(`Found ${attachments.length} attachments for task ID ${taskId}`)
-
 
     const extractedAttachments = await Promise.all(
       attachments.map(async (attachment) => {
@@ -180,15 +164,12 @@ export async function fetchAndExtractTaskAttachments(taskId: number): Promise<Ta
           
           const extractedText = await extractTextFromFile(attachment.file_url, attachment.mime_type)
 
-
           if (!extractedText || extractedText.trim().length === 0) {
             console.warn(`No text extracted from ${attachment.filename}`)
             return null
           }
 
-
           console.log(`Successfully extracted ${extractedText.length} characters from ${attachment.filename}`)
-
 
           return {
             filename: attachment.filename,
@@ -201,15 +182,74 @@ export async function fetchAndExtractTaskAttachments(taskId: number): Promise<Ta
       })
     )
 
-
     const validAttachments = extractedAttachments.filter((att): att is TaskAttachment => att !== null)
-
 
     console.log(`Successfully processed ${validAttachments.length} out of ${attachments.length} attachments`)
     
     return validAttachments
   } catch (error) {
     console.error('Error in fetchAndExtractTaskAttachments:', error)
+    return []
+  }
+}
+
+// ⭐ NEW: Fetch and extract topic attachments
+export async function fetchAndExtractTopicAttachments(topicId: number): Promise<TopicAttachment[]> {
+  if (typeof window === 'undefined') {
+    return []
+  }
+
+  try {
+    const { data: attachments, error: dbError } = await supabase
+      .from('topic_attachments')
+      .select('id, filename, file_url, mime_type')
+      .eq('topic_id', topicId)
+      .order('created_at', { ascending: false })
+
+    if (dbError) {
+      console.error('Error fetching topic attachments:', dbError)
+      return []
+    }
+
+    if (!attachments || attachments.length === 0) {
+      console.log('No attachments found for topic ID:', topicId)
+      return []
+    }
+
+    console.log(`Found ${attachments.length} attachments for topic ID ${topicId}`)
+
+    const extractedAttachments = await Promise.all(
+      attachments.map(async (attachment) => {
+        try {
+          console.log(`Processing attachment: ${attachment.filename} (${attachment.mime_type})`)
+          
+          const extractedText = await extractTextFromFile(attachment.file_url, attachment.mime_type)
+
+          if (!extractedText || extractedText.trim().length === 0) {
+            console.warn(`No text extracted from ${attachment.filename}`)
+            return null
+          }
+
+          console.log(`Successfully extracted ${extractedText.length} characters from ${attachment.filename}`)
+
+          return {
+            filename: attachment.filename,
+            text: extractedText.trim()
+          }
+        } catch (error) {
+          console.error(`Error processing attachment ${attachment.filename}:`, error)
+          return null
+        }
+      })
+    )
+
+    const validAttachments = extractedAttachments.filter((att): att is TopicAttachment => att !== null)
+
+    console.log(`Successfully processed ${validAttachments.length} out of ${attachments.length} attachments`)
+    
+    return validAttachments
+  } catch (error) {
+    console.error('Error in fetchAndExtractTopicAttachments:', error)
     return []
   }
 }

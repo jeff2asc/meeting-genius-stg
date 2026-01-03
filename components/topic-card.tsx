@@ -1,12 +1,13 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
-import { ChevronDown, FileText, CheckSquare, Scale, Paperclip, Edit2, Trash2, X, Check, Sparkles, Loader2, Plus } from "lucide-react"
+import { ChevronDown, FileText, CheckSquare, Scale, Paperclip, Edit2, Trash2, X, Check, Sparkles, Loader2, Plus, Upload, Download } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { supabase } from "@/lib/supabase"
-import { fetchAndExtractBuildingDocuments } from "@/lib/documentExtractor"
+import { supabase, getCurrentUser, TopicAttachment } from "@/lib/supabase"
+import { fetchAndExtractBuildingDocuments, fetchAndExtractTopicAttachments } from "@/lib/documentExtractor"
 import TaskDetailsModal from "./TaskDetailsModal"
+import { toast } from "sonner"
 
 interface Topic {
   id: number
@@ -64,7 +65,13 @@ export default function TopicCard({
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null)
   const [showAiResult, setShowAiResult] = useState(false)
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null)
+  
+  // ⭐ NEW: Topic attachments state
+  const [attachments, setAttachments] = useState<TopicAttachment[]>([])
+  const [uploadingFile, setUploadingFile] = useState(false)
+  const [showAttachments, setShowAttachments] = useState(false)
 
+  const currentUser = getCurrentUser()
   const titleInputRef = useRef<HTMLInputElement>(null)
   const descriptionTextareaRef = useRef<HTMLTextAreaElement>(null)
   const editingContainerRef = useRef<HTMLDivElement>(null)
@@ -79,6 +86,7 @@ export default function TopicCard({
     if (isExpanded) {
       fetchHistory()
       fetchAiAnalysis()
+      fetchTopicAttachments() // ⭐ NEW: Fetch attachments
     }
   }, [topic.id, isExpanded])
 
@@ -96,6 +104,148 @@ export default function TopicCard({
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [isEditing, hasChanges, saving])
+
+  // ⭐ NEW: Fetch topic attachments
+  const fetchTopicAttachments = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('topic_attachments')
+        .select('*')
+        .eq('topic_id', topic.id)
+        .order('created_at', { ascending: false })
+
+      if (error) {
+        console.error('Error fetching topic attachments:', error)
+        return
+      }
+
+      setAttachments(data || [])
+    } catch (err) {
+      console.error('Unexpected error fetching attachments:', err)
+    }
+  }
+
+  // ⭐ NEW: Handle file upload
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    // Validate file size (10MB max)
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('File size must be less than 10MB')
+      return
+    }
+
+    setUploadingFile(true)
+    try {
+      // Upload to Supabase Storage
+      const fileName = `${Date.now()}_${file.name}`
+      const filePath = `${topic.id}/${fileName}`
+
+      const { error: uploadError } = await supabase.storage
+        .from('topic-attachments')
+        .upload(filePath, file)
+
+      if (uploadError) {
+        console.error('Error uploading file:', uploadError)
+        toast.error('Failed to upload file')
+        return
+      }
+
+      // Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('topic-attachments')
+        .getPublicUrl(filePath)
+
+      // Save to database
+      const { error: dbError } = await supabase
+        .from('topic_attachments')
+        .insert({
+          topic_id: topic.id,
+          filename: file.name,
+          file_url: publicUrl,
+          file_size: file.size,
+          mime_type: file.type,
+          uploaded_by: currentUser?.id
+        })
+
+      if (dbError) {
+        console.error('Error saving attachment:', dbError)
+        toast.error('Failed to save attachment')
+        return
+      }
+
+      toast.success('File uploaded successfully')
+      await fetchTopicAttachments()
+      
+      // Update parent component's attachment count
+      onUpdate({ attachments: attachments.length + 1 })
+    } catch (err) {
+      console.error('Unexpected error:', err)
+      toast.error('Failed to upload file')
+    } finally {
+      setUploadingFile(false)
+      // Reset file input
+      event.target.value = ''
+    }
+  }
+
+  // ⭐ NEW: Handle delete attachment
+  const handleDeleteAttachment = async (attachment: TopicAttachment) => {
+    if (!confirm(`Delete ${attachment.filename}?`)) return
+
+    try {
+      // Extract file path from URL
+      const urlParts = attachment.file_url.split('/topic-attachments/')
+      const filePath = urlParts[1]
+
+      // Delete from storage
+      const { error: storageError } = await supabase.storage
+        .from('topic-attachments')
+        .remove([filePath])
+
+      if (storageError) {
+        console.error('Error deleting file from storage:', storageError)
+      }
+
+      // Delete from database
+      const { error: dbError } = await supabase
+        .from('topic_attachments')
+        .delete()
+        .eq('id', attachment.id)
+
+      if (dbError) {
+        console.error('Error deleting attachment:', dbError)
+        toast.error('Failed to delete attachment')
+        return
+      }
+
+      toast.success('Attachment deleted')
+      await fetchTopicAttachments()
+      
+      // Update parent component's attachment count
+      onUpdate({ attachments: attachments.length - 1 })
+    } catch (err) {
+      console.error('Unexpected error:', err)
+      toast.error('Failed to delete attachment')
+    }
+  }
+
+  // ⭐ NEW: Format file size helper
+  const formatFileSize = (bytes: number) => {
+    if (bytes < 1024) return bytes + ' B'
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
+  }
+
+  // ⭐ NEW: Get file type badge color
+  const getFileTypeBadge = (mimeType: string) => {
+    if (mimeType.includes('pdf')) return 'bg-red-100 text-red-800'
+    if (mimeType.includes('word') || mimeType.includes('document')) return 'bg-blue-100 text-blue-800'
+    if (mimeType.includes('image')) return 'bg-purple-100 text-purple-800'
+    if (mimeType.includes('text')) return 'bg-gray-100 text-gray-800'
+    return 'bg-gray-100 text-gray-800'
+  }
 
   const fetchHistory = async () => {
     setLoadingHistory(true)
@@ -258,12 +408,17 @@ export default function TopicCard({
         return
       }
 
-      // 🔥 NEW: Fetch and extract building documents
+      // 🔥 Fetch and extract building documents
       console.log('Fetching building documents for building ID:', buildingId)
       const buildingDocuments = await fetchAndExtractBuildingDocuments(buildingId)
       console.log(`Fetched ${buildingDocuments.length} building documents`)
 
-      // 🔥 NEW: Send documents to n8n
+      // 🔥 NEW: Fetch and extract topic attachments
+      console.log('Fetching topic attachments for topic ID:', topic.id)
+      const topicAttachments = await fetchAndExtractTopicAttachments(topic.id)
+      console.log(`Fetched ${topicAttachments.length} topic attachments`)
+
+      // 🔥 UPDATED: Send documents + topic attachments to n8n
       const response = await fetch('https://rulesengine.asccreative.com/webhook/843afc5f-abe0-4bb4-bb9f-369d2657c4d0', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -273,7 +428,8 @@ export default function TopicCard({
           building_id: buildingId,
           building_name: buildingName,
           description: topic.description,
-          building_documents: buildingDocuments, // 🔥 NEW: Include extracted documents
+          building_documents: buildingDocuments,
+          topic_attachments: topicAttachments, // ⭐ NEW: Include topic attachments
         }),
       })
 
@@ -281,13 +437,13 @@ export default function TopicCard({
         await new Promise(resolve => setTimeout(resolve, 2000))
         await fetchAiAnalysis()
         setShowAiResult(true)
-        alert('✅ AI Analysis complete!')
+        toast.success('✅ AI Analysis complete!')
       } else {
-        alert('Failed to analyze with AI. Please try again.')
+        toast.error('Failed to analyze with AI. Please try again.')
       }
     } catch (error) {
       console.error('Error during AI analysis:', error)
-      alert('An error occurred during AI analysis')
+      toast.error('An error occurred during AI analysis')
     } finally {
       setAnalyzingAI(false)
     }
@@ -385,9 +541,15 @@ export default function TopicCard({
               )}
             </div>
             <div className="flex items-center gap-3">
-              <div className="flex items-center gap-2">
-              
-              </div>
+              {/* ⭐ NEW: Attachments button */}
+              <button
+                onClick={() => setShowAttachments(!showAttachments)}
+                className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium bg-muted hover:bg-muted/80 rounded transition-colors"
+                title="View attachments"
+              >
+                <Paperclip className="h-4 w-4" />
+                {attachments.length}
+              </button>
               {!isEditing && !isReadOnly && (
                 <div className="flex items-center gap-1">
                   <button
@@ -408,6 +570,91 @@ export default function TopicCard({
 
         {isExpanded && (
           <>
+            {/* ⭐ NEW: Attachments Section */}
+            {showAttachments && (
+              <div className="border-b border-border p-4 bg-muted/10">
+                <h4 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+                  <Paperclip className="h-4 w-4" />
+                  Topic Attachments ({attachments.length})
+                </h4>
+
+                {/* Upload Button */}
+                {!isReadOnly && (
+                  <div className="mb-3">
+                    <label htmlFor={`topic-file-upload-${topic.id}`}>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={uploadingFile}
+                        className="cursor-pointer"
+                        onClick={() => document.getElementById(`topic-file-upload-${topic.id}`)?.click()}
+                      >
+                        <Upload className="h-4 w-4 mr-2" />
+                        {uploadingFile ? "Uploading..." : "Upload File"}
+                      </Button>
+                    </label>
+                    <input
+                      id={`topic-file-upload-${topic.id}`}
+                      type="file"
+                      className="hidden"
+                      onChange={handleFileUpload}
+                      disabled={uploadingFile}
+                      accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png"
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Supported: PDF, DOC, DOCX, TXT, Images (Max 10MB)
+                    </p>
+                  </div>
+                )}
+
+                {/* Attachments List */}
+                <div className="space-y-2">
+                  {attachments.length > 0 ? (
+                    attachments.map(attachment => (
+                      <div key={attachment.id} className="flex items-center justify-between bg-background border border-border rounded-lg p-2">
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          <Paperclip className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <div className="font-medium text-xs truncate">{attachment.filename}</div>
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                              <span className={`px-1.5 py-0.5 rounded text-xs ${getFileTypeBadge(attachment.mime_type)}`}>
+                                {attachment.mime_type.split('/')[1].toUpperCase()}
+                              </span>
+                              <span>{formatFileSize(attachment.file_size)}</span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => window.open(attachment.file_url, '_blank')}
+                          >
+                            <Download className="h-3 w-3" />
+                          </Button>
+                          {!isReadOnly && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleDeleteAttachment(attachment)}
+                              className="text-destructive hover:text-destructive"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-center text-xs text-muted-foreground py-4">
+                      {isReadOnly ? 'No attachments yet.' : 'No attachments yet. Upload one above!'}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
             <div className="p-4 border-b border-border">
               {isEditing ? (
                 <textarea
