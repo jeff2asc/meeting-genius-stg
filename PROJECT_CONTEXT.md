@@ -447,24 +447,80 @@ Stores documents associated with buildings for AI analysis and reference.
 ---
 
 ### 14. **ai_analyses**
-Stores AI analysis results for topics and tasks.
+Stores AI analysis results for topics.
 
 ```typescript
 {
   id: number (primary key, auto-increment)
   topic_id: number | null (foreign key → topics.id)
-  task_id: number | null (foreign key → tasks.id)
+  task_id: number | null (foreign key → tasks.id)  // Legacy field, may be null
   analysis_result: string (JSON or text)
   created_at: timestamp
 }
 ```
 
-**Purpose**: Stores AI-generated analysis results for meeting topics and tasks. Analysis is performed by external n8n webhook that processes topic descriptions along with extracted building documents.
+**Purpose**: Stores AI-generated analysis results for meeting topics. Analysis is performed by external n8n webhook that processes topic descriptions along with extracted building documents.
 
 **Usage**:
-- AI analysis is triggered from TopicCard or TaskCard
+- AI analysis is triggered from TopicCard
 - Analysis includes topic description and extracted building documents
-- Results are stored and displayed in the topic/task card
+- Results are stored and displayed in the topic card
+- Webhook URL: `https://rulesengine.asccreative.com/webhook/843afc5f-abe0-4bb4-bb9f-369d2657c4d0`
+
+---
+
+### 15. **task_attachments**
+Stores file attachments for tasks.
+
+```typescript
+{
+  id: number (primary key, auto-increment)
+  task_id: number (foreign key → tasks.id)
+  filename: string
+  file_url: string (URL to file in Supabase storage)
+  file_size: number (bytes)
+  mime_type: string (e.g., "application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "text/plain", "image/*")
+  uploaded_by: number | null (foreign key → users.id)
+  created_at: timestamp
+  updated_at: timestamp
+}
+```
+
+**Purpose**: Stores file attachments uploaded to tasks. Attachments can be PDF, DOCX, TXT, or image files. Text from attachments is extracted and used for AI analysis.
+
+**Storage**:
+- Files are stored in Supabase Storage bucket: `task-attachments`
+- File path format: `{task_id}/{timestamp}_{filename}`
+- Maximum file size: 10MB
+- Supports: PDF, DOC, DOCX, TXT, and image files
+
+**Usage**:
+- Attachments are uploaded via TaskDetailsModal
+- Attachments are extracted using `documentExtractor.ts` utility
+- Extracted text is sent to AI analysis webhook for task analysis
+
+---
+
+### 16. **task_analyses**
+Stores AI analysis results specifically for tasks.
+
+```typescript
+{
+  id: number (primary key, auto-increment)
+  task_id: number (foreign key → tasks.id)
+  task_description: string
+  analysis_result: string (JSON or text)
+  created_at: timestamp
+}
+```
+
+**Purpose**: Stores AI-generated analysis results for tasks. Analysis is performed by external n8n webhook that processes task descriptions along with extracted building documents and task attachments.
+
+**Usage**:
+- AI analysis is triggered from TaskDetailsModal
+- Analysis includes task description, building documents, and task attachments
+- Results are stored and displayed in the task details modal
+- Webhook URL: `https://rulesengine.asccreative.com/webhook/ac3f411b-401a-4a97-ae07-f241dbc2d1ed`
 
 ---
 
@@ -633,23 +689,50 @@ All permission checks are centralized in `lib/permissions.ts`:
   - Documents categorized by type (rules, bylaws, policies, etc.)
 - **Document Text Extraction**:
   - `lib/documentExtractor.ts` utility extracts text from documents
-  - Supports PDF (react-pdftotext), DOCX (mammoth), and plain text
+  - Generic `extractTextFromFile()` function handles multiple file types
+  - Supports PDF (react-pdftotext), DOCX (mammoth), plain text, and images
+  - Image files return placeholder text (OCR can be added later)
   - Extracted text used for AI analysis context
+  - Functions:
+    - `fetchAndExtractBuildingDocuments(buildingId)`: Extracts text from building documents
+    - `fetchAndExtractTaskAttachments(taskId)`: Extracts text from task attachments
 - **AI Analysis Integration**:
-  - AI analysis available for topics and tasks
-  - Triggered from TopicCard or TaskCard "Analyze with AI" button
-  - Sends topic description and extracted building documents to n8n webhook
-  - Webhook URL: `https://rulesengine.asccreative.com/webhook/843afc5f-abe0-4bb4-bb9f-369d2657c4d0`
-  - Analysis results stored in `ai_analyses` table
-  - Results displayed in topic/task card with expandable view
-- **Workflow**:
-  1. User uploads documents to building via Documents tab
-  2. User adds description to topic
-  3. User clicks "Analyze with AI" button
-  4. System extracts text from all building documents
-  5. System sends topic + documents to n8n webhook
-  6. AI processes and returns analysis
-  7. Analysis stored and displayed in topic card
+  - **Topic AI Analysis**:
+    - Available in TopicCard "Analyze with AI" button
+    - Sends topic description and extracted building documents to n8n webhook
+    - Webhook URL: `https://rulesengine.asccreative.com/webhook/843afc5f-abe0-4bb4-bb9f-369d2657c4d0`
+    - Analysis results stored in `ai_analyses` table
+    - Results displayed in topic card with expandable view
+  - **Task AI Analysis**:
+    - Available in TaskDetailsModal "Analyze with AI" button
+    - Sends task description, building documents, and task attachments to n8n webhook
+    - Webhook URL: `https://rulesengine.asccreative.com/webhook/ac3f411b-401a-4a97-ae07-f241dbc2d1ed`
+    - Analysis results stored in `task_analyses` table
+    - Results displayed in task details modal
+- **Task Attachments**:
+  - Users can upload files to tasks via TaskDetailsModal
+  - Supports PDF, DOC, DOCX, TXT, and image files (max 10MB)
+  - Files stored in Supabase Storage (`task-attachments` bucket)
+  - Attachments can be viewed, downloaded, and deleted
+  - Attachment text is extracted and included in task AI analysis
+
+- **Workflows**:
+  - **Topic AI Analysis**:
+    1. User uploads documents to building via Documents tab
+    2. User adds description to topic
+    3. User clicks "Analyze with AI" button in TopicCard
+    4. System extracts text from all building documents
+    5. System sends topic + documents to n8n webhook
+    6. AI processes and returns analysis
+    7. Analysis stored in `ai_analyses` table and displayed in topic card
+  - **Task AI Analysis**:
+    1. User uploads documents to building via Documents tab
+    2. User creates task and optionally uploads attachments
+    3. User clicks "Analyze with AI" button in TaskDetailsModal
+    4. System extracts text from building documents and task attachments
+    5. System sends task + documents + attachments to n8n webhook
+    6. AI processes and returns analysis
+    7. Analysis stored in `task_analyses` table and displayed in task modal
 
 ---
 
@@ -675,6 +758,8 @@ app/page.tsx (Root)
    - Handles authentication state
    - Routes between Dashboard, MeetingView, and AdminPanel
    - Manages modal states (Task, Note, Decision, CreateMeeting)
+   - **Topic refresh callback system**: Stores callbacks from TopicCard to refresh history after modal saves
+   - **Auto-redirect logic**: Redirects attendee and vendor user types to dashboard on login
 
 2. **`components/dashboard.tsx`**
    - Lists all meetings and tasks
@@ -703,7 +788,12 @@ app/page.tsx (Root)
 - `components/create-meeting-modal.tsx`: Create new meetings with rollover support
 - `components/EditMeetingModal.tsx`: Edit meeting details
 - `components/task-modal.tsx`: Create/edit tasks
-- `components/TaskDetailsModal.tsx`: View task details with notes and status updates
+- `components/TaskDetailsModal.tsx`: **Enhanced task details modal** with:
+  - View task details (description, status, assignees, due date)
+  - Task notes management (view, add notes)
+  - **Task attachment upload/download/delete**
+  - **AI analysis integration** (analyze task with building documents and attachments)
+  - Status updates
 - `components/note-modal.tsx`: Add/edit notes
 - `components/decision-modal.tsx`: Record decisions
 - `components/create-section-modal.tsx`: Create sections
@@ -752,8 +842,9 @@ All shadcn/ui style components:
 #### **Card Components**
 
 - `components/meeting-card.tsx`: Meeting display card
-- `components/topic-card.tsx`: Topic display with actions, **AI analysis integration**
+- `components/topic-card.tsx`: Topic display with actions, **AI analysis integration**, **topic refresh callback registration**
 - `components/task-card.tsx`: Task display card, **AI analysis integration**
+- `components/TaskDetailsModal.tsx`: **Enhanced task management** with attachments, AI analysis, and notes
 
 #### **Utility Components**
 
@@ -957,14 +1048,15 @@ working_agenda → agenda → working_minutes → minutes
 6. Document appears in documents list with type badge and download link
 7. User can delete documents (removes from storage and database)
 
-### 13. **AI Analysis Workflow**
+### 13. **AI Analysis Workflows**
 
+**Topic AI Analysis**:
 1. User adds description to a topic in meeting view
 2. User clicks "Analyze with AI" button in TopicCard
 3. System fetches building ID from topic's meeting
 4. System calls `fetchAndExtractBuildingDocuments(buildingId)`:
    - Fetches all documents for building from `building_documents` table
-   - Extracts text from each document (PDF, DOCX, or TXT)
+   - Extracts text from each document using `extractTextFromFile()`
    - Returns array of documents with extracted text
 5. System sends POST request to n8n webhook with:
    - Topic ID, title, description
@@ -973,7 +1065,44 @@ working_agenda → agenda → working_minutes → minutes
 6. n8n webhook processes request and stores analysis in `ai_analyses` table
 7. System polls for analysis result from `ai_analyses` table
 8. Analysis result displayed in expandable section in TopicCard
-9. Same workflow available for tasks via TaskCard
+
+**Task AI Analysis**:
+1. User creates task and optionally uploads attachments
+2. User opens TaskDetailsModal and clicks "Analyze with AI" button
+3. System fetches building ID from task → topic → meeting → building
+4. System calls `fetchAndExtractBuildingDocuments(buildingId)` for building documents
+5. System calls `fetchAndExtractTaskAttachments(taskId)` for task attachments:
+   - Fetches all attachments for task from `task_attachments` table
+   - Extracts text from each attachment using `extractTextFromFile()`
+   - Returns array of attachments with extracted text
+6. System sends POST request to n8n webhook with:
+   - Task ID, description
+   - Building ID and name
+   - Array of extracted building documents
+   - Array of extracted task attachments
+7. n8n webhook processes request and stores analysis in `task_analyses` table
+8. System fetches analysis result from `task_analyses` table
+9. Analysis result displayed in TaskDetailsModal
+
+### 14. **Topic Refresh Callback System**
+
+1. TopicCard registers a refresh callback via `onRegisterTopicRefresh` prop
+2. Callback is stored in `topicRefreshCallbackRef` in `app/page.tsx`
+3. When note/task/decision is saved via modal:
+   - Modal calls `onSave` callback
+   - `app/page.tsx` executes the stored refresh callback
+   - TopicCard refreshes its history display
+4. This ensures topic history is updated immediately after adding notes/tasks/decisions
+
+### 15. **User Type Auto-Redirect**
+
+1. User logs in
+2. System checks `user_type` in `app/page.tsx`
+3. Auto-redirect logic:
+   - **Attendee**: Automatically redirected to dashboard (read-only access)
+   - **Vendor**: Automatically redirected to dashboard (task-focused access)
+   - **Other types**: Start at dashboard (can navigate to admin/meetings)
+4. Prevents unauthorized access attempts
 
 ---
 
@@ -1124,7 +1253,8 @@ Several fields use JSONB for flexible data:
 - `buildings.rules_document`: Document content (legacy, now using building_documents table)
 - `buildings.agenda_template`: Template content
 - `buildings.minutes_template`: Template content
-- `ai_analyses.analysis_result`: AI analysis result (JSON or text)
+- `ai_analyses.analysis_result`: Topic AI analysis result (JSON or text)
+- `task_analyses.analysis_result`: Task AI analysis result (JSON or text)
 
 ### 5. **Meeting Rollover Logic**
 
@@ -1316,7 +1446,7 @@ if (!canCreateMeeting(currentUser?.user_type)) {
 ## Summary
 
 This is a comprehensive meeting management system with:
-- **14 main database tables** (companies, users, buildings, meetings, sections, topics, notes, tasks, decisions, task_notes, minutes_templates, user_buildings, building_documents, ai_analyses)
+- **16 main database tables** (companies, users, buildings, meetings, sections, topics, notes, tasks, decisions, task_notes, minutes_templates, user_buildings, building_documents, ai_analyses, task_attachments, task_analyses)
 - **6 user types** with granular permissions
 - **Multi-tenant architecture** (company → building → meeting hierarchy)
 - **Full CRUD operations** for all entities
@@ -1333,17 +1463,21 @@ The system is designed for property management companies to manage their meeting
 
 ---
 
-**Last Updated**: January 2025 (Updated with document management, AI analysis integration, building_documents table, and document extraction utilities)
+**Last Updated**: January 2025 (Updated with task attachments, task AI analysis, topic refresh callbacks, and enhanced document extraction)
 **Version**: Current production codebase
 
 **Recent Updates**:
-- Added `building_documents` table for storing building-related documents
-- Implemented document upload/management in BuildingDetailsModal → Documents tab
-- Created `documentExtractor.ts` utility for extracting text from PDF, DOCX, and plain text files
-- Added AI analysis feature for topics and tasks
-- Integrated n8n webhook for AI analysis processing
-- Added `ai_analyses` table for storing AI analysis results
-- Documents are extracted and sent to AI webhook along with topic descriptions
-- Added document processing dependencies: react-pdftotext, mammoth
-- AI analysis results displayed in TopicCard and TaskCard components
+- Added `task_attachments` table for storing file attachments on tasks
+- Added `task_analyses` table for storing task-specific AI analysis results
+- Implemented task attachment upload/download/delete in TaskDetailsModal
+- Created `fetchAndExtractTaskAttachments()` function for extracting text from task attachments
+- Enhanced `documentExtractor.ts` with generic `extractTextFromFile()` function
+- Task AI analysis now includes both building documents and task attachments
+- Separate n8n webhook URLs for topics vs tasks:
+  - Topics: `https://rulesengine.asccreative.com/webhook/843afc5f-abe0-4bb4-bb9f-369d2657c4d0`
+  - Tasks: `https://rulesengine.asccreative.com/webhook/ac3f411b-401a-4a97-ae07-f241dbc2d1ed`
+- Implemented topic refresh callback system for real-time history updates
+- Added auto-redirect logic for attendee and vendor user types
+- Task attachments stored in Supabase Storage (`task-attachments` bucket)
+- Enhanced TaskDetailsModal with full attachment management and AI analysis
 
