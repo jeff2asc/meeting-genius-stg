@@ -125,38 +125,47 @@ export default function TopicCard({
     }
   }
 
-  // ⭐ NEW: Handle file upload
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
-
+  
     // Validate file size (10MB max)
     if (file.size > 10 * 1024 * 1024) {
       toast.error('File size must be less than 10MB')
       return
     }
-
+  
     setUploadingFile(true)
     try {
+      // ⭐ Get authenticated user
+      const { data: { user }, error: authError } = await supabase.auth.getUser()
+      
+      if (authError || !user) {
+        console.error('Authentication error:', authError)
+        toast.error('You must be logged in to upload files')
+        setUploadingFile(false)
+        return
+      }
+  
       // Upload to Supabase Storage
-      const fileName = `${Date.now()}_${file.name}`
-      const filePath = `${topic.id}/${fileName}`
-
+      const fileName = `${topic.id}/${Date.now()}_${file.name}`
+      const filePath = fileName
+  
       const { error: uploadError } = await supabase.storage
         .from('topic-attachments')
         .upload(filePath, file)
-
+  
       if (uploadError) {
         console.error('Error uploading file:', uploadError)
         toast.error('Failed to upload file')
         return
       }
-
+  
       // Get public URL
       const { data: { publicUrl } } = supabase.storage
         .from('topic-attachments')
         .getPublicUrl(filePath)
-
+  
       // Save to database
       const { error: dbError } = await supabase
         .from('topic_attachments')
@@ -166,15 +175,15 @@ export default function TopicCard({
           file_url: publicUrl,
           file_size: file.size,
           mime_type: file.type,
-          uploaded_by: currentUser?.id
+          uploaded_by: user.id  // ⭐ Use authenticated user ID
         })
-
+  
       if (dbError) {
         console.error('Error saving attachment:', dbError)
         toast.error('Failed to save attachment')
         return
       }
-
+  
       toast.success('File uploaded successfully')
       await fetchTopicAttachments()
       
@@ -189,6 +198,7 @@ export default function TopicCard({
       event.target.value = ''
     }
   }
+  
 
   // ⭐ NEW: Handle delete attachment
   const handleDeleteAttachment = async (attachment: TopicAttachment) => {

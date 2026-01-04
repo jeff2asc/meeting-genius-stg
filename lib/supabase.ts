@@ -21,6 +21,8 @@ export interface Company {
   smtp_from_name?: string | null
   smtp_from_email?: string | null
   smtp_use_tls?: boolean | null
+  // ⭐ NEW: Company logo
+  logo_url?: string | null
 }
 
 // User interface - with all 6 user types + company_id
@@ -45,7 +47,7 @@ export interface TaskAttachment {
   updated_at: string
 }
 
-// ⭐ NEW: TopicAttachment interface
+// ⭐ TopicAttachment interface
 export interface TopicAttachment {
   id: number
   topic_id: number
@@ -98,6 +100,16 @@ export function isLoggedIn(): boolean {
   return getCurrentUser() !== null
 }
 
+// ⭐ NEW: Get Supabase authenticated user (for file uploads)
+export async function getSupabaseUser() {
+  const { data: { user }, error } = await supabase.auth.getUser()
+  if (error || !user) {
+    console.error('Error getting authenticated user:', error)
+    return null
+  }
+  return user
+}
+
 // Database type -- updated for companies table fields
 export type Database = {
   public: {
@@ -118,6 +130,8 @@ export type Database = {
           smtp_from_name: string | null
           smtp_from_email: string | null
           smtp_use_tls: boolean | null
+          // ⭐ NEW: Company logo
+          logo_url: string | null
         }
         Insert: {
           name: string
@@ -131,6 +145,8 @@ export type Database = {
           smtp_from_name?: string | null
           smtp_from_email?: string | null
           smtp_use_tls?: boolean | null
+          // ⭐ NEW: Company logo optional on insert
+          logo_url?: string | null
         }
       }
       users: {
@@ -327,7 +343,7 @@ export type Database = {
           uploaded_by?: number | null
         }
       }
-      // ⭐ NEW: topic_attachments table
+      // ⭐ topic_attachments table
       topic_attachments: {
         Row: {
           id: number
