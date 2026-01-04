@@ -1,12 +1,13 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { X, Building2, Users, FileText, Plus, Upload, Trash2, ExternalLink, Loader2 } from "lucide-react"
+import { X, Building2, Users, FileText, Plus, Upload, Trash2, ExternalLink, Loader2, Link as LinkIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
+import { Textarea } from "@/components/ui/textarea"
 import {
   Select,
   SelectContent,
@@ -15,6 +16,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { supabase } from "@/lib/supabase"
+import { toast } from "sonner"
 
 interface User {
   id: number
@@ -532,15 +534,36 @@ interface DocumentsTabProps {
   onSuccess: () => void
 }
 
+// ⭐ NEW: Document URL interface
+interface DocumentURL {
+  id: number
+  building_id: number
+  document_type: string
+  url: string
+  title: string
+  description: string | null
+  created_at: string
+}
+
 function DocumentsTab({ building, onSuccess }: DocumentsTabProps) {
   const [documents, setDocuments] = useState<any[]>([])
+  const [documentUrls, setDocumentUrls] = useState<DocumentURL[]>([]) // ⭐ NEW
   const [uploading, setUploading] = useState(false)
   const [selectedDocType, setSelectedDocType] = useState("rules")
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [loading, setLoading] = useState(true)
 
+  // ⭐ NEW: URL form state
+  const [showUrlForm, setShowUrlForm] = useState(false)
+  const [urlTitle, setUrlTitle] = useState("")
+  const [urlLink, setUrlLink] = useState("")
+  const [urlType, setUrlType] = useState("legislation")
+  const [urlDescription, setUrlDescription] = useState("")
+  const [savingUrl, setSavingUrl] = useState(false)
+
   useEffect(() => {
     fetchDocuments()
+    fetchDocumentUrls() // ⭐ NEW
   }, [])
 
   const fetchDocuments = async () => {
@@ -562,6 +585,103 @@ function DocumentsTab({ building, onSuccess }: DocumentsTabProps) {
       console.error('Unexpected error fetching documents:', err)
     } finally {
       setLoading(false)
+    }
+  }
+
+  // ⭐ NEW: Fetch document URLs
+  const fetchDocumentUrls = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('building_document_urls')
+        .select('*')
+        .eq('building_id', building.id)
+        .order('created_at', { ascending: false })
+
+      if (error) {
+        console.error('Error fetching document URLs:', error)
+        return
+      }
+
+      setDocumentUrls(data || [])
+    } catch (err) {
+      console.error('Unexpected error fetching URLs:', err)
+    }
+  }
+
+  // ⭐ NEW: Handle URL save
+  const handleSaveUrl = async () => {
+    if (!urlTitle.trim() || !urlLink.trim()) {
+      toast.error('Title and URL are required')
+      return
+    }
+
+    // Basic URL validation
+    try {
+      new URL(urlLink)
+    } catch {
+      toast.error('Please enter a valid URL')
+      return
+    }
+
+    setSavingUrl(true)
+
+    try {
+      const { error } = await supabase
+        .from('building_document_urls')
+        .insert({
+          building_id: building.id,
+          document_type: urlType,
+          url: urlLink.trim(),
+          title: urlTitle.trim(),
+          description: urlDescription.trim() || null,
+        })
+
+      if (error) {
+        console.error('Error saving URL:', error)
+        toast.error('Failed to save URL')
+        return
+      }
+
+      toast.success('Reference URL added successfully!')
+      
+      // Reset form
+      setUrlTitle("")
+      setUrlLink("")
+      setUrlType("legislation")
+      setUrlDescription("")
+      setShowUrlForm(false)
+
+      await fetchDocumentUrls()
+      await onSuccess()
+    } catch (err) {
+      console.error('Unexpected error:', err)
+      toast.error('Failed to save URL')
+    } finally {
+      setSavingUrl(false)
+    }
+  }
+
+  // ⭐ NEW: Handle URL delete
+  const handleDeleteUrl = async (urlId: number) => {
+    if (!confirm('Are you sure you want to delete this reference URL?')) return
+
+    try {
+      const { error } = await supabase
+        .from('building_document_urls')
+        .delete()
+        .eq('id', urlId)
+
+      if (error) {
+        toast.error('Failed to delete URL')
+        return
+      }
+
+      toast.success('Reference URL deleted')
+      await fetchDocumentUrls()
+      await onSuccess()
+    } catch (err) {
+      console.error('Delete error:', err)
+      toast.error('Failed to delete URL')
     }
   }
 
@@ -678,11 +798,14 @@ function DocumentsTab({ building, onSuccess }: DocumentsTabProps) {
   const getDocumentTypeColor = (type: string) => {
     switch (type) {
       case 'statute':
+      case 'legislation':
         return 'bg-blue-100 text-blue-800 border-blue-200'
       case 'rules':
         return 'bg-green-100 text-green-800 border-green-200'
       case 'bylaws':
         return 'bg-purple-100 text-purple-800 border-purple-200'
+      case 'policy':
+        return 'bg-orange-100 text-orange-800 border-orange-200'
       default:
         return 'bg-gray-100 text-gray-800 border-gray-200'
     }
@@ -759,6 +882,173 @@ function DocumentsTab({ building, onSuccess }: DocumentsTabProps) {
         </div>
       </Card>
 
+      {/* ⭐ NEW: Reference URLs Section */}
+      <Card className="p-6 bg-gradient-to-br from-blue-50 to-purple-50 border-blue-200">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-semibold text-lg flex items-center gap-2">
+            <LinkIcon className="h-5 w-5 text-blue-600" />
+            Reference URLs
+          </h3>
+          <Button
+            onClick={() => setShowUrlForm(!showUrlForm)}
+            size="sm"
+            variant="outline"
+            className="border-blue-300 hover:bg-blue-50"
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            Add URL
+          </Button>
+        </div>
+
+        {showUrlForm && (
+          <div className="mb-4 p-4 bg-white rounded-lg border-2 border-blue-200 space-y-3">
+            <div>
+              <Label htmlFor="urlTitle" className="text-sm font-medium">
+                Title *
+              </Label>
+              <Input
+                id="urlTitle"
+                value={urlTitle}
+                onChange={(e) => setUrlTitle(e.target.value)}
+                placeholder="e.g., Strata Property Act"
+                className="mt-1"
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="urlLink" className="text-sm font-medium">
+                URL *
+              </Label>
+              <Input
+                id="urlLink"
+                value={urlLink}
+                onChange={(e) => setUrlLink(e.target.value)}
+                placeholder="https://example.com/document"
+                className="mt-1"
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="urlType" className="text-sm font-medium">
+                Type *
+              </Label>
+              <Select value={urlType} onValueChange={setUrlType}>
+                <SelectTrigger id="urlType" className="mt-1">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="legislation">Legislation</SelectItem>
+                  <SelectItem value="policy">Policy</SelectItem>
+                  <SelectItem value="reference">Reference</SelectItem>
+                  <SelectItem value="other">Other</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label htmlFor="urlDescription" className="text-sm font-medium">
+                Description (Optional)
+              </Label>
+              <Textarea
+                id="urlDescription"
+                value={urlDescription}
+                onChange={(e) => setUrlDescription(e.target.value)}
+                placeholder="Brief description of this reference..."
+                className="mt-1 min-h-[60px]"
+              />
+            </div>
+
+            <div className="flex gap-2">
+              <Button
+                onClick={handleSaveUrl}
+                disabled={savingUrl}
+                size="sm"
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                {savingUrl ? 'Saving...' : 'Save URL'}
+              </Button>
+              <Button
+                onClick={() => {
+                  setShowUrlForm(false)
+                  setUrlTitle("")
+                  setUrlLink("")
+                  setUrlType("legislation")
+                  setUrlDescription("")
+                }}
+                variant="outline"
+                size="sm"
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* URLs List */}
+        <div className="space-y-2">
+          {documentUrls.length > 0 ? (
+            documentUrls.map((docUrl) => (
+              <Card key={docUrl.id} className="p-3 bg-white hover:shadow-md transition-shadow">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-3 flex-1">
+                    <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-blue-100 flex-shrink-0">
+                      <LinkIcon className="h-4 w-4 text-blue-600" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Badge 
+                          variant="outline" 
+                          className={`text-xs capitalize ${getDocumentTypeColor(docUrl.document_type)}`}
+                        >
+                          {docUrl.document_type}
+                        </Badge>
+                        <p className="font-medium text-sm">{docUrl.title}</p>
+                      </div>
+                      <a 
+                        href={docUrl.url} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="text-xs text-blue-600 hover:underline truncate block"
+                      >
+                        {docUrl.url}
+                      </a>
+                      {docUrl.description && (
+                        <p className="text-xs text-muted-foreground mt-1">{docUrl.description}</p>
+                      )}
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Added {new Date(docUrl.created_at).toLocaleDateString()}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex gap-1 flex-shrink-0">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      asChild
+                    >
+                      <a href={docUrl.url} target="_blank" rel="noopener noreferrer">
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => handleDeleteUrl(docUrl.id)}
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
+                </div>
+              </Card>
+            ))
+          ) : (
+            <p className="text-sm text-center text-muted-foreground py-4">
+              No reference URLs yet. Add external legislation, policies, or reference documents.
+            </p>
+          )}
+        </div>
+      </Card>
+
       {/* Documents List */}
       <div>
         <h3 className="font-semibold text-lg mb-4 flex items-center gap-2">
@@ -768,7 +1058,7 @@ function DocumentsTab({ building, onSuccess }: DocumentsTabProps) {
 
         {loading ? (
           <div className="text-center py-12">
-            <Loader2 className="h-8 w-8 border-4 text-primary animate-spin mx-auto mb-4" />
+            <Loader2 className="h-8 w-8 text-primary animate-spin mx-auto mb-4" />
             <p className="text-sm text-muted-foreground">Loading documents...</p>
           </div>
         ) : documents.length === 0 ? (
@@ -777,7 +1067,7 @@ function DocumentsTab({ building, onSuccess }: DocumentsTabProps) {
             <h4 className="font-medium text-foreground mb-2">No Documents Yet</h4>
             <p className="text-sm text-muted-foreground max-w-md mx-auto">
               Upload building statutes, rules, regulations, or bylaws using the form above. 
-              These documents will be used for AI-powered meeting descriptions.
+              These documents will be used for AI-powered meeting analysis.
             </p>
           </Card>
         ) : (
