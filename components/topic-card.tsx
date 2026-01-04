@@ -137,17 +137,16 @@ export default function TopicCard({
   
     setUploadingFile(true)
     try {
-      // ⭐ Get authenticated user
-      const { data: { user }, error: authError } = await supabase.auth.getUser()
+      // ⭐ Use your custom getCurrentUser() instead of Supabase auth
+      const currentUser = getCurrentUser()
       
-      if (authError || !user) {
-        console.error('Authentication error:', authError)
+      if (!currentUser) {
         toast.error('You must be logged in to upload files')
         setUploadingFile(false)
         return
       }
   
-      // Upload to Supabase Storage
+      // Upload to Supabase Storage (no auth needed for storage, only RLS)
       const fileName = `${topic.id}/${Date.now()}_${file.name}`
       const filePath = fileName
   
@@ -157,7 +156,7 @@ export default function TopicCard({
   
       if (uploadError) {
         console.error('Error uploading file:', uploadError)
-        toast.error('Failed to upload file')
+        toast.error('Failed to upload file: ' + uploadError.message)
         return
       }
   
@@ -175,12 +174,12 @@ export default function TopicCard({
           file_url: publicUrl,
           file_size: file.size,
           mime_type: file.type,
-          uploaded_by: user.id  // ⭐ Use authenticated user ID
+          uploaded_by: currentUser.id  // ⭐ Use custom auth user ID
         })
   
       if (dbError) {
         console.error('Error saving attachment:', dbError)
-        toast.error('Failed to save attachment')
+        toast.error('Failed to save attachment: ' + dbError.message)
         return
       }
   
@@ -198,6 +197,7 @@ export default function TopicCard({
       event.target.value = ''
     }
   }
+  
   
 
   // ⭐ NEW: Handle delete attachment
