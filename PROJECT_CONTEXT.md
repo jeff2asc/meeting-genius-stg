@@ -81,6 +81,7 @@ Multi-tenant company management table.
   smtp_from_name: string | null               // Display name for sender
   smtp_from_email: string | null              // From email address
   smtp_use_tls: boolean | null               // Use TLS encryption
+  logo_url: string | null                      // URL to company logo in Supabase Storage
 }
 ```
 
@@ -96,6 +97,15 @@ Multi-tenant company management table.
 - Used by the email API (`/api/send-email`) to send notifications and task assignments
 - Managed in CompanyDetailsModal → Overview tab
 - Settings include host, port, authentication, and TLS configuration
+
+**Company Logo**:
+- Companies can upload a logo that appears in the dashboard header for all company users
+- Logo is stored in Supabase Storage bucket: `company-logos`
+- File path format: `{company_id}/logo.{ext}`
+- Supported formats: PNG, JPG, SVG
+- Maximum file size: 2MB
+- Managed in CompanyDetailsModal → Logo tab
+- Master users see default Meeting Genius logo; company users see their company logo
 
 ---
 
@@ -497,6 +507,7 @@ Stores file attachments for tasks.
 **Usage**:
 - Attachments are uploaded via TaskDetailsModal
 - Attachments are extracted using `documentExtractor.ts` utility
+- Extracted text from attachments is included in AI analysis for tasks
 - Extracted text is sent to AI analysis webhook for task analysis
 
 ---
@@ -521,6 +532,64 @@ Stores AI analysis results specifically for tasks.
 - Analysis includes task description, building documents, and task attachments
 - Results are stored and displayed in the task details modal
 - Webhook URL: `https://rulesengine.asccreative.com/webhook/ac3f411b-401a-4a97-ae07-f241dbc2d1ed`
+
+---
+
+### 17. **topic_attachments**
+Stores file attachments for topics.
+
+```typescript
+{
+  id: number (primary key, auto-increment)
+  topic_id: number (foreign key → topics.id)
+  filename: string
+  file_url: string (URL to file in Supabase storage)
+  file_size: number (bytes)
+  mime_type: string (e.g., "application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "text/plain", "image/*")
+  uploaded_by: number | null (foreign key → users.id)
+  created_at: timestamp
+  updated_at: timestamp
+}
+```
+
+**Purpose**: Stores file attachments uploaded to topics. Attachments can be PDF, DOCX, TXT, or image files. Text from attachments is extracted and used for AI analysis.
+
+**Storage**:
+- Files are stored in Supabase Storage bucket: `topic-attachments`
+- File path format: `{topic_id}/{timestamp}_{filename}`
+- Maximum file size: 10MB
+- Supports: PDF, DOC, DOCX, TXT, and image files
+
+**Usage**:
+- Attachments are uploaded via TopicCard (when expanded)
+- Attachments are extracted using `fetchAndExtractTopicAttachments()` from `documentExtractor.ts`
+- Extracted text from attachments is included in AI analysis for topics
+- Topic AI analysis now includes both building documents AND topic attachments
+
+---
+
+### 18. **building_document_urls**
+Stores reference URLs (links) associated with buildings.
+
+```typescript
+{
+  id: number (primary key, auto-increment)
+  building_id: number (foreign key → buildings.id)
+  document_type: string (e.g., "legislation", "policy", "reference", "other")
+  url: string (the actual URL/link)
+  title: string (display name for the URL)
+  description: string | null (optional description)
+  created_at: timestamp
+}
+```
+
+**Purpose**: Stores reference URLs (links) for buildings, separate from uploaded document files. Useful for linking to external legislation, policies, or reference materials.
+
+**Usage**:
+- URLs are added via BuildingDetailsModal → Documents tab → Reference URLs section
+- URLs are displayed alongside uploaded documents
+- Different document types: legislation, policy, reference, other
+- URLs can be opened in new tab for reference
 
 ---
 
@@ -636,6 +705,10 @@ All permission checks are centralized in `lib/permissions.ts`:
     - Documents stored in Supabase Storage
     - Documents categorized by type (rules, bylaws, policies, etc.)
     - Documents used for AI analysis of meeting topics
+  - **Reference URLs**: Add, view, and delete reference URLs for buildings
+    - Separate from uploaded documents
+    - Types: legislation, policy, reference, other
+    - Displayed alongside uploaded documents in Documents tab
 - **Company Management**:
   - Create companies with default configurations
   - Edit company details and defaults (meeting sections, types, decision results)
@@ -645,6 +718,11 @@ All permission checks are centralized in `lib/permissions.ts`:
   - Manage users within company (create, filter, delete)
   - Manage corporate administrators
   - Inline creation of property managers, users, and administrators
+  - **Company Logo Management**: Upload, view, and delete company logos
+    - Logo appears in dashboard header for all company users
+    - Stored in Supabase Storage (`company-logos` bucket)
+    - Supports PNG, JPG, SVG (max 2MB)
+    - Managed in CompanyDetailsModal → Logo tab
 - **Document Management**: Upload/view building documents
 - **Minutes Templates Management**: Customize PDF templates per building
 
@@ -687,19 +765,26 @@ All permission checks are centralized in `lib/permissions.ts`:
   - Files stored in Supabase Storage (`building-documents` bucket)
   - Maximum file size: 10MB
   - Documents categorized by type (rules, bylaws, policies, etc.)
+- **Reference URLs**:
+  - Add reference URLs (links) to buildings via BuildingDetailsModal → Documents tab
+  - Separate from uploaded document files
+  - Types: legislation, policy, reference, other
+  - Displayed alongside uploaded documents
+  - URLs can be opened in new tab for reference
 - **Document Text Extraction**:
   - `lib/documentExtractor.ts` utility extracts text from documents
   - Generic `extractTextFromFile()` function handles multiple file types
   - Supports PDF (react-pdftotext), DOCX (mammoth), plain text, and images
   - Image files return placeholder text (OCR can be added later)
   - Extracted text used for AI analysis context
-  - Functions:
+    - Functions:
     - `fetchAndExtractBuildingDocuments(buildingId)`: Extracts text from building documents
     - `fetchAndExtractTaskAttachments(taskId)`: Extracts text from task attachments
+    - `fetchAndExtractTopicAttachments(topicId)`: Extracts text from topic attachments
 - **AI Analysis Integration**:
   - **Topic AI Analysis**:
     - Available in TopicCard "Analyze with AI" button
-    - Sends topic description and extracted building documents to n8n webhook
+    - Sends topic description, extracted building documents, AND topic attachments to n8n webhook
     - Webhook URL: `https://rulesengine.asccreative.com/webhook/843afc5f-abe0-4bb4-bb9f-369d2657c4d0`
     - Analysis results stored in `ai_analyses` table
     - Results displayed in topic card with expandable view
@@ -709,22 +794,31 @@ All permission checks are centralized in `lib/permissions.ts`:
     - Webhook URL: `https://rulesengine.asccreative.com/webhook/ac3f411b-401a-4a97-ae07-f241dbc2d1ed`
     - Analysis results stored in `task_analyses` table
     - Results displayed in task details modal
-- **Task Attachments**:
+  - **Task Attachments**:
   - Users can upload files to tasks via TaskDetailsModal
   - Supports PDF, DOC, DOCX, TXT, and image files (max 10MB)
   - Files stored in Supabase Storage (`task-attachments` bucket)
   - Attachments can be viewed, downloaded, and deleted
   - Attachment text is extracted and included in task AI analysis
+- **Topic Attachments**:
+  - Users can upload files to topics via TopicCard (when expanded)
+  - Supports PDF, DOC, DOCX, TXT, and image files (max 10MB)
+  - Files stored in Supabase Storage (`topic-attachments` bucket)
+  - Attachments can be viewed, downloaded, and deleted
+  - Attachment text is extracted and included in topic AI analysis
+  - Topic attachments displayed in expandable section within TopicCard
 
 - **Workflows**:
   - **Topic AI Analysis**:
-    1. User uploads documents to building via Documents tab
+    1. User uploads documents to building via Documents tab (optional)
     2. User adds description to topic
-    3. User clicks "Analyze with AI" button in TopicCard
-    4. System extracts text from all building documents
-    5. System sends topic + documents to n8n webhook
-    6. AI processes and returns analysis
-    7. Analysis stored in `ai_analyses` table and displayed in topic card
+    3. User optionally uploads attachments to topic
+    4. User clicks "Analyze with AI" button in TopicCard
+    5. System extracts text from all building documents (if any)
+    6. System extracts text from all topic attachments (if any)
+    7. System sends topic + building documents + topic attachments to n8n webhook
+    8. AI processes and returns analysis
+    9. Analysis stored in `ai_analyses` table and displayed in topic card
   - **Task AI Analysis**:
     1. User uploads documents to building via Documents tab
     2. User creates task and optionally uploads attachments
@@ -767,6 +861,7 @@ app/page.tsx (Root)
    - Search functionality
    - Meeting status display
    - Edit/delete meeting actions
+   - **Company logo display**: Shows company logo in header (or default Meeting Genius logo for master users)
 
 3. **`components/meeting-view.tsx`**
    - Main meeting interface
@@ -813,6 +908,8 @@ app/page.tsx (Root)
     - Documents stored in Supabase Storage
     - Documents categorized by type
     - Documents used for AI analysis context
+    - **Reference URLs**: Add, view, and delete reference URLs (legislation, policy, reference, other)
+    - URLs displayed alongside uploaded documents
 - `CreateCompanyModal.tsx`: Create companies
 - `EditCompanyModal.tsx`: Edit company details and defaults (meeting sections, types, decision results)
 - `CompanyDetailsModal.tsx`: **Enhanced company management modal** with tabs:
@@ -822,6 +919,10 @@ app/page.tsx (Root)
   - **Buildings Tab**: View all buildings, create buildings inline, create property managers inline, delete buildings
   - **Users Tab**: View all company users with filtering by type, create users inline, delete users
   - **Administrators Tab**: View corporate administrators, create administrators inline, delete administrators
+  - **Logo Tab**: Upload, view, and delete company logo
+    - Logo appears in dashboard header for company users
+    - Stored in Supabase Storage (`company-logos` bucket)
+    - Supports PNG, JPG, SVG (max 2MB)
 - `UsersTab.tsx`: User management interface with filtering
 - `BuildingsTab.tsx`: Building management interface with user assignment
 - `CompaniesTab.tsx`: Company management interface with statistics
@@ -832,6 +933,7 @@ app/page.tsx (Root)
 - `UserCard.tsx`: Card component for displaying user information
 - `BuildingCard.tsx`: Card component for displaying building information
 - `CompanyCard.tsx`: Card component for displaying company information
+- `LogoTab.tsx`: Company logo management component (upload, delete, preview)
 
 #### **UI Components** (`components/ui/`)
 
@@ -842,7 +944,7 @@ All shadcn/ui style components:
 #### **Card Components**
 
 - `components/meeting-card.tsx`: Meeting display card
-- `components/topic-card.tsx`: Topic display with actions, **AI analysis integration**, **topic refresh callback registration**
+- `components/topic-card.tsx`: Topic display with actions, **AI analysis integration**, **topic refresh callback registration**, **topic attachment upload/download/delete**
 - `components/task-card.tsx`: Task display card, **AI analysis integration**
 - `components/TaskDetailsModal.tsx`: **Enhanced task management** with attachments, AI analysis, and notes
 
@@ -1132,7 +1234,8 @@ meeting-genius/
 │   │   ├── CompanyCard.tsx
 │   │   ├── DocumentManagementModal.tsx
 │   │   ├── ViewDocumentModal.tsx
-│   │   └── AssignUsersToCompanyModal.tsx
+│   │   ├── AssignUsersToCompanyModal.tsx
+│   │   └── LogoTab.tsx                 # Company logo management
 │   │
 │   ├── ui/                      # shadcn/ui components
 │   │   ├── button.tsx
@@ -1446,7 +1549,7 @@ if (!canCreateMeeting(currentUser?.user_type)) {
 ## Summary
 
 This is a comprehensive meeting management system with:
-- **16 main database tables** (companies, users, buildings, meetings, sections, topics, notes, tasks, decisions, task_notes, minutes_templates, user_buildings, building_documents, ai_analyses, task_attachments, task_analyses)
+- **18 main database tables** (companies, users, buildings, meetings, sections, topics, notes, tasks, decisions, task_notes, minutes_templates, user_buildings, building_documents, ai_analyses, task_attachments, task_analyses, topic_attachments, building_document_urls)
 - **6 user types** with granular permissions
 - **Multi-tenant architecture** (company → building → meeting hierarchy)
 - **Full CRUD operations** for all entities
@@ -1457,27 +1560,34 @@ This is a comprehensive meeting management system with:
 - **User-building assignment** via junction table
 - **Property manager assignment** for users
 - **Enhanced company and building management** modals with tabbed interfaces
+- **Topic and task attachments** for file management
+- **Reference URLs** for building documents
+- **Company logo management** with dashboard display
 - **Modern React/Next.js** architecture with TypeScript
 
 The system is designed for property management companies to manage their meeting workflows from agenda creation through minutes finalization and PDF generation.
 
 ---
 
-**Last Updated**: January 2025 (Updated with task attachments, task AI analysis, topic refresh callbacks, and enhanced document extraction)
+**Last Updated**: January 2025 (Updated with topic attachments, building document URLs, company logos, and enhanced AI analysis)
 **Version**: Current production codebase
 
 **Recent Updates**:
-- Added `task_attachments` table for storing file attachments on tasks
-- Added `task_analyses` table for storing task-specific AI analysis results
-- Implemented task attachment upload/download/delete in TaskDetailsModal
-- Created `fetchAndExtractTaskAttachments()` function for extracting text from task attachments
-- Enhanced `documentExtractor.ts` with generic `extractTextFromFile()` function
-- Task AI analysis now includes both building documents and task attachments
-- Separate n8n webhook URLs for topics vs tasks:
-  - Topics: `https://rulesengine.asccreative.com/webhook/843afc5f-abe0-4bb4-bb9f-369d2657c4d0`
-  - Tasks: `https://rulesengine.asccreative.com/webhook/ac3f411b-401a-4a97-ae07-f241dbc2d1ed`
-- Implemented topic refresh callback system for real-time history updates
-- Added auto-redirect logic for attendee and vendor user types
-- Task attachments stored in Supabase Storage (`task-attachments` bucket)
-- Enhanced TaskDetailsModal with full attachment management and AI analysis
+- Added `topic_attachments` table for storing file attachments on topics
+- Added `building_document_urls` table for storing reference URLs (links) for buildings
+- Added `logo_url` field to `companies` table for company logo management
+- Implemented topic attachment upload/download/delete in TopicCard
+- Created `fetchAndExtractTopicAttachments()` function for extracting text from topic attachments
+- Topic AI analysis now includes building documents AND topic attachments
+- Added Reference URLs feature in BuildingDetailsModal → Documents tab
+  - Add, view, and delete reference URLs (legislation, policy, reference, other)
+  - URLs displayed alongside uploaded documents
+- Added Company Logo management in CompanyDetailsModal → Logo tab
+  - Upload, view, and delete company logos
+  - Logo appears in dashboard header for company users
+  - Stored in Supabase Storage (`company-logos` bucket)
+  - Supports PNG, JPG, SVG (max 2MB)
+- Enhanced dashboard to display company logo in header
+- Topic attachments stored in Supabase Storage (`topic-attachments` bucket)
+- Enhanced TopicCard with full attachment management section
 
