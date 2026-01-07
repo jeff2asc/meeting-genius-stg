@@ -613,7 +613,7 @@ export default function MeetingView({
               onClick={() => setShowAttendeesModal(true)}
               variant="outline"
             >
-              View Attendee
+              View Attendeezz
             </Button>
           </div>
           <p className="text-sm text-muted-foreground">{meeting.building}</p>
