@@ -1,10 +1,12 @@
 "use client"
 
+
 import { useState, useEffect } from "react"
 import { X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { supabase, Company } from "@/lib/supabase"
+
 
 interface CreateUserModalProps {
   isOpen: boolean
@@ -16,6 +18,7 @@ interface CreateUserModalProps {
   companies: Company[]
   userId?: number | null  // ADD THIS
 }
+
 
 export default function CreateUserModal({
   isOpen,
@@ -31,7 +34,7 @@ export default function CreateUserModal({
     name: "",
     email: "",
     password: "",
-    userType: "user" as "master" | "property_manager" | "user" | "vendor" | "attendee" | "corporate_administrator",
+    userType: "user" as "master" | "property_manager" | "user" | "vendor" | "attendee" | "corporate_administrator" | "owner",
     assignedPmId: 0,
     companyId: 0,
   })
@@ -39,9 +42,11 @@ export default function CreateUserModal({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+
   const isMaster = currentUser?.user_type === 'master'
   const isCorporateAdmin = currentUser?.user_type === 'corporate_administrator'
   const isEditMode = !!userId
+
 
   // Fetch user data when editing
   useEffect(() => {
@@ -52,6 +57,7 @@ export default function CreateUserModal({
     }
   }, [userId, isOpen])
 
+
   const fetchUserData = async () => {
     try {
       const { data: userData, error: userError } = await supabase
@@ -60,7 +66,9 @@ export default function CreateUserModal({
         .eq('id', userId)
         .single()
 
+
       if (userError) throw userError
+
 
       if (userData) {
         setUserFormData({
@@ -72,11 +80,13 @@ export default function CreateUserModal({
           companyId: userData.company_id || 0,
         })
 
+
         // Fetch user's buildings
         const { data: userBuildings } = await supabase
           .from('user_buildings')
           .select('building_id')
           .eq('user_id', userId)
+
 
         if (userBuildings) {
           setSelectedUserBuildings(userBuildings.map(ub => ub.building_id))
@@ -87,6 +97,7 @@ export default function CreateUserModal({
       setError('Failed to load user data')
     }
   }
+
 
   const resetForm = () => {
     setUserFormData({
@@ -101,6 +112,7 @@ export default function CreateUserModal({
     setError(null)
   }
 
+
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target
     
@@ -111,6 +123,7 @@ export default function CreateUserModal({
     }
   }
 
+
   const toggleUserBuilding = (buildingId: number) => {
     setSelectedUserBuildings(prev => 
       prev.includes(buildingId)
@@ -119,20 +132,24 @@ export default function CreateUserModal({
     )
   }
 
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
+
 
     if (!userFormData.name.trim() || !userFormData.email.trim()) {
       setError("Name and email are required")
       return
     }
 
+
     // Only require password for new users
     if (!isEditMode && !userFormData.password.trim()) {
       setError("Password is required for new users")
       return
     }
+
 
     // Validation for Master creating corporate_administrator or property_manager
     if (isMaster && !isEditMode) {
@@ -143,12 +160,13 @@ export default function CreateUserModal({
         }
       }
 
+
       if (userFormData.userType === 'property_manager') {
         if (selectedUserBuildings.length === 0) {
           setError("Please select at least one building for the Property Manager")
           return
         }
-      } else if (userFormData.userType === 'user') {
+      } else if (userFormData.userType === 'user' || userFormData.userType === 'owner') {
         if (!userFormData.assignedPmId || userFormData.assignedPmId === 0) {
           setError("Please select a Property Manager for this user")
           return
@@ -156,13 +174,16 @@ export default function CreateUserModal({
       }
     }
 
+
     if (isCorporateAdmin && !isEditMode) {
       if (userFormData.userType === 'property_manager' && selectedUserBuildings.length === 0) {
         console.log('⚠️ Creating Property Manager without buildings - they can be assigned later via Admin Panel')
       }
     }
 
+
     setSaving(true)
+
 
     try {
       if (isEditMode) {
@@ -175,15 +196,18 @@ export default function CreateUserModal({
           assigned_pm_id: userFormData.assignedPmId || null,
         }
 
+
         // Only update password if provided
         if (userFormData.password.trim()) {
           updateData.password_hash = '$2a$10$rXqvFZnPzAMcLzCP2L4dxu7L6Y3Y5KjGNQQF6xZ4Y5Y5Y5Y5Y5Y5Y5'
         }
 
+
         const { error: updateError } = await supabase
           .from('users')
           .update(updateData)
           .eq('id', userId)
+
 
         if (updateError) {
           console.error('❌ Error updating user:', updateError)
@@ -192,7 +216,9 @@ export default function CreateUserModal({
           return
         }
 
+
         console.log('✅ User updated successfully')
+
 
         // Update building assignments
         // First, delete existing assignments
@@ -201,6 +227,7 @@ export default function CreateUserModal({
           .delete()
           .eq('user_id', userId)
 
+
         // Then add new assignments
         if (selectedUserBuildings.length > 0) {
           const buildingAssignments = selectedUserBuildings.map(buildingId => ({
@@ -208,14 +235,17 @@ export default function CreateUserModal({
             building_id: buildingId
           }))
 
+
           const { error: buildingsError } = await supabase
             .from('user_buildings')
             .insert(buildingAssignments)
+
 
           if (buildingsError) {
             console.error('Error updating buildings:', buildingsError)
           }
         }
+
 
       } else {
         // CREATE new user (existing logic)
@@ -226,22 +256,23 @@ export default function CreateUserModal({
             companyIdToAssign = userFormData.companyId
             console.log('🏢 Master assigning company_id:', companyIdToAssign, 'to', userFormData.userType)
           }
-          else if (userFormData.userType === 'user' && userFormData.assignedPmId) {
+          else if ((userFormData.userType === 'user' || userFormData.userType === 'owner') && userFormData.assignedPmId) {
             const selectedPM = propertyManagers.find(pm => pm.id === userFormData.assignedPmId)
             companyIdToAssign = selectedPM?.company_id || null
-            console.log('🏢 Master creating user - inheriting company_id:', companyIdToAssign, 'from PM:', selectedPM?.name)
+            console.log('🏢 Master creating user/owner - inheriting company_id:', companyIdToAssign, 'from PM:', selectedPM?.name)
           }
         } else if (isCorporateAdmin) {
-          if (userFormData.userType === 'property_manager' || userFormData.userType === 'user') {
+          if (userFormData.userType === 'property_manager' || userFormData.userType === 'user' || userFormData.userType === 'owner') {
             companyIdToAssign = currentUser.company_id
             console.log('🏢 Corporate Admin assigning their company_id:', companyIdToAssign, 'to', userFormData.userType)
           }
         } else if (currentUser?.user_type === 'property_manager') {
-          if (userFormData.userType === 'user') {
+          if (userFormData.userType === 'user' || userFormData.userType === 'owner') {
             companyIdToAssign = currentUser.company_id
-            console.log('🏢 Property Manager assigning their company_id:', companyIdToAssign, 'to user')
+            console.log('🏢 Property Manager assigning their company_id:', companyIdToAssign, 'to user/owner')
           }
         }
+
 
         const { data: newUser, error: userError } = await supabase
           .from('users')
@@ -249,14 +280,15 @@ export default function CreateUserModal({
             name: userFormData.name.trim(),
             email: userFormData.email.toLowerCase().trim(),
             password_hash: '$2a$10$rXqvFZnPzAMcLzCP2L4dxu7L6Y3Y5KjGNQQF6xZ4Y5Y5Y5Y5Y5Y5Y5',
-            user_type: isMaster ? userFormData.userType : (isCorporateAdmin && userFormData.userType === 'property_manager' ? 'property_manager' : 'user'),
+            user_type: isMaster ? userFormData.userType : (isCorporateAdmin && userFormData.userType === 'property_manager' ? 'property_manager' : userFormData.userType),
             company_id: companyIdToAssign,
-            assigned_pm_id: isMaster && userFormData.userType === 'user' 
+            assigned_pm_id: isMaster && (userFormData.userType === 'user' || userFormData.userType === 'owner')
               ? userFormData.assignedPmId 
               : (currentUser?.user_type === 'property_manager' ? currentUser.id : null)
           })
           .select()
           .single()
+
 
         if (userError) {
           console.error('❌ Error creating user:', userError)
@@ -265,7 +297,9 @@ export default function CreateUserModal({
           return
         }
 
+
         console.log('✅ User created successfully:', newUser)
+
 
         if (selectedUserBuildings.length > 0) {
           const buildingAssignments = selectedUserBuildings.map(buildingId => ({
@@ -273,9 +307,11 @@ export default function CreateUserModal({
             building_id: buildingId
           }))
 
+
           const { error: buildingsError } = await supabase
             .from('user_buildings')
             .insert(buildingAssignments)
+
 
           if (buildingsError) {
             console.error('Error assigning buildings:', buildingsError)
@@ -284,15 +320,18 @@ export default function CreateUserModal({
             return
           }
 
+
           console.log('✅ Buildings assigned successfully')
         } else if (userFormData.userType === 'property_manager') {
           console.log('ℹ️ Property Manager created without buildings - assign later via Admin Panel')
         }
       }
 
+
       resetForm()
       onSuccess()
       onClose()
+
 
     } catch (err) {
       console.error('Unexpected error:', err)
@@ -302,7 +341,9 @@ export default function CreateUserModal({
     }
   }
 
+
   if (!isOpen) return null
+
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 animate-in fade-in overflow-y-auto p-4">
@@ -327,12 +368,14 @@ export default function CreateUserModal({
           </button>
         </div>
 
+
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded text-sm">
               {error}
             </div>
           )}
+
 
           {(isMaster || isCorporateAdmin) && (
             <div>
@@ -347,6 +390,7 @@ export default function CreateUserModal({
                 className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
               >
                 <option value="user">User</option>
+                <option value="owner">Owner</option>
                 <option value="property_manager">Property Manager</option>
                 {isMaster && (
                   <>
@@ -358,6 +402,7 @@ export default function CreateUserModal({
               </select>
             </div>
           )}
+
 
           {!isMaster && !isCorporateAdmin && (
             <div>
@@ -375,6 +420,7 @@ export default function CreateUserModal({
               </p>
             </div>
           )}
+
 
           {isMaster && (userFormData.userType === 'corporate_administrator' || userFormData.userType === 'property_manager') && (
             <div>
@@ -402,6 +448,7 @@ export default function CreateUserModal({
             </div>
           )}
 
+
           <div>
             <label className="block text-sm font-medium text-foreground mb-2">
               Full Name *
@@ -418,6 +465,7 @@ export default function CreateUserModal({
             />
           </div>
 
+
           <div>
             <label className="block text-sm font-medium text-foreground mb-2">
               Email Address *
@@ -433,6 +481,7 @@ export default function CreateUserModal({
               className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
             />
           </div>
+
 
           <div>
             <label className="block text-sm font-medium text-foreground mb-2">
@@ -453,7 +502,8 @@ export default function CreateUserModal({
             </p>
           </div>
 
-          {isMaster && userFormData.userType === 'user' && (
+
+          {isMaster && (userFormData.userType === 'user' || userFormData.userType === 'owner') && (
             <div>
               <label className="block text-sm font-medium text-foreground mb-2">
                 Assign to Property Manager *
@@ -479,7 +529,8 @@ export default function CreateUserModal({
             </div>
           )}
 
-          {(userFormData.userType === 'property_manager' || (!isMaster && !isCorporateAdmin)) && (
+
+          {(userFormData.userType === 'property_manager' || userFormData.userType === 'owner' || (!isMaster && !isCorporateAdmin)) && (
             <div>
               <label className="block text-sm font-medium text-foreground mb-2">
                 Assign Buildings {isMaster && userFormData.userType === 'property_manager' && !isEditMode && '*'}
@@ -519,6 +570,7 @@ export default function CreateUserModal({
               </p>
             </div>
           )}
+
 
           <div className="flex gap-3 pt-4">
             <Button 

@@ -6,19 +6,23 @@ import { Upload, Trash2, Image as ImageIcon } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
 
+
 interface LogoTabProps {
   companyId: number
   currentLogoUrl: string | null
   onLogoUpdate: () => void
 }
 
+
 export default function LogoTab({ companyId, currentLogoUrl, onLogoUpdate }: LogoTabProps) {
   const [uploading, setUploading] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
+
   const handleUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
+
 
     // Validate file type
     if (!file.type.startsWith('image/')) {
@@ -26,11 +30,13 @@ export default function LogoTab({ companyId, currentLogoUrl, onLogoUpdate }: Log
       return
     }
 
+
     // Validate file size (2MB)
     if (file.size > 2 * 1024 * 1024) {
       toast.error('File size must be less than 2MB')
       return
     }
+
 
     setUploading(true)
     try {
@@ -42,23 +48,28 @@ export default function LogoTab({ companyId, currentLogoUrl, onLogoUpdate }: Log
         }
       }
 
+
       // Upload new logo
       const fileExt = file.name.split('.').pop()
       const fileName = `${companyId}/logo.${fileExt}`
 
+
       const { error: uploadError } = await supabase.storage
         .from('company-logos')
         .upload(fileName, file, { upsert: true })
+
 
       if (uploadError) {
         console.error('Upload error:', uploadError)
         throw uploadError
       }
 
+
       // Get public URL
       const { data: { publicUrl } } = supabase.storage
         .from('company-logos')
         .getPublicUrl(fileName)
+
 
       // Update database
       const { error: dbError } = await supabase
@@ -66,12 +77,16 @@ export default function LogoTab({ companyId, currentLogoUrl, onLogoUpdate }: Log
         .update({ logo_url: publicUrl })
         .eq('id', companyId)
 
+
       if (dbError) {
         console.error('Database error:', dbError)
         throw dbError
       }
 
+
       toast.success('Logo uploaded successfully')
+      // Flag that logo was updated so Dashboard can refresh
+      localStorage.setItem('company_logo_updated', '1')
       onLogoUpdate()
     } catch (err) {
       console.error('Error uploading logo:', err)
@@ -82,9 +97,11 @@ export default function LogoTab({ companyId, currentLogoUrl, onLogoUpdate }: Log
     }
   }
 
+
   const handleDelete = async () => {
     if (!currentLogoUrl) return
     if (!confirm('Delete company logo? This will remove the logo from all displays.')) return
+
 
     setDeleting(true)
     try {
@@ -100,18 +117,23 @@ export default function LogoTab({ companyId, currentLogoUrl, onLogoUpdate }: Log
         }
       }
 
+
       // Update database
       const { error: dbError } = await supabase
         .from('companies')
         .update({ logo_url: null })
         .eq('id', companyId)
 
+
       if (dbError) {
         console.error('Database error:', dbError)
         throw dbError
       }
 
+
       toast.success('Logo deleted')
+      // Flag that logo was updated so Dashboard can refresh
+      localStorage.setItem('company_logo_updated', '1')
       onLogoUpdate()
     } catch (err) {
       console.error('Error deleting logo:', err)
@@ -120,6 +142,7 @@ export default function LogoTab({ companyId, currentLogoUrl, onLogoUpdate }: Log
       setDeleting(false)
     }
   }
+
 
   return (
     <div className="space-y-6 p-6">
@@ -132,6 +155,7 @@ export default function LogoTab({ companyId, currentLogoUrl, onLogoUpdate }: Log
           Upload your company logo. This will appear in the header for all company users (Property Managers, Corporate Admins, and Users).
         </p>
       </div>
+
 
       {/* Current Logo Preview */}
       {currentLogoUrl ? (
@@ -170,6 +194,7 @@ export default function LogoTab({ companyId, currentLogoUrl, onLogoUpdate }: Log
           </p>
         </div>
       )}
+
 
       {/* Upload Section */}
       <div className="space-y-3">

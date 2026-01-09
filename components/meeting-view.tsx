@@ -1,5 +1,6 @@
 "use client"
 
+
 import { useState, useEffect } from "react"
 import GenerateAgendaButton from "./GenerateAgendaButton"
 import GenerateMinutesButton from "./GenerateMinutesButton"
@@ -21,6 +22,7 @@ import { canEditMeeting, isReadOnly } from "@/lib/permissions"
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd'
 
 
+
 interface MeetingViewProps {
   meetingId: string
   onBack: () => void
@@ -29,6 +31,7 @@ interface MeetingViewProps {
   onDecisionClick: (topicId: number) => void
   onRegisterTopicRefresh?: (topicId: number, callback: () => void) => void
 }
+
 
 
 interface Topic {
@@ -43,6 +46,7 @@ interface Topic {
 }
 
 
+
 interface Section {
   id: number
   title: string
@@ -52,11 +56,13 @@ interface Section {
 }
 
 
+
 const STATUS_FLOW = [
   "working_agenda",
   "working_minutes",
   "minutes"
 ] as const
+
 
 
 export default function MeetingView({
@@ -81,10 +87,12 @@ export default function MeetingView({
   const [selectedSection, setSelectedSection] = useState<{ id: number; title: string } | null>(null)
 
 
+
   // Section Editing/Removal State
   const [editingSection, setEditingSection] = useState<{ id: number, title: string } | null>(null)
   const [sectionRenameValue, setSectionRenameValue] = useState("")
   const [sectionToDelete, setSectionToDelete] = useState<Section | null>(null)
+
 
 
   const currentUser = getCurrentUser()
@@ -93,8 +101,10 @@ export default function MeetingView({
   const editingLocked = !userCanEdit || (meeting?.status === "minutes")
 
 
+
   useEffect(() => { setIsMounted(true) }, [])
   useEffect(() => { if (meetingId) fetchMeetingData() }, [meetingId])
+
 
 
   const fetchMeetingData = async () => {
@@ -122,9 +132,11 @@ export default function MeetingView({
   }
 
 
+
   // NEW HELPER: Fetch open tasks from all previous meetings of same building + meeting type
   const fetchOpenTasksFromPreviousMeetings = async () => {
     if (!meeting) return []
+
 
     try {
       // Get all meetings of same building + meeting type (including current)
@@ -135,10 +147,12 @@ export default function MeetingView({
         .eq("meeting_type", meeting.meeting_type)
         .order("meeting_date", { ascending: false })
 
+
       if (meetingsError || !allMeetings) {
         console.error("Error fetching previous meetings:", meetingsError)
         return []
       }
+
 
       // Get all topic IDs from all these meetings
       const meetingIds = allMeetings.map(m => m.id)
@@ -148,12 +162,15 @@ export default function MeetingView({
         .select("id, title, meeting_id")
         .in("meeting_id", meetingIds)
 
+
       if (topicsError || !allTopics) {
         console.error("Error fetching topics:", topicsError)
         return []
       }
 
+
       const topicIds = allTopics.map(t => t.id)
+
 
       // Get all open tasks from these topics
       const { data: openTasks, error: tasksError } = await supabase
@@ -162,10 +179,12 @@ export default function MeetingView({
         .in("topic_id", topicIds)
         .in("status", ["open", "in_progress"])
 
+
       if (tasksError) {
         console.error("Error fetching open tasks:", tasksError)
         return []
       }
+
 
       return openTasks || []
     } catch (err) {
@@ -173,6 +192,7 @@ export default function MeetingView({
       return []
     }
   }
+
 
 
   const fetchSectionsAndTopics = async () => {
@@ -187,6 +207,7 @@ export default function MeetingView({
         console.error("Error fetching sections:", sectionsError)
         return
       }
+
 
       const { data: topicsData, error: topicsError } = await supabase
         .from("topics")
@@ -203,8 +224,10 @@ export default function MeetingView({
         return
       }
 
+
       // Fetch open tasks from all previous meetings
       const allOpenTasks = await fetchOpenTasksFromPreviousMeetings()
+
 
       const sectionsWithTopics: Section[] = (sectionsData || []).map((section) => ({
         id: section.id,
@@ -219,6 +242,7 @@ export default function MeetingView({
             task => task.topics?.title === topic.title
           ).length
 
+
           return {
             id: topic.id,
             title: topic.title,
@@ -232,11 +256,13 @@ export default function MeetingView({
         })
       }))
 
+
       setSections(sectionsWithTopics)
     } catch (err) {
       console.error("Unexpected error fetching sections/topics:", err)
     }
   }
+
 
 
   const handleAddTopic = (sectionId: number, sectionTitle: string) => {
@@ -247,6 +273,7 @@ export default function MeetingView({
     setSelectedSection({ id: sectionId, title: sectionTitle })
     setShowCreateTopicModal(true)
   }
+
 
 
   // Section Rename/Remove Logic
@@ -273,6 +300,7 @@ export default function MeetingView({
   const cancelDeleteSection = () => setSectionToDelete(null)
 
 
+
   const updateTopic = async (id: number, updates: Partial<Topic>) => {
     if (!userCanEdit) {
       alert("You do not have permission to edit topics.")
@@ -297,6 +325,7 @@ export default function MeetingView({
   }
 
 
+
   const deleteTopic = async (id: number) => {
     if (!userCanEdit) {
       alert("You do not have permission to delete topics.")
@@ -318,6 +347,7 @@ export default function MeetingView({
   }
 
 
+
   const toggleSection = (sectionId: number) => {
     setSections(
       sections.map((s) =>
@@ -330,6 +360,7 @@ export default function MeetingView({
       )
     )
   }
+
 
 
   const onDragEnd = async (result: any) => {
@@ -403,6 +434,7 @@ export default function MeetingView({
   }
 
 
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case "working_agenda":
@@ -416,6 +448,7 @@ export default function MeetingView({
         return "bg-gray-100 text-gray-800"
     }
   }
+
 
 
   const getStatusText = (status: string) => {
@@ -433,6 +466,7 @@ export default function MeetingView({
   }
 
 
+
   const canTransition = (from: string, direction: "forward" | "backward") => {
     const index = STATUS_FLOW.indexOf(from as any)
     if (direction === "forward") return index < STATUS_FLOW.length - 1
@@ -441,16 +475,19 @@ export default function MeetingView({
   }
 
 
+
   const nextStatus = (current: string) => {
     const index = STATUS_FLOW.indexOf(current as any)
     return index < STATUS_FLOW.length - 1 ? STATUS_FLOW[index + 1] : current
   }
 
 
+
   const prevStatus = (current: string) => {
     const index = STATUS_FLOW.indexOf(current as any)
     return index > 0 ? STATUS_FLOW[index - 1] : current
   }
+
 
 
   const updateMeetingStatus = async (targetStatus: string) => {
@@ -471,6 +508,7 @@ export default function MeetingView({
   }
 
 
+
   const handleCreateSection = () => {
     if (!userCanEdit) {
       alert("You do not have permission to create sections.")
@@ -478,6 +516,7 @@ export default function MeetingView({
     }
     setShowCreateSectionModal(true)
   }
+
 
 
   const handleStartRecording = () => {
@@ -492,6 +531,7 @@ export default function MeetingView({
   }
 
 
+
   const handleStopRecording = () => {
     setIsRecording(false)
     if (timerInterval) {
@@ -499,6 +539,7 @@ export default function MeetingView({
       setTimerInterval(null)
     }
   }
+
 
 
   const formatDate = (dateString: string) => {
@@ -519,6 +560,7 @@ export default function MeetingView({
   
 
 
+
   const formatTime = (timeString: string) => {
     if (!timeString) return null
     const [hours, minutes] = timeString.split(":")
@@ -527,6 +569,7 @@ export default function MeetingView({
     const displayHour = hour % 12 || 12
     return `${displayHour}:${minutes} ${ampm}`
   }
+
 
 
   if (loading) {
@@ -538,6 +581,7 @@ export default function MeetingView({
   }
 
 
+
   if (!meeting) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted flex items-center justify-center">
@@ -547,7 +591,9 @@ export default function MeetingView({
   }
 
 
+
   const totalTopics = sections.reduce((sum, section) => sum + section.topics.length, 0)
+
 
 
   return (
@@ -613,7 +659,7 @@ export default function MeetingView({
               onClick={() => setShowAttendeesModal(true)}
               variant="outline"
             >
-              View Attendeezz
+              View Attendees
             </Button>
           </div>
           <p className="text-sm text-muted-foreground">{meeting.building}</p>
@@ -633,6 +679,7 @@ export default function MeetingView({
             </Button>
           )}
 
+
         {/* Download Agenda Button - Shows for working_agenda and agenda statuses */}
         {(meeting.status === "working_agenda" || meeting.status === "agenda") && (
           <GenerateAgendaButton 
@@ -650,6 +697,7 @@ export default function MeetingView({
         )}
         
         {isMounted && isRecording && <Timer elapsedTime={elapsedTime} />}
+
 
         {isMounted && userCanEdit && (
           <>
@@ -717,6 +765,7 @@ export default function MeetingView({
 
 
 
+
       {/* Attendees POPUP MODAL */}
       {showAttendeesModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
@@ -746,6 +795,7 @@ export default function MeetingView({
       )}
 
 
+
       {/* MEETING SECTIONS/TOPICS WITH DRAG AND DROP */}
       <DragDropContext onDragEnd={onDragEnd}>
         <Droppable droppableId="all-sections" type="SECTION">
@@ -755,8 +805,8 @@ export default function MeetingView({
               ref={provided.innerRef}
               className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8 space-y-3"
             >
-              {sections.map((section, index) => (
-                <Draggable key={section.id} draggableId={section.id.toString()} index={index}>
+              {sections.map((section, sectionIndex) => (
+                <Draggable key={section.id} draggableId={section.id.toString()} index={sectionIndex}>
                   {(provided: any) => (
                     <div ref={provided.innerRef} {...provided.draggableProps}>
                       <Card className="border-0 bg-gradient-to-r from-primary/10 to-decision-purple/10 mb-2">
@@ -787,6 +837,7 @@ export default function MeetingView({
                               </form>
                             ) : (
                               <>
+                                <span className="text-lg font-bold text-primary/70 min-w-[2rem]">{sectionIndex + 1}.</span>
                                 <h2 className="text-lg font-bold text-foreground">{section.title}</h2>
                                 <span className="text-sm text-muted-foreground">
                                   ({section.topics.length} {section.topics.length === 1 ? 'topic' : 'topics'})
@@ -839,11 +890,11 @@ export default function MeetingView({
                                 className="space-y-2 ml-8 pb-2"
                               >
                                 {section.topics.length > 0 ? (
-                                  section.topics.map((topic, idx) => (
+                                  section.topics.map((topic, topicIndex) => (
                                     <Draggable
                                       key={topic.id}
                                       draggableId={`topic-${topic.id}`}
-                                      index={idx}
+                                      index={topicIndex}
                                     >
                                       {(provided: any) => (
                                         <div
@@ -853,7 +904,7 @@ export default function MeetingView({
                                         >
                                           <TopicCard
                                             topic={topic}
-                                            topicNumber={idx + 1}
+                                            topicNumber={topicIndex + 1}
                                             meetingId={parseInt(meetingId)}
                                             onUpdate={updates => updateTopic(topic.id, updates)}
                                             onDelete={id => deleteTopic(id)}
@@ -891,6 +942,7 @@ export default function MeetingView({
       </DragDropContext>
 
 
+
       {/* Section Delete Confirmation Modal */}
       {sectionToDelete && (
         <div className="fixed inset-0 bg-black bg-opacity-40 z-50 flex items-center justify-center">
@@ -906,6 +958,7 @@ export default function MeetingView({
           </div>
         </div>
       )}
+
 
 
       {/* Modals for Section/Topic Creation and Editing */}

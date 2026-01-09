@@ -656,7 +656,7 @@ export default function CompanyDetailsModal({
             value={smtpUser}
             onChange={(e) => setSmtpUser(e.target.value)}
             className="w-full px-2 py-1.5 rounded border border-border text-sm bg-background"
-            placeholder="jeffreydomingo509@gmail.com"
+            placeholder="myemail@gmail.com"
           />
         </div>
 
@@ -698,7 +698,7 @@ export default function CompanyDetailsModal({
             value={smtpFromEmail}
             onChange={(e) => setSmtpFromEmail(e.target.value)}
             className="w-full px-2 py-1.5 rounded border border-border text-sm bg-background"
-            placeholder="jeffreydomingo509@gmail.com"
+            placeholder="myemail@gmail.com"
           />
         </div>
       </div>
