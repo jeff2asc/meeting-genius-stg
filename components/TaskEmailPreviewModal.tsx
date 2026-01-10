@@ -18,6 +18,7 @@ export interface EmailTemplate {
   subject: string
   greeting: string
   bodyText: string
+  additionalNotes: string  // ⭐ NEW
   buttonText: string
   footerText: string
 }
@@ -34,6 +35,7 @@ export default function TaskEmailPreviewModal({
     subject: `New Task Assigned: ${taskDescription.substring(0, 50)}${taskDescription.length > 50 ? '...' : ''}`,
     greeting: 'Hi {name},',
     bodyText: 'You have been assigned a new task.',
+    additionalNotes: '',  // ⭐ NEW - empty by default
     buttonText: 'Update Task Status',
     footerText: 'This link will expire in 90 days.'
   })
@@ -53,6 +55,12 @@ export default function TaskEmailPreviewModal({
           <strong>Task:</strong> ${taskDescription}
           ${dueDate ? `<br><strong>Due Date:</strong> ${new Date(dueDate).toLocaleDateString()}` : ''}
         </div>
+        ${emailData.additionalNotes ? `
+          <div style="background: #fef3c7; border-left: 4px solid #f59e0b; padding: 12px 15px; margin: 20px 0; border-radius: 4px;">
+            <strong style="color: #92400e;">Additional Notes:</strong>
+            <p style="margin: 8px 0 0 0; color: #78350f; white-space: pre-wrap;">${emailData.additionalNotes}</p>
+          </div>
+        ` : ''}
         <p>You can update the task status using the link below:</p>
         <a href="${updateLink}" style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin: 10px 0;">${emailData.buttonText}</a>
         <p style="color: #6b7280; font-size: 14px; margin-top: 30px;">${emailData.footerText}</p>
@@ -118,6 +126,23 @@ export default function TaskEmailPreviewModal({
                 />
               </div>
 
+              {/* ⭐ NEW: Additional Notes Field */}
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-2">
+                  Additional Notes <span className="text-xs text-muted-foreground">(optional)</span>
+                </label>
+                <textarea
+                  value={emailData.additionalNotes}
+                  onChange={(e) => handleInputChange('additionalNotes', e.target.value)}
+                  placeholder="Add any special instructions, context, or notes here..."
+                  rows={4}
+                  className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  This will appear as a highlighted note in the email
+                </p>
+              </div>
+
               <div>
                 <label className="block text-sm font-medium text-foreground mb-2">Button Text</label>
                 <input
@@ -142,7 +167,7 @@ export default function TaskEmailPreviewModal({
             {/* Right: Live Preview */}
             <div className="space-y-4">
               <h3 className="font-semibold text-foreground">Preview</h3>
-              <div className="border border-border rounded-lg p-4 bg-white overflow-auto max-h-[500px]">
+              <div className="border border-border rounded-lg p-4 bg-white overflow-auto max-h-[600px]">
                 <div dangerouslySetInnerHTML={{ __html: generatePreviewHtml(assignees[0]?.name || 'Recipient') }} />
               </div>
             </div>
