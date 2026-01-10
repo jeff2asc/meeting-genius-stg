@@ -6,7 +6,6 @@ import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Trash } from "lucide-react"
 
-// ✅ EXPORT HERE!
 export interface Attendee {
   name: string
   email?: string
@@ -21,7 +20,7 @@ interface AttendeeManagementProps {
   status: string
   userCanEdit: boolean
   onUpdate: (attendees: Attendee[]) => void
-  onClose?: () => void  // ← NEW: Optional callback to close modal
+  onClose?: () => void
 }
 
 export default function AttendeeManagement({
@@ -30,27 +29,23 @@ export default function AttendeeManagement({
   status,
   userCanEdit,
   onUpdate,
-  onClose  // ← NEW
+  onClose
 }: AttendeeManagementProps) {
   const [localAttendees, setLocalAttendees] = useState<Attendee[]>(attendees || [])
-
   const [newAttendee, setNewAttendee] = useState<Partial<Attendee>>({ name: "", email: "", role: "", present: false })
 
-  // Add attendee in Working Agenda
   const handleAddAttendee = () => {
     if (!newAttendee.name) return
     setLocalAttendees([...localAttendees, { ...newAttendee, present: false } as Attendee])
     setNewAttendee({ name: "", email: "", role: "", present: false })
   }
 
-  // Remove attendee in Working Agenda
   const handleRemoveAttendee = (index: number) => {
     const updated = [...localAttendees]
     updated.splice(index, 1)
     setLocalAttendees(updated)
   }
 
-  // Edit fields (Working Agenda only)
   const handleFieldChange = <K extends keyof Attendee>(
     index: number, 
     field: K, 
@@ -61,18 +56,14 @@ export default function AttendeeManagement({
     setLocalAttendees(updated)
   }
 
-  // Mark attendance in Working Minutes only
   const handlePresentChange = (index: number, checked: boolean) => {
     const updated = [...localAttendees]
     updated[index].present = checked
     setLocalAttendees(updated)
   }
 
-  // Save all changes and close modal
   const handleSave = () => {
     onUpdate(localAttendees)
-    
-    // ✅ Close modal after saving
     if (onClose) {
       onClose()
     }
@@ -83,109 +74,118 @@ export default function AttendeeManagement({
   const isFinal = status === "minutes"
 
   return (
-    <div className="mb-8 p-4 border rounded-lg bg-card shadow">
-      <h3 className="font-bold text-lg mb-3">Attendees</h3>
-      <table className="w-full mb-4">
-        <thead>
-          <tr>
-            <th className="px-2 py-2 text-left text-xs text-muted-foreground">Name</th>
-            <th className="px-2 py-2 text-left text-xs text-muted-foreground">Email</th>
-            <th className="px-2 py-2 text-left text-xs text-muted-foreground">Role</th>
-            <th className="px-2 py-2 text-center text-xs text-muted-foreground">Present</th>
-            {isAgenda && userCanEdit && <th></th>}
-          </tr>
-        </thead>
-        <tbody>
-          {localAttendees.map((a, idx) => (
-            <tr key={idx}>
-              <td className="px-2 py-1">
-                {isAgenda && userCanEdit ? (
-                  <Input
-                    value={a.name}
-                    onChange={e => handleFieldChange(idx, "name", e.target.value)}
-                    className="w-full text-sm"
-                    placeholder="Full Name"
-                  />
-                ) : (
-                  <span className="text-sm">{a.name}</span>
-                )}
-              </td>
-              <td className="px-2 py-1">
-                {isAgenda && userCanEdit ? (
-                  <Input
-                    value={a.email || ""}
-                    onChange={e => handleFieldChange(idx, "email", e.target.value)}
-                    className="w-full text-sm"
-                    placeholder="Email"
-                  />
-                ) : (
-                  <span className="text-sm">{a.email}</span>
-                )}
-              </td>
-              <td className="px-2 py-1">
-                {isAgenda && userCanEdit ? (
-                  <Input
-                    value={a.role || ""}
-                    onChange={e => handleFieldChange(idx, "role", e.target.value)}
-                    className="w-full text-sm"
-                    placeholder="Role"
-                  />
-                ) : (
-                  <span className="text-sm">{a.role}</span>
-                )}
-              </td>
-              <td className="px-2 py-1 text-center">
-                {isMinutes && userCanEdit ? (
-                  <Checkbox
-                    checked={a.present}
-                    onCheckedChange={checked => handlePresentChange(idx, !!checked)}
-                  />
-                ) : (
-                  <span>
-                    {a.present ? "✔️" : ""}
-                  </span>
-                )}
-              </td>
-              {isAgenda && userCanEdit && (
-                <td>
-                  <Button variant="ghost" size="icon" onClick={() => handleRemoveAttendee(idx)}>
-                    <Trash className="h-4 w-4 text-red-500" />
-                  </Button>
-                </td>
-              )}
+    <div className="space-y-3">
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-border">
+              <th className="px-2 py-1.5 text-left text-xs font-medium text-muted-foreground">Name</th>
+              <th className="px-2 py-1.5 text-left text-xs font-medium text-muted-foreground">Email</th>
+              <th className="px-2 py-1.5 text-left text-xs font-medium text-muted-foreground">Role</th>
+              <th className="px-2 py-1.5 text-center text-xs font-medium text-muted-foreground w-20">Present</th>
+              {isAgenda && userCanEdit && <th className="w-10"></th>}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {localAttendees.map((a, idx) => (
+              <tr key={idx} className="border-b border-border/30 hover:bg-muted/10">
+                <td className="px-2 py-1.5">
+                  {isAgenda && userCanEdit ? (
+                    <Input
+                      value={a.name}
+                      onChange={e => handleFieldChange(idx, "name", e.target.value)}
+                      className="w-full text-xs h-7 py-1"
+                      placeholder="Full Name"
+                    />
+                  ) : (
+                    <span className="text-xs font-medium">{a.name}</span>
+                  )}
+                </td>
+                <td className="px-2 py-1.5">
+                  {isAgenda && userCanEdit ? (
+                    <Input
+                      value={a.email || ""}
+                      onChange={e => handleFieldChange(idx, "email", e.target.value)}
+                      className="w-full text-xs h-7 py-1"
+                      placeholder="Email"
+                    />
+                  ) : (
+                    <span className="text-xs text-muted-foreground">{a.email}</span>
+                  )}
+                </td>
+                <td className="px-2 py-1.5">
+                  {isAgenda && userCanEdit ? (
+                    <Input
+                      value={a.role || ""}
+                      onChange={e => handleFieldChange(idx, "role", e.target.value)}
+                      className="w-full text-xs h-7 py-1"
+                      placeholder="Role"
+                    />
+                  ) : (
+                    <span className="text-xs text-muted-foreground">{a.role}</span>
+                  )}
+                </td>
+                <td className="px-2 py-1.5 text-center">
+                  {isMinutes && userCanEdit ? (
+                    <div className="flex justify-center">
+                      <Checkbox
+                        checked={a.present}
+                        onCheckedChange={checked => handlePresentChange(idx, !!checked)}
+                        className="h-4 w-4"
+                      />
+                    </div>
+                  ) : (
+                    <span className="text-base">{a.present ? "✓" : ""}</span>
+                  )}
+                </td>
+                {isAgenda && userCanEdit && (
+                  <td className="px-2 py-1.5">
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      onClick={() => handleRemoveAttendee(idx)}
+                      className="h-6 w-6"
+                    >
+                      <Trash className="h-3 w-3 text-red-500" />
+                    </Button>
+                  </td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
       {isAgenda && userCanEdit && (
-        <div className="flex gap-2 mb-3">
+        <div className="flex gap-2">
           <Input
             value={newAttendee.name || ""}
             onChange={e => setNewAttendee(n => ({ ...n, name: e.target.value }))}
             placeholder="Name"
-            className="text-sm"
+            className="text-xs h-8"
           />
           <Input
             value={newAttendee.email || ""}
             onChange={e => setNewAttendee(n => ({ ...n, email: e.target.value }))}
             placeholder="Email"
-            className="text-sm"
+            className="text-xs h-8"
           />
           <Input
             value={newAttendee.role || ""}
             onChange={e => setNewAttendee(n => ({ ...n, role: e.target.value }))}
             placeholder="Role"
-            className="text-sm"
+            className="text-xs h-8"
           />
-          <Button onClick={handleAddAttendee} disabled={!newAttendee.name}>
+          <Button onClick={handleAddAttendee} disabled={!newAttendee.name} size="sm" className="h-8">
             + Add
           </Button>
         </div>
       )}
+
       {userCanEdit && (
         <Button
           onClick={handleSave}
-          className="bg-primary text-white mt-3"
+          className="bg-primary text-white w-full h-8 text-sm"
           disabled={isFinal}
         >
           Save Attendees

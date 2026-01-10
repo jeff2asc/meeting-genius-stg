@@ -1,12 +1,11 @@
 "use client"
 
-
 import { useState, useEffect } from "react"
 import GenerateAgendaButton from "./GenerateAgendaButton"
 import GenerateMinutesButton from "./GenerateMinutesButton"
 import {
   ArrowLeft, Plus, Trash, Pencil, ChevronDown, ChevronRight, Calendar,
-  Clock, MapPin, FileText, Edit2, Play, CheckCircle, ChevronLeft
+  Clock, MapPin, FileText, Edit2, Play, CheckCircle, ChevronLeft, Users
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -17,11 +16,10 @@ import CreateSectionModal from "./create-section-modal"
 import CreateTopicModal from "./create-topic-modal"
 import EditMeetingModal from "./EditMeetingModal"
 import AttendeeManagement, { Attendee } from "./AttendeeManagement"
+import SelectRecorderModal from "./SelectRecorderModal"
 import { supabase, getCurrentUser } from "@/lib/supabase"
 import { canEditMeeting, isReadOnly } from "@/lib/permissions"
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd'
-
-
 
 interface MeetingViewProps {
   meetingId: string
@@ -31,8 +29,6 @@ interface MeetingViewProps {
   onDecisionClick: (topicId: number) => void
   onRegisterTopicRefresh?: (topicId: number, callback: () => void) => void
 }
-
-
 
 interface Topic {
   id: number
@@ -45,8 +41,6 @@ interface Topic {
   order_index?: number
 }
 
-
-
 interface Section {
   id: number
   title: string
@@ -55,15 +49,11 @@ interface Section {
   isExpanded: boolean
 }
 
-
-
 const STATUS_FLOW = [
   "working_agenda",
   "working_minutes",
   "minutes"
 ] as const
-
-
 
 export default function MeetingView({
   meetingId,
@@ -83,29 +73,27 @@ export default function MeetingView({
   const [showCreateSectionModal, setShowCreateSectionModal] = useState(false)
   const [showCreateTopicModal, setShowCreateTopicModal] = useState(false)
   const [showEditMeetingModal, setShowEditMeetingModal] = useState(false)
-  const [showAttendeesModal, setShowAttendeesModal] = useState(false)
+  
+  // Attendees section expanded state
+  const [attendeesExpanded, setAttendeesExpanded] = useState(false)
+  
+  // ⭐ NEW: Recorder selection modal
+  const [showRecorderModal, setShowRecorderModal] = useState(false)
+  
   const [selectedSection, setSelectedSection] = useState<{ id: number; title: string } | null>(null)
-
-
 
   // Section Editing/Removal State
   const [editingSection, setEditingSection] = useState<{ id: number, title: string } | null>(null)
   const [sectionRenameValue, setSectionRenameValue] = useState("")
   const [sectionToDelete, setSectionToDelete] = useState<Section | null>(null)
 
-
-
   const currentUser = getCurrentUser()
   const userCanEdit = currentUser ? canEditMeeting(currentUser.user_type) : false
   const userIsReadOnly = currentUser ? isReadOnly(currentUser.user_type) : false
   const editingLocked = !userCanEdit || (meeting?.status === "minutes")
 
-
-
   useEffect(() => { setIsMounted(true) }, [])
   useEffect(() => { if (meetingId) fetchMeetingData() }, [meetingId])
-
-
 
   const fetchMeetingData = async () => {
     try {
@@ -131,15 +119,10 @@ export default function MeetingView({
     }
   }
 
-
-
-  // NEW HELPER: Fetch open tasks from all previous meetings of same building + meeting type
   const fetchOpenTasksFromPreviousMeetings = async () => {
     if (!meeting) return []
 
-
     try {
-      // Get all meetings of same building + meeting type (including current)
       const { data: allMeetings, error: meetingsError } = await supabase
         .from("meetings")
         .select("id, meeting_date, title")
@@ -147,14 +130,11 @@ export default function MeetingView({
         .eq("meeting_type", meeting.meeting_type)
         .order("meeting_date", { ascending: false })
 
-
       if (meetingsError || !allMeetings) {
         console.error("Error fetching previous meetings:", meetingsError)
         return []
       }
 
-
-      // Get all topic IDs from all these meetings
       const meetingIds = allMeetings.map(m => m.id)
       
       const { data: allTopics, error: topicsError } = await supabase
@@ -162,29 +142,23 @@ export default function MeetingView({
         .select("id, title, meeting_id")
         .in("meeting_id", meetingIds)
 
-
       if (topicsError || !allTopics) {
         console.error("Error fetching topics:", topicsError)
         return []
       }
 
-
       const topicIds = allTopics.map(t => t.id)
 
-
-      // Get all open tasks from these topics
       const { data: openTasks, error: tasksError } = await supabase
         .from("tasks")
         .select("*, topics!inner(id, title, meeting_id)")
         .in("topic_id", topicIds)
         .in("status", ["open", "in_progress"])
 
-
       if (tasksError) {
         console.error("Error fetching open tasks:", tasksError)
         return []
       }
-
 
       return openTasks || []
     } catch (err) {
@@ -192,8 +166,6 @@ export default function MeetingView({
       return []
     }
   }
-
-
 
   const fetchSectionsAndTopics = async () => {
     try {
@@ -207,7 +179,6 @@ export default function MeetingView({
         console.error("Error fetching sections:", sectionsError)
         return
       }
-
 
       const { data: topicsData, error: topicsError } = await supabase
         .from("topics")
@@ -224,10 +195,7 @@ export default function MeetingView({
         return
       }
 
-
-      // Fetch open tasks from all previous meetings
       const allOpenTasks = await fetchOpenTasksFromPreviousMeetings()
-
 
       const sectionsWithTopics: Section[] = (sectionsData || []).map((section) => ({
         id: section.id,
@@ -237,11 +205,9 @@ export default function MeetingView({
         topics: (topicsData || []).filter(
           (topic) => topic.section_id === section.id
         ).map((topic) => {
-          // Count tasks for THIS topic title from ALL meetings
           const tasksForThisTopic = allOpenTasks.filter(
             task => task.topics?.title === topic.title
           ).length
-
 
           return {
             id: topic.id,
@@ -249,21 +215,18 @@ export default function MeetingView({
             description: topic.description,
             section_id: topic.section_id,
             attachments: 0,
-            tasks: tasksForThisTopic, // Now includes open tasks from previous meetings
+            tasks: tasksForThisTopic,
             decisions: topic.decisions?.[0]?.count || 0,
             order_index: topic.order_index
           }
         })
       }))
 
-
       setSections(sectionsWithTopics)
     } catch (err) {
       console.error("Unexpected error fetching sections/topics:", err)
     }
   }
-
-
 
   const handleAddTopic = (sectionId: number, sectionTitle: string) => {
     if (!userCanEdit) {
@@ -274,13 +237,11 @@ export default function MeetingView({
     setShowCreateTopicModal(true)
   }
 
-
-
-  // Section Rename/Remove Logic
   const beginSectionRename = (section: Section) => {
     setEditingSection({ id: section.id, title: section.title })
     setSectionRenameValue(section.title)
   }
+  
   const saveSectionRename = async () => {
     if (!editingSection) return
     await supabase.from("sections")
@@ -290,16 +251,17 @@ export default function MeetingView({
     setSectionRenameValue("")
     await fetchSectionsAndTopics()
   }
+  
   const askDeleteSection = (section: Section) => setSectionToDelete(section)
+  
   const confirmDeleteSection = async () => {
     if (!sectionToDelete) return
     await supabase.from("sections").delete().eq("id", sectionToDelete.id)
     setSectionToDelete(null)
     await fetchSectionsAndTopics()
   }
+  
   const cancelDeleteSection = () => setSectionToDelete(null)
-
-
 
   const updateTopic = async (id: number, updates: Partial<Topic>) => {
     if (!userCanEdit) {
@@ -324,8 +286,6 @@ export default function MeetingView({
     }
   }
 
-
-
   const deleteTopic = async (id: number) => {
     if (!userCanEdit) {
       alert("You do not have permission to delete topics.")
@@ -346,8 +306,6 @@ export default function MeetingView({
     }
   }
 
-
-
   const toggleSection = (sectionId: number) => {
     setSections(
       sections.map((s) =>
@@ -361,11 +319,10 @@ export default function MeetingView({
     )
   }
 
-
-
   const onDragEnd = async (result: any) => {
     if (!result.destination) return
     const { source, destination, type } = result
+    
     if (type === "SECTION") {
       const newSections = Array.from(sections)
       const [removed] = newSections.splice(source.index, 1)
@@ -389,11 +346,13 @@ export default function MeetingView({
       const fromIdx = sections.findIndex((s) => s.id === Number(source.droppableId))
       const toIdx = sections.findIndex((s) => s.id === Number(destination.droppableId))
       if (fromIdx === -1 || toIdx === -1) return
+      
       const fromSection = sections[fromIdx]
       const toSection = sections[toIdx]
       const sourceTopics = Array.from(fromSection.topics)
       const destTopics = Array.from(toSection.topics)
       const [removed] = sourceTopics.splice(source.index, 1)
+      
       if (fromIdx === toIdx) {
         sourceTopics.splice(destination.index, 0, removed)
         const newSections = [...sections]
@@ -406,7 +365,9 @@ export default function MeetingView({
               supabase.from("topics").update({ order_index: topic.order_index }).eq("id", topic.id)
             )
           )
-        } catch (err) { }
+        } catch (err) {
+          console.error("Failed to update topic order:", err)
+        }
       } else {
         destTopics.splice(destination.index, 0, removed)
         const newSections = [...sections]
@@ -428,12 +389,12 @@ export default function MeetingView({
               }).eq("id", topic.id)
             )
           ])
-        } catch (err) { }
+        } catch (err) {
+          console.error("Failed to update topics order:", err)
+        }
       }
     }
   }
-
-
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -449,8 +410,6 @@ export default function MeetingView({
     }
   }
 
-
-
   const getStatusText = (status: string) => {
     switch (status) {
       case "working_agenda":
@@ -465,8 +424,6 @@ export default function MeetingView({
     }
   }
 
-
-
   const canTransition = (from: string, direction: "forward" | "backward") => {
     const index = STATUS_FLOW.indexOf(from as any)
     if (direction === "forward") return index < STATUS_FLOW.length - 1
@@ -474,29 +431,34 @@ export default function MeetingView({
     return false
   }
 
-
-
   const nextStatus = (current: string) => {
     const index = STATUS_FLOW.indexOf(current as any)
     return index < STATUS_FLOW.length - 1 ? STATUS_FLOW[index + 1] : current
   }
-
-
 
   const prevStatus = (current: string) => {
     const index = STATUS_FLOW.indexOf(current as any)
     return index > 0 ? STATUS_FLOW[index - 1] : current
   }
 
-
-
-  const updateMeetingStatus = async (targetStatus: string) => {
+  // ⭐ UPDATED: Now accepts recorder and timekeeper parameters
+  const updateMeetingStatus = async (targetStatus: string, recorderName?: string, timekeeperName?: string | null) => {
     try {
       setLoading(true)
+      
+      const updateData: any = { status: targetStatus }
+      
+      // If transitioning to working_minutes and recorder info provided
+      if (targetStatus === "working_minutes" && recorderName) {
+        updateData.recorder_name = recorderName
+        updateData.timekeeper_name = timekeeperName
+      }
+      
       const { error } = await supabase
         .from("meetings")
-        .update({ status: targetStatus })
+        .update(updateData)
         .eq("id", meetingId)
+      
       if (!error) {
         await fetchMeetingData()
       }
@@ -507,8 +469,6 @@ export default function MeetingView({
     }
   }
 
-
-
   const handleCreateSection = () => {
     if (!userCanEdit) {
       alert("You do not have permission to create sections.")
@@ -516,8 +476,6 @@ export default function MeetingView({
     }
     setShowCreateSectionModal(true)
   }
-
-
 
   const handleStartRecording = () => {
     if (!userCanEdit) {
@@ -530,8 +488,6 @@ export default function MeetingView({
     setTimerInterval(interval)
   }
 
-
-
   const handleStopRecording = () => {
     setIsRecording(false)
     if (timerInterval) {
@@ -540,12 +496,9 @@ export default function MeetingView({
     }
   }
 
-
-
   const formatDate = (dateString: string) => {
     if (!dateString) return "No date"
     
-    // Parse as UTC to avoid timezone shifts
     const [year, month, day] = dateString.split('-').map(Number)
     const date = new Date(Date.UTC(year, month - 1, day))
     
@@ -554,12 +507,9 @@ export default function MeetingView({
       year: "numeric",
       month: "long",
       day: "numeric",
-      timeZone: "UTC" // Force UTC interpretation
+      timeZone: "UTC"
     })
   }
-  
-
-
 
   const formatTime = (timeString: string) => {
     if (!timeString) return null
@@ -570,8 +520,6 @@ export default function MeetingView({
     return `${displayHour}:${minutes} ${ampm}`
   }
 
-
-
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted flex items-center justify-center">
@@ -579,8 +527,6 @@ export default function MeetingView({
       </div>
     )
   }
-
-
 
   if (!meeting) {
     return (
@@ -590,211 +536,224 @@ export default function MeetingView({
     )
   }
 
-
-
-  const totalTopics = sections.reduce((sum, section) => sum + section.topics.length, 0)
-
-
+  const attendeeCount = (meeting.attendees as Attendee[] || []).length
+  const presentCount = (meeting.attendees as Attendee[] || []).filter(a => a.present).length
 
   return (
     <>
       <header className="border-b border-border bg-card shadow-sm sticky top-0 z-40">
-  <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
-    <div className="flex items-center justify-between mb-3">
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" onClick={onBack} className="hover:bg-muted">
-          <ArrowLeft className="h-5 w-5" />
-        </Button>
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl font-bold text-foreground">{meeting.title}</h1>
-            {userCanEdit && meeting.status === "working_agenda" && (
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => setShowEditMeetingModal(true)}
-                className="hover:bg-muted border border-blue-500"
-                title="Edit Meeting"
-              >
-                <Edit2 className="h-4 w-4" />
+        <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-4">
+              <Button variant="ghost" size="icon" onClick={onBack} className="hover:bg-muted">
+                <ArrowLeft className="h-5 w-5" />
               </Button>
-            )}
-            <Badge variant="outline" className={getStatusColor(meeting.status)}>
-              {getStatusText(meeting.status)}
-            </Badge>
-            {userCanEdit && (
-              <>
-                {canTransition(meeting.status, "backward") && (
+              <div>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-xl font-bold text-foreground">{meeting.title}</h1>
+                  {userCanEdit && meeting.status === "working_agenda" && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setShowEditMeetingModal(true)}
+                      className="hover:bg-muted border border-blue-500"
+                      title="Edit Meeting"
+                    >
+                      <Edit2 className="h-4 w-4" />
+                    </Button>
+                  )}
+                  <Badge variant="outline" className={getStatusColor(meeting.status)}>
+                    {getStatusText(meeting.status)}
+                  </Badge>
+                  {userCanEdit && (
+                    <>
+                      {canTransition(meeting.status, "backward") && (
+                        <Button
+                          variant="outline"
+                          onClick={() => updateMeetingStatus(prevStatus(meeting.status))}
+                          className="bg-gray-100 border border-gray-400 ml-2"
+                        >
+                          <ChevronLeft className="h-4 w-4" />
+                          Back to {getStatusText(prevStatus(meeting.status))}
+                        </Button>
+                      )}
+                      {canTransition(meeting.status, "forward") && (
+                        <Button
+                          onClick={() => {
+                            const target = nextStatus(meeting.status)
+                            // ⭐ NEW: If transitioning to working_minutes, show recorder modal
+                            if (target === "working_minutes") {
+                              setShowRecorderModal(true)
+                            } else {
+                              updateMeetingStatus(target)
+                            }
+                          }}
+                          className="bg-green-600 text-white ml-2"
+                        >
+                          {meeting.status === "working_agenda" && (
+                            <>
+                              <Play className="h-4 w-4 mr-2" />
+                              Start Meeting
+                            </>
+                          )}
+                          {meeting.status === "working_minutes" && (
+                            <>
+                              <CheckCircle className="h-4 w-4 mr-2" />
+                              End Meeting
+                            </>
+                          )}
+                        </Button>
+                      )}
+                    </>
+                  )}
+                </div>
+                <p className="text-sm text-muted-foreground">{meeting.building}</p>
+                
+                {/* ⭐ NEW: Display recorder and timekeeper during working_minutes */}
+                {meeting.status === "working_minutes" && (meeting.recorder_name || meeting.timekeeper_name) && (
+                  <div className="flex items-center gap-4 text-xs text-muted-foreground mt-1">
+                    {meeting.recorder_name && (
+                      <span>📝 Recorder: <strong className="text-foreground">{meeting.recorder_name}</strong></span>
+                    )}
+                    {meeting.timekeeper_name && (
+                      <span>⏱️ Timekeeper: <strong className="text-foreground">{meeting.timekeeper_name}</strong></span>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-4">
+              {userCanEdit &&
+                (meeting.status === "working_agenda" || meeting.status === "working_minutes") && (
                   <Button
+                    onClick={handleCreateSection}
                     variant="outline"
-                    onClick={() => updateMeetingStatus(prevStatus(meeting.status))}
-                    className="bg-gray-100 border border-gray-400 ml-2"
+                    className="border-primary text-primary hover:bg-primary/10"
                   >
-                    <ChevronLeft className="h-4 w-4" />
-                    Back to {getStatusText(prevStatus(meeting.status))}
+                    <Plus className="h-4 w-4 mr-2" />
+                    Create Section
                   </Button>
                 )}
-                {canTransition(meeting.status, "forward") && (
-                  <Button
-                    onClick={() => updateMeetingStatus(nextStatus(meeting.status))}
-                    className="bg-green-600 text-white ml-2"
-                  >
-                    {meeting.status === "working_agenda" && (
-                      <>
-                        <Play className="h-4 w-4 mr-2" />
-                        Start Meeting
-                      </>
-                    )}
-                    {meeting.status === "working_minutes" && (
-                      <>
-                        <CheckCircle className="h-4 w-4 mr-2" />
-                        End Meeting
-                      </>
-                    )}
-                  </Button>
-                )}
-              </>
-            )}
-            <Button
-              onClick={() => setShowAttendeesModal(true)}
-              variant="outline"
-            >
-              View Attendees
-            </Button>
+
+              {(meeting.status === "working_agenda" || meeting.status === "agenda") && (
+                <GenerateAgendaButton 
+                  meetingId={parseInt(meetingId)} 
+                  meetingStatus={meeting.status}
+                />
+              )}
+              
+              {meeting.status === "minutes" && (
+                <GenerateMinutesButton 
+                  meetingId={meetingId} 
+                  buildingId={meeting.building_id} 
+                />
+              )}
+              
+              {isMounted && isRecording && <Timer elapsedTime={elapsedTime} />}
+
+              {isMounted && userCanEdit && (
+                <>
+                  {!isRecording ? (
+                    <Button
+                      onClick={handleStartRecording}
+                      className="bg-red-500 hover:bg-red-600 text-white"
+                    >
+                      <span className="flex items-center gap-2">
+                        <span className="h-3 w-3 rounded-full bg-white"></span>
+                        Start Recording
+                      </span>
+                    </Button>
+                  ) : (
+                    <Button
+                      onClick={handleStopRecording}
+                      variant="outline"
+                      className="border-red-500 text-red-500 hover:bg-red-50"
+                    >
+                      <span className="flex items-center gap-2">
+                        <span className="h-3 w-3 rounded-sm bg-red-500"></span>
+                        Stop Recording
+                      </span>
+                    </Button>
+                  )}
+                </>
+              )}
+            </div>
           </div>
-          <p className="text-sm text-muted-foreground">{meeting.building}</p>
-        </div>
-      </div>
-      
-      <div className="flex items-center gap-4">
-        {userCanEdit &&
-          (meeting.status === "working_agenda" || meeting.status === "working_minutes") && (
-            <Button
-              onClick={handleCreateSection}
-              variant="outline"
-              className="border-primary text-primary hover:bg-primary/10"
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              Create Section
-            </Button>
-          )}
-
-
-        {/* Download Agenda Button - Shows for working_agenda and agenda statuses */}
-        {(meeting.status === "working_agenda" || meeting.status === "agenda") && (
-          <GenerateAgendaButton 
-            meetingId={parseInt(meetingId)} 
-            meetingStatus={meeting.status}
-          />
-        )}
-        
-        {/* Generate Minutes Button - Shows only for finalized meetings */}
-        {meeting.status === "minutes" && (
-          <GenerateMinutesButton 
-            meetingId={meetingId} 
-            buildingId={meeting.building_id} 
-          />
-        )}
-        
-        {isMounted && isRecording && <Timer elapsedTime={elapsedTime} />}
-
-
-        {isMounted && userCanEdit && (
-          <>
-            {!isRecording ? (
-              <Button
-                onClick={handleStartRecording}
-                className="bg-red-500 hover:bg-red-600 text-white"
-              >
-                <span className="flex items-center gap-2">
-                  <span className="h-3 w-3 rounded-full bg-white"></span>
-                  Start Recording
-                </span>
-              </Button>
-            ) : (
-              <Button
-                onClick={handleStopRecording}
-                variant="outline"
-                className="border-red-500 text-red-500 hover:bg-red-50"
-              >
-                <span className="flex items-center gap-2">
-                  <span className="h-3 w-3 rounded-sm bg-red-500"></span>
-                  Stop Recording
-                </span>
-              </Button>
+          
+          <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
+            {meeting.meeting_type && (
+              <div className="flex items-center gap-1">
+                <FileText className="h-4 w-4" />
+                <span>{meeting.meeting_type}</span>
+              </div>
             )}
-          </>
-        )}
-      </div>
-    </div>
-    
-    <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
-      {meeting.meeting_type && (
-        <div className="flex items-center gap-1">
-          <FileText className="h-4 w-4" />
-          <span>{meeting.meeting_type}</span>
-        </div>
-      )}
-      {meeting.meeting_date && (
-        <div className="flex items-center gap-1">
-          <Calendar className="h-4 w-4" />
-          <span>{formatDate(meeting.meeting_date)}</span>
-        </div>
-      )}
-      {meeting.start_time && (
-        <div className="flex items-center gap-1">
-          <Clock className="h-4 w-4" />
-          <span>{formatTime(meeting.start_time)}</span>
-        </div>
-      )}
-      {meeting.location && (
-        <div className="flex items-center gap-1">
-          <MapPin className="h-4 w-4" />
-          <span>{meeting.location}</span>
-        </div>
-      )}
-      {meeting.strata_plan_number && (
-        <div className="flex items-center gap-1">
-          <FileText className="h-4 w-4" />
-          <span>Plan: {meeting.strata_plan_number}</span>
-        </div>
-      )}
-    </div>
-  </div>
-</header>
-
-
-
-
-      {/* Attendees POPUP MODAL */}
-      {showAttendeesModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
-          <div className="bg-card p-4 rounded-lg shadow-lg max-w-lg w-full">
-            <AttendeeManagement
-              meetingId={meetingId}
-              attendees={(meeting.attendees as Attendee[]) || []}
-              status={meeting.status}
-              userCanEdit={userCanEdit}
-              onUpdate={async updatedAttendees => {
-                await supabase.from("meetings")
-                  .update({ attendees: updatedAttendees })
-                  .eq("id", meetingId)
-                await fetchMeetingData()
-              }}
-              onClose={() => setShowAttendeesModal(false)}
-            />
-            <Button
-              onClick={() => setShowAttendeesModal(false)}
-              className="mt-4 w-full"
-              variant="outline"
-            >
-              Close
-            </Button>
+            {meeting.meeting_date && (
+              <div className="flex items-center gap-1">
+                <Calendar className="h-4 w-4" />
+                <span>{formatDate(meeting.meeting_date)}</span>
+              </div>
+            )}
+            {meeting.start_time && (
+              <div className="flex items-center gap-1">
+                <Clock className="h-4 w-4" />
+                <span>{formatTime(meeting.start_time)}</span>
+              </div>
+            )}
+            {meeting.location && (
+              <div className="flex items-center gap-1">
+                <MapPin className="h-4 w-4" />
+                <span>{meeting.location}</span>
+              </div>
+            )}
+            {meeting.strata_plan_number && (
+              <div className="flex items-center gap-1">
+                <FileText className="h-4 w-4" />
+                <span>Plan: {meeting.strata_plan_number}</span>
+              </div>
+            )}
           </div>
         </div>
-      )}
+      </header>
 
-
+      {/* ATTENDEES EXPANDABLE SECTION - MINIMAL SINGLE LINE */}
+      <div className="mx-auto max-w-4xl px-4 pt-2 sm:px-6 lg:px-8">
+        <button
+          onClick={() => setAttendeesExpanded(!attendeesExpanded)}
+          className="w-full flex items-center justify-between px-4 py-2 bg-card border border-border rounded-lg hover:bg-muted/30 transition-colors shadow-sm"
+        >
+          <div className="flex items-center gap-2">
+            <Users className="h-4 w-4 text-blue-600" />
+            <span className="text-sm font-medium text-foreground">Attendees</span>
+            <Badge variant="outline" className="bg-blue-50 text-blue-700 text-xs">
+              {attendeeCount}
+              {meeting.status === "working_minutes" || meeting.status === "minutes" 
+                ? ` · ${presentCount} present` 
+                : ''}
+            </Badge>
+          </div>
+          <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${attendeesExpanded ? 'rotate-180' : ''}`} />
+        </button>
+        
+        {attendeesExpanded && (
+          <Card className="mt-2 border border-border shadow-sm">
+            <div className="p-4">
+              <AttendeeManagement
+                meetingId={meetingId}
+                attendees={(meeting.attendees as Attendee[]) || []}
+                status={meeting.status}
+                userCanEdit={userCanEdit}
+                onUpdate={async updatedAttendees => {
+                  await supabase.from("meetings")
+                    .update({ attendees: updatedAttendees })
+                    .eq("id", meetingId)
+                  await fetchMeetingData()
+                }}
+              />
+            </div>
+          </Card>
+        )}
+      </div>
 
       {/* MEETING SECTIONS/TOPICS WITH DRAG AND DROP */}
       <DragDropContext onDragEnd={onDragEnd}>
@@ -803,7 +762,7 @@ export default function MeetingView({
             <div
               {...provided.droppableProps}
               ref={provided.innerRef}
-              className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8 space-y-3"
+              className="mx-auto max-w-4xl px-4 py-4 sm:px-6 lg:px-8 space-y-3"
             >
               {sections.map((section, sectionIndex) => (
                 <Draggable key={section.id} draggableId={section.id.toString()} index={sectionIndex}>
@@ -941,8 +900,6 @@ export default function MeetingView({
         </Droppable>
       </DragDropContext>
 
-
-
       {/* Section Delete Confirmation Modal */}
       {sectionToDelete && (
         <div className="fixed inset-0 bg-black bg-opacity-40 z-50 flex items-center justify-center">
@@ -959,9 +916,20 @@ export default function MeetingView({
         </div>
       )}
 
+      {/* ⭐ NEW: Recorder Selection Modal */}
+      {showRecorderModal && (
+        <SelectRecorderModal
+          isOpen={showRecorderModal}
+          onClose={() => setShowRecorderModal(false)}
+          attendees={(meeting.attendees as Attendee[]) || []}
+          onConfirm={(recorderName, timekeeperName) => {
+            updateMeetingStatus("working_minutes", recorderName, timekeeperName)
+            setShowRecorderModal(false)
+          }}
+        />
+      )}
 
-
-      {/* Modals for Section/Topic Creation and Editing */}
+      {/* Modals */}
       {showCreateSectionModal && userCanEdit && (
         <CreateSectionModal
           meetingId={meetingId}
@@ -972,6 +940,7 @@ export default function MeetingView({
           }}
         />
       )}
+      
       {showCreateTopicModal && selectedSection && userCanEdit && (
         <CreateTopicModal
           meetingId={meetingId}
@@ -988,6 +957,7 @@ export default function MeetingView({
           }}
         />
       )}
+      
       {showEditMeetingModal && userCanEdit && meeting && (
         <EditMeetingModal
           isOpen={showEditMeetingModal}
@@ -1006,7 +976,6 @@ export default function MeetingView({
             meeting_type: meeting.meeting_type,
             strata_plan_number: meeting.strata_plan_number,
           }}
-          
         />
       )}
     </>

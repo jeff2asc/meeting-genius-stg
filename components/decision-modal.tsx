@@ -1,113 +1,203 @@
 "use client"
 
-import type React from "react"
-
-import { useState, useEffect } from "react"
-import { X } from "lucide-react"
+import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { supabase, getCurrentUser } from "@/lib/supabase"
+import { X } from "lucide-react"
+import { supabase } from "@/lib/supabase"
 
 interface DecisionModalProps {
-  topicId: number
+  isOpen: boolean
   onClose: () => void
+  topicId: number
+  meetingId: number
   onSave?: () => void
 }
 
-export default function DecisionModal({ topicId, onClose, onSave }: DecisionModalProps) {
-  const [formData, setFormData] = useState({
-    motionText: "",
-    result: "",
-    votesFor: 0,
-    votesAgainst: 0,
-    votesAbstain: 0,  // ← NEW: Abstain field
-  })
-  const [decisionResultOptions, setDecisionResultOptions] = useState<string[]>([
-    "M/S/C",
-    "Defeated", 
-    "Deferred"
-  ])  // ← NEW: Company-specific options
-  const [fileName, setFileName] = useState<string | null>(null)
+interface Attendee {
+  name: string
+  email?: string
+  present: boolean
+}
+
+export default function DecisionModal({
+  isOpen,
+  onClose,
+  topicId,
+  meetingId,
+  onSave
+}: DecisionModalProps) {
+  const [motionText, setMotionText] = useState("")
+  const [result, setResult] = useState("")
+  const [votesFor, setVotesFor] = useState<number | "">("")
+  const [votesAgainst, setVotesAgainst] = useState<number | "">("")
+  const [votesAbstain, setVotesAbstain] = useState<number | "">("")
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [decisionResults, setDecisionResults] = useState<string[]>([])
+  const [attendees, setAttendees] = useState<Attendee[]>([])
+  
+  // @ Mention Autocomplete State
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const [suggestions, setSuggestions] = useState<Attendee[]>([])
+  const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0)
+  const [cursorPosition, setCursorPosition] = useState(0)
+  const [mentionStartIndex, setMentionStartIndex] = useState(-1)
+  
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const suggestionsRef = useRef<HTMLDivElement>(null)
 
-  // ← NEW: Fetch company's decision result options
   useEffect(() => {
-    async function fetchCompanyDecisionOptions() {
-      try {
-        // Get the topic to find the meeting
-        const { data: topic } = await supabase
-          .from('topics')
-          .select('meeting_id')
-          .eq('id', topicId)
-          .single()
+    if (isOpen) {
+      fetchDecisionResults()
+      fetchAttendees()
+    }
+  }, [isOpen, meetingId])
 
-        if (!topic) return
+  const fetchDecisionResults = async () => {
+    try {
+      const { data: meetingData, error: meetingError } = await supabase
+        .from("meetings")
+        .select("building_id")
+        .eq("id", meetingId)
+        .single()
 
-        // Get the meeting to find the building
-        const { data: meeting } = await supabase
-          .from('meetings')
-          .select('building_id')
-          .eq('id', topic.meeting_id)
-          .single()
-
-        if (!meeting) return
-
-        // Get the building to find the company
-        const { data: building } = await supabase
-          .from('buildings')
-          .select('company_id')
-          .eq('id', meeting.building_id)
-          .single()
-
-        if (!building?.company_id) return
-
-        // Get the company's decision result options
-        const { data: company } = await supabase
-          .from('companies')
-          .select('default_decision_results')
-          .eq('id', building.company_id)
-          .single()
-
-        if (company?.default_decision_results && company.default_decision_results.length > 0) {
-          setDecisionResultOptions(company.default_decision_results)
-          setFormData(prev => ({ ...prev, result: company.default_decision_results[0] }))
-        } else {
-          // Fallback to defaults
-          setFormData(prev => ({ ...prev, result: "M/S/C" }))
-        }
-      } catch (err) {
-        console.error('Error fetching company decision options:', err)
-        setFormData(prev => ({ ...prev, result: "M/S/C" }))
+      if (meetingError || !meetingData) {
+        console.error("Error fetching meeting:", meetingError)
+        return
       }
+
+      const { data: buildingData, error: buildingError } = await supabase
+        .from("buildings")
+        .select("company_id")
+        .eq("id", meetingData.building_id)
+        .single()
+
+      if (buildingError || !buildingData || !buildingData.company_id) {
+        console.error("Error fetching building:", buildingError)
+        return
+      }
+
+      const { data: companyData, error: companyError } = await supabase
+        .from("companies")
+        .select("default_decision_results")
+        .eq("id", buildingData.company_id)
+        .single()
+
+      if (companyError) {
+        console.error("Error fetching company:", companyError)
+        return
+      }
+
+      if (companyData?.default_decision_results) {
+        setDecisionResults(companyData.default_decision_results)
+      } else {
+        setDecisionResults(["MSC", "Defeated", "Deferred"])
+      }
+    } catch (err) {
+      console.error("Error fetching decision results:", err)
+      setDecisionResults(["MSC", "Defeated", "Deferred"])
     }
-
-    fetchCompanyDecisionOptions()
-  }, [topicId])
-
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-    const { name, value } = e.target
-    setFormData((prev) => ({
-      ...prev,
-      [name]: name === "votesFor" || name === "votesAgainst" || name === "votesAbstain" 
-        ? parseInt(value) || 0 
-        : value,
-    }))
   }
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files?.[0]) {
-      setFileName(e.target.files[0].name)
+  const fetchAttendees = async () => {
+    try {
+      const { data: meetingData, error } = await supabase
+        .from("meetings")
+        .select("attendees")
+        .eq("id", meetingId)
+        .single()
+
+      if (error) {
+        console.error("Error fetching attendees:", error)
+        return
+      }
+
+      if (meetingData?.attendees) {
+        setAttendees(meetingData.attendees as Attendee[])
+      }
+    } catch (err) {
+      console.error("Error fetching attendees:", err)
     }
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleMotionTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const text = e.target.value
+    const cursorPos = e.target.selectionStart
     
-    console.log('DEBUG - topicId:', topicId, 'Type:', typeof topicId)
+    setMotionText(text)
+    setCursorPosition(cursorPos)
+
+    // Check for @ mention
+    const textBeforeCursor = text.substring(0, cursorPos)
+    const atIndex = textBeforeCursor.lastIndexOf("@")
     
-    if (!formData.motionText.trim()) {
-      setError("Motion/Resolution text is required")
+    if (atIndex !== -1) {
+      const textAfterAt = textBeforeCursor.substring(atIndex + 1)
+      
+      // Check if there's a space after @ (which would close the mention)
+      if (!textAfterAt.includes(" ") && !textAfterAt.includes("\n")) {
+        setMentionStartIndex(atIndex)
+        
+        // Filter attendees based on text after @
+        const filtered = attendees.filter(attendee =>
+          attendee.name.toLowerCase().includes(textAfterAt.toLowerCase())
+        )
+        
+        setSuggestions(filtered)
+        setShowSuggestions(filtered.length > 0)
+        setSelectedSuggestionIndex(0)
+      } else {
+        setShowSuggestions(false)
+      }
+    } else {
+      setShowSuggestions(false)
+    }
+  }
+
+  const insertMention = (attendee: Attendee) => {
+    if (mentionStartIndex === -1) return
+
+    const beforeMention = motionText.substring(0, mentionStartIndex)
+    const afterCursor = motionText.substring(cursorPosition)
+    const newText = beforeMention + attendee.name + " " + afterCursor
+    
+    setMotionText(newText)
+    setShowSuggestions(false)
+    setMentionStartIndex(-1)
+
+    // Set cursor position after inserted name
+    setTimeout(() => {
+      if (textareaRef.current) {
+        const newCursorPos = mentionStartIndex + attendee.name.length + 1
+        textareaRef.current.setSelectionRange(newCursorPos, newCursorPos)
+        textareaRef.current.focus()
+      }
+    }, 0)
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (!showSuggestions) return
+
+    if (e.key === "ArrowDown") {
+      e.preventDefault()
+      setSelectedSuggestionIndex(prev => 
+        prev < suggestions.length - 1 ? prev + 1 : prev
+      )
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault()
+      setSelectedSuggestionIndex(prev => prev > 0 ? prev - 1 : 0)
+    } else if (e.key === "Enter" && suggestions.length > 0) {
+      e.preventDefault()
+      insertMention(suggestions[selectedSuggestionIndex])
+    } else if (e.key === "Escape") {
+      setShowSuggestions(false)
+    }
+  }
+
+  const handleSave = async () => {
+    if (!motionText.trim()) {
+      setError("Motion text is required")
       return
     }
 
@@ -115,157 +205,194 @@ export default function DecisionModal({ topicId, onClose, onSave }: DecisionModa
     setError(null)
 
     try {
-      const currentUser = getCurrentUser()
-
-      const insertData = {
-        topic_id: topicId,
-        motion_text: formData.motionText.trim(),
-        result: formData.result,
-        votes_for: formData.votesFor,
-        votes_against: formData.votesAgainst,
-        votes_abstain: formData.votesAbstain  // ← NEW
-        //recorded_by: currentUser.id
-      }
-
-      console.log('Inserting decision with data:', insertData)
-
-      const { data, error: insertError } = await supabase
-        .from('decisions')
-        .insert(insertData)
-        .select()
+      const { error: insertError } = await supabase
+        .from("decisions")
+        .insert({
+          topic_id: topicId,
+          motion_text: motionText,
+          result: result || null,
+          votes_for: votesFor === "" ? null : votesFor,
+          votes_against: votesAgainst === "" ? null : votesAgainst,
+          votes_abstain: votesAbstain === "" ? null : votesAbstain
+        })
 
       if (insertError) {
-        console.error('Full error object:', JSON.stringify(insertError, null, 2))
-        setError(`Failed to save decision: ${insertError.message}`)
-        setSaving(false)
+        console.error("Error saving decision:", insertError)
+        setError("Failed to save decision")
         return
       }
 
-      console.log('✅ Decision saved successfully:', data)
-
-      if (onSave) {
-        onSave()
-      }
-
-      onClose()
+      if (onSave) onSave()
+      handleClose()
     } catch (err) {
-      console.error('Unexpected error:', err)
-      setError('An unexpected error occurred')
+      console.error("Unexpected error:", err)
+      setError("An unexpected error occurred")
+    } finally {
       setSaving(false)
     }
   }
 
+  const handleClose = () => {
+    setMotionText("")
+    setResult("")
+    setVotesFor("")
+    setVotesAgainst("")
+    setVotesAbstain("")
+    setError(null)
+    setShowSuggestions(false)
+    setSuggestions([])
+    setMentionStartIndex(-1)
+    onClose()
+  }
+
+  if (!isOpen) return null
+
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 animate-in fade-in">
-      <Card className="w-full sm:max-w-md border-0 rounded-t-2xl sm:rounded-2xl shadow-2xl">
-        <div className="flex items-center justify-between border-b border-border bg-gradient-to-r from-decision-purple/10 to-decision-purple/5 p-6">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 animate-in fade-in">
+      <Card className="w-full max-w-2xl p-6 m-4 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-bold text-foreground">Record Decision</h2>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="flex h-8 w-8 items-center justify-center rounded hover:bg-muted transition-colors"
-            disabled={saving}
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
-          {error && (
-            <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded text-sm">
-              {error}
-            </div>
-          )}
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded text-sm mb-4">
+            {error}
+          </div>
+        )}
 
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-2">Motion/Resolution *</label>
+        <div className="space-y-4">
+          {/* Motion Text with @ Autocomplete */}
+          <div className="relative">
+            <label className="block text-sm font-medium text-foreground mb-2">
+              Motion / Resolution Text <span className="text-red-500">*</span>
+            </label>
+            <p className="text-xs text-muted-foreground mb-2">
+              Type <strong>@</strong> to mention attendees by name
+            </p>
             <textarea
-              name="motionText"
-              value={formData.motionText}
-              onChange={handleInputChange}
-              placeholder="Enter the motion or resolution text..."
-              required
+              ref={textareaRef}
+              value={motionText}
+              onChange={handleMotionTextChange}
+              onKeyDown={handleKeyDown}
+              placeholder="E.g., Motion by @John Smith, seconded by @Jane Doe, to approve the budget..."
+              className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary min-h-[120px]"
               disabled={saving}
-              className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-decision-purple/50 resize-none min-h-24 disabled:opacity-50"
             />
+            
+            {/* @ Mention Suggestions Dropdown */}
+            {showSuggestions && (
+              <div
+                ref={suggestionsRef}
+                className="absolute z-10 w-full mt-1 bg-card border border-border rounded-lg shadow-lg max-h-48 overflow-y-auto"
+              >
+                {suggestions.map((attendee, index) => (
+                  <button
+                    key={index}
+                    onClick={() => insertMention(attendee)}
+                    className={`w-full text-left px-4 py-2 hover:bg-muted transition-colors ${
+                      index === selectedSuggestionIndex ? 'bg-muted' : ''
+                    }`}
+                  >
+                    <div className="font-medium text-foreground">{attendee.name}</div>
+                    {attendee.email && (
+                      <div className="text-xs text-muted-foreground">{attendee.email}</div>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
+          {/* Result Dropdown */}
           <div>
-            <label className="block text-sm font-medium text-foreground mb-2">Result *</label>
+            <label className="block text-sm font-medium text-foreground mb-2">
+              Result
+            </label>
             <select
-              name="result"
-              value={formData.result}
-              onChange={handleInputChange}
+              value={result}
+              onChange={(e) => setResult(e.target.value)}
+              className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
               disabled={saving}
-              required
-              className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-decision-purple/50 disabled:opacity-50"
             >
-              {decisionResultOptions.map((option) => (
-                <option key={option} value={option}>
-                  {option}
+              <option value="">Select result...</option>
+              {decisionResults.map((res) => (
+                <option key={res} value={res}>
+                  {res}
                 </option>
               ))}
             </select>
           </div>
 
-          {/* ← NEW: 3-column grid with Abstain */}
-          <div className="grid grid-cols-3 gap-3">
+          {/* Voting Counts */}
+          <div className="grid grid-cols-3 gap-4">
             <div>
-              <label className="block text-sm font-medium text-foreground mb-2">Votes For</label>
+              <label className="block text-sm font-medium text-foreground mb-2">
+                Votes For
+              </label>
               <input
                 type="number"
-                name="votesFor"
-                value={formData.votesFor}
-                onChange={handleInputChange}
                 min="0"
+                value={votesFor}
+                onChange={(e) => setVotesFor(e.target.value === "" ? "" : parseInt(e.target.value))}
+                placeholder="0"
+                className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
                 disabled={saving}
-                className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-decision-purple/50 disabled:opacity-50"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-foreground mb-2">Votes Against</label>
+              <label className="block text-sm font-medium text-foreground mb-2">
+                Votes Against
+              </label>
               <input
                 type="number"
-                name="votesAgainst"
-                value={formData.votesAgainst}
-                onChange={handleInputChange}
                 min="0"
+                value={votesAgainst}
+                onChange={(e) => setVotesAgainst(e.target.value === "" ? "" : parseInt(e.target.value))}
+                placeholder="0"
+                className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
                 disabled={saving}
-                className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-decision-purple/50 disabled:opacity-50"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-foreground mb-2">Abstain</label>
+              <label className="block text-sm font-medium text-foreground mb-2">
+                Abstentions
+              </label>
               <input
                 type="number"
-                name="votesAbstain"
-                value={formData.votesAbstain}
-                onChange={handleInputChange}
                 min="0"
+                value={votesAbstain}
+                onChange={(e) => setVotesAbstain(e.target.value === "" ? "" : parseInt(e.target.value))}
+                placeholder="0"
+                className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
                 disabled={saving}
-                className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-decision-purple/50 disabled:opacity-50"
               />
             </div>
           </div>
+        </div>
 
-          <div className="flex gap-3 pt-4">
-            <Button 
-              type="button" 
-              variant="outline" 
-              onClick={onClose} 
-              className="flex-1 bg-transparent"
-              disabled={saving}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              className="flex-1 bg-decision-purple text-white hover:bg-decision-purple/90"
-              disabled={saving || !formData.motionText.trim()}
-            >
-              {saving ? "Saving..." : "Save Decision"}
-            </Button>
-          </div>
-        </form>
+        <div className="flex gap-3 mt-6">
+          <Button
+            onClick={handleClose}
+            variant="outline"
+            className="flex-1"
+            disabled={saving}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleSave}
+            className="flex-1 bg-decision-purple hover:bg-decision-purple/90 text-white"
+            disabled={saving}
+          >
+            {saving ? "Saving..." : "Save Decision"}
+          </Button>
+        </div>
       </Card>
     </div>
   )
