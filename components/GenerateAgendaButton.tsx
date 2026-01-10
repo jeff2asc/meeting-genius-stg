@@ -40,7 +40,7 @@ export default function GenerateAgendaButton({
     setGenerating(true)
 
     try {
-      // Fetch meeting data
+      // Fetch meeting data (include logo_url)
       const { data: meeting, error: meetingError } = await supabase
         .from("meetings")
         .select(`
@@ -48,7 +48,8 @@ export default function GenerateAgendaButton({
           buildings!inner(
             name,
             address,
-            building_type
+            building_type,
+            logo_url
           )
         `)
         .eq("id", meetingId)
@@ -75,12 +76,28 @@ export default function GenerateAgendaButton({
 
       // Generate PDF directly using jsPDF
       await generatePDF(meeting, sections || [], topics || [])
-
     } catch (error) {
       console.error("Error generating agenda:", error)
       alert("Failed to generate agenda PDF")
     } finally {
       setGenerating(false)
+    }
+  }
+
+  // Helper: load image URL and convert to data URL for jsPDF
+  const loadImageAsDataUrl = async (url: string): Promise<string | null> => {
+    try {
+      const res = await fetch(url)
+      if (!res.ok) return null
+      const blob = await res.blob()
+      return await new Promise((resolve) => {
+        const reader = new FileReader()
+        reader.onloadend = () => resolve(reader.result as string)
+        reader.readAsDataURL(blob)
+      })
+    } catch (e) {
+      console.error("Failed to load logo image:", e)
+      return null
     }
   }
 
@@ -99,6 +116,12 @@ export default function GenerateAgendaButton({
       day: "numeric"
     })
 
+    // Try to load building logo (if present)
+    let logoDataUrl: string | null = null
+    if (building?.logo_url) {
+      logoDataUrl = await loadImageAsDataUrl(building.logo_url)
+    }
+
     // Helper function to add new page if needed
     const checkPageBreak = (spaceNeeded: number) => {
       if (yPosition + spaceNeeded > pageHeight - margin) {
@@ -109,40 +132,43 @@ export default function GenerateAgendaButton({
       return false
     }
 
-    // Helper to add wrapped text
-    const addWrappedText = (text: string, x: number, fontSize: number, maxWidth: number, color: string = "#000000") => {
-      pdf.setFontSize(fontSize)
-      pdf.setTextColor(color)
-      const lines = pdf.splitTextToSize(text, maxWidth)
-      lines.forEach((line: string) => {
-        checkPageBreak(fontSize * 0.5)
-        pdf.text(line, x, yPosition)
-        yPosition += fontSize * 0.5
-      })
-    }
-
-    // Header
+    // Header with logo + title bar
+    // Background bar
     pdf.setFillColor(37, 99, 235) // Blue
     pdf.rect(0, 0, pageWidth, 40, "F")
-    
+
+    // Draw logo on the left if available
+    if (logoDataUrl) {
+      try {
+        const logoHeight = 20
+        const logoWidth = 40 // approximate; jsPDF keeps aspect ratio if one dimension given
+        const logoX = margin
+        const logoY = 10
+        pdf.addImage(logoDataUrl, "PNG", logoX, logoY, logoWidth, logoHeight)
+      } catch (e) {
+        console.error("Failed to add logo to PDF:", e)
+      }
+    }
+
+    // Title and building name centered
     pdf.setFontSize(24)
     pdf.setTextColor("#FFFFFF")
     pdf.setFont("helvetica", "bold")
-    pdf.text("MEETING AGENDA", pageWidth / 2, 20, { align: "center" })
-    
+    pdf.text("MEETING AGENDA", pageWidth / 2, 16, { align: "center" })
+
     pdf.setFontSize(16)
-    pdf.text(building?.name || "Building", pageWidth / 2, 32, { align: "center" })
-    
+    pdf.text(building?.name || "Building", pageWidth / 2, 30, { align: "center" })
+
     yPosition = 55
 
     // Meeting Details Box
     pdf.setFillColor(243, 244, 246)
     pdf.rect(margin, yPosition, pageWidth - 2 * margin, 50, "F")
-    
+
     pdf.setFontSize(10)
     pdf.setTextColor("#374151")
     pdf.setFont("helvetica", "bold")
-    
+
     let detailY = yPosition + 10
     const addDetail = (label: string, value: string) => {
       pdf.setFont("helvetica", "bold")
@@ -185,7 +211,7 @@ export default function GenerateAgendaButton({
     // Add sections with topics
     sections.forEach((section) => {
       const sectionTopics = topicsBySection[section.id] || []
-      
+
       checkPageBreak(15)
       pdf.setFontSize(14)
       pdf.setTextColor("#2563eb")
@@ -196,23 +222,23 @@ export default function GenerateAgendaButton({
       if (sectionTopics.length > 0) {
         sectionTopics.forEach((topic: Topic, idx: number) => {
           checkPageBreak(20)
-          
+
           // Topic box
           pdf.setFillColor(249, 250, 251)
           const boxHeight = topic.description ? 20 : 12
           pdf.rect(margin + 5, yPosition - 5, pageWidth - 2 * margin - 10, boxHeight, "F")
-          
+
           // Blue left border
           pdf.setFillColor(96, 165, 250)
           pdf.rect(margin + 5, yPosition - 5, 2, boxHeight, "F")
-          
+
           // Topic title
           pdf.setFontSize(11)
           pdf.setTextColor("#374151")
           pdf.setFont("helvetica", "bold")
           pdf.text(`${itemNumber}.${idx + 1} ${topic.title}`, margin + 10, yPosition)
           yPosition += 6
-          
+
           // Topic description
           if (topic.description) {
             pdf.setFontSize(9)
@@ -225,7 +251,7 @@ export default function GenerateAgendaButton({
               yPosition += 4
             })
           }
-          
+
           yPosition += 8
         })
       }
@@ -246,20 +272,20 @@ export default function GenerateAgendaButton({
 
       unsectionedTopics.forEach((topic: Topic, idx: number) => {
         checkPageBreak(20)
-        
+
         pdf.setFillColor(249, 250, 251)
         const boxHeight = topic.description ? 20 : 12
         pdf.rect(margin + 5, yPosition - 5, pageWidth - 2 * margin - 10, boxHeight, "F")
-        
+
         pdf.setFillColor(96, 165, 250)
         pdf.rect(margin + 5, yPosition - 5, 2, boxHeight, "F")
-        
+
         pdf.setFontSize(11)
         pdf.setTextColor("#374151")
         pdf.setFont("helvetica", "bold")
         pdf.text(`${itemNumber}.${idx + 1} ${topic.title}`, margin + 10, yPosition)
         yPosition += 6
-        
+
         if (topic.description) {
           pdf.setFontSize(9)
           pdf.setFont("helvetica", "normal")
@@ -271,7 +297,7 @@ export default function GenerateAgendaButton({
             yPosition += 4
           })
         }
-        
+
         yPosition += 8
       })
     }
@@ -281,7 +307,7 @@ export default function GenerateAgendaButton({
     pdf.setDrawColor(229, 231, 235)
     pdf.setLineWidth(0.5)
     pdf.line(margin, footerY, pageWidth - margin, footerY)
-    
+
     pdf.setFontSize(8)
     pdf.setTextColor("#9ca3af")
     pdf.setFont("helvetica", "normal")
