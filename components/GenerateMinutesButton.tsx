@@ -50,23 +50,37 @@ export default function GenerateMinutesButton({
       const template: TemplateConfig =
         templateData?.blocks?.sections ? templateData.blocks : getDefaultTemplate()
 
-      // Step 2: Fetch meeting data
+      // Step 2: Fetch meeting data + building + company logo
       const { data: meeting, error: meetingError } = await supabase
         .from("meetings")
         .select(
           `
           *,
-          buildings(name, address)
+          buildings(
+            name,
+            address,
+            logo_url,
+            company_id,
+            companies(
+              logo_url
+            )
+          )
         `
         )
         .eq("id", meetingId)
         .single()
 
       if (meetingError || !meeting) {
+        console.error("Failed to load meeting data:", meetingError)
         alert("Failed to load meeting data")
         setGenerating(false)
         return
       }
+
+      const building = meeting.buildings
+      const company = building?.companies
+      const logoUrl: string | null =
+        building?.logo_url || company?.logo_url || null
 
       // Step 3: Fetch sections and topics
       const { data: sections } = await supabase
@@ -85,8 +99,13 @@ export default function GenerateMinutesButton({
         .eq("meeting_id", meetingId)
         .order("order_index")
 
-      // Step 4: Generate HTML
-      const minutesHtml = generateMinutesHtml(template, meeting, sections || [])
+      // Step 4: Generate HTML (with logo)
+      const minutesHtml = generateMinutesHtml(
+        template,
+        meeting,
+        sections || [],
+        logoUrl
+      )
 
       // Step 5: Create isolated iframe
       const iframe = document.createElement("iframe")
@@ -138,6 +157,18 @@ export default function GenerateMinutesButton({
               font-size: 12pt; 
               margin: 12px 0 8px 0;
               page-break-after: avoid;
+            }
+            .page-header {
+              text-align: center;
+              border-bottom: 2px solid #1f2937;
+              padding-bottom: 12px;
+              margin-bottom: 25px;
+            }
+            .page-header-logo {
+              max-height: 60px;
+              max-width: 180px;
+              object-fit: contain;
+              margin-bottom: 8px;
             }
             .section { 
               margin-bottom: 25px;
@@ -257,7 +288,8 @@ export default function GenerateMinutesButton({
       const fullHeight = canvas.height
 
       // How many canvas pixels fit into one PDF page in height
-      const pageCanvasHeight = (usablePageHeight * canvas.width) / (pageWidth - margin * 2)
+      const pageCanvasHeight =
+        (usablePageHeight * canvas.width) / (pageWidth - margin * 2)
 
       let renderedHeight = 0
       let pageIndex = 0
@@ -266,7 +298,10 @@ export default function GenerateMinutesButton({
         // Create a temporary canvas for each page slice
         const pageCanvas = document.createElement("canvas")
         pageCanvas.width = fullWidth
-        pageCanvas.height = Math.min(pageCanvasHeight, fullHeight - renderedHeight)
+        pageCanvas.height = Math.min(
+          pageCanvasHeight,
+          fullHeight - renderedHeight
+        )
 
         const pageCtx = pageCanvas.getContext("2d")
         if (!pageCtx) break
@@ -298,7 +333,11 @@ export default function GenerateMinutesButton({
         pageIndex++
       }
 
-      const fileName = `${meeting.title.replace(/[^a-z0-9]/gi, "_")}_Minutes_${
+      const safeTitle = (meeting.title || "Meeting")
+        .replace(/[^a-z0-9]/gi, "_")
+        .substring(0, 80)
+
+      const fileName = `${safeTitle}_Minutes_${
         new Date().toISOString().split("T")[0]
       }.pdf`
       pdf.save(fileName)
@@ -347,7 +386,12 @@ function getDefaultTemplate(): TemplateConfig {
           { id: "meeting_date", label: "Meeting Date", visible: true, order: 3 },
           { id: "start_time", label: "Start Time", visible: true, order: 4 },
           { id: "location", label: "Location", visible: true, order: 5 },
-          { id: "strata_plan", label: "Strata Plan Number", visible: true, order: 6 },
+          {
+            id: "strata_plan",
+            label: "Strata Plan Number",
+            visible: true,
+            order: 6,
+          },
         ],
       },
       {
@@ -383,7 +427,12 @@ function getDefaultTemplate(): TemplateConfig {
         fields: [
           { id: "adjournment", label: "Meeting Adjourned", visible: true, order: 1 },
           { id: "next_meeting", label: "Next Meeting Date", visible: true, order: 2 },
-          { id: "prepared_by", label: "Minutes Prepared By", visible: true, order: 3 },
+          {
+            id: "prepared_by",
+            label: "Minutes Prepared By",
+            visible: true,
+            order: 3,
+          },
           { id: "signatures", label: "Signatures", visible: true, order: 4 },
         ],
       },
@@ -391,13 +440,23 @@ function getDefaultTemplate(): TemplateConfig {
   }
 }
 
-function generateMinutesHtml(template: TemplateConfig, meeting: any, sections: any[]): string {
+function generateMinutesHtml(
+  template: TemplateConfig,
+  meeting: any,
+  sections: any[],
+  logoUrl: string | null
+): string {
   const building = meeting.buildings
 
   let html = `
-    <h1 style="text-align: center; border-bottom: 2px solid #1f2937; padding-bottom: 12px; margin-bottom: 25px;">
-      ${escapeHtml(meeting.title)}
-    </h1>
+    <div class="page-header">
+      ${
+        logoUrl
+          ? `<img src="${escapeHtml(logoUrl)}" alt="Logo" class="page-header-logo" />`
+          : ""
+      }
+      <h1>${escapeHtml(meeting.title)}</h1>
+    </div>
   `
 
   template.sections.forEach((templateSection) => {
@@ -426,7 +485,9 @@ function escapeHtml(text: string): string {
 }
 
 function renderHeader(section: TemplateSection, meeting: any, building: any): string {
-  const visibleFields = section.fields.filter((f) => f.visible).sort((a, b) => a.order - b.order)
+  const visibleFields = section.fields
+    .filter((f) => f.visible)
+    .sort((a, b) => a.order - b.order)
 
   let html = `
     <div class="section">
@@ -445,13 +506,16 @@ function renderHeader(section: TemplateSection, meeting: any, building: any): st
         break
       case "meeting_date":
         value = meeting.meeting_date
-          ? new Date(meeting.meeting_date + "T00:00:00Z").toLocaleDateString("en-US", {
-              weekday: "long",
-              year: "numeric",
-              month: "long",
-              day: "numeric",
-              timeZone: "UTC",
-            })
+          ? new Date(meeting.meeting_date + "T00:00:00Z").toLocaleDateString(
+              "en-US",
+              {
+                weekday: "long",
+                year: "numeric",
+                month: "long",
+                day: "numeric",
+                timeZone: "UTC",
+              }
+            )
           : "N/A"
         break
       case "start_time":
@@ -522,10 +586,14 @@ function renderTopics(sections: any[]): string {
       section.topics.forEach((topic: any, tIdx: number) => {
         html += `
           <div class="topic-box">
-            <div class="topic-title">${sIdx + 1}.${tIdx + 1} ${escapeHtml(topic.title)}</div>`
+            <div class="topic-title">${sIdx + 1}.${tIdx + 1} ${escapeHtml(
+              topic.title
+            )}</div>`
 
         if (topic.description) {
-          html += `<div class="topic-description">${escapeHtml(topic.description)}</div>`
+          html += `<div class="topic-description">${escapeHtml(
+            topic.description
+          )}</div>`
         }
 
         if (topic.notes && topic.notes.length > 0) {
@@ -538,7 +606,8 @@ function renderTopics(sections: any[]): string {
 
         if (topic.tasks && topic.tasks.length > 0) {
           topic.tasks.forEach((task: any) => {
-            const assignee = task.assigned_name || task.assigned_email || "Unassigned"
+            const assignee =
+              task.assigned_name || task.assigned_email || "Unassigned"
             const dueDate = task.due_date
               ? ` (Due: ${new Date(task.due_date).toLocaleDateString()})`
               : ""
