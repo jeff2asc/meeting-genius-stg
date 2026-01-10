@@ -42,7 +42,7 @@ export default function GenerateAgendaButton({
     try {
       console.log("📄 Generating agenda for meetingId =", meetingId)
 
-      // Fetch meeting data (include logo_url)
+      // Fetch meeting + building + company (for logo)
       const { data: meeting, error: meetingError } = await supabase
         .from("meetings")
         .select(`
@@ -51,7 +51,11 @@ export default function GenerateAgendaButton({
             name,
             address,
             building_type,
-            logo_url
+            logo_url,
+            company_id,
+            companies (
+              logo_url
+            )
           )
         `)
         .eq("id", meetingId)
@@ -125,7 +129,9 @@ export default function GenerateAgendaButton({
     let yPosition = margin
 
     const building = meeting.buildings
+    const company = building?.companies
     console.log("🏢 Building from meeting:", building)
+    console.log("🏢 Company from building:", company)
 
     const meetingDate = new Date(meeting.meeting_date).toLocaleDateString("en-US", {
       weekday: "long",
@@ -134,14 +140,19 @@ export default function GenerateAgendaButton({
       day: "numeric"
     })
 
-    // Try to load building logo (if present)
+    // Compute logo URL: prefer building logo, fallback to company logo
+    const logoUrl: string | null =
+      building?.logo_url || company?.logo_url || null
+
+    console.log("🖼 Resolved logoUrl =", logoUrl)
+
+    // Try to load logo (if present)
     let logoDataUrl: string | null = null
-    if (building?.logo_url) {
-      console.log("🖼 Found building.logo_url:", building.logo_url)
-      logoDataUrl = await loadImageAsDataUrl(building.logo_url)
+    if (logoUrl) {
+      logoDataUrl = await loadImageAsDataUrl(logoUrl)
       console.log("🖼 Logo data URL loaded?", !!logoDataUrl)
     } else {
-      console.log("🖼 No logo_url found on building")
+      console.log("🖼 No logo URL available for this meeting")
     }
 
     // Helper function to add new page if needed
