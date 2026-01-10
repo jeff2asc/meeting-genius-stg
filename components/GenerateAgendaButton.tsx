@@ -40,6 +40,8 @@ export default function GenerateAgendaButton({
     setGenerating(true)
 
     try {
+      console.log("📄 Generating agenda for meetingId =", meetingId)
+
       // Fetch meeting data (include logo_url)
       const { data: meeting, error: meetingError } = await supabase
         .from("meetings")
@@ -55,7 +57,11 @@ export default function GenerateAgendaButton({
         .eq("id", meetingId)
         .single()
 
-      if (meetingError) throw meetingError
+      console.log("📄 Meeting data:", meeting)
+      if (meetingError) {
+        console.error("❌ Meeting fetch error:", meetingError)
+        throw meetingError
+      }
 
       // Fetch sections and topics
       const { data: sections, error: sectionsError } = await supabase
@@ -64,7 +70,11 @@ export default function GenerateAgendaButton({
         .eq("meeting_id", meetingId)
         .order("order_index")
 
-      if (sectionsError) throw sectionsError
+      console.log("📄 Sections:", sections)
+      if (sectionsError) {
+        console.error("❌ Sections fetch error:", sectionsError)
+        throw sectionsError
+      }
 
       const { data: topics, error: topicsError } = await supabase
         .from("topics")
@@ -72,7 +82,11 @@ export default function GenerateAgendaButton({
         .eq("meeting_id", meetingId)
         .order("order_index")
 
-      if (topicsError) throw topicsError
+      console.log("📄 Topics:", topics)
+      if (topicsError) {
+        console.error("❌ Topics fetch error:", topicsError)
+        throw topicsError
+      }
 
       // Generate PDF directly using jsPDF
       await generatePDF(meeting, sections || [], topics || [])
@@ -87,7 +101,9 @@ export default function GenerateAgendaButton({
   // Helper: load image URL and convert to data URL for jsPDF
   const loadImageAsDataUrl = async (url: string): Promise<string | null> => {
     try {
+      console.log("🖼 Fetching logo from URL:", url)
       const res = await fetch(url)
+      console.log("🖼 Logo fetch response status:", res.status)
       if (!res.ok) return null
       const blob = await res.blob()
       return await new Promise((resolve) => {
@@ -109,6 +125,8 @@ export default function GenerateAgendaButton({
     let yPosition = margin
 
     const building = meeting.buildings
+    console.log("🏢 Building from meeting:", building)
+
     const meetingDate = new Date(meeting.meeting_date).toLocaleDateString("en-US", {
       weekday: "long",
       year: "numeric",
@@ -119,7 +137,11 @@ export default function GenerateAgendaButton({
     // Try to load building logo (if present)
     let logoDataUrl: string | null = null
     if (building?.logo_url) {
+      console.log("🖼 Found building.logo_url:", building.logo_url)
       logoDataUrl = await loadImageAsDataUrl(building.logo_url)
+      console.log("🖼 Logo data URL loaded?", !!logoDataUrl)
+    } else {
+      console.log("🖼 No logo_url found on building")
     }
 
     // Helper function to add new page if needed
@@ -141,13 +163,16 @@ export default function GenerateAgendaButton({
     if (logoDataUrl) {
       try {
         const logoHeight = 20
-        const logoWidth = 40 // approximate; jsPDF keeps aspect ratio if one dimension given
+        const logoWidth = 40 // approximate
         const logoX = margin
         const logoY = 10
+        console.log("🖼 Adding logo to PDF at", { logoX, logoY, logoWidth, logoHeight })
         pdf.addImage(logoDataUrl, "PNG", logoX, logoY, logoWidth, logoHeight)
       } catch (e) {
         console.error("Failed to add logo to PDF:", e)
       }
+    } else {
+      console.log("🖼 Skipping logo drawing (no logoDataUrl)")
     }
 
     // Title and building name centered
