@@ -205,10 +205,19 @@ Meeting records (agendas and minutes).
   {
     "name": "John Doe",
     "email": "john@example.com",
+    "role": "Chair",
+    "user_id": 123,
     "present": true
   }
 ]
 ```
+
+**Attendee Fields**:
+- `name`: Required string - Attendee's full name
+- `email`: Optional string - Attendee's email address
+- `role`: Optional string - Attendee's role (e.g., "Chair", "Secretary", "Member", "Treasurer")
+- `user_id`: Optional number - Reference to user in `users` table (if attendee is a system user)
+- `present`: Boolean - Whether attendee was present at the meeting
 
 ---
 
@@ -398,7 +407,7 @@ Customizable templates for generating minutes PDFs.
 
 **Template Sections**:
 - `header`: Building name, meeting type, date, time, location, strata plan
-- `attendees`: Present, absent, regrets
+- `attendees`: Name, role, and present/absent status for each attendee
 - `topics`: Discussion topics with descriptions, notes, tasks, and decisions
 - `decisions`: Motions, results, vote counts
 - `footer`: Adjournment, signatures, next meeting date
@@ -659,7 +668,11 @@ All permission checks are centralized in `lib/permissions.ts`:
 - Four status states: working_agenda → agenda → working_minutes → minutes
 - Drag-and-drop reordering of sections and topics
 - Meeting rollover: copy topics and tasks from previous meetings
-- Attendee management with presence tracking
+- **Attendee management** with presence tracking and role assignment
+  - Add/edit/remove attendees during agenda phase
+  - Assign roles to attendees (e.g., "Chair", "Secretary", "Member")
+  - Track presence during meeting minutes phase
+  - Roles displayed in PDF minutes generation
 
 ### 2. **Topic & Section Management**
 - Organize topics into sections
@@ -893,7 +906,7 @@ app/page.tsx (Root)
 - `components/decision-modal.tsx`: Record decisions
 - `components/create-section-modal.tsx`: Create sections
 - `components/create-topic-modal.tsx`: Create topics
-- `components/AttendeeManagement.tsx`: Manage meeting attendees
+- `components/AttendeeManagement.tsx`: Manage meeting attendees with role assignment and presence tracking
 - `components/GenerateMinutesButton.tsx`: Generate PDF minutes from finalized meetings
 
 #### **Admin Components** (`components/admin/`)
@@ -1071,7 +1084,7 @@ working_agenda → agenda → working_minutes → minutes
 4. If no template exists, uses default template
 5. System fetches all meeting data:
    - Meeting details (title, date, type, location, etc.)
-   - Attendees (present/absent)
+   - Attendees (name, email, role, present/absent status)
    - Sections and topics
    - Notes for each topic
    - Tasks for each topic
@@ -1400,10 +1413,21 @@ Attendees stored as JSONB array in `meetings.attendees`:
   {
     "name": "John Doe",
     "email": "john@example.com",
+    "role": "Chair",
+    "user_id": 123,
     "present": true
   }
 ]
 ```
+
+**Attendee Management Features**:
+- **Add Attendees**: During `working_agenda` phase, users can add attendees with name, email, and role
+- **Edit Attendees**: In `working_agenda` phase, all attendee fields (name, email, role) are editable
+- **Remove Attendees**: Attendees can be deleted during `working_agenda` phase
+- **Track Presence**: During `working_minutes` phase, users can mark attendees as present/absent
+- **Role Assignment**: Each attendee can have a role (e.g., "Chair", "Secretary", "Member", "Treasurer")
+- **Role Display**: Roles are displayed in the attendees table and included in PDF minutes generation
+- **Read-Only Mode**: In `minutes` (finalized) status, attendees are read-only
 
 ### 10. **TypeScript Types**
 
@@ -1569,10 +1593,13 @@ The system is designed for property management companies to manage their meeting
 
 ---
 
-**Last Updated**: January 2025 (Updated with topic attachments, building document URLs, company logos, and enhanced AI analysis)
+**Last Updated**: January 2025 (Updated with attendee role field, topic attachments, building document URLs, company logos, and enhanced AI analysis)
 **Version**: Current production codebase
 
 **Recent Updates**:
+- Added `role` field to attendee objects in `meetings.attendees` JSONB array
+- Enhanced AttendeeManagement component to support role assignment and editing
+- Roles are now displayed in attendees table and included in PDF minutes generation
 - Added `topic_attachments` table for storing file attachments on topics
 - Added `building_document_urls` table for storing reference URLs (links) for buildings
 - Added `logo_url` field to `companies` table for company logo management
