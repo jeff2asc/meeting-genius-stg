@@ -1,153 +1,298 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { X, Users, ThumbsUp, ThumbsDown, Minus } from "lucide-react"
+import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
+import { X, Sparkles, AtSign } from "lucide-react"
 import { supabase, getCurrentUser } from "@/lib/supabase"
-import GeniusWordsInput from "./GeniusWordsInput"
 
 interface DecisionModalProps {
-  topicId: number
-  meetingId: number
   isOpen: boolean
   onClose: () => void
-  onSave: () => void
+  topicId: number
+  meetingId: number
+  onSave?: () => void
 }
 
-interface VotingEligibleOwner {
-  id: number
+interface Attendee {
   name: string
-  email: string
-  voting_units: number
+  email?: string
+  present: boolean
 }
 
-export default function DecisionModal({ topicId, meetingId, isOpen, onClose, onSave }: DecisionModalProps) {
-  const [formData, setFormData] = useState({
-    motion_text: "",
-    result: "pending" as "approved" | "rejected" | "pending" | "deferred",
-    votes_for: null as number | null,
-    votes_against: null as number | null,
-    abstentions: null as number | null,
-  })
+interface GeniusWord {
+  id: number
+  shortcode: string
+  description: string
+}
 
+export default function DecisionModal({
+  isOpen,
+  onClose,
+  topicId,
+  meetingId,
+  onSave
+}: DecisionModalProps) {
+  const [motionText, setMotionText] = useState("")
+  const [result, setResult] = useState("")
+  const [votesFor, setVotesFor] = useState<number | "">("")
+  const [votesAgainst, setVotesAgainst] = useState<number | "">("")
+  const [votesAbstain, setVotesAbstain] = useState<number | "">("")
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [decisionResults, setDecisionResults] = useState<string[]>([])
+  const [attendees, setAttendees] = useState<Attendee[]>([])
+  
+  // @ Mention Autocomplete State
+  const [showMentionSuggestions, setShowMentionSuggestions] = useState(false)
+  const [mentionSuggestions, setMentionSuggestions] = useState<Attendee[]>([])
+  const [selectedMentionIndex, setSelectedMentionIndex] = useState(0)
+  const [mentionStartIndex, setMentionStartIndex] = useState(-1)
+  
+  // # GeniusWords Autocomplete State
+  const [geniusWords, setGeniusWords] = useState<GeniusWord[]>([])
+  const [showGeniusSuggestions, setShowGeniusSuggestions] = useState(false)
+  const [geniusSuggestions, setGeniusSuggestions] = useState<GeniusWord[]>([])
+  const [selectedGeniusIndex, setSelectedGeniusIndex] = useState(0)
+  const [geniusStartIndex, setGeniusStartIndex] = useState(-1)
+  
+  const [cursorPosition, setCursorPosition] = useState(0)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const mentionSuggestionsRef = useRef<HTMLDivElement>(null)
+  const geniusSuggestionsRef = useRef<HTMLDivElement>(null)
 
-  // Voting eligibility
-  const [votingEligibleOwners, setVotingEligibleOwners] = useState<VotingEligibleOwner[]>([])
-  const [totalVotingUnits, setTotalVotingUnits] = useState(0)
-  const [attendeeVotingUnits, setAttendeeVotingUnits] = useState(0)
-  const [loadingVoters, setLoadingVoters] = useState(false)
-
-  // Individual voter tracking
-  const [individualVotes, setIndividualVotes] = useState<
-    { owner_id: number; vote: "for" | "against" | "abstain" | null }[]
-  >([])
+  const currentUser = getCurrentUser()
 
   useEffect(() => {
     if (isOpen) {
-      fetchVotingEligibleOwners()
+      fetchDecisionResults()
+      fetchAttendees()
+      fetchGeniusWords()
     }
   }, [isOpen, meetingId])
 
-  const fetchVotingEligibleOwners = async () => {
-    setLoadingVoters(true)
+  const fetchDecisionResults = async () => {
     try {
       const { data: meetingData, error: meetingError } = await supabase
         .from("meetings")
-        .select("building_id, attendees")
+        .select("building_id")
         .eq("id", meetingId)
         .single()
 
       if (meetingError || !meetingData) {
         console.error("Error fetching meeting:", meetingError)
-        setLoadingVoters(false)
         return
       }
 
-      const buildingId = meetingData.building_id
-      const attendeesData = meetingData.attendees || []
+      const { data: buildingData, error: buildingError } = await supabase
+        .from("buildings")
+        .select("company_id")
+        .eq("id", meetingData.building_id)
+        .single()
 
-      const { data: ownersData, error: ownersError } = await supabase
-        .from("owners")
-        .select("id, name, email, voting_units")
-        .eq("building_id", buildingId)
-        .gt("voting_units", 0)
-
-      if (ownersError || !ownersData) {
-        console.error("Error fetching owners:", ownersError)
-        setLoadingVoters(false)
+      if (buildingError || !buildingData || !buildingData.company_id) {
+        console.error("Error fetching building:", buildingError)
         return
       }
 
-      setVotingEligibleOwners(ownersData)
+      const { data: companyData, error: companyError } = await supabase
+        .from("companies")
+        .select("default_decision_results")
+        .eq("id", buildingData.company_id)
+        .single()
 
-      const total = ownersData.reduce((sum, owner) => sum + owner.voting_units, 0)
-      setTotalVotingUnits(total)
+      if (companyError) {
+        console.error("Error fetching company:", companyError)
+        return
+      }
 
-      const attendeeEmails = attendeesData
-        .filter((a: any) => a.present)
-        .map((a: any) => a.email.toLowerCase())
-
-      const attendeeTotal = ownersData
-        .filter((owner) => attendeeEmails.includes(owner.email.toLowerCase()))
-        .reduce((sum, owner) => sum + owner.voting_units, 0)
-
-      setAttendeeVotingUnits(attendeeTotal)
-
-      const initialVotes = ownersData.map((owner) => ({
-        owner_id: owner.id,
-        vote: null as "for" | "against" | "abstain" | null,
-      }))
-      setIndividualVotes(initialVotes)
+      if (companyData?.default_decision_results) {
+        setDecisionResults(companyData.default_decision_results)
+      } else {
+        setDecisionResults(["MSC", "Defeated", "Deferred"])
+      }
     } catch (err) {
-      console.error("Unexpected error:", err)
-    } finally {
-      setLoadingVoters(false)
+      console.error("Error fetching decision results:", err)
+      setDecisionResults(["MSC", "Defeated", "Deferred"])
     }
   }
 
-  const handleVoteChange = (ownerId: number, vote: "for" | "against" | "abstain" | null) => {
-    setIndividualVotes((prev) =>
-      prev.map((v) => (v.owner_id === ownerId ? { ...v, vote } : v))
-    )
+  const fetchAttendees = async () => {
+    try {
+      const { data: meetingData, error } = await supabase
+        .from("meetings")
+        .select("attendees")
+        .eq("id", meetingId)
+        .single()
+
+      if (error) {
+        console.error("Error fetching attendees:", error)
+        return
+      }
+
+      if (meetingData?.attendees) {
+        setAttendees(meetingData.attendees as Attendee[])
+      }
+    } catch (err) {
+      console.error("Error fetching attendees:", err)
+    }
   }
 
-  useEffect(() => {
-    const votesFor = individualVotes
-      .filter((v) => v.vote === "for")
-      .reduce((sum, v) => {
-        const owner = votingEligibleOwners.find((o) => o.id === v.owner_id)
-        return sum + (owner?.voting_units || 0)
-      }, 0)
+  const fetchGeniusWords = async () => {
+    if (!currentUser?.id) return
 
-    const votesAgainst = individualVotes
-      .filter((v) => v.vote === "against")
-      .reduce((sum, v) => {
-        const owner = votingEligibleOwners.find((o) => o.id === v.owner_id)
-        return sum + (owner?.voting_units || 0)
-      }, 0)
+    try {
+      const { data, error } = await supabase
+        .from('genius_words')
+        .select('id, shortcode, description')
+        .eq('user_id', currentUser.id)
+        .order('shortcode', { ascending: true })
 
-    const abstentions = individualVotes
-      .filter((v) => v.vote === "abstain")
-      .reduce((sum, v) => {
-        const owner = votingEligibleOwners.find((o) => o.id === v.owner_id)
-        return sum + (owner?.voting_units || 0)
-      }, 0)
+      if (!error && data) {
+        setGeniusWords(data)
+      }
+    } catch (err) {
+      console.error('Error fetching genius words:', err)
+    }
+  }
 
-    setFormData((prev) => ({
-      ...prev,
-      votes_for: votesFor || null,
-      votes_against: votesAgainst || null,
-      abstentions: abstentions || null,
-    }))
-  }, [individualVotes, votingEligibleOwners])
+  const handleMotionTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const text = e.target.value
+    const cursorPos = e.target.selectionStart
+    
+    setMotionText(text)
+    setCursorPosition(cursorPos)
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+    const textBeforeCursor = text.substring(0, cursorPos)
 
-    if (!formData.motion_text.trim()) {
+    // Check for @ mention
+    const atIndex = textBeforeCursor.lastIndexOf("@")
+    const hashIndex = textBeforeCursor.lastIndexOf("#")
+    
+    // Determine which autocomplete to show (prioritize the most recent trigger)
+    if (atIndex > hashIndex && atIndex !== -1) {
+      const textAfterAt = textBeforeCursor.substring(atIndex + 1)
+      
+      if (!textAfterAt.includes(" ") && !textAfterAt.includes("\n")) {
+        setMentionStartIndex(atIndex)
+        
+        const filtered = attendees.filter(attendee =>
+          attendee.name.toLowerCase().includes(textAfterAt.toLowerCase())
+        )
+        
+        setMentionSuggestions(filtered)
+        setShowMentionSuggestions(filtered.length > 0)
+        setSelectedMentionIndex(0)
+        setShowGeniusSuggestions(false)
+      } else {
+        setShowMentionSuggestions(false)
+      }
+    } else if (hashIndex > atIndex && hashIndex !== -1) {
+      const textAfterHash = textBeforeCursor.substring(hashIndex + 1)
+      
+      if (!textAfterHash.includes(" ") && !textAfterHash.includes("\n")) {
+        setGeniusStartIndex(hashIndex)
+        
+        const searchTerm = textAfterHash.toLowerCase()
+        const filtered = geniusWords.filter(gw =>
+          gw.shortcode.toLowerCase().includes(`#${searchTerm}`)
+        )
+        
+        setGeniusSuggestions(filtered)
+        setShowGeniusSuggestions(filtered.length > 0)
+        setSelectedGeniusIndex(0)
+        setShowMentionSuggestions(false)
+      } else {
+        setShowGeniusSuggestions(false)
+      }
+    } else {
+      setShowMentionSuggestions(false)
+      setShowGeniusSuggestions(false)
+    }
+  }
+
+  const insertMention = (attendee: Attendee) => {
+    if (mentionStartIndex === -1) return
+
+    const beforeMention = motionText.substring(0, mentionStartIndex)
+    const afterCursor = motionText.substring(cursorPosition)
+    const newText = beforeMention + attendee.name + " " + afterCursor
+    
+    setMotionText(newText)
+    setShowMentionSuggestions(false)
+    setMentionStartIndex(-1)
+
+    setTimeout(() => {
+      if (textareaRef.current) {
+        const newCursorPos = mentionStartIndex + attendee.name.length + 1
+        textareaRef.current.setSelectionRange(newCursorPos, newCursorPos)
+        textareaRef.current.focus()
+      }
+    }, 0)
+  }
+
+  const insertGeniusWord = (geniusWord: GeniusWord) => {
+    if (geniusStartIndex === -1) return
+
+    const beforeGenius = motionText.substring(0, geniusStartIndex)
+    const afterCursor = motionText.substring(cursorPosition)
+    const newText = beforeGenius + geniusWord.description + " " + afterCursor
+    
+    setMotionText(newText)
+    setShowGeniusSuggestions(false)
+    setGeniusStartIndex(-1)
+
+    setTimeout(() => {
+      if (textareaRef.current) {
+        const newCursorPos = geniusStartIndex + geniusWord.description.length + 1
+        textareaRef.current.setSelectionRange(newCursorPos, newCursorPos)
+        textareaRef.current.focus()
+      }
+    }, 0)
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Handle @ mention suggestions
+    if (showMentionSuggestions) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault()
+        setSelectedMentionIndex(prev => 
+          prev < mentionSuggestions.length - 1 ? prev + 1 : prev
+        )
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault()
+        setSelectedMentionIndex(prev => prev > 0 ? prev - 1 : 0)
+      } else if (e.key === "Enter" && mentionSuggestions.length > 0) {
+        e.preventDefault()
+        insertMention(mentionSuggestions[selectedMentionIndex])
+      } else if (e.key === "Escape") {
+        setShowMentionSuggestions(false)
+      }
+      return
+    }
+
+    // Handle # GeniusWords suggestions
+    if (showGeniusSuggestions) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault()
+        setSelectedGeniusIndex(prev => 
+          prev < geniusSuggestions.length - 1 ? prev + 1 : prev
+        )
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault()
+        setSelectedGeniusIndex(prev => prev > 0 ? prev - 1 : 0)
+      } else if (e.key === "Enter" && geniusSuggestions.length > 0) {
+        e.preventDefault()
+        insertGeniusWord(geniusSuggestions[selectedGeniusIndex])
+      } else if (e.key === "Escape") {
+        setShowGeniusSuggestions(false)
+      }
+      return
+    }
+  }
+
+  const handleSave = async () => {
+    if (!motionText.trim()) {
       setError("Motion text is required")
       return
     }
@@ -156,231 +301,244 @@ export default function DecisionModal({ topicId, meetingId, isOpen, onClose, onS
     setError(null)
 
     try {
-      const currentUser = getCurrentUser()
-
-      const { error: insertError } = await supabase.from("decisions").insert({
-        topic_id: topicId,
-        meeting_id: meetingId,
-        motion_text: formData.motion_text.trim(),
-        result: formData.result,
-        votes_for: formData.votes_for,
-        votes_against: formData.votes_against,
-        abstentions: formData.abstentions,
-        total_voting_units: totalVotingUnits,
-        attendee_voting_units: attendeeVotingUnits,
-        individual_votes: individualVotes,
-        recorded_by: currentUser?.id,
-      })
+      const { error: insertError } = await supabase
+        .from("decisions")
+        .insert({
+          topic_id: topicId,
+          motion_text: motionText,
+          result: result || null,
+          votes_for: votesFor === "" ? null : votesFor,
+          votes_against: votesAgainst === "" ? null : votesAgainst,
+          votes_abstain: votesAbstain === "" ? null : votesAbstain
+        })
 
       if (insertError) {
-        console.error("Error inserting decision:", insertError)
-        setError(`Failed to save decision: ${insertError.message}`)
-        setSaving(false)
+        console.error("Error saving decision:", insertError)
+        setError("Failed to save decision")
         return
       }
 
-      console.log("✅ Decision saved successfully")
-      onSave()
+      if (onSave) onSave()
+      handleClose()
     } catch (err) {
       console.error("Unexpected error:", err)
       setError("An unexpected error occurred")
+    } finally {
       setSaving(false)
     }
+  }
+
+  const handleClose = () => {
+    setMotionText("")
+    setResult("")
+    setVotesFor("")
+    setVotesAgainst("")
+    setVotesAbstain("")
+    setError(null)
+    setShowMentionSuggestions(false)
+    setShowGeniusSuggestions(false)
+    setMentionSuggestions([])
+    setGeniusSuggestions([])
+    setMentionStartIndex(-1)
+    setGeniusStartIndex(-1)
+    onClose()
   }
 
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 animate-in fade-in">
-      <Card className="w-full sm:max-w-3xl border-0 rounded-t-2xl sm:rounded-2xl shadow-2xl max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between border-b border-border bg-gradient-to-r from-decision-purple/10 to-decision-purple/5 p-6 sticky top-0 bg-card z-10">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 animate-in fade-in">
+      <Card className="w-full max-w-2xl p-6 m-4 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-bold text-foreground">Record Decision</h2>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="flex h-8 w-8 items-center justify-center rounded hover:bg-muted transition-colors"
-            disabled={saving}
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          {error && (
-            <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded text-sm">
-              {error}
-            </div>
-          )}
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded text-sm mb-4">
+            {error}
+          </div>
+        )}
 
-          {/* ⭐ UPDATED: Motion Text with GeniusWords */}
-          <div>
+        <div className="space-y-4">
+          {/* Motion Text with @ and # Autocomplete */}
+          <div className="relative">
             <label className="block text-sm font-medium text-foreground mb-2">
-              Motion Text *
+              Motion / Resolution Text <span className="text-red-500">*</span>
             </label>
-            <GeniusWordsInput
-              value={formData.motion_text}
-              onChange={(value) => setFormData({ ...formData, motion_text: value })}
-              placeholder="Enter the motion text... (Type # for shortcuts)"
-              rows={4}
+            <div className="flex items-center gap-2 mb-2 text-xs text-muted-foreground">
+              <div className="flex items-center gap-1">
+                <AtSign className="h-3 w-3" />
+                <span>Type <strong>@</strong> to mention attendees</span>
+              </div>
+              <span>•</span>
+              <div className="flex items-center gap-1">
+                <Sparkles className="h-3 w-3" />
+                <span>Type <strong>#</strong> for shortcuts</span>
+              </div>
+            </div>
+            <textarea
+              ref={textareaRef}
+              value={motionText}
+              onChange={handleMotionTextChange}
+              onKeyDown={handleKeyDown}
+              placeholder="E.g., Motion by @John Smith, seconded by @Jane Doe, to #ApprovalMotion..."
+              className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary min-h-[120px]"
               disabled={saving}
             />
-          </div>
+            
+            {/* @ Mention Suggestions Dropdown */}
+            {showMentionSuggestions && (
+              <div
+                ref={mentionSuggestionsRef}
+                className="absolute z-10 w-full mt-1 bg-card border border-border rounded-lg shadow-lg max-h-48 overflow-y-auto"
+              >
+                <div className="p-2 border-b border-border bg-muted/30 flex items-center gap-2">
+                  <AtSign className="h-4 w-4 text-blue-600" />
+                  <span className="text-xs font-medium text-muted-foreground">
+                    Mention Attendee
+                  </span>
+                </div>
+                {mentionSuggestions.map((attendee, index) => (
+                  <button
+                    key={index}
+                    onClick={() => insertMention(attendee)}
+                    className={`w-full text-left px-4 py-2 hover:bg-muted transition-colors ${
+                      index === selectedMentionIndex ? 'bg-primary/10' : ''
+                    }`}
+                  >
+                    <div className="font-medium text-foreground">{attendee.name}</div>
+                    {attendee.email && (
+                      <div className="text-xs text-muted-foreground">{attendee.email}</div>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
 
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-2">Result</label>
-            <select
-              value={formData.result}
-              onChange={(e) =>
-                setFormData({
-                  ...formData,
-                  result: e.target.value as "approved" | "rejected" | "pending" | "deferred",
-                })
-              }
-              disabled={saving}
-              className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50"
-            >
-              <option value="pending">Pending</option>
-              <option value="approved">Approved</option>
-              <option value="rejected">Rejected</option>
-              <option value="deferred">Deferred</option>
-            </select>
-          </div>
-
-          {/* Voting Units Summary */}
-          <Card className="p-4 bg-muted/20 border-border">
-            <div className="flex items-center gap-2 mb-3">
-              <Users className="h-5 w-5 text-primary" />
-              <h3 className="font-semibold text-foreground">Voting Units Summary</h3>
-            </div>
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div>
-                <span className="text-muted-foreground">Total Voting Units:</span>
-                <span className="ml-2 font-semibold text-foreground">{totalVotingUnits}</span>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Present Voting Units:</span>
-                <span className="ml-2 font-semibold text-foreground">{attendeeVotingUnits}</span>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Votes For:</span>
-                <span className="ml-2 font-semibold text-green-600">{formData.votes_for || 0}</span>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Votes Against:</span>
-                <span className="ml-2 font-semibold text-red-600">{formData.votes_against || 0}</span>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Abstentions:</span>
-                <span className="ml-2 font-semibold text-gray-600">{formData.abstentions || 0}</span>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Not Voted:</span>
-                <span className="ml-2 font-semibold text-gray-400">
-                  {attendeeVotingUnits -
-                    (formData.votes_for || 0) -
-                    (formData.votes_against || 0) -
-                    (formData.abstentions || 0)}
-                </span>
-              </div>
-            </div>
-          </Card>
-
-          {/* Individual Voters */}
-          <div>
-            <h3 className="font-semibold text-foreground mb-3 flex items-center gap-2">
-              <Users className="h-4 w-4" />
-              Individual Votes ({votingEligibleOwners.length} voters)
-            </h3>
-
-            {loadingVoters ? (
-              <div className="text-center py-4 text-muted-foreground">Loading voters...</div>
-            ) : votingEligibleOwners.length === 0 ? (
-              <div className="text-center py-4 text-muted-foreground border border-dashed border-border rounded-lg">
-                No voting-eligible owners found for this building
-              </div>
-            ) : (
-              <div className="space-y-2 max-h-[300px] overflow-y-auto border border-border rounded-lg p-2">
-                {votingEligibleOwners.map((owner) => {
-                  const currentVote = individualVotes.find((v) => v.owner_id === owner.id)?.vote
-                  return (
-                    <div
-                      key={owner.id}
-                      className="flex items-center justify-between bg-background border border-border rounded-lg p-3"
-                    >
-                      <div className="flex-1 min-w-0">
-                        <div className="font-medium text-sm text-foreground truncate">{owner.name}</div>
-                        <div className="text-xs text-muted-foreground truncate">{owner.email}</div>
-                        <div className="text-xs text-primary font-semibold">
-                          {owner.voting_units} {owner.voting_units === 1 ? "unit" : "units"}
-                        </div>
-                      </div>
-                      <div className="flex gap-1 ml-2">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant={currentVote === "for" ? "default" : "outline"}
-                          onClick={() => handleVoteChange(owner.id, currentVote === "for" ? null : "for")}
-                          disabled={saving}
-                          className={
-                            currentVote === "for"
-                              ? "bg-green-600 hover:bg-green-700 text-white"
-                              : "text-green-600 hover:bg-green-50"
-                          }
-                        >
-                          <ThumbsUp className="h-3 w-3" />
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant={currentVote === "against" ? "default" : "outline"}
-                          onClick={() =>
-                            handleVoteChange(owner.id, currentVote === "against" ? null : "against")
-                          }
-                          disabled={saving}
-                          className={
-                            currentVote === "against"
-                              ? "bg-red-600 hover:bg-red-700 text-white"
-                              : "text-red-600 hover:bg-red-50"
-                          }
-                        >
-                          <ThumbsDown className="h-3 w-3" />
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant={currentVote === "abstain" ? "default" : "outline"}
-                          onClick={() =>
-                            handleVoteChange(owner.id, currentVote === "abstain" ? null : "abstain")
-                          }
-                          disabled={saving}
-                          className={
-                            currentVote === "abstain"
-                              ? "bg-gray-600 hover:bg-gray-700 text-white"
-                              : "text-gray-600 hover:bg-gray-50"
-                          }
-                        >
-                          <Minus className="h-3 w-3" />
-                        </Button>
-                      </div>
+            {/* # GeniusWords Suggestions Dropdown */}
+            {showGeniusSuggestions && (
+              <div
+                ref={geniusSuggestionsRef}
+                className="absolute z-10 w-full mt-1 bg-card border border-border rounded-lg shadow-lg max-h-60 overflow-y-auto"
+              >
+                <div className="p-2 border-b border-border bg-muted/30 flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-purple-600" />
+                  <span className="text-xs font-medium text-muted-foreground">
+                    GeniusWords Shortcuts
+                  </span>
+                </div>
+                {geniusSuggestions.map((gw, index) => (
+                  <button
+                    key={gw.id}
+                    onClick={() => insertGeniusWord(gw)}
+                    className={`w-full text-left px-3 py-2 hover:bg-muted transition-colors ${
+                      index === selectedGeniusIndex ? 'bg-primary/10' : ''
+                    }`}
+                  >
+                    <div className="flex items-start gap-2">
+                      <code className="px-2 py-0.5 bg-purple-100 text-purple-800 rounded text-xs font-mono shrink-0">
+                        {gw.shortcode}
+                      </code>
+                      <span className="text-sm text-foreground flex-1">
+                        {gw.description}
+                      </span>
                     </div>
-                  )
-                })}
+                  </button>
+                ))}
               </div>
             )}
           </div>
 
-          <div className="flex gap-3 pt-4">
-            <Button type="button" variant="outline" onClick={onClose} className="flex-1" disabled={saving}>
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              className="flex-1 bg-decision-purple text-white hover:bg-decision-purple/90"
-              disabled={saving || !formData.motion_text.trim()}
+          {/* Result Dropdown */}
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-2">
+              Result
+            </label>
+            <select
+              value={result}
+              onChange={(e) => setResult(e.target.value)}
+              className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+              disabled={saving}
             >
-              {saving ? "Saving..." : "Save Decision"}
-            </Button>
+              <option value="">Select result...</option>
+              {decisionResults.map((res) => (
+                <option key={res} value={res}>
+                  {res}
+                </option>
+              ))}
+            </select>
           </div>
-        </form>
+
+          {/* Voting Counts */}
+          <div className="grid grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-2">
+                Votes For
+              </label>
+              <input
+                type="number"
+                min="0"
+                value={votesFor}
+                onChange={(e) => setVotesFor(e.target.value === "" ? "" : parseInt(e.target.value))}
+                placeholder="0"
+                className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                disabled={saving}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-2">
+                Votes Against
+              </label>
+              <input
+                type="number"
+                min="0"
+                value={votesAgainst}
+                onChange={(e) => setVotesAgainst(e.target.value === "" ? "" : parseInt(e.target.value))}
+                placeholder="0"
+                className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                disabled={saving}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-2">
+                Abstentions
+              </label>
+              <input
+                type="number"
+                min="0"
+                value={votesAbstain}
+                onChange={(e) => setVotesAbstain(e.target.value === "" ? "" : parseInt(e.target.value))}
+                placeholder="0"
+                className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                disabled={saving}
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="flex gap-3 mt-6">
+          <Button
+            onClick={handleClose}
+            variant="outline"
+            className="flex-1"
+            disabled={saving}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleSave}
+            className="flex-1 bg-decision-purple hover:bg-decision-purple/90 text-white"
+            disabled={saving}
+          >
+            {saving ? "Saving..." : "Save Decision"}
+          </Button>
+        </div>
       </Card>
     </div>
   )
