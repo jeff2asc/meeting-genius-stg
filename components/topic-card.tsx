@@ -7,7 +7,25 @@ import { Button } from "@/components/ui/button"
 import { supabase, getCurrentUser, TopicAttachment } from "@/lib/supabase"
 import { fetchAndExtractBuildingDocuments, fetchAndExtractTopicAttachments } from "@/lib/documentExtractor"
 import TaskDetailsModal from "./TaskDetailsModal"
+import GeniusWordsInput from "./GeniusWordsInput"
 import { toast } from "sonner"
+
+// ⭐ NEW: Debounce hook for auto-save
+function useDebounce<T>(value: T, delay: number): T {
+  const [debouncedValue, setDebouncedValue] = useState<T>(value)
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value)
+    }, delay)
+
+    return () => {
+      clearTimeout(handler)
+    }
+  }, [value, delay])
+
+  return debouncedValue
+}
 
 interface Topic {
   id: number
@@ -53,10 +71,9 @@ export default function TopicCard({
   isReadOnly = false
 }: TopicCardProps) {
   const [isExpanded, setIsExpanded] = useState(true)
-  const [isEditing, setIsEditing] = useState(false)
+  const [isEditingTitle, setIsEditingTitle] = useState(false)
   const [editedTitle, setEditedTitle] = useState(topic.title)
   const [editedDescription, setEditedDescription] = useState(topic.description || "")
-  const [hasChanges, setHasChanges] = useState(false)
   const [saving, setSaving] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [history, setHistory] = useState<HistoryItem[]>([])
@@ -66,15 +83,15 @@ export default function TopicCard({
   const [showAiResult, setShowAiResult] = useState(false)
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null)
   
-  // ⭐ NEW: Topic attachments state
   const [attachments, setAttachments] = useState<TopicAttachment[]>([])
   const [uploadingFile, setUploadingFile] = useState(false)
   const [showAttachments, setShowAttachments] = useState(false)
 
+  // ⭐ NEW: Debounced description for auto-save
+  const debouncedDescription = useDebounce(editedDescription, 1000)
+
   const currentUser = getCurrentUser()
   const titleInputRef = useRef<HTMLInputElement>(null)
-  const descriptionTextareaRef = useRef<HTMLTextAreaElement>(null)
-  const editingContainerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (onRegisterRefresh) {
@@ -86,26 +103,28 @@ export default function TopicCard({
     if (isExpanded) {
       fetchHistory()
       fetchAiAnalysis()
-      fetchTopicAttachments() // ⭐ NEW: Fetch attachments
+      fetchTopicAttachments()
     }
   }, [topic.id, isExpanded])
 
+  // ⭐ NEW: Auto-save description when debounced value changes
   useEffect(() => {
-    if (!isEditing) return
+    // Don't save on initial load
+    if (debouncedDescription === topic.description) return
+    
+    // Don't save if empty and original was empty
+    if (!debouncedDescription && !topic.description) return
+    
+    // Auto-save
+    handleAutoSaveDescription()
+  }, [debouncedDescription])
 
-    const handleClickOutside = (event: MouseEvent) => {
-      if (editingContainerRef.current && !editingContainerRef.current.contains(event.target as Node)) {
-        if (hasChanges && !saving) {
-          handleSave()
-        }
-      }
-    }
+  // Update local state when topic prop changes
+  useEffect(() => {
+    setEditedDescription(topic.description || "")
+    setEditedTitle(topic.title)
+  }, [topic.description, topic.title])
 
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [isEditing, hasChanges, saving])
-
-  // ⭐ NEW: Fetch topic attachments
   const fetchTopicAttachments = async () => {
     try {
       const { data, error } = await supabase
@@ -129,24 +148,21 @@ export default function TopicCard({
     const file = event.target.files?.[0]
     if (!file) return
   
-    // Validate file size (10MB max)
     if (file.size > 10 * 1024 * 1024) {
-      toast.error('File size must be less than 10MB')
+      alert('File size must be less than 10MB')
       return
     }
   
     setUploadingFile(true)
     try {
-      // ⭐ Use your custom getCurrentUser() instead of Supabase auth
       const currentUser = getCurrentUser()
       
       if (!currentUser) {
-        toast.error('You must be logged in to upload files')
+        alert('You must be logged in to upload files')
         setUploadingFile(false)
         return
       }
   
-      // Upload to Supabase Storage (no auth needed for storage, only RLS)
       const fileName = `${topic.id}/${Date.now()}_${file.name}`
       const filePath = fileName
   
@@ -156,16 +172,14 @@ export default function TopicCard({
   
       if (uploadError) {
         console.error('Error uploading file:', uploadError)
-        toast.error('Failed to upload file: ' + uploadError.message)
+        alert('Failed to upload file: ' + uploadError.message)
         return
       }
   
-      // Get public URL
       const { data: { publicUrl } } = supabase.storage
         .from('topic-attachments')
         .getPublicUrl(filePath)
   
-      // Save to database
       const { error: dbError } = await supabase
         .from('topic_attachments')
         .insert({
@@ -174,42 +188,35 @@ export default function TopicCard({
           file_url: publicUrl,
           file_size: file.size,
           mime_type: file.type,
-          uploaded_by: currentUser.id  // ⭐ Use custom auth user ID
+          uploaded_by: currentUser.id
         })
   
       if (dbError) {
         console.error('Error saving attachment:', dbError)
-        toast.error('Failed to save attachment: ' + dbError.message)
+        alert('Failed to save attachment: ' + dbError.message)
         return
       }
   
-      toast.success('File uploaded successfully')
+      alert('File uploaded successfully')
       await fetchTopicAttachments()
       
-      // Update parent component's attachment count
       onUpdate({ attachments: attachments.length + 1 })
     } catch (err) {
       console.error('Unexpected error:', err)
-      toast.error('Failed to upload file')
+      alert('Failed to upload file')
     } finally {
       setUploadingFile(false)
-      // Reset file input
       event.target.value = ''
     }
   }
-  
-  
 
-  // ⭐ NEW: Handle delete attachment
   const handleDeleteAttachment = async (attachment: TopicAttachment) => {
     if (!confirm(`Delete ${attachment.filename}?`)) return
 
     try {
-      // Extract file path from URL
       const urlParts = attachment.file_url.split('/topic-attachments/')
       const filePath = urlParts[1]
 
-      // Delete from storage
       const { error: storageError } = await supabase.storage
         .from('topic-attachments')
         .remove([filePath])
@@ -218,7 +225,6 @@ export default function TopicCard({
         console.error('Error deleting file from storage:', storageError)
       }
 
-      // Delete from database
       const { error: dbError } = await supabase
         .from('topic_attachments')
         .delete()
@@ -226,29 +232,26 @@ export default function TopicCard({
 
       if (dbError) {
         console.error('Error deleting attachment:', dbError)
-        toast.error('Failed to delete attachment')
+        alert('Failed to delete attachment')
         return
       }
 
-      toast.success('Attachment deleted')
+      alert('Attachment deleted')
       await fetchTopicAttachments()
       
-      // Update parent component's attachment count
       onUpdate({ attachments: attachments.length - 1 })
     } catch (err) {
       console.error('Unexpected error:', err)
-      toast.error('Failed to delete attachment')
+      alert('Failed to delete attachment')
     }
   }
 
-  // ⭐ NEW: Format file size helper
   const formatFileSize = (bytes: number) => {
     if (bytes < 1024) return bytes + ' B'
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
   }
 
-  // ⭐ NEW: Get file type badge color
   const getFileTypeBadge = (mimeType: string) => {
     if (mimeType.includes('pdf')) return 'bg-red-100 text-red-800'
     if (mimeType.includes('word') || mimeType.includes('document')) return 'bg-blue-100 text-blue-800'
@@ -381,7 +384,7 @@ export default function TopicCard({
       alert('You do not have permission to analyze topics.')
       return
     }
-    if (!topic.description || topic.description.trim() === '') {
+    if (!editedDescription || editedDescription.trim() === '') {
       alert('Please add a description first before analyzing with AI')
       return
     }
@@ -418,17 +421,14 @@ export default function TopicCard({
         return
       }
 
-      // 🔥 Fetch and extract building documents
       console.log('Fetching building documents for building ID:', buildingId)
       const buildingDocuments = await fetchAndExtractBuildingDocuments(buildingId)
       console.log(`Fetched ${buildingDocuments.length} building documents`)
 
-      // 🔥 NEW: Fetch and extract topic attachments
       console.log('Fetching topic attachments for topic ID:', topic.id)
       const topicAttachments = await fetchAndExtractTopicAttachments(topic.id)
       console.log(`Fetched ${topicAttachments.length} topic attachments`)
 
-      // 🔥 UPDATED: Send documents + topic attachments to n8n
       const response = await fetch('https://rulesengine.asccreative.com/webhook/843afc5f-abe0-4bb4-bb9f-369d2657c4d0', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -437,9 +437,9 @@ export default function TopicCard({
           topic_title: topic.title,
           building_id: buildingId,
           building_name: buildingName,
-          description: topic.description,
+          description: editedDescription,
           building_documents: buildingDocuments,
-          topic_attachments: topicAttachments, // ⭐ NEW: Include topic attachments
+          topic_attachments: topicAttachments,
         }),
       })
 
@@ -447,13 +447,13 @@ export default function TopicCard({
         await new Promise(resolve => setTimeout(resolve, 2000))
         await fetchAiAnalysis()
         setShowAiResult(true)
-        toast.success('✅ AI Analysis complete!')
+        alert('✅ AI Analysis complete!')
       } else {
-        toast.error('Failed to analyze with AI. Please try again.')
+        alert('Failed to analyze with AI. Please try again.')
       }
     } catch (error) {
       console.error('Error during AI analysis:', error)
-      toast.error('An error occurred during AI analysis')
+      alert('An error occurred during AI analysis')
     } finally {
       setAnalyzingAI(false)
     }
@@ -461,45 +461,53 @@ export default function TopicCard({
 
   const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setEditedTitle(e.target.value)
-    setHasChanges(true)
-  }
-  
-  const handleDescriptionChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setEditedDescription(e.target.value)
-    setHasChanges(true)
   }
 
   const handleTitleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && hasChanges && !saving) {
+    if (e.key === 'Enter' && !saving) {
       e.preventDefault()
-      handleSave()
+      handleSaveTitle()
+    }
+    if (e.key === 'Escape') {
+      handleCancelTitle()
     }
   }
 
-  const handleSave = async () => {
+  // ⭐ NEW: Auto-save description
+  const handleAutoSaveDescription = async () => {
+    if (isReadOnly) return
+    if (saving) return
+    
+    setSaving(true)
+    await onUpdate({ description: editedDescription })
+    setSaving(false)
+    fetchHistory()
+    
+    // Show subtle alert
+    console.log('Description saved')
+  }
+
+  // ⭐ UPDATED: Save title only
+  const handleSaveTitle = async () => {
     if (saving) return
     setSaving(true)
-    await onUpdate({ title: editedTitle, description: editedDescription })
-    setHasChanges(false)
-    setIsEditing(false)
+    await onUpdate({ title: editedTitle })
+    setIsEditingTitle(false)
     setSaving(false)
     fetchHistory()
   }
 
-  const handleEdit = () => {
+  const handleEditTitle = () => {
     if (isReadOnly) {
       alert('You do not have permission to edit topics.')
       return
     }
-    setIsEditing(true)
-    setHasChanges(false)
+    setIsEditingTitle(true)
   }
 
-  const handleCancel = () => {
+  const handleCancelTitle = () => {
     setEditedTitle(topic.title)
-    setEditedDescription(topic.description || "")
-    setIsEditing(false)
-    setHasChanges(false)
+    setIsEditingTitle(false)
   }
 
   const handleDelete = async () => {
@@ -522,8 +530,8 @@ export default function TopicCard({
 
   return (
     <>
-      <Card className="border-0 bg-card shadow-md overflow-hidden" ref={editingContainerRef}>
-        <div className="border-b border-border bg-gradient-to-r from-primary/5 to-decision-purple/5 p-4">
+      <Card className="border-0 bg-card shadow-md overflow-hidden">
+        <div className="border-b border-border bg-gradient-to-r from-primary/5 to-decision-purple/5 p-2">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3 flex-1">
               <button
@@ -533,7 +541,7 @@ export default function TopicCard({
                 <ChevronDown className={`h-5 w-5 transition-transform ${isExpanded ? "" : "-rotate-90"}`} />
               </button>
               <span className="text-sm font-semibold text-muted-foreground">Topic {topicNumber}</span>
-              {isEditing ? (
+              {isEditingTitle ? (
                 <input
                   ref={titleInputRef}
                   value={editedTitle}
@@ -550,8 +558,7 @@ export default function TopicCard({
                 </h3>
               )}
             </div>
-            <div className="flex items-center gap-3">
-              {/* ⭐ NEW: Attachments button */}
+            <div className="flex items-center gap-2">
               <button
                 onClick={() => setShowAttachments(!showAttachments)}
                 className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium bg-muted hover:bg-muted/80 rounded transition-colors"
@@ -560,12 +567,12 @@ export default function TopicCard({
                 <Paperclip className="h-4 w-4" />
                 {attachments.length}
               </button>
-              {!isEditing && !isReadOnly && (
+              {!isEditingTitle && !isReadOnly && (
                 <div className="flex items-center gap-1">
                   <button
-                    onClick={handleEdit}
+                    onClick={handleEditTitle}
                     className="flex h-8 w-8 items-center justify-center rounded hover:bg-muted transition-colors text-primary"
-                    title="Edit topic"
+                    title="Edit title"
                   ><Edit2 className="h-4 w-4" /></button>
                   <button
                     onClick={() => setShowDeleteConfirm(true)}
@@ -578,19 +585,29 @@ export default function TopicCard({
           </div>
         </div>
 
+        {/* Title Edit Buttons */}
+        {isEditingTitle && !isReadOnly && (
+          <div className="px-2 py-1.5 bg-muted/20 border-b border-border flex gap-2">
+            <Button onClick={handleCancelTitle} variant="outline" className="flex-1">
+              <X className="h-4 w-4 mr-2" />Cancel
+            </Button>
+            <Button onClick={handleSaveTitle} disabled={saving} className="flex-1 bg-primary hover:bg-primary/90">
+              <Check className="h-4 w-4 mr-2" />{saving ? "Saving..." : "Save Title"}
+            </Button>
+          </div>
+        )}
+
         {isExpanded && (
           <>
-            {/* ⭐ NEW: Attachments Section */}
             {showAttachments && (
-              <div className="border-b border-border p-4 bg-muted/10">
-                <h4 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+              <div className="border-b border-border p-2 bg-muted/10">
+                <h4 className="text-sm font-semibold text-foreground mb-1.5 flex items-center gap-2">
                   <Paperclip className="h-4 w-4" />
                   Topic Attachments ({attachments.length})
                 </h4>
 
-                {/* Upload Button */}
                 {!isReadOnly && (
-                  <div className="mb-3">
+                  <div className="mb-1.5">
                     <label htmlFor={`topic-file-upload-${topic.id}`}>
                       <Button
                         type="button"
@@ -618,8 +635,7 @@ export default function TopicCard({
                   </div>
                 )}
 
-                {/* Attachments List */}
-                <div className="space-y-2">
+                <div className="space-y-1">
                   {attachments.length > 0 ? (
                     attachments.map(attachment => (
                       <div key={attachment.id} className="flex items-center justify-between bg-background border border-border rounded-lg p-2">
@@ -657,7 +673,7 @@ export default function TopicCard({
                       </div>
                     ))
                   ) : (
-                    <p className="text-center text-xs text-muted-foreground py-4">
+                    <p className="text-center text-xs text-muted-foreground py-3">
                       {isReadOnly ? 'No attachments yet.' : 'No attachments yet. Upload one above!'}
                     </p>
                   )}
@@ -665,77 +681,76 @@ export default function TopicCard({
               </div>
             )}
 
-            <div className="p-4 border-b border-border">
-              {isEditing ? (
-                <textarea
-                  ref={descriptionTextareaRef}
-                  value={editedDescription}
-                  onChange={handleDescriptionChange}
-                  placeholder="Add description here..."
-                  className="w-full min-h-32 bg-background text-foreground rounded border border-primary p-3 focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none"
-                  disabled={isReadOnly}
-                />
-              ) : (
+            {/* ⭐ UPDATED: Always Editable Description with GeniusWords */}
+            <div className="p-2 border-b border-border">
+              {!isReadOnly ? (
                 <>
-                  <div className="min-h-32 text-foreground p-3 mb-3">
-                    {topic.description || <span className="text-muted-foreground">No description yet...</span>}
-                  </div>
-                  {topic.description && !isEditing && !isReadOnly && (
-                    <div className="flex gap-2">
-                      <Button
-                        onClick={handleAiAnalysis}
-                        disabled={analyzingAI}
-                        size="sm"
-                        className="bg-gradient-to-r from-purple-600 to-blue-600 text-white hover:opacity-90"
-                      >
-                        {analyzingAI ? (
-                          <>
-                            <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Analyzing...
-                          </>
-                        ) : (
-                          <>
-                            <Sparkles className="h-4 w-4 mr-2" /> 🤖 Analyze with AI
-                          </>
-                        )}
-                      </Button>
-                      {aiAnalysis && (
-                        <Button
-                          onClick={() => setShowAiResult(!showAiResult)}
-                          variant="outline"
-                          size="sm"
-                        >
-                          {showAiResult ? 'Hide' : 'Show'} Analysis
-                        </Button>
-                      )}
-                    </div>
-                  )}
-                  {showAiResult && aiAnalysis && (
-                    <div className="mt-4 p-4 bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-200 rounded-lg">
-                      <div className="flex items-center gap-2 mb-2">
-                        <Sparkles className="h-5 w-5 text-purple-600" />
-                        <h4 className="font-semibold text-purple-900">AI Analysis Result</h4>
-                      </div>
-                      <div className="text-sm text-gray-800 whitespace-pre-wrap">
-                        {aiAnalysis}
-                      </div>
+                  <GeniusWordsInput
+                    value={editedDescription}
+                    onChange={setEditedDescription}
+                    placeholder="Add description here... (Type # for shortcuts)"
+                    rows={2}
+                  />
+                  {saving && (
+                    <div className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                      <span className="animate-pulse">💾 Saving...</span>
                     </div>
                   )}
                 </>
+              ) : (
+                <div className="min-h-[2.5rem] text-foreground p-1.5 mb-1.5">
+                  {topic.description || <span className="text-muted-foreground">No description yet...</span>}
+                </div>
+              )}
+              
+              {/* AI Analysis Button */}
+              {editedDescription && !isReadOnly && (
+                <div className="flex gap-2 mt-2">
+                  <Button
+                    onClick={handleAiAnalysis}
+                    disabled={analyzingAI}
+                    size="sm"
+                    className="bg-gradient-to-r from-purple-600 to-blue-600 text-white hover:opacity-90"
+                  >
+                    {analyzingAI ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Analyzing...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="h-4 w-4 mr-2" /> 🤖 Analyze with AI
+                      </>
+                    )}
+                  </Button>
+                  {aiAnalysis && (
+                    <Button
+                      onClick={() => setShowAiResult(!showAiResult)}
+                      variant="outline"
+                      size="sm"
+                    >
+                      {showAiResult ? 'Hide' : 'Show'} Analysis
+                    </Button>
+                  )}
+                </div>
+              )}
+              
+              {/* AI Analysis Result */}
+              {showAiResult && aiAnalysis && (
+                <div className="mt-3 p-3 bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-200 rounded-lg">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Sparkles className="h-5 w-5 text-purple-600" />
+                    <h4 className="font-semibold text-purple-900">AI Analysis Result</h4>
+                  </div>
+                  <div className="text-sm text-gray-800 whitespace-pre-wrap">
+                    {aiAnalysis}
+                  </div>
+                </div>
               )}
             </div>
 
-            {isEditing && !isReadOnly && (
-              <div className="px-4 py-3 bg-muted/20 border-b border-border flex gap-2">
-                <Button onClick={handleCancel} variant="outline" className="flex-1"><X className="h-4 w-4 mr-2" />Cancel</Button>
-                <Button onClick={handleSave} disabled={saving || !hasChanges} className="flex-1 bg-primary hover:bg-primary/90">
-                  <Check className="h-4 w-4 mr-2" />{saving ? "Saving..." : "Save Changes"}
-                </Button>
-              </div>
-            )}
-
             {showDeleteConfirm && !isReadOnly && (
-              <div className="px-4 py-3 bg-red-50 border-b border-red-200">
-                <p className="text-sm text-red-800 mb-3">
+              <div className="px-2 py-1.5 bg-red-50 border-b border-red-200">
+                <p className="text-sm text-red-800 mb-1.5">
                   Are you sure you want to delete this topic? This action cannot be undone.
                 </p>
                 <div className="flex gap-2">
@@ -748,7 +763,7 @@ export default function TopicCard({
             )}
 
             {!isReadOnly && (
-              <div className="flex gap-2 border-b border-border bg-muted/30 p-4">
+              <div className="flex gap-2 border-b border-border bg-muted/30 p-2">
                 <Button size="sm" className="flex-1 bg-note-blue text-white hover:bg-note-blue/90" onClick={onNoteClick}>
                   <FileText className="h-4 w-4 mr-2" />📝 Note
                 </Button>
@@ -761,10 +776,10 @@ export default function TopicCard({
               </div>
             )}
 
-            <div className="p-4 bg-muted/20">
-              <h4 className="text-sm font-semibold text-foreground mb-2">History by Type</h4>
+            <div className="p-2 bg-muted/20">
+              <h4 className="text-sm font-semibold text-foreground mb-1.5">History by Type</h4>
               {["task", "decision", "note"].map(type => (
-                <div className="mb-4" key={type}>
+                <div className="mb-2 last:mb-0" key={type}>
                   <div className="flex items-center gap-2 mb-1">
                     {type === "task" && <CheckSquare className="h-4 w-4 text-task-green" />}
                     {type === "decision" && <Scale className="h-4 w-4 text-decision-purple" />}
@@ -779,7 +794,7 @@ export default function TopicCard({
                       history.filter(h => h.type === type).map(item => (
                         <div 
                           key={item.id} 
-                          className="flex flex-col gap-2 rounded bg-background border border-border px-3 py-2"
+                          className="flex flex-col gap-1 rounded bg-background border border-border px-2 py-1.5"
                         >
                           <div className="flex-1">
                             <div className="flex gap-2 items-center mb-1">

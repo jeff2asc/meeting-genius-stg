@@ -3,11 +3,13 @@
 import type React from "react"
 
 import { useState, useEffect } from "react"
-import { X, Plus } from "lucide-react"
+import { X, Plus, Upload, Trash2, Paperclip } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { supabase, getCurrentUser } from "@/lib/supabase"
 import TaskEmailPreviewModal, { EmailTemplate } from "./TaskEmailPreviewModal"
+import GeniusWordsInput from "./GeniusWordsInput"
+import { toast } from "sonner"
 
 interface TaskModalProps {
   topicId: number
@@ -19,6 +21,16 @@ interface Assignee {
   name: string
   email: string
   present?: boolean
+}
+
+// ⭐ NEW: Attachment interface
+interface TaskAttachment {
+  id?: number
+  filename: string
+  file_url: string
+  file_size: number
+  mime_type: string
+  file?: File // For new uploads before saving
 }
 
 export default function TaskModal({ topicId, onClose, onSave }: TaskModalProps) {
@@ -42,6 +54,10 @@ export default function TaskModal({ topicId, onClose, onSave }: TaskModalProps) 
   const [showEmailPreview, setShowEmailPreview] = useState(false)
   const [pendingTaskData, setPendingTaskData] = useState<any>(null)
 
+  // ⭐ NEW: Attachments state
+  const [attachments, setAttachments] = useState<TaskAttachment[]>([])
+  const [uploadingFile, setUploadingFile] = useState(false)
+
   // Fetch meeting_id from topic, then fetch attendees
   useEffect(() => {
     fetchMeetingIdAndAttendees()
@@ -51,7 +67,6 @@ export default function TaskModal({ topicId, onClose, onSave }: TaskModalProps) 
     try {
       console.log('🔍 Fetching meeting_id for topic:', topicId)
       
-      // First, get the meeting_id from the topic
       const { data: topicData, error: topicError } = await supabase
         .from('topics')
         .select('meeting_id')
@@ -67,7 +82,6 @@ export default function TaskModal({ topicId, onClose, onSave }: TaskModalProps) 
       console.log('✅ Meeting ID found:', fetchedMeetingId)
       setMeetingId(fetchedMeetingId)
 
-      // Now fetch attendees for that meeting
       const { data: meetingData, error: meetingError } = await supabase
         .from('meetings')
         .select('attendees')
@@ -93,6 +107,54 @@ export default function TaskModal({ topicId, onClose, onSave }: TaskModalProps) 
     } catch (err) {
       console.error('💥 Unexpected error:', err)
     }
+  }
+
+  // ⭐ NEW: Handle file upload
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    // Validate file size (10MB max)
+    if (file.size > 10 * 1024 * 1024) {
+      alert('File size must be less than 10MB')
+      return
+    }
+
+    // Add to attachments list (file will be uploaded after task creation)
+    const newAttachment: TaskAttachment = {
+      filename: file.name,
+      file_url: '', // Will be set after upload
+      file_size: file.size,
+      mime_type: file.type,
+      file: file
+    }
+
+    setAttachments([...attachments, newAttachment])
+    alert(`${file.name} added`)
+    
+    // Reset file input
+    event.target.value = ''
+  }
+
+  // ⭐ NEW: Remove attachment before saving
+  const handleRemoveAttachment = (index: number) => {
+    setAttachments(attachments.filter((_, i) => i !== index))
+  }
+
+  // ⭐ NEW: Format file size
+  const formatFileSize = (bytes: number) => {
+    if (bytes < 1024) return bytes + ' B'
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
+  }
+
+  // ⭐ NEW: Get file type badge color
+  const getFileTypeBadge = (mimeType: string) => {
+    if (mimeType.includes('pdf')) return 'bg-red-100 text-red-800'
+    if (mimeType.includes('word') || mimeType.includes('document')) return 'bg-blue-100 text-blue-800'
+    if (mimeType.includes('image')) return 'bg-purple-100 text-purple-800'
+    if (mimeType.includes('text')) return 'bg-gray-100 text-gray-800'
+    return 'bg-gray-100 text-gray-800'
   }
 
   const handleAddFromAttendees = (attendee: Assignee) => {
@@ -198,7 +260,7 @@ export default function TaskModal({ topicId, onClose, onSave }: TaskModalProps) 
     }
   }
 
-  // Create task function
+  // ⭐ UPDATED: Create task function with attachment upload
   const createTask = async (taskData: any, emailTemplate: EmailTemplate | null) => {
     setSaving(true)
     setError(null)
@@ -218,7 +280,13 @@ export default function TaskModal({ topicId, onClose, onSave }: TaskModalProps) 
         return
       }
 
+      const taskId = data[0].id
       console.log('✅ Task saved successfully:', data)
+
+      // ⭐ NEW: Upload attachments after task creation
+      if (attachments.length > 0) {
+        await uploadAttachments(taskId)
+      }
 
       // Send email if template provided
       if (emailTemplate && meetingId) {
@@ -237,11 +305,63 @@ export default function TaskModal({ topicId, onClose, onSave }: TaskModalProps) 
     }
   }
 
+  // ⭐ NEW: Upload attachments to storage and save to database
+  const uploadAttachments = async (taskId: number) => {
+    const currentUser = getCurrentUser()
+    if (!currentUser) return
+
+    for (const attachment of attachments) {
+      if (!attachment.file) continue
+
+      try {
+        // Upload to Supabase Storage
+        const fileName = `${taskId}/${Date.now()}_${attachment.filename}`
+        const filePath = fileName
+
+        const { error: uploadError } = await supabase.storage
+          .from('task-attachments')
+          .upload(filePath, attachment.file)
+
+        if (uploadError) {
+          console.error('Error uploading file:', uploadError)
+          alert(`Failed to upload ${attachment.filename}`)
+          continue
+        }
+
+        // Get public URL
+        const { data: { publicUrl } } = supabase.storage
+          .from('task-attachments')
+          .getPublicUrl(filePath)
+
+        // Save to database
+        const { error: dbError } = await supabase
+          .from('task_attachments')
+          .insert({
+            task_id: taskId,
+            filename: attachment.filename,
+            file_url: publicUrl,
+            file_size: attachment.file_size,
+            mime_type: attachment.mime_type,
+            uploaded_by: currentUser.id
+          })
+
+        if (dbError) {
+          console.error('Error saving attachment to DB:', dbError)
+          alert(`Failed to save ${attachment.filename}`)
+        } else {
+          console.log(`✅ Uploaded ${attachment.filename}`)
+        }
+      } catch (err) {
+        console.error('Error uploading attachment:', err)
+        alert(`Failed to upload ${attachment.filename}`)
+      }
+    }
+  }
+
   // Send customized emails function
   const sendCustomizedEmails = async (emailTemplate: EmailTemplate, externalToken: string) => {
     console.log('📧 Sending customized emails...')
     try {
-      // Get company_id through building_id
       const { data: meetingData, error: meetingError } = await supabase
         .from('meetings')
         .select('buildings!inner(company_id)')
@@ -256,7 +376,6 @@ export default function TaskModal({ topicId, onClose, onSave }: TaskModalProps) 
       if (!meetingError && companyId) {
         const updateLink = `${window.location.origin}/task-update/${externalToken}`
 
-        // Send email to each assignee
         for (const assignee of assignees) {
           console.log('📧 Sending email to', assignee.email)
 
@@ -326,17 +445,85 @@ export default function TaskModal({ topicId, onClose, onSave }: TaskModalProps) 
               </div>
             )}
 
+            {/* ⭐ UPDATED: Task Description with GeniusWords */}
             <div>
               <label className="block text-sm font-medium text-foreground mb-2">Task Description *</label>
-              <textarea
-                name="description"
+              <GeniusWordsInput
                 value={formData.description}
-                onChange={handleInputChange}
-                placeholder="Enter task description..."
-                required
+                onChange={(value) => setFormData((prev) => ({ ...prev, description: value }))}
+                placeholder="Enter task description... (Type # for shortcuts)"
+                rows={4}
                 disabled={saving}
-                className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none min-h-24 disabled:opacity-50"
               />
+            </div>
+
+            {/* ⭐ NEW: Attachments Section */}
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-2 flex items-center gap-2">
+                <Paperclip className="h-4 w-4" />
+                Attachments ({attachments.length})
+              </label>
+              
+              {/* Upload Button */}
+              <div className="mb-2">
+                <label htmlFor="task-file-upload">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={uploadingFile || saving}
+                    className="cursor-pointer"
+                    onClick={() => document.getElementById('task-file-upload')?.click()}
+                  >
+                    <Upload className="h-4 w-4 mr-2" />
+                    Upload File
+                  </Button>
+                </label>
+                <input
+                  id="task-file-upload"
+                  type="file"
+                  className="hidden"
+                  onChange={handleFileUpload}
+                  disabled={uploadingFile || saving}
+                  accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Supported: PDF, DOC, DOCX, TXT, Images (Max 10MB)
+                </p>
+              </div>
+
+              {/* Attachments List */}
+              {attachments.length > 0 && (
+                <div className="space-y-1.5 border border-border rounded-lg p-2 bg-muted/10">
+                  {attachments.map((attachment, index) => (
+                    <div key={index} className="flex items-center justify-between bg-background border border-border rounded-lg p-2">
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <Paperclip className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium text-xs truncate">{attachment.filename}</div>
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <span className={`px-1.5 py-0.5 rounded text-xs ${getFileTypeBadge(attachment.mime_type)}`}>
+                              {attachment.mime_type.split('/')[1]?.toUpperCase() || 'FILE'}
+                            </span>
+                            <span>{formatFileSize(attachment.file_size)}</span>
+                          </div>
+                        </div>
+                      </div>
+                      {!saving && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleRemoveAttachment(index)}
+                          className="text-destructive hover:text-destructive"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Assignees Section */}

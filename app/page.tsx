@@ -9,12 +9,22 @@ import NoteModal from "@/components/note-modal"
 import DecisionModal from "@/components/decision-modal"
 import CreateMeetingModal from "@/components/create-meeting-modal"
 import LoginForm from "@/components/login-form"
+import ProfileSettingsModal from "@/components/ProfileSettingsModal"
+import GeniusWordsManager from "@/components/GeniusWordsManager"
 import { isLoggedIn, getCurrentUser, clearCurrentUser } from "@/lib/supabase"
 import { canAccessAdmin, canCreateMeeting, getUserTypeDisplayName } from "@/lib/permissions"
 import { Button } from "@/components/ui/button"
-import { LogOut, Settings } from "lucide-react"
+import { LogOut, Settings, User, Key, Sparkles, ChevronDown } from "lucide-react"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 
-type Screen = "dashboard" | "meeting" | "admin"
+type Screen = "dashboard" | "meeting" | "admin" | "genius-words"
 
 export default function Home() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
@@ -23,6 +33,7 @@ export default function Home() {
   const [showNoteModal, setShowNoteModal] = useState(false)
   const [showDecisionModal, setShowDecisionModal] = useState(false)
   const [showCreateMeetingModal, setShowCreateMeetingModal] = useState(false)
+  const [showProfileModal, setShowProfileModal] = useState(false)
   const [selectedMeeting, setSelectedMeeting] = useState<string | null>(null)
   const [selectedTopicId, setSelectedTopicId] = useState<number | null>(null)
   const [selectedMeetingId, setSelectedMeetingId] = useState<number | null>(null)
@@ -30,7 +41,6 @@ export default function Home() {
   const [refreshKey, setRefreshKey] = useState(0)
   const [currentUser, setCurrentUser] = useState<any>(null)
 
-  // Store the callback to refresh TopicCard history
   const topicRefreshCallbackRef = useRef<(() => void) | null>(null)
 
   useEffect(() => {
@@ -40,12 +50,9 @@ export default function Home() {
       const user = getCurrentUser()
       setCurrentUser(user)
       
-      // Auto-redirect based on user type
       if (user?.user_type === 'attendee') {
-        // Attendees start at dashboard (read-only meetings)
         setCurrentScreen("dashboard")
       } else if (user?.user_type === 'vendor') {
-        // Vendors start at dashboard (see their tasks)
         setCurrentScreen("dashboard")
       }
     }
@@ -56,7 +63,6 @@ export default function Home() {
     const user = getCurrentUser()
     setCurrentUser(user)
     
-    // Set initial screen based on user type
     if (user?.user_type === 'attendee' || user?.user_type === 'vendor') {
       setCurrentScreen("dashboard")
     }
@@ -75,7 +81,6 @@ export default function Home() {
   }
 
   const handleCreateMeeting = () => {
-    // Check permission before opening modal
     if (!canCreateMeeting(currentUser?.user_type)) {
       alert(`${getUserTypeDisplayName(currentUser?.user_type)} cannot create meetings.`)
       return
@@ -93,7 +98,6 @@ export default function Home() {
     setSelectedMeeting(null)
   }
 
-  // Function to register the refresh callback from TopicCard
   const registerTopicRefresh = (topicId: number, callback: () => void) => {
     topicRefreshCallbackRef.current = callback
   }
@@ -105,7 +109,6 @@ export default function Home() {
 
   const handleDecisionClick = (topicId: number) => {
     setSelectedTopicId(topicId)
-    // Get meeting ID from the current meeting
     if (selectedMeeting) {
       setSelectedMeetingId(parseInt(selectedMeeting))
     }
@@ -117,7 +120,6 @@ export default function Home() {
     setShowTaskModal(true)
   }
 
-  // Called after modal saves successfully
   const handleNoteSave = () => {
     if (topicRefreshCallbackRef.current) {
       topicRefreshCallbackRef.current()
@@ -137,7 +139,6 @@ export default function Home() {
   }
 
   const handleAdminClick = () => {
-    // Check permission before navigating
     if (!canAccessAdmin(currentUser?.user_type)) {
       alert(`${getUserTypeDisplayName(currentUser?.user_type)} cannot access the Admin Panel.`)
       return
@@ -145,7 +146,21 @@ export default function Home() {
     setCurrentScreen("admin")
   }
 
-  // Permission checks
+  const handleGeniusWordsClick = () => {
+    setCurrentScreen("genius-words")
+  }
+
+  // Get user initials for avatar
+  const getInitials = (name: string) => {
+    if (!name) return "U"
+    return name
+      .split(' ')
+      .map(n => n[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2)
+  }
+
   const userCanAccessAdmin = canAccessAdmin(currentUser?.user_type)
   const userCanCreateMeeting = canCreateMeeting(currentUser?.user_type)
 
@@ -168,15 +183,71 @@ export default function Home() {
             Admin
           </Button>
         )}
-        <Button
-          onClick={handleLogout}
-          variant="outline"
-          size="sm"
-          className="bg-background/80 backdrop-blur"
-        >
-          <LogOut className="h-4 w-4 mr-2" />
-          Logout ({currentUser?.name})
-        </Button>
+
+        {/* User Dropdown Menu */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button 
+              variant="outline" 
+              size="sm"
+              className="bg-background/80 backdrop-blur flex items-center gap-2 px-3 py-2 h-auto"
+            >
+              {/* Avatar */}
+              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-primary-foreground font-semibold text-xs">
+                {getInitials(currentUser?.name || 'User')}
+              </div>
+              
+              {/* User name */}
+              <span className="text-sm font-medium">
+                {currentUser?.name || 'User'}
+              </span>
+              
+              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            </Button>
+          </DropdownMenuTrigger>
+
+          <DropdownMenuContent align="end" className="w-56">
+            <DropdownMenuLabel className="font-normal">
+              <div className="flex flex-col space-y-1">
+                <p className="text-sm font-medium leading-none">{currentUser?.name}</p>
+                <p className="text-xs leading-none text-muted-foreground">
+                  {currentUser?.email}
+                </p>
+                <p className="text-xs leading-none text-muted-foreground">
+                  {getUserTypeDisplayName(currentUser?.user_type)}
+                </p>
+              </div>
+            </DropdownMenuLabel>
+            
+            <DropdownMenuSeparator />
+            
+            <DropdownMenuItem
+              onClick={() => setShowProfileModal(true)}
+              className="cursor-pointer"
+            >
+              <User className="mr-2 h-4 w-4" />
+              <span>Profile Settings</span>
+            </DropdownMenuItem>
+            
+            <DropdownMenuItem
+              onClick={handleGeniusWordsClick}
+              className="cursor-pointer"
+            >
+              <Sparkles className="mr-2 h-4 w-4" />
+              <span>GeniusWords</span>
+            </DropdownMenuItem>
+            
+            <DropdownMenuSeparator />
+            
+            <DropdownMenuItem
+              onClick={handleLogout}
+              className="cursor-pointer text-red-600 focus:text-red-600 focus:bg-red-50"
+            >
+              <LogOut className="mr-2 h-4 w-4" />
+              <span>Logout</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       {/* Screen Router */}
@@ -203,6 +274,10 @@ export default function Home() {
 
       {currentScreen === "admin" && userCanAccessAdmin && (
         <AdminPanel onBack={handleBackToDashboard} />
+      )}
+
+      {currentScreen === "genius-words" && (
+        <GeniusWordsManager onBack={handleBackToDashboard} />
       )}
       
       {/* Modals */}
@@ -252,6 +327,19 @@ export default function Home() {
           onClose={() => setShowCreateMeetingModal(false)}
           onSuccess={handleMeetingCreated}
           buildings={buildings}
+        />
+      )}
+
+      {/* Profile Settings Modal */}
+      {showProfileModal && currentUser && (
+        <ProfileSettingsModal
+          user={currentUser}
+          onClose={() => setShowProfileModal(false)}
+          onUpdate={() => {
+            setShowProfileModal(false)
+            const updatedUser = getCurrentUser()
+            setCurrentUser(updatedUser)
+          }}
         />
       )}
     </main>

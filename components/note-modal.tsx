@@ -1,10 +1,11 @@
 "use client"
 
 import { useState } from "react"
-import { X, Upload } from "lucide-react"
+import { X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { supabase, getCurrentUser } from "@/lib/supabase"
+import GeniusWordsInput from "./GeniusWordsInput"
 
 interface NoteModalProps {
   topicId: number
@@ -14,20 +15,11 @@ interface NoteModalProps {
 
 export default function NoteModal({ topicId, onClose, onSave }: NoteModalProps) {
   const [content, setContent] = useState("")
-  const [fileName, setFileName] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files?.[0]) {
-      setFileName(e.target.files[0].name)
-    }
-  }
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
-    console.log('DEBUG - topicId:', topicId, 'Type:', typeof topicId)
     
     if (!content.trim()) {
       setError("Note content is required")
@@ -40,27 +32,22 @@ export default function NoteModal({ topicId, onClose, onSave }: NoteModalProps) 
     try {
       const currentUser = getCurrentUser()
 
-      const insertData = {
-        topic_id: topicId,
-        content: content.trim(),
-        created_by: currentUser.id
-      }
-      
-      console.log('Inserting with data:', insertData)
-
-      const { data, error: insertError } = await supabase
+      const { error: insertError } = await supabase
         .from('notes')
-        .insert(insertData)
-        .select()
+        .insert({
+          topic_id: topicId,
+          content: content.trim(),
+          created_by: currentUser?.id
+        })
 
       if (insertError) {
-        console.error('Full error object:', JSON.stringify(insertError, null, 2))
+        console.error('Error inserting note:', insertError)
         setError(`Failed to save note: ${insertError.message}`)
         setSaving(false)
         return
       }
 
-      console.log('✅ Note saved successfully:', data)
+      console.log('✅ Note saved successfully')
 
       if (onSave) {
         onSave()
@@ -76,7 +63,7 @@ export default function NoteModal({ topicId, onClose, onSave }: NoteModalProps) 
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 animate-in fade-in">
-      <Card className="w-full sm:max-w-md border-0 rounded-t-2xl sm:rounded-2xl shadow-2xl">
+      <Card className="w-full sm:max-w-2xl border-0 rounded-t-2xl sm:rounded-2xl shadow-2xl">
         <div className="flex items-center justify-between border-b border-border bg-gradient-to-r from-note-blue/10 to-note-blue/5 p-6">
           <h2 className="text-xl font-bold text-foreground">Add Note</h2>
           <button
@@ -88,22 +75,24 @@ export default function NoteModal({ topicId, onClose, onSave }: NoteModalProps) 
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded text-sm">
               {error}
             </div>
           )}
 
+          {/* ⭐ UPDATED: Note Content with GeniusWords */}
           <div>
-            <label className="block text-sm font-medium text-foreground mb-2">Note Content *</label>
-            <textarea
+            <label className="block text-sm font-medium text-foreground mb-2">
+              Note Content *
+            </label>
+            <GeniusWordsInput
               value={content}
-              onChange={(e) => setContent(e.target.value)}
-              placeholder="Enter your note here..."
-              required
+              onChange={setContent}
+              placeholder="Enter note content... (Type # for shortcuts)"
+              rows={6}
               disabled={saving}
-              className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-note-blue/50 resize-none min-h-32 disabled:opacity-50"
             />
           </div>
 
@@ -112,7 +101,7 @@ export default function NoteModal({ topicId, onClose, onSave }: NoteModalProps) 
               type="button" 
               variant="outline" 
               onClick={onClose} 
-              className="flex-1 bg-transparent"
+              className="flex-1"
               disabled={saving}
             >
               Cancel

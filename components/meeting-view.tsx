@@ -77,7 +77,7 @@ export default function MeetingView({
   // Attendees section expanded state
   const [attendeesExpanded, setAttendeesExpanded] = useState(false)
   
-  // ⭐ NEW: Recorder selection modal
+  // Recorder selection modal
   const [showRecorderModal, setShowRecorderModal] = useState(false)
   
   const [selectedSection, setSelectedSection] = useState<{ id: number; title: string } | null>(null)
@@ -441,14 +441,12 @@ export default function MeetingView({
     return index > 0 ? STATUS_FLOW[index - 1] : current
   }
 
-  // ⭐ UPDATED: Now accepts recorder and timekeeper parameters
   const updateMeetingStatus = async (targetStatus: string, recorderName?: string, timekeeperName?: string | null) => {
     try {
       setLoading(true)
       
       const updateData: any = { status: targetStatus }
       
-      // If transitioning to working_minutes and recorder info provided
       if (targetStatus === "working_minutes" && recorderName) {
         updateData.recorder_name = recorderName
         updateData.timekeeper_name = timekeeperName
@@ -581,7 +579,6 @@ export default function MeetingView({
                         <Button
                           onClick={() => {
                             const target = nextStatus(meeting.status)
-                            // ⭐ NEW: If transitioning to working_minutes, show recorder modal
                             if (target === "working_minutes") {
                               setShowRecorderModal(true)
                             } else {
@@ -609,7 +606,6 @@ export default function MeetingView({
                 </div>
                 <p className="text-sm text-muted-foreground">{meeting.building}</p>
                 
-                {/* ⭐ NEW: Display recorder and timekeeper during working_minutes */}
                 {meeting.status === "working_minutes" && (meeting.recorder_name || meeting.timekeeper_name) && (
                   <div className="flex items-center gap-4 text-xs text-muted-foreground mt-1">
                     {meeting.recorder_name && (
@@ -749,27 +745,29 @@ export default function MeetingView({
                     .eq("id", meetingId)
                   await fetchMeetingData()
                 }}
+                onClose={() => setAttendeesExpanded(false)}
               />
             </div>
           </Card>
         )}
       </div>
 
-      {/* MEETING SECTIONS/TOPICS WITH DRAG AND DROP */}
+      {/* MEETING SECTIONS/TOPICS WITH DRAG AND DROP - ⭐ UPDATED: space-y-3 to space-y-2 */}
       <DragDropContext onDragEnd={onDragEnd}>
         <Droppable droppableId="all-sections" type="SECTION">
           {(provided: any) => (
             <div
               {...provided.droppableProps}
               ref={provided.innerRef}
-              className="mx-auto max-w-4xl px-4 py-4 sm:px-6 lg:px-8 space-y-3"
+              className="mx-auto max-w-4xl px-4 py-4 sm:px-6 lg:px-8 space-y-2"
             >
               {sections.map((section, sectionIndex) => (
                 <Draggable key={section.id} draggableId={section.id.toString()} index={sectionIndex}>
                   {(provided: any) => (
                     <div ref={provided.innerRef} {...provided.draggableProps}>
                       <Card className="border-0 bg-gradient-to-r from-primary/10 to-decision-purple/10 mb-2">
-                        <div className="w-full p-2 flex items-center justify-between">
+                        {/* ⭐ UPDATED: p-2 to p-1.5 */}
+                        <div className="w-full p-1.5 flex items-center justify-between">
                           <div className="flex items-center gap-3">
                             <div {...provided.dragHandleProps} onClick={() => toggleSection(section.id)} className="cursor-pointer">
                               {section.isExpanded ? (
@@ -916,7 +914,7 @@ export default function MeetingView({
         </div>
       )}
 
-      {/* ⭐ NEW: Recorder Selection Modal */}
+      {/* Recorder Selection Modal */}
       {showRecorderModal && (
         <SelectRecorderModal
           isOpen={showRecorderModal}

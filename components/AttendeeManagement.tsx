@@ -62,8 +62,11 @@ export default function AttendeeManagement({
     setLocalAttendees(updated)
   }
 
-  const handleSave = () => {
-    onUpdate(localAttendees)
+  const handleSave = async () => {
+    // Call onUpdate first to save the data
+    await onUpdate(localAttendees)
+    
+    // Then close the modal/section
     if (onClose) {
       onClose()
     }
