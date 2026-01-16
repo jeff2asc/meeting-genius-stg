@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { X, Sparkles, AtSign } from "lucide-react"
+import { X } from "lucide-react"
 import { supabase, getCurrentUser } from "@/lib/supabase"
 
 interface DecisionModalProps {
@@ -44,9 +44,10 @@ export default function DecisionModal({
   const [attendees, setAttendees] = useState<Attendee[]>([])
   
   // @ Mention Autocomplete State
-  const [showMentionSuggestions, setShowMentionSuggestions] = useState(false)
-  const [mentionSuggestions, setMentionSuggestions] = useState<Attendee[]>([])
-  const [selectedMentionIndex, setSelectedMentionIndex] = useState(0)
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const [suggestions, setSuggestions] = useState<Attendee[]>([])
+  const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0)
+  const [cursorPosition, setCursorPosition] = useState(0)
   const [mentionStartIndex, setMentionStartIndex] = useState(-1)
   
   // # GeniusWords Autocomplete State
@@ -56,9 +57,8 @@ export default function DecisionModal({
   const [selectedGeniusIndex, setSelectedGeniusIndex] = useState(0)
   const [geniusStartIndex, setGeniusStartIndex] = useState(-1)
   
-  const [cursorPosition, setCursorPosition] = useState(0)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const mentionSuggestionsRef = useRef<HTMLDivElement>(null)
+  const suggestionsRef = useRef<HTMLDivElement>(null)
   const geniusSuggestionsRef = useRef<HTMLDivElement>(null)
 
   const currentUser = getCurrentUser()
@@ -163,50 +163,59 @@ export default function DecisionModal({
     setMotionText(text)
     setCursorPosition(cursorPos)
 
+    // Check for @ mention and # GeniusWords
     const textBeforeCursor = text.substring(0, cursorPos)
-
-    // Check for @ mention
     const atIndex = textBeforeCursor.lastIndexOf("@")
     const hashIndex = textBeforeCursor.lastIndexOf("#")
     
-    // Determine which autocomplete to show (prioritize the most recent trigger)
-    if (atIndex > hashIndex && atIndex !== -1) {
+    // Determine which trigger is most recent
+    const mostRecentIsAt = atIndex > hashIndex
+    
+    if (mostRecentIsAt && atIndex !== -1) {
+      // Handle @ mention
       const textAfterAt = textBeforeCursor.substring(atIndex + 1)
       
+      // Check if there's a space after @ (which would close the mention)
       if (!textAfterAt.includes(" ") && !textAfterAt.includes("\n")) {
         setMentionStartIndex(atIndex)
         
+        // Filter attendees based on text after @
         const filtered = attendees.filter(attendee =>
           attendee.name.toLowerCase().includes(textAfterAt.toLowerCase())
         )
         
-        setMentionSuggestions(filtered)
-        setShowMentionSuggestions(filtered.length > 0)
-        setSelectedMentionIndex(0)
+        setSuggestions(filtered)
+        setShowSuggestions(filtered.length > 0)
+        setSelectedSuggestionIndex(0)
         setShowGeniusSuggestions(false)
       } else {
-        setShowMentionSuggestions(false)
+        setShowSuggestions(false)
       }
-    } else if (hashIndex > atIndex && hashIndex !== -1) {
+    } else if (!mostRecentIsAt && hashIndex !== -1) {
+      // Handle # GeniusWords
       const textAfterHash = textBeforeCursor.substring(hashIndex + 1)
       
       if (!textAfterHash.includes(" ") && !textAfterHash.includes("\n")) {
         setGeniusStartIndex(hashIndex)
         
+        // Filter GeniusWords - search without the # prefix
         const searchTerm = textAfterHash.toLowerCase()
-        const filtered = geniusWords.filter(gw =>
-          gw.shortcode.toLowerCase().includes(`#${searchTerm}`)
-        )
+        const filtered = geniusWords.filter(gw => {
+          // Remove # from shortcode for comparison
+          const shortcodeWithoutHash = gw.shortcode.replace(/^#/, '').toLowerCase()
+          return shortcodeWithoutHash.includes(searchTerm) || 
+                 gw.shortcode.toLowerCase().includes(`#${searchTerm}`)
+        })
         
         setGeniusSuggestions(filtered)
         setShowGeniusSuggestions(filtered.length > 0)
         setSelectedGeniusIndex(0)
-        setShowMentionSuggestions(false)
+        setShowSuggestions(false)
       } else {
         setShowGeniusSuggestions(false)
       }
     } else {
-      setShowMentionSuggestions(false)
+      setShowSuggestions(false)
       setShowGeniusSuggestions(false)
     }
   }
@@ -219,9 +228,10 @@ export default function DecisionModal({
     const newText = beforeMention + attendee.name + " " + afterCursor
     
     setMotionText(newText)
-    setShowMentionSuggestions(false)
+    setShowSuggestions(false)
     setMentionStartIndex(-1)
 
+    // Set cursor position after inserted name
     setTimeout(() => {
       if (textareaRef.current) {
         const newCursorPos = mentionStartIndex + attendee.name.length + 1
@@ -253,20 +263,20 @@ export default function DecisionModal({
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // Handle @ mention suggestions
-    if (showMentionSuggestions) {
+    if (showSuggestions) {
       if (e.key === "ArrowDown") {
         e.preventDefault()
-        setSelectedMentionIndex(prev => 
-          prev < mentionSuggestions.length - 1 ? prev + 1 : prev
+        setSelectedSuggestionIndex(prev => 
+          prev < suggestions.length - 1 ? prev + 1 : prev
         )
       } else if (e.key === "ArrowUp") {
         e.preventDefault()
-        setSelectedMentionIndex(prev => prev > 0 ? prev - 1 : 0)
-      } else if (e.key === "Enter" && mentionSuggestions.length > 0) {
+        setSelectedSuggestionIndex(prev => prev > 0 ? prev - 1 : 0)
+      } else if (e.key === "Enter" && suggestions.length > 0) {
         e.preventDefault()
-        insertMention(mentionSuggestions[selectedMentionIndex])
+        insertMention(suggestions[selectedSuggestionIndex])
       } else if (e.key === "Escape") {
-        setShowMentionSuggestions(false)
+        setShowSuggestions(false)
       }
       return
     }
@@ -335,11 +345,11 @@ export default function DecisionModal({
     setVotesAgainst("")
     setVotesAbstain("")
     setError(null)
-    setShowMentionSuggestions(false)
-    setShowGeniusSuggestions(false)
-    setMentionSuggestions([])
-    setGeniusSuggestions([])
+    setShowSuggestions(false)
+    setSuggestions([])
     setMentionStartIndex(-1)
+    setShowGeniusSuggestions(false)
+    setGeniusSuggestions([])
     setGeniusStartIndex(-1)
     onClose()
   }
@@ -366,50 +376,36 @@ export default function DecisionModal({
         )}
 
         <div className="space-y-4">
-          {/* Motion Text with @ and # Autocomplete */}
+          {/* Motion Text with @ Autocomplete */}
           <div className="relative">
             <label className="block text-sm font-medium text-foreground mb-2">
               Motion / Resolution Text <span className="text-red-500">*</span>
             </label>
-            <div className="flex items-center gap-2 mb-2 text-xs text-muted-foreground">
-              <div className="flex items-center gap-1">
-                <AtSign className="h-3 w-3" />
-                <span>Type <strong>@</strong> to mention attendees</span>
-              </div>
-              <span>•</span>
-              <div className="flex items-center gap-1">
-                <Sparkles className="h-3 w-3" />
-                <span>Type <strong>#</strong> for shortcuts</span>
-              </div>
-            </div>
+            <p className="text-xs text-muted-foreground mb-2">
+              Type <strong>@</strong> to mention attendees by name, <strong>#</strong> for GeniusWords shortcuts
+            </p>
             <textarea
               ref={textareaRef}
               value={motionText}
               onChange={handleMotionTextChange}
               onKeyDown={handleKeyDown}
-              placeholder="E.g., Motion by @John Smith, seconded by @Jane Doe, to #ApprovalMotion..."
+              placeholder="E.g., Motion by @John Smith, seconded by @Jane Doe, to approve the budget..."
               className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary min-h-[120px]"
               disabled={saving}
             />
             
             {/* @ Mention Suggestions Dropdown */}
-            {showMentionSuggestions && (
+            {showSuggestions && (
               <div
-                ref={mentionSuggestionsRef}
+                ref={suggestionsRef}
                 className="absolute z-10 w-full mt-1 bg-card border border-border rounded-lg shadow-lg max-h-48 overflow-y-auto"
               >
-                <div className="p-2 border-b border-border bg-muted/30 flex items-center gap-2">
-                  <AtSign className="h-4 w-4 text-blue-600" />
-                  <span className="text-xs font-medium text-muted-foreground">
-                    Mention Attendee
-                  </span>
-                </div>
-                {mentionSuggestions.map((attendee, index) => (
+                {suggestions.map((attendee, index) => (
                   <button
                     key={index}
                     onClick={() => insertMention(attendee)}
                     className={`w-full text-left px-4 py-2 hover:bg-muted transition-colors ${
-                      index === selectedMentionIndex ? 'bg-primary/10' : ''
+                      index === selectedSuggestionIndex ? 'bg-muted' : ''
                     }`}
                   >
                     <div className="font-medium text-foreground">{attendee.name}</div>
@@ -425,27 +421,21 @@ export default function DecisionModal({
             {showGeniusSuggestions && (
               <div
                 ref={geniusSuggestionsRef}
-                className="absolute z-10 w-full mt-1 bg-card border border-border rounded-lg shadow-lg max-h-60 overflow-y-auto"
+                className="absolute z-10 w-full mt-1 bg-card border border-border rounded-lg shadow-lg max-h-48 overflow-y-auto"
               >
-                <div className="p-2 border-b border-border bg-muted/30 flex items-center gap-2">
-                  <Sparkles className="h-4 w-4 text-purple-600" />
-                  <span className="text-xs font-medium text-muted-foreground">
-                    GeniusWords Shortcuts
-                  </span>
-                </div>
                 {geniusSuggestions.map((gw, index) => (
                   <button
                     key={gw.id}
                     onClick={() => insertGeniusWord(gw)}
-                    className={`w-full text-left px-3 py-2 hover:bg-muted transition-colors ${
-                      index === selectedGeniusIndex ? 'bg-primary/10' : ''
+                    className={`w-full text-left px-4 py-2 hover:bg-muted transition-colors ${
+                      index === selectedGeniusIndex ? 'bg-muted' : ''
                     }`}
                   >
                     <div className="flex items-start gap-2">
-                      <code className="px-2 py-0.5 bg-purple-100 text-purple-800 rounded text-xs font-mono shrink-0">
+                      <code className="text-xs font-mono text-muted-foreground shrink-0">
                         {gw.shortcode}
                       </code>
-                      <span className="text-sm text-foreground flex-1">
+                      <span className="text-sm text-foreground">
                         {gw.description}
                       </span>
                     </div>
