@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
-import { ChevronDown, FileText, CheckSquare, Scale, Paperclip, Edit2, Trash2, X, Check, Sparkles, Loader2, Plus, Upload, Download } from "lucide-react"
+import { ChevronDown, FileText, CheckSquare, Scale, Paperclip, Edit2, Trash2, X, Check, Sparkles, Loader2, Plus, Upload, Download, CornerDownRight } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { supabase, getCurrentUser, TopicAttachment } from "@/lib/supabase"
@@ -45,6 +45,21 @@ interface HistoryItem {
   attachmentUrl?: string
 }
 
+// ⭐ NEW: Decision interface with threading support
+interface Decision {
+  id: number
+  topic_id: number
+  motion_text: string
+  result: string | null
+  votes_for: number | null
+  votes_against: number | null
+  votes_abstain: number | null
+  parent_decision_id: number | null
+  recorded_at: string
+  edited_at: string | null
+  children?: Decision[] // For nested decisions
+}
+
 interface TopicCardProps {
   topic: Topic
   topicNumber: number
@@ -56,6 +71,9 @@ interface TopicCardProps {
   onDecisionClick: () => void
   onRegisterRefresh?: (topicId: number, callback: () => void) => void
   isReadOnly?: boolean
+  // ⭐ UPDATED: Include topicId in callbacks
+  onEditDecision?: (decisionId: number, topicId: number) => void
+  onAddThreadedDecision?: (parentDecisionId: number, topicId: number) => void
 }
 
 export default function TopicCard({ 
@@ -68,7 +86,9 @@ export default function TopicCard({
   onNoteClick,
   onDecisionClick,
   onRegisterRefresh,
-  isReadOnly = false
+  isReadOnly = false,
+  onEditDecision,
+  onAddThreadedDecision
 }: TopicCardProps) {
   const [isExpanded, setIsExpanded] = useState(true)
   const [isEditingTitle, setIsEditingTitle] = useState(false)
@@ -87,6 +107,10 @@ export default function TopicCard({
   const [uploadingFile, setUploadingFile] = useState(false)
   const [showAttachments, setShowAttachments] = useState(false)
 
+  // ⭐ NEW: Threaded decisions state
+  const [decisions, setDecisions] = useState<Decision[]>([])
+  const [loadingDecisions, setLoadingDecisions] = useState(false)
+
   // ⭐ NEW: Debounced description for auto-save
   const debouncedDescription = useDebounce(editedDescription, 1000)
 
@@ -104,6 +128,7 @@ export default function TopicCard({
       fetchHistory()
       fetchAiAnalysis()
       fetchTopicAttachments()
+      fetchDecisions() // ⭐ NEW
     }
   }, [topic.id, isExpanded])
 
@@ -124,6 +149,56 @@ export default function TopicCard({
     setEditedDescription(topic.description || "")
     setEditedTitle(topic.title)
   }, [topic.description, topic.title])
+
+  // ⭐ NEW: Fetch decisions with threading structure
+  const fetchDecisions = async () => {
+    setLoadingDecisions(true)
+    try {
+      const { data, error } = await supabase
+        .from('decisions')
+        .select('*')
+        .eq('topic_id', topic.id)
+        .order('recorded_at', { ascending: false })
+
+      if (error) {
+        console.error('Error fetching decisions:', error)
+        return
+      }
+
+      if (data) {
+        // Build threaded structure
+        const decisionsMap = new Map<number, Decision>()
+        const rootDecisions: Decision[] = []
+
+        // First pass: create all decision objects
+        data.forEach(d => {
+          decisionsMap.set(d.id, { ...d, children: [] })
+        })
+
+        // Second pass: build parent-child relationships
+        data.forEach(d => {
+          const decision = decisionsMap.get(d.id)!
+          if (d.parent_decision_id) {
+            const parent = decisionsMap.get(d.parent_decision_id)
+            if (parent) {
+              parent.children!.push(decision)
+            } else {
+              // Parent not found, treat as root
+              rootDecisions.push(decision)
+            }
+          } else {
+            rootDecisions.push(decision)
+          }
+        })
+
+        setDecisions(rootDecisions)
+      }
+    } catch (err) {
+      console.error('Unexpected error fetching decisions:', err)
+    } finally {
+      setLoadingDecisions(false)
+    }
+  }
 
   const fetchTopicAttachments = async () => {
     try {
@@ -334,26 +409,7 @@ export default function TopicCard({
         }
       }
 
-      const { data: decisions } = await supabase
-        .from('decisions')
-        .select('id, motion_text, result, votes_for, votes_against, recorded_at')
-        .eq('topic_id', topic.id)
-        .order('recorded_at', { ascending: false })
-
-      if (decisions) {
-        decisions.forEach(decision => {
-          const voteText = decision.votes_for !== null || decision.votes_against !== null
-            ? ` • Votes: ${decision.votes_for || 0} for, ${decision.votes_against || 0} against`
-            : ''
-          historyItems.push({
-            id: decision.id,
-            type: 'decision',
-            content: decision.motion_text.substring(0, 100) + (decision.motion_text.length > 100 ? '...' : ''),
-            timestamp: new Date(decision.recorded_at).toLocaleString(),
-            details: `Result: ${decision.result || 'N/A'}${voteText}`
-          })
-        })
-      }
+      // ⭐ REMOVED: Old decision fetching (now handled by fetchDecisions separately)
 
       historyItems.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
       setHistory(historyItems)
@@ -526,6 +582,87 @@ export default function TopicCard({
       case 'decision': return 'bg-decision-purple/10 text-decision-purple border-decision-purple/20'
       default: return 'bg-gray-100 text-gray-600'
     }
+  }
+
+  // ⭐ NEW: Render decision with children recursively
+  const renderDecision = (decision: Decision, depth: number = 0) => {
+    const hasChildren = decision.children && decision.children.length > 0
+    
+    return (
+      <div key={decision.id} className={depth > 0 ? 'ml-6 mt-2' : ''}>
+        <div className="flex flex-col gap-1 rounded bg-background border border-border px-2 py-1.5 relative">
+          {/* Threading indicator for nested decisions */}
+          {depth > 0 && (
+            <div className="absolute -left-3 top-3 text-purple-400">
+              <CornerDownRight className="h-4 w-4" />
+            </div>
+          )}
+          
+          <div className="flex-1">
+            <div className="flex gap-2 items-center mb-1">
+              <span className="text-xs font-medium px-2 py-0.5 rounded border bg-decision-purple/10 text-decision-purple border-decision-purple/20">
+                DECISION {depth > 0 && '(THREADED)'}
+              </span>
+              <span className="text-xs text-muted-foreground">
+                {new Date(decision.recorded_at).toLocaleString()}
+              </span>
+              {decision.edited_at && (
+                <span className="text-xs text-amber-600">(Edited)</span>
+              )}
+            </div>
+            <p className="text-sm text-foreground mb-1">{decision.motion_text}</p>
+            {(decision.result || decision.votes_for !== null || decision.votes_against !== null) && (
+              <p className="text-xs text-muted-foreground">
+                {decision.result && `Result: ${decision.result}`}
+                {(decision.votes_for !== null || decision.votes_against !== null) && ` • Votes: ${decision.votes_for || 0} for, ${decision.votes_against || 0} against`}
+                {decision.votes_abstain !== null && decision.votes_abstain > 0 && `, ${decision.votes_abstain} abstain`}
+              </p>
+            )}
+          </div>
+          
+          {/* ⭐ FIXED: Action Buttons with topicId */}
+          {!isReadOnly && (
+            <div className="flex gap-2 mt-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  console.log('Edit button clicked:', decision.id, topic.id)
+                  if (onEditDecision) {
+                    onEditDecision(decision.id, topic.id)
+                  }
+                }}
+                className="flex-1 text-purple-600 border-purple-600 hover:bg-purple-50"
+              >
+                <Edit2 className="h-3 w-3 mr-1" />
+                Edit
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  console.log('Add threaded button clicked:', decision.id, topic.id)
+                  if (onAddThreadedDecision) {
+                    onAddThreadedDecision(decision.id, topic.id)
+                  }
+                }}
+                className="flex-1 text-purple-600 border-purple-600 hover:bg-purple-50"
+              >
+                <Plus className="h-3 w-3 mr-1" />
+                Add Threaded Decision
+              </Button>
+            </div>
+          )}
+        </div>
+        
+        {/* Render children recursively */}
+        {hasChildren && (
+          <div className="mt-1">
+            {decision.children!.map(child => renderDecision(child, depth + 1))}
+          </div>
+        )}
+      </div>
+    )
   }
 
   return (
@@ -778,62 +915,114 @@ export default function TopicCard({
 
             <div className="p-2 bg-muted/20">
               <h4 className="text-sm font-semibold text-foreground mb-1.5">History by Type</h4>
-              {["task", "decision", "note"].map(type => (
-                <div className="mb-2 last:mb-0" key={type}>
-                  <div className="flex items-center gap-2 mb-1">
-                    {type === "task" && <CheckSquare className="h-4 w-4 text-task-green" />}
-                    {type === "decision" && <Scale className="h-4 w-4 text-decision-purple" />}
-                    {type === "note" && <FileText className="h-4 w-4 text-note-blue" />}
-                    <span className="font-semibold text-xs uppercase">
-                      {type === "task" ? "Tasks" : type === "decision" ? "Decisions" : "Notes"}
-                    </span>
-                  </div>
-                  <div className="space-y-1">
-                    {loadingHistory && <div className="text-xs text-muted-foreground px-2">Loading...</div>}
-                    {!loadingHistory && history.filter(h => h.type === type).length > 0 ? (
-                      history.filter(h => h.type === type).map(item => (
-                        <div 
-                          key={item.id} 
-                          className="flex flex-col gap-1 rounded bg-background border border-border px-2 py-1.5"
-                        >
-                          <div className="flex-1">
-                            <div className="flex gap-2 items-center mb-1">
-                              <span className={`text-xs font-medium px-2 py-0.5 rounded border ${getHistoryBadgeColor(item.type)}`}>
-                                {item.type.toUpperCase()}
-                              </span>
-                              <span className="text-xs text-muted-foreground">{item.timestamp}</span>
-                            </div>
-                            <p className="text-sm text-foreground mb-1">{item.content}</p>
-                            {item.details && (
-                              <p className="text-xs text-muted-foreground">{item.details}</p>
-                            )}
+              
+              {/* ⭐ NEW: Decisions Section with Threading */}
+              <div className="mb-2">
+                <div className="flex items-center gap-2 mb-1">
+                  <Scale className="h-4 w-4 text-decision-purple" />
+                  <span className="font-semibold text-xs uppercase">Decisions</span>
+                </div>
+                <div className="space-y-1">
+                  {loadingDecisions && <div className="text-xs text-muted-foreground px-2">Loading...</div>}
+                  {!loadingDecisions && decisions.length > 0 ? (
+                    decisions.map(decision => renderDecision(decision))
+                  ) : (
+                    !loadingDecisions && <div className="text-xs text-muted-foreground px-2">
+                      {isReadOnly 
+                        ? 'No decisions yet.'
+                        : 'No decisions yet. Click the button above to add one.'}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Tasks Section */}
+              <div className="mb-2">
+                <div className="flex items-center gap-2 mb-1">
+                  <CheckSquare className="h-4 w-4 text-task-green" />
+                  <span className="font-semibold text-xs uppercase">Tasks</span>
+                </div>
+                <div className="space-y-1">
+                  {loadingHistory && <div className="text-xs text-muted-foreground px-2">Loading...</div>}
+                  {!loadingHistory && history.filter(h => h.type === "task").length > 0 ? (
+                    history.filter(h => h.type === "task").map(item => (
+                      <div 
+                        key={item.id} 
+                        className="flex flex-col gap-1 rounded bg-background border border-border px-2 py-1.5"
+                      >
+                        <div className="flex-1">
+                          <div className="flex gap-2 items-center mb-1">
+                            <span className={`text-xs font-medium px-2 py-0.5 rounded border ${getHistoryBadgeColor(item.type)}`}>
+                              {item.type.toUpperCase()}
+                            </span>
+                            <span className="text-xs text-muted-foreground">{item.timestamp}</span>
                           </div>
-                          {item.type === 'task' && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => {
-                                console.log('Clicking task:', item.id)
-                                setSelectedTaskId(item.id)
-                              }}
-                              className="w-full text-task-green border-task-green hover:bg-task-green/10"
-                            >
-                              <CheckSquare className="h-3 w-3 mr-1" />
-                              View Task Details
-                            </Button>
+                          <p className="text-sm text-foreground mb-1">{item.content}</p>
+                          {item.details && (
+                            <p className="text-xs text-muted-foreground">{item.details}</p>
                           )}
                         </div>
-                      ))
-                    ) : (
-                      !loadingHistory && <div className="text-xs text-muted-foreground px-2">
-                        {isReadOnly 
-                          ? `No ${type}s yet.`
-                          : `No ${type}s yet. Click the button above to add one.`}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            console.log('Clicking task:', item.id)
+                            setSelectedTaskId(item.id)
+                          }}
+                          className="w-full text-task-green border-task-green hover:bg-task-green/10"
+                        >
+                          <CheckSquare className="h-3 w-3 mr-1" />
+                          View Task Details
+                        </Button>
                       </div>
-                    )}
-                  </div>
+                    ))
+                  ) : (
+                    !loadingHistory && <div className="text-xs text-muted-foreground px-2">
+                      {isReadOnly 
+                        ? 'No tasks yet.'
+                        : 'No tasks yet. Click the button above to add one.'}
+                    </div>
+                  )}
                 </div>
-              ))}
+              </div>
+
+              {/* Notes Section */}
+              <div className="mb-2 last:mb-0">
+                <div className="flex items-center gap-2 mb-1">
+                  <FileText className="h-4 w-4 text-note-blue" />
+                  <span className="font-semibold text-xs uppercase">Notes</span>
+                </div>
+                <div className="space-y-1">
+                  {loadingHistory && <div className="text-xs text-muted-foreground px-2">Loading...</div>}
+                  {!loadingHistory && history.filter(h => h.type === "note").length > 0 ? (
+                    history.filter(h => h.type === "note").map(item => (
+                      <div 
+                        key={item.id} 
+                        className="flex flex-col gap-1 rounded bg-background border border-border px-2 py-1.5"
+                      >
+                        <div className="flex-1">
+                          <div className="flex gap-2 items-center mb-1">
+                            <span className={`text-xs font-medium px-2 py-0.5 rounded border ${getHistoryBadgeColor(item.type)}`}>
+                              {item.type.toUpperCase()}
+                            </span>
+                            <span className="text-xs text-muted-foreground">{item.timestamp}</span>
+                          </div>
+                          <p className="text-sm text-foreground mb-1">{item.content}</p>
+                          {item.details && (
+                            <p className="text-xs text-muted-foreground">{item.details}</p>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    !loadingHistory && <div className="text-xs text-muted-foreground px-2">
+                      {isReadOnly 
+                        ? 'No notes yet.'
+                        : 'No notes yet. Click the button above to add one.'}
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           </>
         )}

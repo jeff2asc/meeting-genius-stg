@@ -12,6 +12,11 @@ interface DecisionModalProps {
   topicId: number
   meetingId: number
   onSave?: () => void
+  // ⭐ NEW: Edit mode props
+  editMode?: boolean
+  existingDecisionId?: number | null
+  // ⭐ NEW: Threading props
+  parentDecisionId?: number | null
 }
 
 interface Attendee {
@@ -26,12 +31,29 @@ interface GeniusWord {
   description: string
 }
 
+// ⭐ NEW: Decision interface for loading existing decisions
+interface Decision {
+  id: number
+  topic_id: number
+  motion_text: string
+  result: string | null
+  votes_for: number | null
+  votes_against: number | null
+  votes_abstain: number | null
+  parent_decision_id: number | null
+  recorded_at: string
+  edited_at: string | null
+}
+
 export default function DecisionModal({
   isOpen,
   onClose,
   topicId,
   meetingId,
-  onSave
+  onSave,
+  editMode = false,
+  existingDecisionId = null,
+  parentDecisionId = null
 }: DecisionModalProps) {
   const [motionText, setMotionText] = useState("")
   const [result, setResult] = useState("")
@@ -42,6 +64,9 @@ export default function DecisionModal({
   const [error, setError] = useState<string | null>(null)
   const [decisionResults, setDecisionResults] = useState<string[]>([])
   const [attendees, setAttendees] = useState<Attendee[]>([])
+  
+  // ⭐ NEW: Parent decision info for display
+  const [parentDecision, setParentDecision] = useState<Decision | null>(null)
   
   // @ Mention Autocomplete State
   const [showSuggestions, setShowSuggestions] = useState(false)
@@ -68,8 +93,68 @@ export default function DecisionModal({
       fetchDecisionResults()
       fetchAttendees()
       fetchGeniusWords()
+      
+      // ⭐ NEW: Load existing decision if in edit mode
+      if (editMode && existingDecisionId) {
+        loadExistingDecision(existingDecisionId)
+      }
+      
+      // ⭐ NEW: Load parent decision if creating a threaded decision
+      if (parentDecisionId) {
+        loadParentDecision(parentDecisionId)
+      }
     }
-  }, [isOpen, meetingId])
+  }, [isOpen, meetingId, editMode, existingDecisionId, parentDecisionId])
+
+  // ⭐ NEW: Load existing decision for editing
+  const loadExistingDecision = async (decisionId: number) => {
+    try {
+      const { data, error } = await supabase
+        .from('decisions')
+        .select('*')
+        .eq('id', decisionId)
+        .single()
+
+      if (error) {
+        console.error('Error loading decision:', error)
+        setError('Failed to load decision')
+        return
+      }
+
+      if (data) {
+        setMotionText(data.motion_text)
+        setResult(data.result || '')
+        setVotesFor(data.votes_for ?? '')
+        setVotesAgainst(data.votes_against ?? '')
+        setVotesAbstain(data.votes_abstain ?? '')
+      }
+    } catch (err) {
+      console.error('Unexpected error loading decision:', err)
+      setError('An unexpected error occurred')
+    }
+  }
+
+  // ⭐ NEW: Load parent decision for display
+  const loadParentDecision = async (decisionId: number) => {
+    try {
+      const { data, error } = await supabase
+        .from('decisions')
+        .select('*')
+        .eq('id', decisionId)
+        .single()
+
+      if (error) {
+        console.error('Error loading parent decision:', error)
+        return
+      }
+
+      if (data) {
+        setParentDecision(data)
+      }
+    } catch (err) {
+      console.error('Unexpected error loading parent decision:', err)
+    }
+  }
 
   const fetchDecisionResults = async () => {
     try {
@@ -311,21 +396,44 @@ export default function DecisionModal({
     setError(null)
 
     try {
-      const { error: insertError } = await supabase
-        .from("decisions")
-        .insert({
-          topic_id: topicId,
-          motion_text: motionText,
-          result: result || null,
-          votes_for: votesFor === "" ? null : votesFor,
-          votes_against: votesAgainst === "" ? null : votesAgainst,
-          votes_abstain: votesAbstain === "" ? null : votesAbstain
-        })
+      // ⭐ NEW: Edit existing decision
+      if (editMode && existingDecisionId) {
+        const { error: updateError } = await supabase
+          .from("decisions")
+          .update({
+            motion_text: motionText,
+            result: result || null,
+            votes_for: votesFor === "" ? null : votesFor,
+            votes_against: votesAgainst === "" ? null : votesAgainst,
+            votes_abstain: votesAbstain === "" ? null : votesAbstain,
+            edited_at: new Date().toISOString()
+          })
+          .eq('id', existingDecisionId)
 
-      if (insertError) {
-        console.error("Error saving decision:", insertError)
-        setError("Failed to save decision")
-        return
+        if (updateError) {
+          console.error("Error updating decision:", updateError)
+          setError("Failed to update decision")
+          return
+        }
+      } else {
+        // ⭐ NEW: Create new decision (with optional parent)
+        const { error: insertError } = await supabase
+          .from("decisions")
+          .insert({
+            topic_id: topicId,
+            motion_text: motionText,
+            result: result || null,
+            votes_for: votesFor === "" ? null : votesFor,
+            votes_against: votesAgainst === "" ? null : votesAgainst,
+            votes_abstain: votesAbstain === "" ? null : votesAbstain,
+            parent_decision_id: parentDecisionId // ⭐ NEW: Link to parent if threaded
+          })
+
+        if (insertError) {
+          console.error("Error saving decision:", insertError)
+          setError("Failed to save decision")
+          return
+        }
       }
 
       if (onSave) onSave()
@@ -351,6 +459,7 @@ export default function DecisionModal({
     setShowGeniusSuggestions(false)
     setGeniusSuggestions([])
     setGeniusStartIndex(-1)
+    setParentDecision(null)
     onClose()
   }
 
@@ -360,7 +469,9 @@ export default function DecisionModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 animate-in fade-in">
       <Card className="w-full max-w-2xl p-6 m-4 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-bold text-foreground">Record Decision</h2>
+          <h2 className="text-xl font-bold text-foreground">
+            {editMode ? "Edit Decision" : parentDecision ? "Add Threaded Decision" : "Record Decision"}
+          </h2>
           <button
             onClick={handleClose}
             className="flex h-8 w-8 items-center justify-center rounded hover:bg-muted transition-colors"
@@ -368,6 +479,21 @@ export default function DecisionModal({
             <X className="h-5 w-5" />
           </button>
         </div>
+
+        {/* ⭐ NEW: Parent Decision Display */}
+        {parentDecision && (
+          <div className="mb-4 p-3 bg-purple-50 border border-purple-200 rounded-lg">
+            <div className="flex items-start gap-2">
+              <div className="text-purple-600 font-semibold text-sm">Parent Motion:</div>
+              <div className="flex-1">
+                <p className="text-sm text-gray-700">{parentDecision.motion_text}</p>
+                {parentDecision.result && (
+                  <p className="text-xs text-purple-600 mt-1">Result: {parentDecision.result}</p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {error && (
           <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded text-sm mb-4">
@@ -526,7 +652,7 @@ export default function DecisionModal({
             className="flex-1 bg-decision-purple hover:bg-decision-purple/90 text-white"
             disabled={saving}
           >
-            {saving ? "Saving..." : "Save Decision"}
+            {saving ? "Saving..." : editMode ? "Update Decision" : "Save Decision"}
           </Button>
         </div>
       </Card>

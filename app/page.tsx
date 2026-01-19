@@ -41,6 +41,11 @@ export default function Home() {
   const [refreshKey, setRefreshKey] = useState(0)
   const [currentUser, setCurrentUser] = useState<any>(null)
 
+  // ⭐ NEW: Decision modal state for edit/threading
+  const [decisionEditMode, setDecisionEditMode] = useState(false)
+  const [editingDecisionId, setEditingDecisionId] = useState<number | null>(null)
+  const [parentDecisionId, setParentDecisionId] = useState<number | null>(null)
+
   const topicRefreshCallbackRef = useRef<(() => void) | null>(null)
 
   useEffect(() => {
@@ -107,11 +112,43 @@ export default function Home() {
     setShowNoteModal(true)
   }
 
+  // ⭐ UPDATED: Decision click for new decision
   const handleDecisionClick = (topicId: number) => {
+    console.log('handleDecisionClick called with topicId:', topicId)
     setSelectedTopicId(topicId)
     if (selectedMeeting) {
       setSelectedMeetingId(parseInt(selectedMeeting))
     }
+    // Reset to create mode
+    setDecisionEditMode(false)
+    setEditingDecisionId(null)
+    setParentDecisionId(null)
+    setShowDecisionModal(true)
+  }
+
+  // ⭐ FIXED: Edit existing decision with topicId parameter
+  const handleEditDecision = (decisionId: number, topicId: number) => {
+    console.log('handleEditDecision called:', decisionId, topicId)
+    setSelectedTopicId(topicId)
+    if (selectedMeeting) {
+      setSelectedMeetingId(parseInt(selectedMeeting))
+    }
+    setDecisionEditMode(true)
+    setEditingDecisionId(decisionId)
+    setParentDecisionId(null)
+    setShowDecisionModal(true)
+  }
+
+  // ⭐ FIXED: Add threaded decision with topicId parameter
+  const handleAddThreadedDecision = (parentId: number, topicId: number) => {
+    console.log('handleAddThreadedDecision called:', parentId, topicId)
+    setSelectedTopicId(topicId)
+    if (selectedMeeting) {
+      setSelectedMeetingId(parseInt(selectedMeeting))
+    }
+    setDecisionEditMode(false)
+    setEditingDecisionId(null)
+    setParentDecisionId(parentId)
     setShowDecisionModal(true)
   }
 
@@ -269,6 +306,9 @@ export default function Home() {
           onNoteClick={handleNoteClick}
           onDecisionClick={handleDecisionClick}
           onRegisterTopicRefresh={registerTopicRefresh}
+          // ⭐ FIXED: Pass handlers with topicId support
+          onEditDecision={handleEditDecision}
+          onAddThreadedDecision={handleAddThreadedDecision}
         />
       )}
 
@@ -303,21 +343,31 @@ export default function Home() {
         />
       )}
       
+      {/* ⭐ UPDATED: Decision Modal with edit/threading support */}
       {showDecisionModal && selectedTopicId && selectedMeetingId && (
         <DecisionModal 
           topicId={selectedTopicId}
           meetingId={selectedMeetingId}
           isOpen={showDecisionModal}
+          editMode={decisionEditMode}
+          existingDecisionId={editingDecisionId}
+          parentDecisionId={parentDecisionId}
           onClose={() => {
             setShowDecisionModal(false)
             setSelectedTopicId(null)
             setSelectedMeetingId(null)
+            setDecisionEditMode(false)
+            setEditingDecisionId(null)
+            setParentDecisionId(null)
           }}
           onSave={() => {
             handleDecisionSave()
             setShowDecisionModal(false)
             setSelectedTopicId(null)
             setSelectedMeetingId(null)
+            setDecisionEditMode(false)
+            setEditingDecisionId(null)
+            setParentDecisionId(null)
           }}
         />
       )}
@@ -343,5 +393,5 @@ export default function Home() {
         />
       )}
     </main>
-  )
+  ) 
 }

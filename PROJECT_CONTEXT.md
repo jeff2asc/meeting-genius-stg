@@ -602,6 +602,38 @@ Stores reference URLs (links) associated with buildings.
 
 ---
 
+### 19. **genius_words**
+Stores user-specific text shortcuts (GeniusWords) for quick insertion of commonly used phrases.
+
+```typescript
+{
+  id: number (primary key, auto-increment)
+  user_id: number (foreign key → users.id)
+  shortcode: string (must start with #, e.g., "#QuoteReq")
+  description: string (the full text that replaces the shortcode)
+  created_by: number | null (foreign key → users.id)
+  created_at: timestamp
+}
+```
+
+**Purpose**: Allows users to create personal shortcuts that expand to full text descriptions. Shortcuts work across all text inputs in the system (topics, tasks, notes, decisions).
+
+**Usage**:
+- Users create shortcuts via GeniusWordsManager screen
+- Shortcodes must start with `#` and cannot contain spaces
+- When typing `#` followed by a shortcode in any text field, autocomplete suggestions appear
+- Selecting a suggestion replaces the shortcode with the full description
+- Available in: decision modal, note modal, task modal, topic descriptions
+- Each user has their own collection of GeniusWords
+
+**Features**:
+- Autocomplete dropdown with keyboard navigation (Arrow keys, Enter, Escape)
+- Search functionality in GeniusWordsManager
+- Edit and delete shortcuts
+- User-specific (each user sees only their own shortcuts)
+
+---
+
 ## User Types & Permissions System
 
 The system uses a centralized permission checking system located in `lib/permissions.ts`.
@@ -695,6 +727,9 @@ All permission checks are centralized in `lib/permissions.ts`:
 - Company-specific decision result options (customizable in EditCompanyModal)
 - Link decisions to topics
 - Decision result dropdown uses company's `default_decision_results` configuration
+- **@ Mention Autocomplete**: Type `@` to mention meeting attendees by name
+- **# GeniusWords Autocomplete**: Type `#` to insert user-defined shortcuts
+- Both autocomplete features work in the motion text field with keyboard navigation
 
 ### 5. **Notes System**
 - Add notes to topics
@@ -771,7 +806,15 @@ All permission checks are centralized in `lib/permissions.ts`:
   - Used for task assignments and notifications
 - **Company-Level Email**: Each company has independent email configuration
 
-### 11. **Document Management & AI Analysis**
+### 11. **GeniusWords - User Text Shortcuts**
+- **Personal Shortcuts**: Users can create custom shortcuts (starting with `#`) that expand to full text
+- **Universal Usage**: Shortcuts work in all text inputs (topics, tasks, notes, decisions)
+- **Autocomplete Integration**: Type `#` followed by shortcode to see suggestions
+- **Management Interface**: Dedicated GeniusWordsManager screen for creating, editing, and deleting shortcuts
+- **User-Specific**: Each user has their own collection of shortcuts
+- **Keyboard Navigation**: Arrow keys to navigate, Enter to select, Escape to close
+
+### 12. **Document Management & AI Analysis**
 - **Document Upload & Storage**:
   - Upload building documents via BuildingDetailsModal → Documents tab
   - Supports PDF, DOC, DOCX, and plain text files
@@ -902,8 +945,10 @@ app/page.tsx (Root)
   - **Task attachment upload/download/delete**
   - **AI analysis integration** (analyze task with building documents and attachments)
   - Status updates
-- `components/note-modal.tsx`: Add/edit notes
-- `components/decision-modal.tsx`: Record decisions
+- `components/note-modal.tsx`: Add/edit notes (with GeniusWords support)
+- `components/decision-modal.tsx`: Record decisions with @ mention and # GeniusWords autocomplete
+- `components/GeniusWordsManager.tsx`: Manage user's text shortcuts (create, edit, delete, search)
+- `components/GeniusWordsInput.tsx`: Reusable input component with GeniusWords autocomplete support
 - `components/create-section-modal.tsx`: Create sections
 - `components/create-topic-modal.tsx`: Create topics
 - `components/AttendeeManagement.tsx`: Manage meeting attendees with role assignment and presence tracking
@@ -957,9 +1002,11 @@ All shadcn/ui style components:
 #### **Card Components**
 
 - `components/meeting-card.tsx`: Meeting display card
-- `components/topic-card.tsx`: Topic display with actions, **AI analysis integration**, **topic refresh callback registration**, **topic attachment upload/download/delete**
+- `components/topic-card.tsx`: Topic display with actions, **AI analysis integration**, **topic refresh callback registration**, **topic attachment upload/download/delete**, **GeniusWords support**
 - `components/task-card.tsx`: Task display card, **AI analysis integration**
 - `components/TaskDetailsModal.tsx`: **Enhanced task management** with attachments, AI analysis, and notes
+- `components/GeniusWordsManager.tsx`: Full-screen interface for managing user's text shortcuts
+- `components/GeniusWordsInput.tsx`: Reusable text input/textarea component with GeniusWords autocomplete
 
 #### **Utility Components**
 
@@ -1058,8 +1105,13 @@ working_agenda → agenda → working_minutes → minutes
 1. User clicks "Record Decision" on a topic
 2. `DecisionModal` opens
 3. System fetches company's decision result options
-4. User enters motion text, result, votes
-5. Decision saved to `decisions` table
+4. System fetches meeting attendees for @ mention autocomplete
+5. System fetches user's GeniusWords for # shortcut autocomplete
+6. User enters motion text with optional:
+   - `@` mentions: Type `@` to autocomplete attendee names
+   - `#` shortcuts: Type `#` to autocomplete GeniusWords shortcuts
+7. User selects result and enters votes
+8. Decision saved to `decisions` table
 
 ### 6. **User Access Control**
 
@@ -1219,6 +1271,28 @@ working_agenda → agenda → working_minutes → minutes
    - **Other types**: Start at dashboard (can navigate to admin/meetings)
 4. Prevents unauthorized access attempts
 
+### 16. **GeniusWords Management Workflow**
+
+1. User navigates to GeniusWords screen from user menu
+2. `GeniusWordsManager` component loads user's shortcuts
+3. User can:
+   - **Create**: Click "Add New", enter shortcode (must start with `#`) and description
+   - **Edit**: Click edit button, modify shortcode or description
+   - **Delete**: Click delete button, confirm deletion
+   - **Search**: Filter shortcuts by shortcode or description
+4. Shortcuts are saved to `genius_words` table with `user_id`
+5. Shortcuts become available in all text inputs across the application
+
+### 17. **GeniusWords Autocomplete Workflow**
+
+1. User types in any text field (decision modal, note modal, task modal, topic description)
+2. User types `#` followed by shortcode characters
+3. System detects `#` trigger and filters user's GeniusWords
+4. Autocomplete dropdown appears showing matching shortcuts
+5. User navigates with Arrow keys, selects with Enter, or closes with Escape
+6. Selected shortcut replaces `#shortcode` with full description text
+7. Cursor positioned after inserted text
+
 ---
 
 ## File Structure
@@ -1269,6 +1343,8 @@ meeting-genius/
 │   ├── create-topic-modal.tsx    # Create topic
 │   ├── AttendeeManagement.tsx   # Attendee management
 │   ├── GenerateMinutesButton.tsx # Generate PDF minutes
+│   ├── GeniusWordsManager.tsx    # Manage user text shortcuts
+│   ├── GeniusWordsInput.tsx      # Reusable input with GeniusWords autocomplete
 │   ├── topic-card.tsx            # Topic display
 │   ├── task-card.tsx             # Task display
 │   ├── meeting-card.tsx          # Meeting display
@@ -1371,6 +1447,8 @@ Several fields use JSONB for flexible data:
 - `buildings.minutes_template`: Template content
 - `ai_analyses.analysis_result`: Topic AI analysis result (JSON or text)
 - `task_analyses.analysis_result`: Task AI analysis result (JSON or text)
+
+**Note**: `genius_words` table uses standard columns (not JSONB) for shortcode and description storage.
 
 ### 5. **Meeting Rollover Logic**
 
@@ -1573,7 +1651,7 @@ if (!canCreateMeeting(currentUser?.user_type)) {
 ## Summary
 
 This is a comprehensive meeting management system with:
-- **18 main database tables** (companies, users, buildings, meetings, sections, topics, notes, tasks, decisions, task_notes, minutes_templates, user_buildings, building_documents, ai_analyses, task_attachments, task_analyses, topic_attachments, building_document_urls)
+- **19 main database tables** (companies, users, buildings, meetings, sections, topics, notes, tasks, decisions, task_notes, minutes_templates, user_buildings, building_documents, ai_analyses, task_attachments, task_analyses, topic_attachments, building_document_urls, genius_words)
 - **6 user types** with granular permissions
 - **Multi-tenant architecture** (company → building → meeting hierarchy)
 - **Full CRUD operations** for all entities
@@ -1587,16 +1665,33 @@ This is a comprehensive meeting management system with:
 - **Topic and task attachments** for file management
 - **Reference URLs** for building documents
 - **Company logo management** with dashboard display
+- **GeniusWords text shortcuts** for user productivity
 - **Modern React/Next.js** architecture with TypeScript
 
 The system is designed for property management companies to manage their meeting workflows from agenda creation through minutes finalization and PDF generation.
 
 ---
 
-**Last Updated**: January 2025 (Updated with attendee role field, topic attachments, building document URLs, company logos, and enhanced AI analysis)
+**Last Updated**: January 2025 (Updated with GeniusWords feature, decision modal enhancements, and attendee mentions)
 **Version**: Current production codebase
 
 **Recent Updates**:
+- **GeniusWords Feature**: User-specific text shortcuts system
+  - Added `genius_words` table for storing user shortcuts (shortcode + description)
+  - Created `GeniusWordsManager` component for managing shortcuts (create, edit, delete, search)
+  - Created `GeniusWordsInput` reusable component with autocomplete support
+  - Integrated GeniusWords autocomplete in decision modal, note modal, task modal, and topic descriptions
+  - Shortcuts start with `#` and expand to full descriptions when selected
+  - Keyboard navigation: Arrow keys, Enter to select, Escape to close
+- **Decision Modal Enhancements**:
+  - Added `@` mention autocomplete for meeting attendees
+  - Added `#` GeniusWords autocomplete for user shortcuts
+  - Both features work simultaneously with intelligent trigger detection
+  - Autocomplete dropdowns with keyboard navigation
+  - Attendee names and emails displayed in mention suggestions
+- **Navigation Updates**:
+  - Added "GeniusWords" option to user menu dropdown
+  - New screen route: `genius-words` for managing shortcuts
 - Added `role` field to attendee objects in `meetings.attendees` JSONB array
 - Enhanced AttendeeManagement component to support role assignment and editing
 - Roles are now displayed in attendees table and included in PDF minutes generation

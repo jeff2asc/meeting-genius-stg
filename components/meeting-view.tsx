@@ -28,6 +28,9 @@ interface MeetingViewProps {
   onNoteClick: (topicId: number) => void
   onDecisionClick: (topicId: number) => void
   onRegisterTopicRefresh?: (topicId: number, callback: () => void) => void
+  // ⭐ NEW: Decision editing and threading handlers
+  onEditDecision?: (decisionId: number, topicId: number) => void
+  onAddThreadedDecision?: (parentDecisionId: number, topicId: number) => void
 }
 
 interface Topic {
@@ -61,7 +64,9 @@ export default function MeetingView({
   onTaskClick,
   onNoteClick,
   onDecisionClick,
-  onRegisterTopicRefresh
+  onRegisterTopicRefresh,
+  onEditDecision,        // ⭐ NEW
+  onAddThreadedDecision  // ⭐ NEW
 }: MeetingViewProps) {
   const [meeting, setMeeting] = useState<any>(null)
   const [sections, setSections] = useState<Section[]>([])
@@ -752,7 +757,7 @@ export default function MeetingView({
         )}
       </div>
 
-      {/* MEETING SECTIONS/TOPICS WITH DRAG AND DROP - ⭐ UPDATED: space-y-3 to space-y-2 */}
+      {/* MEETING SECTIONS/TOPICS WITH DRAG AND DROP */}
       <DragDropContext onDragEnd={onDragEnd}>
         <Droppable droppableId="all-sections" type="SECTION">
           {(provided: any) => (
@@ -766,7 +771,6 @@ export default function MeetingView({
                   {(provided: any) => (
                     <div ref={provided.innerRef} {...provided.draggableProps}>
                       <Card className="border-0 bg-gradient-to-r from-primary/10 to-decision-purple/10 mb-2">
-                        {/* ⭐ UPDATED: p-2 to p-1.5 */}
                         <div className="w-full p-1.5 flex items-center justify-between">
                           <div className="flex items-center gap-3">
                             <div {...provided.dragHandleProps} onClick={() => toggleSection(section.id)} className="cursor-pointer">
@@ -870,6 +874,16 @@ export default function MeetingView({
                                             onDecisionClick={() => onDecisionClick(topic.id)}
                                             onRegisterRefresh={onRegisterTopicRefresh}
                                             isReadOnly={userIsReadOnly || meeting.status === "minutes"}
+                                            onEditDecision={(decisionId, topicId) => {
+                                              if (onEditDecision) {
+                                                onEditDecision(decisionId, topicId)
+                                              }
+                                            }}
+                                            onAddThreadedDecision={(parentId, topicId) => {
+                                              if (onAddThreadedDecision) {
+                                                onAddThreadedDecision(parentId, topicId)
+                                              }
+                                            }}
                                           />
                                         </div>
                                       )}
