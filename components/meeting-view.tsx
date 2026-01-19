@@ -268,6 +268,7 @@ export default function MeetingView({
   
   const cancelDeleteSection = () => setSectionToDelete(null)
 
+  // ⭐ FIXED: Don't refresh when saving description (keeps card open)
   const updateTopic = async (id: number, updates: Partial<Topic>) => {
     if (!userCanEdit) {
       alert("You do not have permission to edit topics.")
@@ -285,7 +286,11 @@ export default function MeetingView({
         console.error("Error updating topic:", error)
         return
       }
-      await fetchSectionsAndTopics()
+      // ⭐ DON'T refresh sections - keeps card open during auto-save
+      // Only refresh when saving title (not description)
+      if (updates.title) {
+        await fetchSectionsAndTopics()
+      }
     } catch (err) {
       console.error("Unexpected error:", err)
     }
@@ -953,6 +958,7 @@ export default function MeetingView({
         />
       )}
       
+      {/* ⭐ FIXED: Create Topic Modal - doesn't auto-close after creation */}
       {showCreateTopicModal && selectedSection && userCanEdit && (
         <CreateTopicModal
           meetingId={meetingId}
@@ -964,8 +970,7 @@ export default function MeetingView({
           }}
           onSuccess={() => {
             fetchSectionsAndTopics()
-            setShowCreateTopicModal(false)
-            setSelectedSection(null)
+            // ⭐ Don't close modal - let user click "Done" button
           }}
         />
       )}

@@ -111,8 +111,8 @@ export default function TopicCard({
   const [decisions, setDecisions] = useState<Decision[]>([])
   const [loadingDecisions, setLoadingDecisions] = useState(false)
 
-  // ⭐ NEW: Debounced description for auto-save
-  const debouncedDescription = useDebounce(editedDescription, 1000)
+  // ⭐ UPDATED: 3-second debounced description for auto-save
+  const debouncedDescription = useDebounce(editedDescription, 3000)
 
   const currentUser = getCurrentUser()
   const titleInputRef = useRef<HTMLInputElement>(null)
@@ -529,7 +529,7 @@ export default function TopicCard({
     }
   }
 
-  // ⭐ NEW: Auto-save description
+  // ⭐ FIXED: Auto-save description without refreshing history
   const handleAutoSaveDescription = async () => {
     if (isReadOnly) return
     if (saving) return
@@ -537,7 +537,7 @@ export default function TopicCard({
     setSaving(true)
     await onUpdate({ description: editedDescription })
     setSaving(false)
-    fetchHistory()
+    // ⭐ Don't refresh history on auto-save - keeps card open
     
     // Show subtle alert
     console.log('Description saved')
