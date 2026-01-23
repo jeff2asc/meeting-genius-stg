@@ -21,9 +21,12 @@
 ### Core Purpose
 - Manage meeting agendas and minutes for property management
 - Track tasks, decisions, and notes from meetings
-- Support multiple companies, buildings, and user types
+- Support multiple companies, buildings, and user types (including owners)
 - Enable rollover of topics and tasks from previous meetings
 - Provide role-based access control
+- AI-powered analysis of topics and tasks using building documents
+- Document management and text extraction for context
+- Email notifications via company-specific SMTP configurations
 
 ---
 
@@ -44,18 +47,21 @@
 - **Database**: Supabase (PostgreSQL)
 - **Client**: @supabase/supabase-js 2.76.1
 - **Authentication**: Custom (localStorage-based, password hashing with bcryptjs)
+- **Storage**: Supabase Storage for files (documents, attachments, logos)
 
 ### Other Dependencies
-- **Date Handling**: date-fns
-- **Charts**: Recharts
+- **Date Handling**: date-fns 4.1.0
+- **Charts**: Recharts 2.15.4
 - **Notifications**: Sonner (toast notifications)
-- **Analytics**: Vercel Analytics
+- **Analytics**: Vercel Analytics 1.3.1
 - **PDF Generation**: jspdf (^3.0.4)
 - **HTML to Canvas**: html2canvas (^1.4.1)
 - **Email**: nodemailer (^7.0.11) - For sending emails via SMTP
 - **Document Processing**: 
   - react-pdftotext (^1.3.4) - Extract text from PDF files
   - mammoth (^1.11.0) - Extract text from DOCX files
+  - pdf-parse (^2.4.5) - Additional PDF parsing support
+  - pdfjs-dist (^5.4.449) - PDF.js library
 
 ---
 
@@ -118,7 +124,7 @@ User accounts with role-based access.
   name: string
   email: string (unique)
   password_hash: string
-  user_type: 'master' | 'property_manager' | 'user' | 'vendor' | 'attendee' | 'corporate_administrator'
+  user_type: 'master' | 'property_manager' | 'user' | 'vendor' | 'attendee' | 'corporate_administrator' | 'owner'
   company_id: number | null (foreign key → companies.id)
   assigned_pm_id: number | null (foreign key → users.id, references property_manager)
   smtp_config: any | null
@@ -140,6 +146,7 @@ User accounts with role-based access.
 - `user`: Basic access to assigned buildings
 - `vendor`: Receives and updates assigned tasks
 - `attendee`: View-only access to meetings they attend
+- `owner`: Property owner with access to assigned buildings and meetings (similar permissions to regular users)
 
 ---
 
@@ -323,7 +330,7 @@ Action items/tasks from topics.
 ---
 
 ### 9. **decisions**
-Decisions/motions recorded for topics.
+Decisions/motions recorded for topics with threading support.
 
 ```typescript
 {
@@ -334,12 +341,14 @@ Decisions/motions recorded for topics.
   votes_for: number | null
   votes_against: number | null
   votes_abstain: number | null
+  parent_decision_id: number | null (foreign key → decisions.id, self-referential for threading)
   recorded_by: number | null (foreign key → users.id)
   recorded_at: timestamp
+  edited_at: timestamp | null (tracks when decision was last edited)
 }
 ```
 
-**Purpose**: Records formal decisions, motions, and voting results.
+**Purpose**: Records formal decisions, motions, and voting results with support for threaded discussions.
 
 **Decision Result Options**:
 - Companies can customize decision result options via `default_decision_results` field
@@ -347,7 +356,18 @@ Decisions/motions recorded for topics.
 - Default options: "M/S/C", "Defeated", "Deferred"
 - Customizable in EditCompanyModal
 
-**Note**: The `votes_abstain` field is used in the application (decision-modal, GenerateMinutesButton) but may need to be added to the database schema if not already present.
+**Decision Threading**:
+- `parent_decision_id`: Links child decisions to parent decisions for threaded discussions
+- Allows for follow-up motions and amendments to be connected
+- UI displays threaded decisions hierarchically in TopicCard
+- Edit/delete functionality available for decisions
+- Threading icon displayed for child decisions
+
+**Decision Features**:
+- **@ Mention Autocomplete**: Type `@` to mention meeting attendees by name
+- **# GeniusWords Autocomplete**: Type `#` to insert user-defined shortcuts
+- **Edit Mode**: Modify existing decisions with edit history tracking
+- **Threading Mode**: Add child decisions to create discussion threads
 
 ---
 
@@ -644,33 +664,49 @@ The system uses a centralized permission checking system located in `lib/permiss
    - Full access to everything across all companies
    - Can manage all companies, users, buildings
    - Can see all data
+   - Sees default Meeting Genius logo in dashboard
 
 2. **corporate_administrator** (Corporate Administrator)
    - Manages multiple property managers within their company
    - Can create/edit users, buildings, meetings
    - Can access admin panel
    - Sees only data within their company
+   - Sees company logo in dashboard (if configured)
 
 3. **property_manager** (Property Manager)
    - Manages buildings and meetings within their company
    - Can create/edit users, buildings, meetings
    - Can access admin panel
    - Sees only their assigned buildings
+   - Sees company logo in dashboard (if configured)
 
 4. **user** (Standard User)
    - Basic access to assigned buildings
    - Can view and edit meetings (not create)
    - Cannot access admin panel
+   - Sees company logo in dashboard (if configured)
 
-5. **vendor** (Vendor/Contractor)
+5. **owner** (Property Owner)
+   - Similar permissions to standard users
+   - Access to assigned buildings and meetings
+   - Can view and edit meetings
+   - Can update task status
+   - Cannot create meetings or access admin panel
+   - Sees company logo in dashboard (if configured)
+
+6. **vendor** (Vendor/Contractor)
    - Receives and updates assigned tasks
    - Can view meetings (read-only)
    - Can update task status for tasks assigned to them
+   - Auto-redirected to dashboard on login
+   - Sees company logo in dashboard (if configured)
 
-6. **attendee** (Meeting Attendee)
+7. **attendee** (Meeting Attendee)
    - View-only access to meetings they attend
    - Cannot edit anything
    - Cannot access admin panel
+   - Auto-redirected to dashboard on login
+   - Sees company logo in dashboard (if configured)
 
 ### Permission Functions
 
@@ -721,7 +757,7 @@ All permission checks are centralized in `lib/permissions.ts`:
 - Task notes: Add notes and updates to individual tasks
 - Task details modal: View full task information with notes history
 
-### 4. **Decision Recording**
+### 4. **Decision Recording & Threading**
 - Record motions/resolutions
 - Track voting results (for, against, abstain)
 - Company-specific decision result options (customizable in EditCompanyModal)
@@ -730,6 +766,11 @@ All permission checks are centralized in `lib/permissions.ts`:
 - **@ Mention Autocomplete**: Type `@` to mention meeting attendees by name
 - **# GeniusWords Autocomplete**: Type `#` to insert user-defined shortcuts
 - Both autocomplete features work in the motion text field with keyboard navigation
+- **Decision Threading**: Create child decisions linked to parent decisions for follow-up motions
+- **Edit Decisions**: Modify existing decisions with edit history tracking (`edited_at` field)
+- **Delete Decisions**: Remove decisions (with confirmation)
+- **Hierarchical Display**: Threaded decisions displayed with visual indentation and icons
+- **Decision History**: Track when decisions are created and edited
 
 ### 5. **Notes System**
 - Add notes to topics
@@ -813,6 +854,9 @@ All permission checks are centralized in `lib/permissions.ts`:
 - **Management Interface**: Dedicated GeniusWordsManager screen for creating, editing, and deleting shortcuts
 - **User-Specific**: Each user has their own collection of shortcuts
 - **Keyboard Navigation**: Arrow keys to navigate, Enter to select, Escape to close
+- **Validation**: Shortcodes must start with `#` and cannot contain spaces
+- **Search**: Filter shortcuts by shortcode or description in manager interface
+- **Components**: `GeniusWordsManager` for management, `GeniusWordsInput` reusable component
 
 ### 12. **Document Management & AI Analysis**
 - **Document Upload & Storage**:
@@ -938,21 +982,31 @@ app/page.tsx (Root)
 
 - `components/create-meeting-modal.tsx`: Create new meetings with rollover support
 - `components/EditMeetingModal.tsx`: Edit meeting details
-- `components/task-modal.tsx`: Create/edit tasks
+- `components/task-modal.tsx`: Create/edit tasks with GeniusWords support
 - `components/TaskDetailsModal.tsx`: **Enhanced task details modal** with:
   - View task details (description, status, assignees, due date)
   - Task notes management (view, add notes)
   - **Task attachment upload/download/delete**
   - **AI analysis integration** (analyze task with building documents and attachments)
-  - Status updates
-- `components/note-modal.tsx`: Add/edit notes (with GeniusWords support)
-- `components/decision-modal.tsx`: Record decisions with @ mention and # GeniusWords autocomplete
+  - Status updates (open, in_progress, completed, blocked)
+  - Delete task functionality
+- `components/note-modal.tsx`: Add/edit notes with GeniusWords support
+- `components/decision-modal.tsx`: **Enhanced decision modal** with:
+  - Create new decisions
+  - Edit existing decisions (edit mode)
+  - Create threaded child decisions (threading mode)
+  - @ mention autocomplete for meeting attendees
+  - # GeniusWords autocomplete for user shortcuts
+  - Company-specific decision result options
+  - Vote tracking (for, against, abstain)
+  - Parent decision display when threading
 - `components/GeniusWordsManager.tsx`: Manage user's text shortcuts (create, edit, delete, search)
 - `components/GeniusWordsInput.tsx`: Reusable input component with GeniusWords autocomplete support
 - `components/create-section-modal.tsx`: Create sections
-- `components/create-topic-modal.tsx`: Create topics
+- `components/create-topic-modal.tsx`: Create topics with GeniusWords support
 - `components/AttendeeManagement.tsx`: Manage meeting attendees with role assignment and presence tracking
 - `components/GenerateMinutesButton.tsx`: Generate PDF minutes from finalized meetings
+- `components/ProfileSettingsModal.tsx`: User profile settings (name, email, password)
 
 #### **Admin Components** (`components/admin/`)
 
@@ -1002,8 +1056,19 @@ All shadcn/ui style components:
 #### **Card Components**
 
 - `components/meeting-card.tsx`: Meeting display card
-- `components/topic-card.tsx`: Topic display with actions, **AI analysis integration**, **topic refresh callback registration**, **topic attachment upload/download/delete**, **GeniusWords support**
-- `components/task-card.tsx`: Task display card, **AI analysis integration**
+- `components/topic-card.tsx`: **Enhanced topic display** with:
+  - Expandable/collapsible sections
+  - Auto-save description with debounce
+  - AI analysis integration with building documents and topic attachments
+  - Topic refresh callback registration
+  - Topic attachment upload/download/delete
+  - GeniusWords support in descriptions
+  - Decision display with threading support (hierarchical display)
+  - Edit/delete buttons for decisions
+  - Add threaded decision functionality
+  - History display (notes, tasks, decisions)
+  - Visual indicators for saving state
+- `components/task-card.tsx`: Task display card with AI analysis integration
 - `components/TaskDetailsModal.tsx`: **Enhanced task management** with attachments, AI analysis, and notes
 - `components/GeniusWordsManager.tsx`: Full-screen interface for managing user's text shortcuts
 - `components/GeniusWordsInput.tsx`: Reusable text input/textarea component with GeniusWords autocomplete
@@ -1102,16 +1167,44 @@ working_agenda → agenda → working_minutes → minutes
 
 ### 5. **Recording Decisions**
 
+**Creating a New Decision**:
 1. User clicks "Record Decision" on a topic
-2. `DecisionModal` opens
+2. `DecisionModal` opens in create mode
 3. System fetches company's decision result options
 4. System fetches meeting attendees for @ mention autocomplete
 5. System fetches user's GeniusWords for # shortcut autocomplete
 6. User enters motion text with optional:
    - `@` mentions: Type `@` to autocomplete attendee names
    - `#` shortcuts: Type `#` to autocomplete GeniusWords shortcuts
-7. User selects result and enters votes
-8. Decision saved to `decisions` table
+7. User selects result and enters votes (for, against, abstain)
+8. Decision saved to `decisions` table with `recorded_at` timestamp
+
+**Editing an Existing Decision**:
+1. User clicks edit button on a decision in TopicCard
+2. `DecisionModal` opens in edit mode with `editMode: true`
+3. System loads existing decision data (`existingDecisionId`)
+4. Modal pre-fills with current decision data
+5. User modifies motion text, result, or votes
+6. On save, decision is updated with `edited_at` timestamp
+
+**Creating a Threaded Decision**:
+1. User clicks thread button on a parent decision in TopicCard
+2. `DecisionModal` opens in threading mode with `parentDecisionId` set
+3. System loads parent decision for display at top of modal
+4. User creates new decision linked to parent via `parent_decision_id` field
+5. Child decision saved and displayed hierarchically under parent
+
+**Deleting a Decision**:
+1. User clicks delete button on a decision in TopicCard
+2. Confirmation prompt appears
+3. On confirmation, decision deleted from database
+4. Topic history refreshes to remove decision
+
+**Decision Threading Display**:
+- Parent decisions displayed normally
+- Child decisions indented with `CornerDownRight` icon
+- Edit and delete buttons available for all decisions
+- Threaded structure maintained in database via `parent_decision_id`
 
 ### 6. **User Access Control**
 
@@ -1293,6 +1386,42 @@ working_agenda → agenda → working_minutes → minutes
 6. Selected shortcut replaces `#shortcode` with full description text
 7. Cursor positioned after inserted text
 
+### 18. **Auto-save Topic Description Workflow**
+
+1. User focuses on topic description field (GeniusWordsInput)
+2. User types or modifies description
+3. System debounces input (1 second delay)
+4. Visual indicator changes to "Saving..."
+5. System sends update to database via `supabase.from('topics').update()`
+6. On success, visual indicator changes to "Saved" (green checkmark)
+7. On error, toast notification displays error message
+8. No manual save button needed
+
+### 19. **Decision Threading Workflow**
+
+**Creating a Thread**:
+1. User has existing decision in topic
+2. User clicks thread button (CornerDownRight icon) on decision
+3. `DecisionModal` opens with `parentDecisionId` set
+4. Parent decision displayed at top of modal for context
+5. User creates new decision (child)
+6. Child decision saved with `parent_decision_id` linking to parent
+7. TopicCard displays child decision indented under parent with icon
+
+**Displaying Threaded Decisions**:
+1. TopicCard fetches all decisions for topic
+2. System organizes decisions into parent-child relationships
+3. Parent decisions displayed first
+4. Child decisions displayed indented with `CornerDownRight` icon
+5. Each decision shows edit, thread, and delete buttons
+6. Hierarchical structure visually clear to users
+
+**Editing Threaded Decisions**:
+1. User can edit both parent and child decisions
+2. Edit mode preserves threading relationships
+3. `edited_at` timestamp updated on edit
+4. Threading structure remains intact after edits
+
 ---
 
 ## File Structure
@@ -1361,8 +1490,10 @@ meeting-genius/
 │
 ├── app/
 │   ├── api/
-│   │   └── send-email/
-│   │       └── route.ts          # Email sending API endpoint (uses company SMTP)
+│   │   ├── send-email/
+│   │   │   └── route.ts          # Email sending API endpoint (uses company SMTP)
+│   │   └── signup/
+│   │       └── route.ts          # Signup API endpoint (creates company, admin, PM, building)
 │
 ├── hooks/
 │   ├── use-mobile.ts            # Mobile detection hook
@@ -1440,15 +1571,36 @@ Uses `@hello-pangea/dnd` for reordering:
 ### 4. **JSONB Fields**
 
 Several fields use JSONB for flexible data:
-- `meetings.attendees`: Array of attendee objects
-- `tasks.assignees`: Array of assignee objects
+- `meetings.attendees`: Array of attendee objects with name, email, role, user_id, present fields
+- `tasks.assignees`: Array of assignee objects with name, email, present fields
 - `buildings.rules_document`: Document content (legacy, now using building_documents table)
 - `buildings.agenda_template`: Template content
-- `buildings.minutes_template`: Template content
+- `buildings.minutes_template`: Template content (used by GenerateMinutesButton)
 - `ai_analyses.analysis_result`: Topic AI analysis result (JSON or text)
 - `task_analyses.analysis_result`: Task AI analysis result (JSON or text)
+- `minutes_templates.blocks`: Template configuration for PDF generation (sections with fields)
 
 **Note**: `genius_words` table uses standard columns (not JSONB) for shortcode and description storage.
+
+**Attendee Object Structure**:
+```json
+{
+  "name": "John Doe",
+  "email": "john@example.com",
+  "role": "Chair",
+  "user_id": 123,
+  "present": true
+}
+```
+
+**Assignee Object Structure**:
+```json
+{
+  "name": "Jane Smith",
+  "email": "jane@example.com",
+  "present": true
+}
+```
 
 ### 5. **Meeting Rollover Logic**
 
@@ -1515,6 +1667,11 @@ All database types defined in `lib/supabase.ts` as `Database` type:
 - Prevents typos in table/column names
 - Includes SMTP fields in companies table
 - Includes default_decision_results in companies table
+- Includes logo_url in companies table
+- Includes parent_decision_id, edited_at, votes_abstain in decisions table
+- Includes all 7 user types (master, corporate_administrator, property_manager, user, owner, vendor, attendee)
+- Interfaces for TaskAttachment, TopicAttachment, TaskAnalysis, Company, User
+- Generic extractTextFromFile function for document processing
 
 ### 11. **PDF Minutes Generation**
 
@@ -1553,6 +1710,31 @@ The system includes email functionality for sending notifications:
   - Meeting invitations
   - Other system notifications
 
+### 13. **Signup API**
+
+The system includes a programmatic signup API for creating new companies and users:
+- **API Endpoint**: `/app/api/signup/route.ts`
+- **Authentication**: API key-based authentication via `x-api-key` header
+- **Purpose**: Create a complete company setup in one API call
+- **Functionality**:
+  - Creates a new company with optional default configurations
+  - Creates a corporate administrator user
+  - Optionally creates a property manager user
+  - Optionally creates a building (assigned to PM or corporate admin)
+  - Configures company defaults (meeting sections, types)
+  - Optionally configures SMTP settings
+- **Request Fields**:
+  - **Required**: `company_name`, `corporate_admin_name`, `corporate_admin_email`, `corporate_admin_password`
+  - **Optional**: `building_name`, `building_address`, `building_type`, `property_manager_name`, `property_manager_email`, `property_manager_password`, `default_meeting_sections`, `default_meeting_types`, `smtp_config`
+- **Security**:
+  - Passwords are automatically hashed with bcrypt (10 salt rounds)
+  - API key validation required for all requests
+  - Email uniqueness validation before user creation
+  - Transaction rollback on errors (company deleted if admin creation fails)
+- **Response**: Returns created company, corporate admin, building, and property manager IDs
+- **Health Check**: GET endpoint available for API status checking
+- **Documentation**: See `Meeting_Genius_Signup_API_Documentation.md` for complete API documentation
+
 ---
 
 ## Development Notes
@@ -1560,33 +1742,61 @@ The system includes email functionality for sending notifications:
 ### Running the Project
 
 ```bash
+# Install dependencies
 npm install
+
+# Run development server
 npm run dev
-```
 
-### Building for Production
-
-```bash
+# Build for production
 npm run build
+
+# Start production server
 npm start
+
+# Lint code
+npm run lint
 ```
 
 ### Environment
 
-- Supabase URL and keys are hardcoded in `lib/supabase.ts` (should be moved to env variables)
-- No `.env` file currently used
+- **Supabase**: URL and keys are hardcoded in `lib/supabase.ts` and `app/api/send-email/route.ts`
+  - Should be moved to `.env.local` file for security
+  - Example `.env.local`:
+    ```
+    NEXT_PUBLIC_SUPABASE_URL=https://iehrlogqpsebhubbafxo.supabase.co
+    NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key-here
+    ```
+- No `.env` file currently used in the project
 
 ### Authentication
 
-- Currently uses simple password check ("123456" for all users)
-- Password hashing functions exist but not fully implemented
-- Should implement proper bcrypt password verification
+- **Current Implementation**: Simple password check (password: "123456" for all users)
+- **Password Hashing**: bcryptjs library installed and functions available in `lib/auth.ts`
+  - `hashPassword()` and `verifyPassword()` functions exist but not fully utilized
+  - Should implement proper bcrypt password verification in production
+- **Session Management**: localStorage-based authentication
+  - User object stored in `localStorage` as `current_user`
+  - No server-side sessions or JWT tokens
+  - No automatic token refresh
 
 ### Database Connection
 
-- Supabase client initialized in `lib/supabase.ts`
-- All queries use the Supabase client
-- No connection pooling or special configuration
+- **Supabase Client**: Initialized in `lib/supabase.ts`
+- **Query Pattern**: All queries use Supabase client with async/await
+- **No Pooling**: No connection pooling or special configuration
+- **Storage**: Supabase Storage used for file uploads
+  - Buckets: `company-logos`, `building-documents`, `task-attachments`, `topic-attachments`
+  - Public access URLs generated for uploaded files
+
+### Deployment
+
+- **Deployment Scripts**: Several batch files in root directory
+  - `deploy.bat`: Full deployment
+  - `deploy-server-only.bat`: Server-only deployment
+  - `deploy-git.bat`: Git-based deployment
+- **Deploy Folder**: Contains separate `package.json` and `.next` build output
+- **Production Build**: Next.js static export or server-side rendering
 
 ---
 
@@ -1620,31 +1830,361 @@ const { error } = await supabase
   .eq('id', recordId)
 ```
 
+### Deleting Records
+
+```typescript
+const { error } = await supabase
+  .from('table_name')
+  .delete()
+  .eq('id', recordId)
+```
+
 ### Permission Checks
 
 ```typescript
-import { canCreateMeeting } from '@/lib/permissions'
+import { canCreateMeeting, canAccessAdmin, isReadOnly } from '@/lib/permissions'
 
 if (!canCreateMeeting(currentUser?.user_type)) {
   // Show error or hide button
 }
+
+if (canAccessAdmin(currentUser?.user_type)) {
+  // Show admin panel link
+}
+
+if (isReadOnly(currentUser?.user_type)) {
+  // Disable all edit functionality
+}
+```
+
+### Document Text Extraction
+
+```typescript
+import { fetchAndExtractBuildingDocuments, fetchAndExtractTaskAttachments, fetchAndExtractTopicAttachments } from '@/lib/documentExtractor'
+
+// Extract text from building documents
+const buildingDocs = await fetchAndExtractBuildingDocuments(buildingId)
+
+// Extract text from task attachments
+const taskAttachments = await fetchAndExtractTaskAttachments(taskId)
+
+// Extract text from topic attachments
+const topicAttachments = await fetchAndExtractTopicAttachments(topicId)
+```
+
+### File Upload to Supabase Storage
+
+```typescript
+// Upload to Supabase Storage
+const filePath = `${entityId}/${Date.now()}_${file.name}`
+const { data, error } = await supabase.storage
+  .from('bucket-name')
+  .upload(filePath, file)
+
+if (error) {
+  console.error('Upload error:', error)
+  return
+}
+
+// Get public URL
+const { data: { publicUrl } } = supabase.storage
+  .from('bucket-name')
+  .getPublicUrl(filePath)
+```
+
+### Auto-save with Debounce
+
+```typescript
+import { useState, useEffect } from 'react'
+
+// Custom debounce hook
+function useDebounce<T>(value: T, delay: number): T {
+  const [debouncedValue, setDebouncedValue] = useState<T>(value)
+  
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value)
+    }, delay)
+    
+    return () => clearTimeout(handler)
+  }, [value, delay])
+  
+  return debouncedValue
+}
+
+// Usage
+const [description, setDescription] = useState('')
+const debouncedDescription = useDebounce(description, 1000)
+
+useEffect(() => {
+  if (debouncedDescription !== originalDescription) {
+    saveToDatabase(debouncedDescription)
+  }
+}, [debouncedDescription])
 ```
 
 ---
 
 ## Future Considerations
 
-1. **Authentication**: Implement proper password hashing and verification
-2. **Environment Variables**: Move Supabase credentials to `.env` file
-3. **Error Handling**: Add comprehensive error handling and user feedback
+### Implemented ✅
+- ✅ **Document Storage**: Supabase Storage for building documents, task attachments, topic attachments, company logos
+- ✅ **Email Notifications**: Company-specific SMTP configuration and email sending API
+- ✅ **AI Analysis**: Topic and task analysis with building documents and attachments
+- ✅ **Decision Threading**: Parent-child relationships for decision discussions
+- ✅ **Auto-save**: Debounced auto-save for topic descriptions
+- ✅ **GeniusWords**: User-specific text shortcuts with autocomplete
+- ✅ **Delete Confirmations**: Modals for meeting, task, and decision deletion
+- ✅ **Company Logos**: Upload and display company logos in dashboard
+- ✅ **User Type 'Owner'**: Property owner user type with appropriate permissions
+
+### Remaining Considerations 🔄
+1. **Authentication**: Implement proper password hashing and verification (bcryptjs functions exist but not fully used)
+2. **Environment Variables**: Move Supabase credentials to `.env` file (currently hardcoded)
+3. **Error Handling**: Add more comprehensive error handling and user feedback
 4. **Testing**: Add unit and integration tests
 5. **Documentation**: Add JSDoc comments to functions
-6. **Performance**: Optimize queries, add pagination
-7. **Security**: Implement Row Level Security (RLS) in Supabase
-8. **Real-time**: Add Supabase real-time subscriptions for live updates
-9. **File Storage**: Implement proper file storage for audio files (document storage now implemented via Supabase Storage)
-10. **Email Notifications**: Implement email sending for task assignments (now implemented)
-11. **AI Analysis**: Enhance AI analysis with more context and better prompts
+6. **Performance**: 
+   - Optimize queries, add pagination for large datasets
+   - Implement caching for frequently accessed data
+   - Lazy loading for large lists
+7. **Security**: 
+   - Implement Row Level Security (RLS) in Supabase
+   - Add CSRF protection
+   - Implement rate limiting for API endpoints
+8. **Real-time**: Add Supabase real-time subscriptions for live updates (collaborative editing)
+9. **Audio Recording**: Implement proper file storage and playback for meeting audio files
+10. **Advanced AI Features**:
+    - AI-generated meeting summaries
+    - AI-suggested actions from meeting discussions
+    - Sentiment analysis of meeting notes
+11. **Mobile App**: React Native or Progressive Web App (PWA) version
+12. **Integrations**:
+    - Calendar integrations (Google Calendar, Outlook)
+    - Slack/Teams notifications
+    - Third-party document services
+13. **Reporting & Analytics**:
+    - Meeting attendance reports
+    - Task completion metrics
+    - Building-level analytics dashboards
+14. **Advanced Search**: Full-text search across all meeting content
+15. **Version History**: Track and display version history for all entities
+16. **Bulk Operations**: Bulk edit/delete for tasks, meetings, users
+17. **Export/Import**: CSV/Excel export for reports, data import functionality
+18. **Customization**: Theme customization per company (colors, fonts)
+19. **Audit Logs**: Comprehensive audit trail for all changes
+
+---
+
+### 13. **Auto-save Functionality**
+- **Topic Descriptions**: Auto-save with 1-second debounce delay
+- **Visual Feedback**: "Saving..." and "Saved" indicators
+- **No Manual Save**: No save button needed for topic descriptions
+- **Error Handling**: Toast notifications for save errors
+- **Optimistic Updates**: UI updates immediately while save happens in background
+
+### 14. **Delete Confirmation Modals**
+- **Meeting Deletion**: Confirmation modal before deleting meetings
+- **Task Deletion**: Confirmation modal before deleting tasks
+- **Decision Deletion**: Confirmation modal before deleting decisions
+- **Cascading Deletes**: Warnings about related data being deleted
+- **Loading States**: Disabled buttons during deletion process
+
+---
+
+## Troubleshooting & Known Issues
+
+### Common Issues
+
+1. **File Upload Errors**
+   - **Issue**: Files fail to upload to Supabase Storage
+   - **Solution**: Check Supabase Storage bucket policies and authentication
+   - **Prevention**: Ensure max file size limits are enforced on client side
+
+2. **Document Text Extraction Failures**
+   - **Issue**: PDF or DOCX text extraction returns empty or errors
+   - **Solution**: Check file format and corruption, ensure libraries are installed
+   - **Prevention**: Validate file types before upload
+
+3. **AI Analysis Not Returning Results**
+   - **Issue**: AI analysis webhook times out or returns no data
+   - **Solution**: Check n8n webhook URL availability, verify payload format
+   - **Debug**: Console log the request payload before sending
+
+4. **SMTP Email Sending Fails**
+   - **Issue**: Emails not sending despite SMTP configuration
+   - **Solution**: 
+     - Verify SMTP credentials are correct
+     - Check SMTP port (587 for TLS, 465 for SSL)
+     - Ensure `smtp_use_tls` setting matches server requirements
+   - **Test**: Use `transporter.verify()` to test connection
+
+5. **User Cannot See Buildings/Meetings**
+   - **Issue**: User sees empty dashboard despite being assigned
+   - **Solution**: 
+     - Check user's `company_id` matches building's `company_id`
+     - Verify user is in `user_buildings` junction table
+     - For property managers, check `manager_id` on buildings
+   - **Debug**: Log user type and query filters in dashboard
+
+6. **Decision Threading Not Displaying Correctly**
+   - **Issue**: Child decisions not showing under parent
+   - **Solution**: Check `parent_decision_id` is set correctly in database
+   - **Debug**: Verify TopicCard is organizing decisions by parent-child relationships
+
+7. **Auto-save Not Working**
+   - **Issue**: Topic descriptions not saving automatically
+   - **Solution**: Check debounce timing, verify database connection
+   - **Debug**: Add console logs in debounce effect and save function
+
+8. **GeniusWords Autocomplete Not Appearing**
+   - **Issue**: Typing `#` doesn't show suggestions
+   - **Solution**: 
+     - Verify user has GeniusWords created
+     - Check `user_id` filter in query
+     - Ensure `#` trigger detection is working
+   - **Debug**: Console log fetched GeniusWords and trigger detection
+
+### Performance Optimization Tips
+
+1. **Large Meeting Lists**: Implement pagination or virtual scrolling
+2. **Document Extraction**: Process documents asynchronously with progress indicators
+3. **AI Analysis**: Add caching for repeated analyses
+4. **Real-time Updates**: Consider Supabase real-time subscriptions instead of polling
+
+### Security Best Practices
+
+1. **Environment Variables**: Move all credentials to `.env.local` file
+2. **Row Level Security**: Implement RLS policies in Supabase
+3. **Password Hashing**: Enable bcrypt password verification
+4. **CSRF Protection**: Add CSRF tokens for API endpoints
+5. **Input Validation**: Validate all user inputs on server side
+6. **File Upload**: Scan uploaded files for malware
+
+---
+
+## API Endpoints & External Integrations
+
+### Internal API Endpoints
+
+#### 1. `/api/send-email` (POST)
+- **Purpose**: Send emails using company-specific SMTP configuration
+- **Authentication**: None (should be added for production)
+- **Request Body**:
+  ```json
+  {
+    "companyId": 123,
+    "to": "recipient@example.com",
+    "subject": "Email Subject",
+    "html": "<p>HTML email content</p>",
+    "text": "Plain text fallback (optional)"
+  }
+  ```
+- **Response**:
+  ```json
+  {
+    "success": true,
+    "messageId": "smtp-message-id"
+  }
+  ```
+- **Error Handling**: Returns appropriate error messages if SMTP not configured or connection fails
+- **Implementation**: Uses Nodemailer with company SMTP settings from database
+
+#### 2. `/api/signup` (POST)
+- **Purpose**: User signup endpoint (see Meeting_Genius_Signup_API_Documentation.md)
+- **Features**: User registration with validation
+- **Implementation**: Located in `app/api/signup/route.ts`
+
+### External API Integrations
+
+#### AI Analysis Webhooks (n8n)
+
+**Topic AI Analysis**:
+- **Webhook URL**: `https://rulesengine.asccreative.com/webhook/843afc5f-abe0-4bb4-bb9f-369d2657c4d0`
+- **Method**: POST
+- **Request Payload**:
+  ```json
+  {
+    "topicId": 123,
+    "topicTitle": "Topic Title",
+    "topicDescription": "Topic description text",
+    "buildingId": 456,
+    "buildingName": "Building Name",
+    "buildingDocuments": [
+      {
+        "type": "rules",
+        "filename": "building-rules.pdf",
+        "text": "Extracted text from document..."
+      }
+    ],
+    "topicAttachments": [
+      {
+        "filename": "attachment.pdf",
+        "text": "Extracted text from attachment..."
+      }
+    ]
+  }
+  ```
+- **Response**: AI analysis result stored in `ai_analyses` table
+- **Triggered From**: TopicCard "Analyze with AI" button
+
+**Task AI Analysis**:
+- **Webhook URL**: `https://rulesengine.asccreative.com/webhook/ac3f411b-401a-4a97-ae07-f241dbc2d1ed`
+- **Method**: POST
+- **Request Payload**:
+  ```json
+  {
+    "taskId": 123,
+    "taskDescription": "Task description text",
+    "buildingId": 456,
+    "buildingName": "Building Name",
+    "buildingDocuments": [
+      {
+        "type": "rules",
+        "filename": "building-rules.pdf",
+        "text": "Extracted text from document..."
+      }
+    ],
+    "taskAttachments": [
+      {
+        "filename": "attachment.pdf",
+        "text": "Extracted text from attachment..."
+      }
+    ]
+  }
+  ```
+- **Response**: AI analysis result stored in `task_analyses` table
+- **Triggered From**: TaskDetailsModal "Analyze with AI" button
+
+### Supabase Storage Buckets
+
+1. **company-logos**
+   - Purpose: Store company logo images
+   - File Path Format: `{company_id}/logo.{ext}`
+   - Max File Size: 2MB
+   - Supported Formats: PNG, JPG, SVG
+   - Access: Public read
+
+2. **building-documents**
+   - Purpose: Store building-related documents for AI analysis
+   - File Path Format: `{building_id}/{timestamp}_{filename}`
+   - Max File Size: 10MB
+   - Supported Formats: PDF, DOC, DOCX, TXT
+   - Access: Authenticated users
+
+3. **task-attachments**
+   - Purpose: Store files attached to tasks
+   - File Path Format: `{task_id}/{timestamp}_{filename}`
+   - Max File Size: 10MB
+   - Supported Formats: PDF, DOC, DOCX, TXT, images
+   - Access: Authenticated users
+
+4. **topic-attachments**
+   - Purpose: Store files attached to topics
+   - File Path Format: `{topic_id}/{timestamp}_{filename}`
+   - Max File Size: 10MB
+   - Supported Formats: PDF, DOC, DOCX, TXT, images
+   - Access: Authenticated users
 
 ---
 
@@ -1652,11 +2192,12 @@ if (!canCreateMeeting(currentUser?.user_type)) {
 
 This is a comprehensive meeting management system with:
 - **19 main database tables** (companies, users, buildings, meetings, sections, topics, notes, tasks, decisions, task_notes, minutes_templates, user_buildings, building_documents, ai_analyses, task_attachments, task_analyses, topic_attachments, building_document_urls, genius_words)
-- **6 user types** with granular permissions
+- **7 user types** with granular permissions (master, corporate_administrator, property_manager, user, owner, vendor, attendee)
 - **Multi-tenant architecture** (company → building → meeting hierarchy)
 - **Full CRUD operations** for all entities
 - **Meeting rollover** functionality
-- **Task and decision tracking** with task notes
+- **Task and decision tracking** with task notes and decision threading
+- **Decision threading** for follow-up motions and amendments
 - **PDF minutes generation** with customizable templates
 - **Comprehensive admin panel** with inline creation capabilities
 - **User-building assignment** via junction table
@@ -1665,17 +2206,41 @@ This is a comprehensive meeting management system with:
 - **Topic and task attachments** for file management
 - **Reference URLs** for building documents
 - **Company logo management** with dashboard display
+- **Signup API** for programmatic company and user creation
 - **GeniusWords text shortcuts** for user productivity
+- **Auto-save functionality** for topic descriptions
+- **AI-powered analysis** of topics and tasks using extracted document text
+- **Document text extraction** from PDFs, DOCX, and plain text files
+- **Email notifications** via company-specific SMTP configurations
 - **Modern React/Next.js** architecture with TypeScript
 
-The system is designed for property management companies to manage their meeting workflows from agenda creation through minutes finalization and PDF generation.
+The system is designed for property management companies to manage their meeting workflows from agenda creation through minutes finalization and PDF generation, with support for multiple companies, buildings, and user roles.
 
 ---
 
-**Last Updated**: January 2025 (Updated with GeniusWords feature, decision modal enhancements, and attendee mentions)
+**Last Updated**: January 21, 2026
 **Version**: Current production codebase
 
 **Recent Updates**:
+- **Signup API**: Programmatic company creation endpoint
+  - Added `/api/signup` endpoint for creating companies, corporate administrators, property managers, and buildings
+  - API key-based authentication via `x-api-key` header
+  - Creates complete company setup in one API call
+  - Supports optional property manager and building creation
+  - Configures company defaults (meeting sections, types) and SMTP settings
+  - Automatic password hashing with bcrypt (10 salt rounds)
+  - Transaction rollback on errors
+  - Health check endpoint (GET `/api/signup`)
+  - Complete API documentation in `Meeting_Genius_Signup_API_Documentation.md`
+- **Decision Threading System**: Complete decision edit/thread/delete functionality
+  - Added `parent_decision_id`, `edited_at` fields to decisions table
+  - Edit existing decisions with history tracking
+  - Create threaded child decisions for follow-up motions
+  - Delete decisions (both parent and children)
+  - Hierarchical display of threaded decisions in TopicCard
+  - Icons and visual indicators for threaded decisions (CornerDownRight icon)
+  - Edit and delete buttons inline for each decision
+
 - **GeniusWords Feature**: User-specific text shortcuts system
   - Added `genius_words` table for storing user shortcuts (shortcode + description)
   - Created `GeniusWordsManager` component for managing shortcuts (create, edit, delete, search)
@@ -1683,33 +2248,70 @@ The system is designed for property management companies to manage their meeting
   - Integrated GeniusWords autocomplete in decision modal, note modal, task modal, and topic descriptions
   - Shortcuts start with `#` and expand to full descriptions when selected
   - Keyboard navigation: Arrow keys, Enter to select, Escape to close
+
 - **Decision Modal Enhancements**:
   - Added `@` mention autocomplete for meeting attendees
   - Added `#` GeniusWords autocomplete for user shortcuts
   - Both features work simultaneously with intelligent trigger detection
   - Autocomplete dropdowns with keyboard navigation
   - Attendee names and emails displayed in mention suggestions
-- **Navigation Updates**:
-  - Added "GeniusWords" option to user menu dropdown
-  - New screen route: `genius-words` for managing shortcuts
-- Added `role` field to attendee objects in `meetings.attendees` JSONB array
-- Enhanced AttendeeManagement component to support role assignment and editing
-- Roles are now displayed in attendees table and included in PDF minutes generation
-- Added `topic_attachments` table for storing file attachments on topics
-- Added `building_document_urls` table for storing reference URLs (links) for buildings
-- Added `logo_url` field to `companies` table for company logo management
-- Implemented topic attachment upload/download/delete in TopicCard
-- Created `fetchAndExtractTopicAttachments()` function for extracting text from topic attachments
-- Topic AI analysis now includes building documents AND topic attachments
-- Added Reference URLs feature in BuildingDetailsModal → Documents tab
-  - Add, view, and delete reference URLs (legislation, policy, reference, other)
-  - URLs displayed alongside uploaded documents
-- Added Company Logo management in CompanyDetailsModal → Logo tab
-  - Upload, view, and delete company logos
-  - Logo appears in dashboard header for company users
+  - Edit mode: Load and modify existing decisions
+  - Threading mode: Create child decisions linked to parent
+
+- **Auto-save Functionality**:
+  - Topic descriptions auto-save with debounce (1 second delay)
+  - Visual feedback with "Saving..." and "Saved" indicators
+  - No manual save button needed for topic descriptions
+
+- **Enhanced Topic Management**:
+  - Topic attachments: Upload/download/delete files on topics
+  - AI analysis includes both building documents AND topic attachments
+  - Topic attachments stored in Supabase Storage (`topic-attachments` bucket)
+  - Attachment management section with file list and upload button
+
+- **User Type Addition**:
+  - Added `owner` user type for property owners
+  - Owners have similar permissions to regular users
+  - Can view and edit meetings, update tasks, access assigned buildings
+
+- **Attendee Roles**:
+  - Added `role` field to attendee objects in `meetings.attendees` JSONB array
+  - Enhanced AttendeeManagement component to support role assignment and editing
+  - Roles displayed in attendees table and included in PDF minutes generation
+  - Common roles: Chair, Secretary, Member, Treasurer
+
+- **Document Management**:
+  - Building document uploads and text extraction (PDF, DOCX, TXT)
+  - Topic attachments for contextual file uploads
+  - Task attachments for task-specific files
+  - Reference URLs (building_document_urls table) for external links
+  - Document types: rules, bylaws, policies, legislation, reference, other
+
+- **Company Logo Management**:
+  - Added `logo_url` field to `companies` table
+  - Upload, view, and delete company logos via CompanyDetailsModal → Logo tab
+  - Logo appears in dashboard header for all company users
   - Stored in Supabase Storage (`company-logos` bucket)
   - Supports PNG, JPG, SVG (max 2MB)
-- Enhanced dashboard to display company logo in header
-- Topic attachments stored in Supabase Storage (`topic-attachments` bucket)
-- Enhanced TopicCard with full attachment management section
+  - Master users see default Meeting Genius logo; company users see their company logo
+
+- **AI Analysis Integration**:
+  - Topic AI analysis: Analyzes topic description + building documents + topic attachments
+  - Task AI analysis: Analyzes task description + building documents + task attachments
+  - Results stored in `ai_analyses` and `task_analyses` tables
+  - External n8n webhook integration for processing
+  - Expandable analysis display in UI
+
+- **Email System**:
+  - Company-specific SMTP configuration in companies table
+  - `/api/send-email` endpoint for sending emails via Nodemailer
+  - SMTP settings managed in CompanyDetailsModal → Overview tab
+  - Used for task assignment notifications and other system emails
+
+- **UI/UX Improvements**:
+  - Enhanced TopicCard with collapsible sections
+  - Improved decision display with threading support
+  - Delete confirmation modals for meetings and tasks
+  - Toast notifications for user feedback (Sonner)
+  - Loading states and error handling throughout
 

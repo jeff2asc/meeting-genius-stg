@@ -5,7 +5,7 @@ import GenerateAgendaButton from "./GenerateAgendaButton"
 import GenerateMinutesButton from "./GenerateMinutesButton"
 import {
   ArrowLeft, Plus, Trash, Pencil, ChevronDown, ChevronRight, Calendar,
-  Clock, MapPin, FileText, Edit2, Play, CheckCircle, ChevronLeft, Users
+  Clock, MapPin, FileText, Edit2, Play, CheckCircle, ChevronLeft, Users, Lock, Unlock
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -21,6 +21,7 @@ import { supabase, getCurrentUser } from "@/lib/supabase"
 import { canEditMeeting, isReadOnly } from "@/lib/permissions"
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd'
 
+
 interface MeetingViewProps {
   meetingId: string
   onBack: () => void
@@ -28,10 +29,12 @@ interface MeetingViewProps {
   onNoteClick: (topicId: number) => void
   onDecisionClick: (topicId: number) => void
   onRegisterTopicRefresh?: (topicId: number, callback: () => void) => void
-  // ⭐ NEW: Decision editing and threading handlers
   onEditDecision?: (decisionId: number, topicId: number) => void
   onAddThreadedDecision?: (parentDecisionId: number, topicId: number) => void
+  onEditTask?: (taskId: number, topicId: number) => void
+  onEditNote?: (noteId: number, topicId: number) => void
 }
+
 
 interface Topic {
   id: number
@@ -44,6 +47,7 @@ interface Topic {
   order_index?: number
 }
 
+
 interface Section {
   id: number
   title: string
@@ -52,11 +56,13 @@ interface Section {
   isExpanded: boolean
 }
 
+
 const STATUS_FLOW = [
   "working_agenda",
   "working_minutes",
   "minutes"
 ] as const
+
 
 export default function MeetingView({
   meetingId,
@@ -65,8 +71,10 @@ export default function MeetingView({
   onNoteClick,
   onDecisionClick,
   onRegisterTopicRefresh,
-  onEditDecision,        // ⭐ NEW
-  onAddThreadedDecision  // ⭐ NEW
+  onEditDecision,
+  onAddThreadedDecision,
+  onEditTask,
+  onEditNote
 }: MeetingViewProps) {
   const [meeting, setMeeting] = useState<any>(null)
   const [sections, setSections] = useState<Section[]>([])
@@ -79,15 +87,10 @@ export default function MeetingView({
   const [showCreateTopicModal, setShowCreateTopicModal] = useState(false)
   const [showEditMeetingModal, setShowEditMeetingModal] = useState(false)
   
-  // Attendees section expanded state
   const [attendeesExpanded, setAttendeesExpanded] = useState(false)
-  
-  // Recorder selection modal
   const [showRecorderModal, setShowRecorderModal] = useState(false)
-  
   const [selectedSection, setSelectedSection] = useState<{ id: number; title: string } | null>(null)
 
-  // Section Editing/Removal State
   const [editingSection, setEditingSection] = useState<{ id: number, title: string } | null>(null)
   const [sectionRenameValue, setSectionRenameValue] = useState("")
   const [sectionToDelete, setSectionToDelete] = useState<Section | null>(null)
@@ -121,6 +124,39 @@ export default function MeetingView({
       console.error("Unexpected error:", err)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleMeetingIncameraToggle = async () => {
+    if (!userCanEdit) {
+      alert('You do not have permission to modify meetings.')
+      return
+    }
+
+    const newValue = !meeting.is_incamera
+
+    try {
+      const { error } = await supabase
+        .from("meetings")
+        .update({ is_incamera: newValue })
+        .eq("id", meetingId)
+
+      if (error) {
+        console.error("Error updating in-camera status:", error)
+        alert("Failed to update in-camera status")
+        return
+      }
+
+      setMeeting({ ...meeting, is_incamera: newValue })
+      
+      if (newValue) {
+        alert('🔒 Entire meeting marked as In-Camera (Confidential)')
+      } else {
+        alert('🔓 In-Camera removed from meeting')
+      }
+    } catch (err) {
+      console.error("Unexpected error:", err)
+      alert("Failed to update in-camera status")
     }
   }
 
@@ -268,7 +304,6 @@ export default function MeetingView({
   
   const cancelDeleteSection = () => setSectionToDelete(null)
 
-  // ⭐ FIXED: Don't refresh when saving description (keeps card open)
   const updateTopic = async (id: number, updates: Partial<Topic>) => {
     if (!userCanEdit) {
       alert("You do not have permission to edit topics.")
@@ -286,8 +321,6 @@ export default function MeetingView({
         console.error("Error updating topic:", error)
         return
       }
-      // ⭐ DON'T refresh sections - keeps card open during auto-save
-      // Only refresh when saving title (not description)
       if (updates.title) {
         await fetchSectionsAndTopics()
       }
@@ -550,179 +583,246 @@ export default function MeetingView({
   return (
     <>
       <header className="border-b border-border bg-card shadow-sm sticky top-0 z-40">
-        <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-4">
-              <Button variant="ghost" size="icon" onClick={onBack} className="hover:bg-muted">
-                <ArrowLeft className="h-5 w-5" />
-              </Button>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h1 className="text-xl font-bold text-foreground">{meeting.title}</h1>
-                  {userCanEdit && meeting.status === "working_agenda" && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => setShowEditMeetingModal(true)}
-                      className="hover:bg-muted border border-blue-500"
-                      title="Edit Meeting"
-                    >
-                      <Edit2 className="h-4 w-4" />
-                    </Button>
-                  )}
-                  <Badge variant="outline" className={getStatusColor(meeting.status)}>
-                    {getStatusText(meeting.status)}
-                  </Badge>
-                  {userCanEdit && (
-                    <>
-                      {canTransition(meeting.status, "backward") && (
-                        <Button
-                          variant="outline"
-                          onClick={() => updateMeetingStatus(prevStatus(meeting.status))}
-                          className="bg-gray-100 border border-gray-400 ml-2"
-                        >
-                          <ChevronLeft className="h-4 w-4" />
-                          Back to {getStatusText(prevStatus(meeting.status))}
-                        </Button>
-                      )}
-                      {canTransition(meeting.status, "forward") && (
-                        <Button
-                          onClick={() => {
-                            const target = nextStatus(meeting.status)
-                            if (target === "working_minutes") {
-                              setShowRecorderModal(true)
-                            } else {
-                              updateMeetingStatus(target)
-                            }
-                          }}
-                          className="bg-green-600 text-white ml-2"
-                        >
-                          {meeting.status === "working_agenda" && (
-                            <>
-                              <Play className="h-4 w-4 mr-2" />
-                              Start Meeting
-                            </>
-                          )}
-                          {meeting.status === "working_minutes" && (
-                            <>
-                              <CheckCircle className="h-4 w-4 mr-2" />
-                              End Meeting
-                            </>
-                          )}
-                        </Button>
-                      )}
-                    </>
-                  )}
-                </div>
-                <p className="text-sm text-muted-foreground">{meeting.building}</p>
-                
-                {meeting.status === "working_minutes" && (meeting.recorder_name || meeting.timekeeper_name) && (
-                  <div className="flex items-center gap-4 text-xs text-muted-foreground mt-1">
-                    {meeting.recorder_name && (
-                      <span>📝 Recorder: <strong className="text-foreground">{meeting.recorder_name}</strong></span>
-                    )}
-                    {meeting.timekeeper_name && (
-                      <span>⏱️ Timekeeper: <strong className="text-foreground">{meeting.timekeeper_name}</strong></span>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
+        <div className="mx-auto max-w-7xl px-4 py-3 sm:px-6 lg:px-8">
+          {/* ⭐ ROW 1: Back button + Title + Status Badges */}
+          <div className="flex items-center gap-3 mb-2">
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              onClick={onBack} 
+              className="hover:bg-muted flex-shrink-0 h-8 w-8"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
             
-            <div className="flex items-center gap-4">
-              {userCanEdit &&
-                (meeting.status === "working_agenda" || meeting.status === "working_minutes") && (
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <h1 className="text-lg font-bold text-foreground truncate">{meeting.title}</h1>
+                
+                {meeting.is_incamera && (
+                  <Badge variant="outline" className="bg-red-100 text-red-700 border-red-300 flex-shrink-0 text-xs h-6">
+                    <Lock className="h-3 w-3 mr-1" />
+                    IN-CAMERA
+                  </Badge>
+                )}
+                
+                <Badge variant="outline" className={`${getStatusColor(meeting.status)} flex-shrink-0 text-xs h-6`}>
+                  {getStatusText(meeting.status)}
+                </Badge>
+                
+                {userCanEdit && meeting.status === "working_agenda" && (
                   <Button
-                    onClick={handleCreateSection}
-                    variant="outline"
-                    className="border-primary text-primary hover:bg-primary/10"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setShowEditMeetingModal(true)}
+                    className="hover:bg-muted border border-blue-500 h-6 w-6 p-0 flex-shrink-0"
+                    title="Edit Meeting"
                   >
-                    <Plus className="h-4 w-4 mr-2" />
-                    Create Section
+                    <Edit2 className="h-3 w-3" />
                   </Button>
                 )}
+              </div>
+              
+              <p className="text-xs text-muted-foreground truncate">{meeting.building}</p>
+            </div>
+          </div>
 
-              {(meeting.status === "working_agenda" || meeting.status === "agenda") && (
+          {/* ⭐ ROW 2: In-Camera Warning (if enabled) */}
+          {meeting.is_incamera && (
+            <div className="mb-2 p-2 bg-red-50 border border-red-200 rounded text-xs">
+              <div className="flex items-center gap-1.5 text-red-800">
+                <Lock className="h-3 w-3 flex-shrink-0" />
+                <span className="font-semibold">Confidential Meeting</span>
+              </div>
+            </div>
+          )}
+          
+          {/* ⭐ ROW 3: ALL ACTION BUTTONS - SINGLE LINE, SAME SIZE */}
+          <div className="flex items-center gap-1.5 overflow-x-auto">
+            {/* In-Camera Toggle */}
+            {userCanEdit && meeting.status !== "minutes" && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleMeetingIncameraToggle}
+                className={`h-8 px-3 text-xs whitespace-nowrap flex-shrink-0 ${meeting.is_incamera 
+                  ? "bg-red-50 border-red-300 text-red-700" 
+                  : "border-gray-300"}`}
+              >
+                {meeting.is_incamera ? (
+                  <>
+                    <Unlock className="h-3 w-3 mr-1" />
+                    Remove In-Camera
+                  </>
+                ) : (
+                  <>
+                    <Lock className="h-3 w-3 mr-1" />
+                    In-Camera
+                  </>
+                )}
+              </Button>
+            )}
+            
+            {/* Back to Previous Status */}
+            {userCanEdit && canTransition(meeting.status, "backward") && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => updateMeetingStatus(prevStatus(meeting.status))}
+                className="h-8 px-3 text-xs whitespace-nowrap flex-shrink-0 bg-gray-100 border-gray-400"
+              >
+                <ChevronLeft className="h-3 w-3 mr-1" />
+                Back
+              </Button>
+            )}
+            
+            {/* Start/End Meeting */}
+            {userCanEdit && canTransition(meeting.status, "forward") && (
+              <Button
+                size="sm"
+                onClick={() => {
+                  const target = nextStatus(meeting.status)
+                  if (target === "working_minutes") {
+                    setShowRecorderModal(true)
+                  } else {
+                    updateMeetingStatus(target)
+                  }
+                }}
+                className="h-8 px-3 text-xs whitespace-nowrap flex-shrink-0 bg-green-600 text-white hover:bg-green-700"
+              >
+                {meeting.status === "working_agenda" && (
+                  <>
+                    <Play className="h-3 w-3 mr-1" />
+                    Start
+                  </>
+                )}
+                {meeting.status === "working_minutes" && (
+                  <>
+                    <CheckCircle className="h-3 w-3 mr-1" />
+                    End
+                  </>
+                )}
+              </Button>
+            )}
+            
+            {/* Create Section */}
+            {userCanEdit && (meeting.status === "working_agenda" || meeting.status === "working_minutes") && (
+              <Button
+                size="sm"
+                onClick={handleCreateSection}
+                variant="outline"
+                className="h-8 px-3 text-xs whitespace-nowrap flex-shrink-0 border-primary text-primary"
+              >
+                <Plus className="h-3 w-3 mr-1" />
+                Section
+              </Button>
+            )}
+
+            {/* Generate Agenda */}
+            {(meeting.status === "working_agenda" || meeting.status === "agenda") && (
+              <div className="flex-shrink-0">
                 <GenerateAgendaButton 
                   meetingId={parseInt(meetingId)} 
                   meetingStatus={meeting.status}
                 />
-              )}
-              
-              {meeting.status === "minutes" && (
+              </div>
+            )}
+            
+            {/* Generate Minutes */}
+            {meeting.status === "minutes" && (
+              <div className="flex-shrink-0">
                 <GenerateMinutesButton 
                   meetingId={meetingId} 
                   buildingId={meeting.building_id} 
                 />
-              )}
-              
-              {isMounted && isRecording && <Timer elapsedTime={elapsedTime} />}
+              </div>
+            )}
+            
+            {/* Timer (when recording) */}
+            {isMounted && isRecording && (
+              <div className="flex-shrink-0">
+                <Timer elapsedTime={elapsedTime} />
+              </div>
+            )}
 
-              {isMounted && userCanEdit && (
-                <>
-                  {!isRecording ? (
-                    <Button
-                      onClick={handleStartRecording}
-                      className="bg-red-500 hover:bg-red-600 text-white"
-                    >
-                      <span className="flex items-center gap-2">
-                        <span className="h-3 w-3 rounded-full bg-white"></span>
-                        Start Recording
-                      </span>
-                    </Button>
-                  ) : (
-                    <Button
-                      onClick={handleStopRecording}
-                      variant="outline"
-                      className="border-red-500 text-red-500 hover:bg-red-50"
-                    >
-                      <span className="flex items-center gap-2">
-                        <span className="h-3 w-3 rounded-sm bg-red-500"></span>
-                        Stop Recording
-                      </span>
-                    </Button>
-                  )}
-                </>
-              )}
-            </div>
+            {/* Recording Controls */}
+            {isMounted && userCanEdit && (
+              <>
+                {!isRecording ? (
+                  <Button
+                    size="sm"
+                    onClick={handleStartRecording}
+                    className="h-8 px-3 text-xs whitespace-nowrap flex-shrink-0 bg-red-500 hover:bg-red-600 text-white"
+                  >
+                    <span className="h-2 w-2 rounded-full bg-white mr-1.5"></span>
+                    Record
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    onClick={handleStopRecording}
+                    variant="outline"
+                    className="h-8 px-3 text-xs whitespace-nowrap flex-shrink-0 border-red-500 text-red-500"
+                  >
+                    <span className="h-2 w-2 rounded-sm bg-red-500 mr-1.5"></span>
+                    Stop
+                  </Button>
+                )}
+              </>
+            )}
           </div>
           
-          <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
-            {meeting.meeting_type && (
-              <div className="flex items-center gap-1">
-                <FileText className="h-4 w-4" />
-                <span>{meeting.meeting_type}</span>
-              </div>
-            )}
-            {meeting.meeting_date && (
-              <div className="flex items-center gap-1">
-                <Calendar className="h-4 w-4" />
-                <span>{formatDate(meeting.meeting_date)}</span>
-              </div>
-            )}
-            {meeting.start_time && (
-              <div className="flex items-center gap-1">
-                <Clock className="h-4 w-4" />
-                <span>{formatTime(meeting.start_time)}</span>
-              </div>
-            )}
-            {meeting.location && (
-              <div className="flex items-center gap-1">
-                <MapPin className="h-4 w-4" />
-                <span>{meeting.location}</span>
-              </div>
-            )}
-            {meeting.strata_plan_number && (
-              <div className="flex items-center gap-1">
-                <FileText className="h-4 w-4" />
-                <span>Plan: {meeting.strata_plan_number}</span>
+          {/* ⭐ ROW 4: Meeting Metadata + Recorder Info */}
+          <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground mt-2 pt-2 border-t border-border">
+            <div className="flex items-center gap-3 overflow-x-auto">
+              {meeting.meeting_type && (
+                <div className="flex items-center gap-1 whitespace-nowrap">
+                  <FileText className="h-3 w-3" />
+                  <span>{meeting.meeting_type}</span>
+                </div>
+              )}
+              {meeting.meeting_date && (
+                <div className="flex items-center gap-1 whitespace-nowrap">
+                  <Calendar className="h-3 w-3" />
+                  <span>{formatDate(meeting.meeting_date)}</span>
+                </div>
+              )}
+              {meeting.start_time && (
+                <div className="flex items-center gap-1 whitespace-nowrap">
+                  <Clock className="h-3 w-3" />
+                  <span>{formatTime(meeting.start_time)}</span>
+                </div>
+              )}
+              {meeting.location && (
+                <div className="flex items-center gap-1 whitespace-nowrap">
+                  <MapPin className="h-3 w-3" />
+                  <span>{meeting.location}</span>
+                </div>
+              )}
+              {meeting.strata_plan_number && (
+                <div className="flex items-center gap-1 whitespace-nowrap">
+                  <FileText className="h-3 w-3" />
+                  <span>Plan: {meeting.strata_plan_number}</span>
+                </div>
+              )}
+            </div>
+            
+            {/* Recorder/Timekeeper info on the right */}
+            {meeting.status === "working_minutes" && (meeting.recorder_name || meeting.timekeeper_name) && (
+              <div className="flex items-center gap-2 text-xs whitespace-nowrap flex-shrink-0">
+                {meeting.recorder_name && (
+                  <span>📝 <strong>{meeting.recorder_name}</strong></span>
+                )}
+                {meeting.timekeeper_name && (
+                  <span>⏱️ <strong>{meeting.timekeeper_name}</strong></span>
+                )}
               </div>
             )}
           </div>
         </div>
       </header>
 
-      {/* ATTENDEES EXPANDABLE SECTION - MINIMAL SINGLE LINE */}
+      {/* ATTENDEES EXPANDABLE SECTION */}
       <div className="mx-auto max-w-4xl px-4 pt-2 sm:px-6 lg:px-8">
         <button
           onClick={() => setAttendeesExpanded(!attendeesExpanded)}
@@ -872,6 +972,7 @@ export default function MeetingView({
                                             topic={topic}
                                             topicNumber={topicIndex + 1}
                                             meetingId={parseInt(meetingId)}
+                                            meetingStatus={meeting.status}
                                             onUpdate={updates => updateTopic(topic.id, updates)}
                                             onDelete={id => deleteTopic(id)}
                                             onTaskClick={() => onTaskClick(topic.id)}
@@ -887,6 +988,16 @@ export default function MeetingView({
                                             onAddThreadedDecision={(parentId, topicId) => {
                                               if (onAddThreadedDecision) {
                                                 onAddThreadedDecision(parentId, topicId)
+                                              }
+                                            }}
+                                            onEditTask={(taskId, topicId) => {
+                                              if (onEditTask) {
+                                                onEditTask(taskId, topicId)
+                                              }
+                                            }}
+                                            onEditNote={(noteId, topicId) => {
+                                              if (onEditNote) {
+                                                onEditNote(noteId, topicId)
                                               }
                                             }}
                                           />
@@ -958,7 +1069,6 @@ export default function MeetingView({
         />
       )}
       
-      {/* ⭐ FIXED: Create Topic Modal - doesn't auto-close after creation */}
       {showCreateTopicModal && selectedSection && userCanEdit && (
         <CreateTopicModal
           meetingId={meetingId}
@@ -970,7 +1080,6 @@ export default function MeetingView({
           }}
           onSuccess={() => {
             fetchSectionsAndTopics()
-            // ⭐ Don't close modal - let user click "Done" button
           }}
         />
       )}

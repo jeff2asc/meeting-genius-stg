@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
-import { ChevronDown, FileText, CheckSquare, Scale, Paperclip, Edit2, Trash2, X, Check, Sparkles, Loader2, Plus, Upload, Download, CornerDownRight } from "lucide-react"
+import { ChevronDown, FileText, CheckSquare, Scale, Paperclip, Edit2, Trash2, X, Check, Sparkles, Loader2, Plus, Upload, Download, CornerDownRight, Lock, Unlock } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { supabase, getCurrentUser, TopicAttachment } from "@/lib/supabase"
@@ -34,6 +34,10 @@ interface Topic {
   attachments: number
   tasks: number
   decisions: number
+  // ⭐ NEW: In-camera fields
+  is_incamera?: boolean
+  incamera_start_time?: string | null
+  incamera_end_time?: string | null
 }
 
 interface HistoryItem {
@@ -64,6 +68,7 @@ interface TopicCardProps {
   topic: Topic
   topicNumber: number
   meetingId: number
+  meetingStatus?: string  // ⭐ NEW: To check if meeting has started
   onUpdate: (updates: Partial<Topic>) => void
   onDelete: (topicId: number) => void
   onTaskClick: () => void
@@ -74,12 +79,16 @@ interface TopicCardProps {
   // ⭐ UPDATED: Include topicId in callbacks
   onEditDecision?: (decisionId: number, topicId: number) => void
   onAddThreadedDecision?: (parentDecisionId: number, topicId: number) => void
+  // ⭐ NEW: Edit callbacks for task and note
+  onEditTask?: (taskId: number, topicId: number) => void
+  onEditNote?: (noteId: number, topicId: number) => void
 }
 
 export default function TopicCard({ 
   topic, 
   topicNumber,
   meetingId,
+  meetingStatus,  // ⭐ NEW
   onUpdate,
   onDelete,
   onTaskClick,
@@ -88,7 +97,9 @@ export default function TopicCard({
   onRegisterRefresh,
   isReadOnly = false,
   onEditDecision,
-  onAddThreadedDecision
+  onAddThreadedDecision,
+  onEditTask,
+  onEditNote
 }: TopicCardProps) {
   const [isExpanded, setIsExpanded] = useState(true)
   const [isEditingTitle, setIsEditingTitle] = useState(false)
@@ -111,15 +122,28 @@ export default function TopicCard({
   const [decisions, setDecisions] = useState<Decision[]>([])
   const [loadingDecisions, setLoadingDecisions] = useState(false)
 
+  // ⭐ NEW: In-camera state
+  const [isIncamera, setIsIncamera] = useState(topic.is_incamera || false)
+  const [incameraStartTime, setIncameraStartTime] = useState(topic.incamera_start_time || "")
+  const [incameraEndTime, setIncameraEndTime] = useState(topic.incamera_end_time || "")
+
   // ⭐ UPDATED: 3-second debounced description for auto-save
   const debouncedDescription = useDebounce(editedDescription, 3000)
 
   const currentUser = getCurrentUser()
   const titleInputRef = useRef<HTMLInputElement>(null)
 
+  // ⭐ Check if meeting has started (only show in-camera during meeting)
+  const isMeetingStarted = meetingStatus === 'working_minutes' || meetingStatus === 'minutes'
+
+  // ⭐ FIXED: Register callback that refreshes BOTH history AND decisions
   useEffect(() => {
     if (onRegisterRefresh) {
-      onRegisterRefresh(topic.id, fetchHistory)
+      onRegisterRefresh(topic.id, () => {
+        console.log('🔄 REFRESH CALLBACK TRIGGERED for topic:', topic.id)
+        fetchHistory()
+        fetchDecisions() // ⭐ ADDED: Also refresh decisions
+      })
     }
   }, [topic.id, onRegisterRefresh])
 
@@ -148,7 +172,48 @@ export default function TopicCard({
   useEffect(() => {
     setEditedDescription(topic.description || "")
     setEditedTitle(topic.title)
-  }, [topic.description, topic.title])
+    setIsIncamera(topic.is_incamera || false)
+    setIncameraStartTime(topic.incamera_start_time || "")
+    setIncameraEndTime(topic.incamera_end_time || "")
+  }, [topic.description, topic.title, topic.is_incamera, topic.incamera_start_time, topic.incamera_end_time])
+
+  // ⭐ NEW: Handle in-camera toggle
+  const handleIncameraToggle = async () => {
+    if (isReadOnly) {
+      alert('You do not have permission to modify topics.')
+      return
+    }
+
+    const newValue = !isIncamera
+    setIsIncamera(newValue)
+
+    // Auto-update start time when enabling
+    if (newValue && !incameraStartTime) {
+      const now = new Date().toISOString()
+      setIncameraStartTime(now)
+      await onUpdate({ 
+        is_incamera: newValue, 
+        incamera_start_time: now 
+      })
+    } else {
+      await onUpdate({ is_incamera: newValue })
+    }
+
+    toast.success(newValue ? '🔒 Topic marked as In-Camera' : '🔓 In-Camera removed')
+  }
+
+  // ⭐ NEW: Handle time updates
+  const handleTimeUpdate = async (field: 'start' | 'end', value: string) => {
+    if (isReadOnly) return
+
+    if (field === 'start') {
+      setIncameraStartTime(value)
+      await onUpdate({ incamera_start_time: value })
+    } else {
+      setIncameraEndTime(value)
+      await onUpdate({ incamera_end_time: value })
+    }
+  }
 
   // ⭐ NEW: Fetch decisions with threading structure
   const fetchDecisions = async () => {
@@ -668,7 +733,8 @@ export default function TopicCard({
   return (
     <>
       <Card className="border-0 bg-card shadow-md overflow-hidden">
-        <div className="border-b border-border bg-gradient-to-r from-primary/5 to-decision-purple/5 p-2">
+        {/* ⭐ UPDATED: Header with In-Camera indicator */}
+        <div className={`border-b border-border p-2 ${isIncamera ? 'bg-gradient-to-r from-red-50 to-orange-50' : 'bg-gradient-to-r from-primary/5 to-decision-purple/5'}`}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3 flex-1">
               <button
@@ -678,6 +744,15 @@ export default function TopicCard({
                 <ChevronDown className={`h-5 w-5 transition-transform ${isExpanded ? "" : "-rotate-90"}`} />
               </button>
               <span className="text-sm font-semibold text-muted-foreground">Topic {topicNumber}</span>
+              
+              {/* ⭐ NEW: In-Camera Badge */}
+              {isIncamera && (
+                <span className="flex items-center gap-1 px-2 py-1 bg-red-100 text-red-700 border border-red-300 rounded text-xs font-semibold">
+                  <Lock className="h-3 w-3" />
+                  IN-CAMERA
+                </span>
+              )}
+
               {isEditingTitle ? (
                 <input
                   ref={titleInputRef}
@@ -736,6 +811,65 @@ export default function TopicCard({
 
         {isExpanded && (
           <>
+            {/* ⭐ NEW: In-Camera Control Section - Only show during meeting */}
+            {!isReadOnly && isMeetingStarted && (
+              <div className="border-b border-border p-3 bg-muted/5">
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={handleIncameraToggle}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-lg border-2 transition-all ${
+                      isIncamera 
+                        ? 'bg-red-50 border-red-300 text-red-700 hover:bg-red-100' 
+                        : 'bg-background border-border hover:border-primary/50'
+                    }`}
+                  >
+                    {isIncamera ? <Lock className="h-4 w-4" /> : <Unlock className="h-4 w-4" />}
+                    <span className="text-sm font-medium">
+                      {isIncamera ? 'In-Camera (Confidential)' : 'Mark as In-Camera'}
+                    </span>
+                  </button>
+
+                  {isIncamera && (
+                    <div className="flex-1 flex items-center gap-2 text-xs">
+                      <div className="flex items-center gap-1">
+                        <label className="text-muted-foreground">Start:</label>
+                        <input
+                          type="datetime-local"
+                          value={incameraStartTime ? new Date(incameraStartTime).toISOString().slice(0, 16) : ''}
+                          onChange={(e) => handleTimeUpdate('start', e.target.value ? new Date(e.target.value).toISOString() : '')}
+                          className="px-2 py-1 rounded border border-border text-xs"
+                        />
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <label className="text-muted-foreground">End:</label>
+                        <input
+                          type="datetime-local"
+                          value={incameraEndTime ? new Date(incameraEndTime).toISOString().slice(0, 16) : ''}
+                          onChange={(e) => handleTimeUpdate('end', e.target.value ? new Date(e.target.value).toISOString() : '')}
+                          className="px-2 py-1 rounded border border-border text-xs"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* ⭐ UPDATED: Show warning if in-camera */}
+            {isIncamera && (
+              <div className="border-b border-border p-3 bg-red-50">
+                <div className="flex items-start gap-2 text-sm text-red-800">
+                  <Lock className="h-5 w-5 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-semibold">This topic is In-Camera (Confidential)</p>
+                    <p className="text-xs mt-1">
+                      Content will be hidden in published agendas and minutes. Only "This topic is in-camera" will be shown.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {showAttachments && (
               <div className="border-b border-border p-2 bg-muted/10">
                 <h4 className="text-sm font-semibold text-foreground mb-1.5 flex items-center gap-2">
@@ -936,7 +1070,7 @@ export default function TopicCard({
                 </div>
               </div>
 
-              {/* Tasks Section */}
+              {/* ⭐ UPDATED: Tasks Section with Edit Button */}
               <div className="mb-2">
                 <div className="flex items-center gap-2 mb-1">
                   <CheckSquare className="h-4 w-4 text-task-green" />
@@ -962,18 +1096,37 @@ export default function TopicCard({
                             <p className="text-xs text-muted-foreground">{item.details}</p>
                           )}
                         </div>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            console.log('Clicking task:', item.id)
-                            setSelectedTaskId(item.id)
-                          }}
-                          className="w-full text-task-green border-task-green hover:bg-task-green/10"
-                        >
-                          <CheckSquare className="h-3 w-3 mr-1" />
-                          View Task Details
-                        </Button>
+                        {/* ⭐ NEW: Task action buttons */}
+                        {!isReadOnly && (
+                          <div className="flex gap-2 mt-1">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                console.log('View task details:', item.id)
+                                setSelectedTaskId(item.id)
+                              }}
+                              className="flex-1 text-task-green border-task-green hover:bg-task-green/10"
+                            >
+                              <CheckSquare className="h-3 w-3 mr-1" />
+                              View Details
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                console.log('Edit task clicked:', item.id, topic.id)
+                                if (onEditTask) {
+                                  onEditTask(item.id, topic.id)
+                                }
+                              }}
+                              className="flex-1 text-task-green border-task-green hover:bg-task-green/10"
+                            >
+                              <Edit2 className="h-3 w-3 mr-1" />
+                              Edit
+                            </Button>
+                          </div>
+                        )}
                       </div>
                     ))
                   ) : (
@@ -986,7 +1139,7 @@ export default function TopicCard({
                 </div>
               </div>
 
-              {/* Notes Section */}
+              {/* ⭐ UPDATED: Notes Section with Edit Button */}
               <div className="mb-2 last:mb-0">
                 <div className="flex items-center gap-2 mb-1">
                   <FileText className="h-4 w-4 text-note-blue" />
@@ -1012,6 +1165,21 @@ export default function TopicCard({
                             <p className="text-xs text-muted-foreground">{item.details}</p>
                           )}
                         </div>
+                        {/* ⭐ NEW: Edit Note Button */}
+                        {!isReadOnly && onEditNote && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              console.log('Edit note clicked:', item.id, topic.id)
+                              onEditNote(item.id, topic.id)
+                            }}
+                            className="w-full text-note-blue border-note-blue hover:bg-note-blue/10"
+                          >
+                            <Edit2 className="h-3 w-3 mr-1" />
+                            Edit Note
+                          </Button>
+                        )}
                       </div>
                     ))
                   ) : (

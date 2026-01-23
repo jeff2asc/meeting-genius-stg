@@ -249,6 +249,10 @@ export type Database = {
           description: string | null
           order_index: number
           rolled_over_from_topic_id: number | null
+          // ⭐ NEW: In-camera fields
+          is_incamera: boolean
+          incamera_start_time: string | null
+          incamera_end_time: string | null
           created_at: string
           updated_at: string
         }
@@ -258,6 +262,10 @@ export type Database = {
           title: string
           description?: string | null
           order_index?: number
+          // ⭐ NEW: In-camera fields optional on insert
+          is_incamera?: boolean
+          incamera_start_time?: string | null
+          incamera_end_time?: string | null
         }
       }
       notes: {

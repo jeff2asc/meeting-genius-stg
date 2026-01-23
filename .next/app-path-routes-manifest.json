@@ -1,6 +1,6 @@
 {
-  "/api/signup/route": "/api/signup",
-  "/_not-found/page": "/_not-found",
   "/api/send-email/route": "/api/send-email",
+  "/_not-found/page": "/_not-found",
+  "/api/signup/route": "/api/signup",
   "/page": "/"
 }

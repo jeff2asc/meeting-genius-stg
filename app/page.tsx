@@ -46,6 +46,14 @@ export default function Home() {
   const [editingDecisionId, setEditingDecisionId] = useState<number | null>(null)
   const [parentDecisionId, setParentDecisionId] = useState<number | null>(null)
 
+  // ⭐ NEW: Task modal state for edit
+  const [taskEditMode, setTaskEditMode] = useState(false)
+  const [editingTaskId, setEditingTaskId] = useState<number | null>(null)
+
+  // ⭐ NEW: Note modal state for edit
+  const [noteEditMode, setNoteEditMode] = useState(false)
+  const [editingNoteId, setEditingNoteId] = useState<number | null>(null)
+
   const topicRefreshCallbackRef = useRef<(() => void) | null>(null)
 
   useEffect(() => {
@@ -107,8 +115,21 @@ export default function Home() {
     topicRefreshCallbackRef.current = callback
   }
 
+  // ⭐ UPDATED: Note click for new note
   const handleNoteClick = (topicId: number) => {
     setSelectedTopicId(topicId)
+    // Reset to create mode
+    setNoteEditMode(false)
+    setEditingNoteId(null)
+    setShowNoteModal(true)
+  }
+
+  // ⭐ NEW: Edit existing note
+  const handleEditNote = (noteId: number, topicId: number) => {
+    console.log('handleEditNote called:', noteId, topicId)
+    setSelectedTopicId(topicId)
+    setNoteEditMode(true)
+    setEditingNoteId(noteId)
     setShowNoteModal(true)
   }
 
@@ -152,8 +173,21 @@ export default function Home() {
     setShowDecisionModal(true)
   }
 
+  // ⭐ UPDATED: Task click for new task
   const handleTaskClick = (topicId: number) => {
     setSelectedTopicId(topicId)
+    // Reset to create mode
+    setTaskEditMode(false)
+    setEditingTaskId(null)
+    setShowTaskModal(true)
+  }
+
+  // ⭐ NEW: Edit existing task
+  const handleEditTask = (taskId: number, topicId: number) => {
+    console.log('handleEditTask called:', taskId, topicId)
+    setSelectedTopicId(topicId)
+    setTaskEditMode(true)
+    setEditingTaskId(taskId)
     setShowTaskModal(true)
   }
 
@@ -309,6 +343,9 @@ export default function Home() {
           // ⭐ FIXED: Pass handlers with topicId support
           onEditDecision={handleEditDecision}
           onAddThreadedDecision={handleAddThreadedDecision}
+          // ⭐ NEW: Pass edit handlers for task and note
+          onEditTask={handleEditTask}
+          onEditNote={handleEditNote}
         />
       )}
 
@@ -320,30 +357,39 @@ export default function Home() {
         <GeniusWordsManager onBack={handleBackToDashboard} />
       )}
       
-      {/* Modals */}
+      {/* ⭐ UPDATED: Task Modal with edit mode support */}
       {showTaskModal && selectedTopicId && (
         <TaskModal 
           topicId={selectedTopicId}
           onClose={() => {
             setShowTaskModal(false)
             setSelectedTopicId(null)
+            setTaskEditMode(false)
+            setEditingTaskId(null)
           }}
           onSave={handleTaskSave}
+          editMode={taskEditMode}
+          existingTaskId={editingTaskId}
         />
       )}
       
+      {/* ⭐ UPDATED: Note Modal with edit mode support */}
       {showNoteModal && selectedTopicId && (
         <NoteModal 
           topicId={selectedTopicId}
           onClose={() => {
             setShowNoteModal(false)
             setSelectedTopicId(null)
+            setNoteEditMode(false)
+            setEditingNoteId(null)
           }}
           onSave={handleNoteSave}
+          editMode={noteEditMode}
+          existingNoteId={editingNoteId}
         />
       )}
       
-      {/* ⭐ UPDATED: Decision Modal with edit/threading support */}
+      {/* ⭐ FIXED: Decision Modal with edit/threading support - onSave only calls handleDecisionSave */}
       {showDecisionModal && selectedTopicId && selectedMeetingId && (
         <DecisionModal 
           topicId={selectedTopicId}
@@ -360,15 +406,7 @@ export default function Home() {
             setEditingDecisionId(null)
             setParentDecisionId(null)
           }}
-          onSave={() => {
-            handleDecisionSave()
-            setShowDecisionModal(false)
-            setSelectedTopicId(null)
-            setSelectedMeetingId(null)
-            setDecisionEditMode(false)
-            setEditingDecisionId(null)
-            setParentDecisionId(null)
-          }}
+          onSave={handleDecisionSave}
         />
       )}
       

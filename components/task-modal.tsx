@@ -15,6 +15,9 @@ interface TaskModalProps {
   topicId: number
   onClose: () => void
   onSave?: () => void
+  // ⭐ NEW: Edit mode props
+  editMode?: boolean
+  existingTaskId?: number | null
 }
 
 interface Assignee {
@@ -33,10 +36,17 @@ interface TaskAttachment {
   file?: File // For new uploads before saving
 }
 
-export default function TaskModal({ topicId, onClose, onSave }: TaskModalProps) {
+export default function TaskModal({ 
+  topicId, 
+  onClose, 
+  onSave,
+  editMode = false,
+  existingTaskId = null
+}: TaskModalProps) {
   const [formData, setFormData] = useState({
     description: "",
     dueDate: "",
+    status: "open",
     sendNotification: true,
   })
 
@@ -48,6 +58,7 @@ export default function TaskModal({ topicId, onClose, onSave }: TaskModalProps) 
   const [meetingId, setMeetingId] = useState<number | null>(null)
   
   const [saving, setSaving] = useState(false)
+  const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   // Email preview modal state
@@ -58,10 +69,70 @@ export default function TaskModal({ topicId, onClose, onSave }: TaskModalProps) 
   const [attachments, setAttachments] = useState<TaskAttachment[]>([])
   const [uploadingFile, setUploadingFile] = useState(false)
 
+  // ⭐ NEW: Load existing task data in edit mode
+  useEffect(() => {
+    if (editMode && existingTaskId) {
+      loadExistingTask()
+    }
+  }, [editMode, existingTaskId])
+
   // Fetch meeting_id from topic, then fetch attendees
   useEffect(() => {
     fetchMeetingIdAndAttendees()
   }, [topicId])
+
+  // ⭐ NEW: Load existing task for editing
+  const loadExistingTask = async () => {
+    setLoading(true)
+    try {
+      const { data: taskData, error: taskError } = await supabase
+        .from('tasks')
+        .select('*')
+        .eq('id', existingTaskId)
+        .single()
+
+      if (taskError || !taskData) {
+        console.error('Error loading task:', taskError)
+        setError('Failed to load task')
+        return
+      }
+
+      // Populate form
+      setFormData({
+        description: taskData.description || "",
+        dueDate: taskData.due_date || "",
+        status: taskData.status || "open",
+        sendNotification: false, // Don't send notification on edit
+      })
+
+      // Populate assignees
+      if (taskData.assignees && Array.isArray(taskData.assignees)) {
+        setAssignees(taskData.assignees)
+      }
+
+      // Load existing attachments
+      const { data: attachmentsData } = await supabase
+        .from('task_attachments')
+        .select('*')
+        .eq('task_id', existingTaskId)
+        .order('created_at', { ascending: false })
+
+      if (attachmentsData) {
+        setAttachments(attachmentsData.map(att => ({
+          id: att.id,
+          filename: att.filename,
+          file_url: att.file_url,
+          file_size: att.file_size,
+          mime_type: att.mime_type
+        })))
+      }
+    } catch (err) {
+      console.error('Error loading task:', err)
+      setError('Failed to load task')
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const fetchMeetingIdAndAttendees = async () => {
     try {
@@ -136,8 +207,46 @@ export default function TaskModal({ topicId, onClose, onSave }: TaskModalProps) 
     event.target.value = ''
   }
 
-  // ⭐ NEW: Remove attachment before saving
-  const handleRemoveAttachment = (index: number) => {
+  // ⭐ UPDATED: Remove attachment (handle both new and existing)
+  const handleRemoveAttachment = async (index: number) => {
+    const attachment = attachments[index]
+    
+    // If existing attachment, delete from storage and DB
+    if (attachment.id && editMode) {
+      try {
+        // Delete from storage
+        const urlParts = attachment.file_url.split('/task-attachments/')
+        const filePath = urlParts[1]
+
+        const { error: storageError } = await supabase.storage
+          .from('task-attachments')
+          .remove([filePath])
+
+        if (storageError) {
+          console.error('Error deleting file from storage:', storageError)
+        }
+
+        // Delete from database
+        const { error: dbError } = await supabase
+          .from('task_attachments')
+          .delete()
+          .eq('id', attachment.id)
+
+        if (dbError) {
+          console.error('Error deleting attachment from DB:', dbError)
+          alert('Failed to delete attachment')
+          return
+        }
+
+        alert('Attachment deleted')
+      } catch (err) {
+        console.error('Error deleting attachment:', err)
+        alert('Failed to delete attachment')
+        return
+      }
+    }
+
+    // Remove from local state
     setAttachments(attachments.filter((_, i) => i !== index))
   }
 
@@ -205,7 +314,7 @@ export default function TaskModal({ topicId, onClose, onSave }: TaskModalProps) 
     }
   }
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target
     setFormData((prev) => ({ ...prev, [name]: value }))
   }
@@ -232,35 +341,91 @@ export default function TaskModal({ topicId, onClose, onSave }: TaskModalProps) 
 
     const currentUser = getCurrentUser()
 
-    // Generate token and expiry
-    const externalToken = crypto.randomUUID()
-    const tokenExpiry = new Date()
-    tokenExpiry.setDate(tokenExpiry.getDate() + 90)
+    // ⭐ UPDATED: Handle both create and edit
+    if (editMode && existingTaskId) {
+      // UPDATE existing task
+      const taskData = {
+        description: formData.description.trim(),
+        assignees: assignees,
+        assigned_name: assignees[0].name,
+        assigned_email: assignees[0].email,
+        due_date: formData.dueDate || null,
+        status: formData.status,
+      }
 
-    const taskData = {
-      topic_id: topicId,
-      description: formData.description.trim(),
-      assignees: assignees,
-      assigned_name: assignees[0].name,
-      assigned_email: assignees[0].email,
-      due_date: formData.dueDate || null,
-      status: 'open',
-      external_update_token: externalToken,
-      token_expires_at: tokenExpiry.toISOString(),
-      created_by: currentUser?.id
-    }
-
-    // If notification enabled, show email preview modal first
-    if (formData.sendNotification) {
-      setPendingTaskData({ taskData, externalToken })
-      setShowEmailPreview(true)
+      await updateTask(taskData)
     } else {
-      // If no notification, create task directly
-      await createTask(taskData, null)
+      // CREATE new task
+      const externalToken = crypto.randomUUID()
+      const tokenExpiry = new Date()
+      tokenExpiry.setDate(tokenExpiry.getDate() + 90)
+
+      const taskData = {
+        topic_id: topicId,
+        description: formData.description.trim(),
+        assignees: assignees,
+        assigned_name: assignees[0].name,
+        assigned_email: assignees[0].email,
+        due_date: formData.dueDate || null,
+        status: 'open',
+        external_update_token: externalToken,
+        token_expires_at: tokenExpiry.toISOString(),
+        created_by: currentUser?.id
+      }
+
+      // If notification enabled, show email preview modal first
+      if (formData.sendNotification) {
+        setPendingTaskData({ taskData, externalToken })
+        setShowEmailPreview(true)
+      } else {
+        // If no notification, create task directly
+        await createTask(taskData, null)
+      }
     }
   }
 
-  // ⭐ UPDATED: Create task function with attachment upload
+  // ⭐ NEW: Update existing task
+  const updateTask = async (taskData: any) => {
+    setSaving(true)
+    setError(null)
+
+    try {
+      console.log('💾 Updating task:', existingTaskId, taskData)
+
+      const { error: updateError } = await supabase
+        .from('tasks')
+        .update(taskData)
+        .eq('id', existingTaskId)
+
+      if (updateError) {
+        console.error('❌ Error updating task:', updateError)
+        setError(`Failed to update task: ${updateError.message}`)
+        setSaving(false)
+        return
+      }
+
+      console.log('✅ Task updated successfully')
+
+      // Upload new attachments
+      if (attachments.some(a => a.file)) {
+        await uploadAttachments(existingTaskId!)
+      }
+
+      // Call onSave BEFORE closing
+      if (onSave) {
+        onSave()
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 100))
+      onClose()
+    } catch (err) {
+      console.error('💥 Unexpected error:', err)
+      setError('An unexpected error occurred')
+      setSaving(false)
+    }
+  }
+
+  // ⭐ FIXED: Create task function with attachment upload and proper refresh
   const createTask = async (taskData: any, emailTemplate: EmailTemplate | null) => {
     setSaving(true)
     setError(null)
@@ -293,9 +458,13 @@ export default function TaskModal({ topicId, onClose, onSave }: TaskModalProps) 
         await sendCustomizedEmails(emailTemplate, taskData.external_update_token)
       }
 
+      // ⭐ FIXED: Call onSave BEFORE closing to trigger refresh
       if (onSave) {
         onSave()
       }
+
+      // ⭐ FIXED: Small delay to ensure refresh completes
+      await new Promise(resolve => setTimeout(resolve, 100))
 
       onClose()
     } catch (err) {
@@ -423,12 +592,27 @@ export default function TaskModal({ topicId, onClose, onSave }: TaskModalProps) 
     }
   }
 
+  if (loading) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <Card className="p-6">
+          <div className="flex items-center gap-3">
+            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
+            <span>Loading task...</span>
+          </div>
+        </Card>
+      </div>
+    )
+  }
+
   return (
     <>
       <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 animate-in fade-in">
         <Card className="w-full sm:max-w-3xl border-0 rounded-t-2xl sm:rounded-2xl shadow-2xl">
           <div className="flex items-center justify-between border-b border-border bg-gradient-to-r from-primary/5 to-decision-purple/5 p-6">
-            <h2 className="text-xl font-bold text-foreground">Create Task</h2>
+            <h2 className="text-xl font-bold text-foreground">
+              {editMode ? "Edit Task" : "Create Task"}
+            </h2>
             <button
               onClick={onClose}
               className="flex h-8 w-8 items-center justify-center rounded hover:bg-muted transition-colors"
@@ -456,6 +640,25 @@ export default function TaskModal({ topicId, onClose, onSave }: TaskModalProps) 
                 disabled={saving}
               />
             </div>
+
+            {/* ⭐ NEW: Status dropdown (only in edit mode) */}
+            {editMode && (
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-2">Status</label>
+                <select
+                  name="status"
+                  value={formData.status}
+                  onChange={handleInputChange}
+                  disabled={saving}
+                  className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50"
+                >
+                  <option value="open">Open</option>
+                  <option value="in_progress">In Progress</option>
+                  <option value="completed">Completed</option>
+                  <option value="blocked">Blocked</option>
+                </select>
+              </div>
+            )}
 
             {/* ⭐ NEW: Attachments Section */}
             <div>
@@ -646,20 +849,22 @@ export default function TaskModal({ topicId, onClose, onSave }: TaskModalProps) 
               />
             </div>
 
-            {/* Send Notification Checkbox */}
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="sendNotification"
-                checked={formData.sendNotification}
-                onChange={handleCheckboxChange}
-                disabled={saving}
-                className="h-4 w-4 rounded border-border text-primary focus:ring-2 focus:ring-primary/50"
-              />
-              <label htmlFor="sendNotification" className="text-sm text-foreground">
-                Send email notification to assignees
-              </label>
-            </div>
+            {/* Send Notification Checkbox (only in create mode) */}
+            {!editMode && (
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="sendNotification"
+                  checked={formData.sendNotification}
+                  onChange={handleCheckboxChange}
+                  disabled={saving}
+                  className="h-4 w-4 rounded border-border text-primary focus:ring-2 focus:ring-primary/50"
+                />
+                <label htmlFor="sendNotification" className="text-sm text-foreground">
+                  Send email notification to assignees
+                </label>
+              </div>
+            )}
 
             <div className="flex gap-3 pt-4">
               <Button 
@@ -676,15 +881,15 @@ export default function TaskModal({ topicId, onClose, onSave }: TaskModalProps) 
                 className="flex-1 bg-gradient-to-r from-primary to-decision-purple text-primary-foreground hover:opacity-90"
                 disabled={saving || !formData.description.trim() || assignees.length === 0}
               >
-                {saving ? "Creating..." : "Create Task"}
+                {saving ? (editMode ? "Updating..." : "Creating...") : (editMode ? "Update Task" : "Create Task")}
               </Button>
             </div>
           </form>
         </Card>
       </div>
 
-      {/* Email Preview Modal */}
-      {showEmailPreview && pendingTaskData && (
+      {/* Email Preview Modal (only in create mode) */}
+      {showEmailPreview && pendingTaskData && !editMode && (
         <TaskEmailPreviewModal
           assignees={assignees}
           taskDescription={formData.description}

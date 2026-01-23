@@ -1,10 +1,12 @@
 "use client"
 
+
 import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { X } from "lucide-react"
 import { supabase, getCurrentUser } from "@/lib/supabase"
+
 
 interface DecisionModalProps {
   isOpen: boolean
@@ -19,17 +21,20 @@ interface DecisionModalProps {
   parentDecisionId?: number | null
 }
 
+
 interface Attendee {
   name: string
   email?: string
   present: boolean
 }
 
+
 interface GeniusWord {
   id: number
   shortcode: string
   description: string
 }
+
 
 // ⭐ NEW: Decision interface for loading existing decisions
 interface Decision {
@@ -44,6 +49,7 @@ interface Decision {
   recorded_at: string
   edited_at: string | null
 }
+
 
 export default function DecisionModal({
   isOpen,
@@ -86,7 +92,9 @@ export default function DecisionModal({
   const suggestionsRef = useRef<HTMLDivElement>(null)
   const geniusSuggestionsRef = useRef<HTMLDivElement>(null)
 
+
   const currentUser = getCurrentUser()
+
 
   useEffect(() => {
     if (isOpen) {
@@ -106,6 +114,7 @@ export default function DecisionModal({
     }
   }, [isOpen, meetingId, editMode, existingDecisionId, parentDecisionId])
 
+
   // ⭐ NEW: Load existing decision for editing
   const loadExistingDecision = async (decisionId: number) => {
     try {
@@ -115,11 +124,13 @@ export default function DecisionModal({
         .eq('id', decisionId)
         .single()
 
+
       if (error) {
         console.error('Error loading decision:', error)
         setError('Failed to load decision')
         return
       }
+
 
       if (data) {
         setMotionText(data.motion_text)
@@ -134,6 +145,7 @@ export default function DecisionModal({
     }
   }
 
+
   // ⭐ NEW: Load parent decision for display
   const loadParentDecision = async (decisionId: number) => {
     try {
@@ -143,10 +155,12 @@ export default function DecisionModal({
         .eq('id', decisionId)
         .single()
 
+
       if (error) {
         console.error('Error loading parent decision:', error)
         return
       }
+
 
       if (data) {
         setParentDecision(data)
@@ -156,6 +170,7 @@ export default function DecisionModal({
     }
   }
 
+
   const fetchDecisionResults = async () => {
     try {
       const { data: meetingData, error: meetingError } = await supabase
@@ -164,10 +179,12 @@ export default function DecisionModal({
         .eq("id", meetingId)
         .single()
 
+
       if (meetingError || !meetingData) {
         console.error("Error fetching meeting:", meetingError)
         return
       }
+
 
       const { data: buildingData, error: buildingError } = await supabase
         .from("buildings")
@@ -175,10 +192,12 @@ export default function DecisionModal({
         .eq("id", meetingData.building_id)
         .single()
 
+
       if (buildingError || !buildingData || !buildingData.company_id) {
         console.error("Error fetching building:", buildingError)
         return
       }
+
 
       const { data: companyData, error: companyError } = await supabase
         .from("companies")
@@ -186,10 +205,12 @@ export default function DecisionModal({
         .eq("id", buildingData.company_id)
         .single()
 
+
       if (companyError) {
         console.error("Error fetching company:", companyError)
         return
       }
+
 
       if (companyData?.default_decision_results) {
         setDecisionResults(companyData.default_decision_results)
@@ -202,6 +223,7 @@ export default function DecisionModal({
     }
   }
 
+
   const fetchAttendees = async () => {
     try {
       const { data: meetingData, error } = await supabase
@@ -210,10 +232,12 @@ export default function DecisionModal({
         .eq("id", meetingId)
         .single()
 
+
       if (error) {
         console.error("Error fetching attendees:", error)
         return
       }
+
 
       if (meetingData?.attendees) {
         setAttendees(meetingData.attendees as Attendee[])
@@ -223,8 +247,10 @@ export default function DecisionModal({
     }
   }
 
+
   const fetchGeniusWords = async () => {
     if (!currentUser?.id) return
+
 
     try {
       const { data, error } = await supabase
@@ -232,6 +258,7 @@ export default function DecisionModal({
         .select('id, shortcode, description')
         .eq('user_id', currentUser.id)
         .order('shortcode', { ascending: true })
+
 
       if (!error && data) {
         setGeniusWords(data)
@@ -241,12 +268,14 @@ export default function DecisionModal({
     }
   }
 
+
   const handleMotionTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const text = e.target.value
     const cursorPos = e.target.selectionStart
     
     setMotionText(text)
     setCursorPosition(cursorPos)
+
 
     // Check for @ mention and # GeniusWords
     const textBeforeCursor = text.substring(0, cursorPos)
@@ -305,8 +334,10 @@ export default function DecisionModal({
     }
   }
 
+
   const insertMention = (attendee: Attendee) => {
     if (mentionStartIndex === -1) return
+
 
     const beforeMention = motionText.substring(0, mentionStartIndex)
     const afterCursor = motionText.substring(cursorPosition)
@@ -315,6 +346,7 @@ export default function DecisionModal({
     setMotionText(newText)
     setShowSuggestions(false)
     setMentionStartIndex(-1)
+
 
     // Set cursor position after inserted name
     setTimeout(() => {
@@ -326,8 +358,10 @@ export default function DecisionModal({
     }, 0)
   }
 
+
   const insertGeniusWord = (geniusWord: GeniusWord) => {
     if (geniusStartIndex === -1) return
+
 
     const beforeGenius = motionText.substring(0, geniusStartIndex)
     const afterCursor = motionText.substring(cursorPosition)
@@ -337,6 +371,7 @@ export default function DecisionModal({
     setShowGeniusSuggestions(false)
     setGeniusStartIndex(-1)
 
+
     setTimeout(() => {
       if (textareaRef.current) {
         const newCursorPos = geniusStartIndex + geniusWord.description.length + 1
@@ -345,6 +380,7 @@ export default function DecisionModal({
       }
     }, 0)
   }
+
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // Handle @ mention suggestions
@@ -366,6 +402,7 @@ export default function DecisionModal({
       return
     }
 
+
     // Handle # GeniusWords suggestions
     if (showGeniusSuggestions) {
       if (e.key === "ArrowDown") {
@@ -386,14 +423,17 @@ export default function DecisionModal({
     }
   }
 
+
   const handleSave = async () => {
     if (!motionText.trim()) {
       setError("Motion text is required")
       return
     }
 
+
     setSaving(true)
     setError(null)
+
 
     try {
       // ⭐ NEW: Edit existing decision
@@ -410,9 +450,11 @@ export default function DecisionModal({
           })
           .eq('id', existingDecisionId)
 
+
         if (updateError) {
           console.error("Error updating decision:", updateError)
           setError("Failed to update decision")
+          setSaving(false)
           return
         }
       } else {
@@ -429,14 +471,22 @@ export default function DecisionModal({
             parent_decision_id: parentDecisionId // ⭐ NEW: Link to parent if threaded
           })
 
+
         if (insertError) {
           console.error("Error saving decision:", insertError)
           setError("Failed to save decision")
+          setSaving(false)
           return
         }
       }
 
+
+      // ⭐ FIXED: Call onSave BEFORE closing to trigger refresh
       if (onSave) onSave()
+      
+      // ⭐ FIXED: Small delay to ensure refresh completes
+      await new Promise(resolve => setTimeout(resolve, 100))
+      
       handleClose()
     } catch (err) {
       console.error("Unexpected error:", err)
@@ -445,6 +495,7 @@ export default function DecisionModal({
       setSaving(false)
     }
   }
+
 
   const handleClose = () => {
     setMotionText("")
@@ -463,7 +514,9 @@ export default function DecisionModal({
     onClose()
   }
 
+
   if (!isOpen) return null
+
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 animate-in fade-in">
@@ -480,6 +533,7 @@ export default function DecisionModal({
           </button>
         </div>
 
+
         {/* ⭐ NEW: Parent Decision Display */}
         {parentDecision && (
           <div className="mb-4 p-3 bg-purple-50 border border-purple-200 rounded-lg">
@@ -495,11 +549,13 @@ export default function DecisionModal({
           </div>
         )}
 
+
         {error && (
           <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded text-sm mb-4">
             {error}
           </div>
         )}
+
 
         <div className="space-y-4">
           {/* Motion Text with @ Autocomplete */}
@@ -543,6 +599,7 @@ export default function DecisionModal({
               </div>
             )}
 
+
             {/* # GeniusWords Suggestions Dropdown */}
             {showGeniusSuggestions && (
               <div
@@ -571,6 +628,7 @@ export default function DecisionModal({
             )}
           </div>
 
+
           {/* Result Dropdown */}
           <div>
             <label className="block text-sm font-medium text-foreground mb-2">
@@ -590,6 +648,7 @@ export default function DecisionModal({
               ))}
             </select>
           </div>
+
 
           {/* Voting Counts */}
           <div className="grid grid-cols-3 gap-4">
@@ -637,6 +696,7 @@ export default function DecisionModal({
             </div>
           </div>
         </div>
+
 
         <div className="flex gap-3 mt-6">
           <Button

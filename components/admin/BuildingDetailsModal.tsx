@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { X, Building2, Users, FileText, Plus, Upload, Trash2, ExternalLink, Loader2, Link as LinkIcon } from "lucide-react"
+import { X, Building2, Users, FileText, Plus, Upload, Trash2, ExternalLink, Loader2, Link as LinkIcon, Bell } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -35,6 +35,9 @@ interface Building {
   building_type?: string
   created_at: string
   users?: Array<{ id: number; name: string; email: string; user_type: string }>
+  board_meeting_notice_days?: number
+  general_meeting_notice_days?: number
+  notification_recipient_type?: string
 }
 
 interface BuildingDetailsModalProps {
@@ -45,7 +48,7 @@ interface BuildingDetailsModalProps {
   availableUsers: User[]
 }
 
-type TabType = "details" | "users" | "documents"
+type TabType = "details" | "users" | "documents" | "notifications"
 
 export default function BuildingDetailsModal({
   isOpen,
@@ -63,11 +66,15 @@ export default function BuildingDetailsModal({
   const [propertyManagers, setPropertyManagers] = useState<User[]>([])
   const [submitting, setSubmitting] = useState(false)
 
-  // inline "add user" state
+  const [boardMeetingNoticeDays, setBoardMeetingNoticeDays] = useState(7)
+  const [generalMeetingNoticeDays, setGeneralMeetingNoticeDays] = useState(7)
+  const [notificationRecipientType, setNotificationRecipientType] = useState("owner")
+
   const [showAddUserForm, setShowAddUserForm] = useState(false)
   const [newUserName, setNewUserName] = useState("")
   const [newUserEmail, setNewUserEmail] = useState("")
   const [newUserPassword, setNewUserPassword] = useState("")
+  const [newUserType, setNewUserType] = useState("user")
   const [creatingUser, setCreatingUser] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -78,10 +85,38 @@ export default function BuildingDetailsModal({
       setBuildingType(building.building_type || "Strata/Condo")
       setManagerId(building.manager_id)
       setSelectedUsers(building.users?.map((u) => u.id) || [])
+      
+      setBoardMeetingNoticeDays(building.board_meeting_notice_days || 7)
+      setGeneralMeetingNoticeDays(building.general_meeting_notice_days || 7)
+      setNotificationRecipientType(building.notification_recipient_type || getDefaultRecipientType(building.building_type || "Strata/Condo"))
+      
       setActiveTab("details")
       fetchPropertyManagers()
     }
   }, [isOpen, building])
+
+  const getDefaultRecipientType = (buildingType: string): string => {
+    if (buildingType === "Housing Co-op") return "resident"
+    return "owner"
+  }
+
+  useEffect(() => {
+    if (buildingType === "Housing Co-op") {
+      setNotificationRecipientType("resident")
+    } else if (buildingType === "Strata/Condo" || buildingType === "Rental") {
+      setNotificationRecipientType("owner")
+    }
+  }, [buildingType])
+
+  useEffect(() => {
+    if (buildingType === "Housing Co-op") {
+      setNewUserType("resident")
+    } else if (buildingType === "Strata/Condo" || buildingType === "Rental") {
+      setNewUserType("owner")
+    } else {
+      setNewUserType("user")
+    }
+  }, [buildingType])
 
   const fetchPropertyManagers = async () => {
     if (!building) return
@@ -129,7 +164,7 @@ export default function BuildingDetailsModal({
           email: newUserEmail.toLowerCase().trim(),
           password_hash:
             "$2a$10$rXqvFZnPzAMcLzCP2L4dxu7L6Y3Y5KjGNQQF6xZ4Y5Y5Y5Y5Y5Y5Y5",
-          user_type: "user",
+          user_type: newUserType,
           company_id: building.company_id,
           assigned_pm_id: managerId,
         })
@@ -162,7 +197,11 @@ export default function BuildingDetailsModal({
       setNewUserName("")
       setNewUserEmail("")
       setNewUserPassword("")
+      setNewUserType(buildingType === "Housing Co-op" ? "resident" : buildingType === "Strata/Condo" || buildingType === "Rental" ? "owner" : "user")
       setShowAddUserForm(false)
+
+      const userTypeLabel = newUserType === 'resident' ? 'Resident' : newUserType === 'owner' ? 'Owner' : 'User'
+      toast.success(`${userTypeLabel} created successfully!`)
 
       await onSuccess()
     } catch (err) {
@@ -189,6 +228,9 @@ export default function BuildingDetailsModal({
           address: buildingAddress.trim() || null,
           building_type: buildingType,
           manager_id: managerId,
+          board_meeting_notice_days: boardMeetingNoticeDays,
+          general_meeting_notice_days: generalMeetingNoticeDays,
+          notification_recipient_type: notificationRecipientType,
         })
         .eq("id", building.id)
 
@@ -229,6 +271,7 @@ export default function BuildingDetailsModal({
         }
       }
 
+      toast.success("Building settings updated successfully!")
       await onSuccess()
       onClose()
     } catch (err) {
@@ -245,6 +288,27 @@ export default function BuildingDetailsModal({
     )
   }
 
+  // ⭐ NEW: Helper function to format user type display
+  const getUserTypeDisplay = (userType: string) => {
+    switch (userType) {
+      case 'resident':
+        return { label: '🏠 Resident', className: 'bg-green-100 text-green-800 border border-green-200' }
+      case 'owner':
+        return { label: '👤 Owner', className: 'bg-blue-100 text-blue-800 border border-blue-200' }
+      case 'property_manager':
+        return { label: '🏢 Property Manager', className: 'bg-purple-100 text-purple-800 border border-purple-200' }
+      case 'corporate_administrator':
+        return { label: '🏛️ Corporate Admin', className: 'bg-orange-100 text-orange-800 border border-orange-200' }
+      case 'master':
+        return { label: '⭐ Master', className: 'bg-red-100 text-red-800 border border-red-200' }
+      default:
+        return { 
+          label: userType.replace('_', ' ').charAt(0).toUpperCase() + userType.slice(1).replace('_', ' '), 
+          className: 'bg-gray-100 text-gray-800 border border-gray-200' 
+        }
+    }
+  }
+
   const filteredAvailableUsers = building
     ? availableUsers.filter(
         (user) => !building.company_id || user.company_id === building.company_id
@@ -256,7 +320,6 @@ export default function BuildingDetailsModal({
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <Card className="w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
-        {/* Header */}
         <div className="p-6 border-b border-border flex items-center justify-between bg-gradient-to-r from-primary/10 to-decision-purple/10">
           <div>
             <h2 className="text-2xl font-bold text-foreground">Building Details</h2>
@@ -267,11 +330,10 @@ export default function BuildingDetailsModal({
           </Button>
         </div>
 
-        {/* Tabs */}
-        <div className="flex gap-4 px-6 pt-4 border-b border-border">
+        <div className="flex gap-4 px-6 pt-4 border-b border-border overflow-x-auto">
           <button
             onClick={() => setActiveTab("details")}
-            className={`pb-3 px-1 font-medium text-sm transition-colors flex items-center gap-2 ${
+            className={`pb-3 px-1 font-medium text-sm transition-colors flex items-center gap-2 whitespace-nowrap ${
               activeTab === "details"
                 ? "text-primary border-b-2 border-primary"
                 : "text-muted-foreground hover:text-foreground"
@@ -282,7 +344,7 @@ export default function BuildingDetailsModal({
           </button>
           <button
             onClick={() => setActiveTab("users")}
-            className={`pb-3 px-1 font-medium text-sm transition-colors flex items-center gap-2 ${
+            className={`pb-3 px-1 font-medium text-sm transition-colors flex items-center gap-2 whitespace-nowrap ${
               activeTab === "users"
                 ? "text-primary border-b-2 border-primary"
                 : "text-muted-foreground hover:text-foreground"
@@ -293,7 +355,7 @@ export default function BuildingDetailsModal({
           </button>
           <button
             onClick={() => setActiveTab("documents")}
-            className={`pb-3 px-1 font-medium text-sm transition-colors flex items-center gap-2 ${
+            className={`pb-3 px-1 font-medium text-sm transition-colors flex items-center gap-2 whitespace-nowrap ${
               activeTab === "documents"
                 ? "text-primary border-b-2 border-primary"
                 : "text-muted-foreground hover:text-foreground"
@@ -302,9 +364,19 @@ export default function BuildingDetailsModal({
             <FileText className="h-4 w-4" />
             Documents
           </button>
+          <button
+            onClick={() => setActiveTab("notifications")}
+            className={`pb-3 px-1 font-medium text-sm transition-colors flex items-center gap-2 whitespace-nowrap ${
+              activeTab === "notifications"
+                ? "text-primary border-b-2 border-primary"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <Bell className="h-4 w-4" />
+            Notifications
+          </button>
         </div>
 
-        {/* Content */}
         <div className="flex-1 overflow-y-auto p-6">
           {activeTab === "details" && (
             <div className="space-y-4">
@@ -433,6 +505,30 @@ export default function BuildingDetailsModal({
                         placeholder="Enter temporary password"
                       />
                     </div>
+                    
+                    <div>
+                      <Label htmlFor="newUserType">User Type *</Label>
+                      <Select value={newUserType} onValueChange={setNewUserType}>
+                        <SelectTrigger id="newUserType" className="mt-1">
+                          <SelectValue placeholder="Select user type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {buildingType === "Housing Co-op" && (
+                            <SelectItem value="resident">Resident</SelectItem>
+                          )}
+                          {(buildingType === "Strata/Condo" || buildingType === "Rental") && (
+                            <SelectItem value="owner">Owner</SelectItem>
+                          )}
+                          <SelectItem value="user">General User</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {buildingType === "Housing Co-op" && "Housing Co-ops use Resident type"}
+                        {buildingType === "Strata/Condo" && "Strata/Condo buildings use Owner type"}
+                        {buildingType === "Rental" && "Rental buildings use Owner type"}
+                      </p>
+                    </div>
+
                     <div className="flex gap-2">
                       <Button
                         onClick={handleCreateNewUser}
@@ -448,6 +544,7 @@ export default function BuildingDetailsModal({
                           setNewUserName("")
                           setNewUserEmail("")
                           setNewUserPassword("")
+                          setNewUserType(buildingType === "Housing Co-op" ? "resident" : "owner")
                           setError(null)
                         }}
                         variant="outline"
@@ -476,26 +573,30 @@ export default function BuildingDetailsModal({
                     {building.company_id || "N/A"}):
                   </p>
                   <div className="border border-border rounded-lg max-h-[400px] overflow-y-auto">
-                    {filteredAvailableUsers.map((user) => (
-                      <label
-                        key={user.id}
-                        className="flex items-center gap-3 p-3 hover:bg-muted cursor-pointer border-b border-border last:border-b-0"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selectedUsers.includes(user.id)}
-                          onChange={() => toggleUserSelection(user.id)}
-                          className="h-4 w-4"
-                        />
-                        <div className="flex-1">
-                          <p className="font-medium text-sm">{user.name}</p>
-                          <p className="text-xs text-muted-foreground">{user.email}</p>
-                        </div>
-                        <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">
-                          {user.user_type}
-                        </span>
-                      </label>
-                    ))}
+                    {filteredAvailableUsers.map((user) => {
+                      const userTypeDisplay = getUserTypeDisplay(user.user_type)
+                      return (
+                        <label
+                          key={user.id}
+                          className="flex items-center gap-3 p-3 hover:bg-muted cursor-pointer border-b border-border last:border-b-0"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedUsers.includes(user.id)}
+                            onChange={() => toggleUserSelection(user.id)}
+                            className="h-4 w-4"
+                          />
+                          <div className="flex-1">
+                            <p className="font-medium text-sm">{user.name}</p>
+                            <p className="text-xs text-muted-foreground">{user.email}</p>
+                          </div>
+                          {/* ⭐ ENHANCED: Color-coded badges with icons */}
+                          <span className={`text-xs px-2 py-1 rounded font-medium ${userTypeDisplay.className}`}>
+                            {userTypeDisplay.label}
+                          </span>
+                        </label>
+                      )
+                    })}
                   </div>
                 </>
               )}
@@ -505,9 +606,20 @@ export default function BuildingDetailsModal({
           {activeTab === "documents" && (
             <DocumentsTab building={building} onSuccess={onSuccess} />
           )}
+
+          {activeTab === "notifications" && (
+            <NotificationsTab
+              boardMeetingNoticeDays={boardMeetingNoticeDays}
+              setBoardMeetingNoticeDays={setBoardMeetingNoticeDays}
+              generalMeetingNoticeDays={generalMeetingNoticeDays}
+              setGeneralMeetingNoticeDays={setGeneralMeetingNoticeDays}
+              notificationRecipientType={notificationRecipientType}
+              setNotificationRecipientType={setNotificationRecipientType}
+              buildingType={buildingType}
+            />
+          )}
         </div>
 
-        {/* Footer */}
         <div className="p-6 border-t border-border flex justify-end gap-3">
           <Button variant="outline" onClick={onClose} disabled={submitting}>
             Cancel
@@ -524,6 +636,195 @@ export default function BuildingDetailsModal({
     </div>
   )
 }
+// ============================================
+// Notifications Tab Component
+// ============================================
+
+interface NotificationsTabProps {
+  boardMeetingNoticeDays: number
+  setBoardMeetingNoticeDays: (days: number) => void
+  generalMeetingNoticeDays: number
+  setGeneralMeetingNoticeDays: (days: number) => void
+  notificationRecipientType: string
+  setNotificationRecipientType: (type: string) => void
+  buildingType: string
+}
+
+function NotificationsTab({
+  boardMeetingNoticeDays,
+  setBoardMeetingNoticeDays,
+  generalMeetingNoticeDays,
+  setGeneralMeetingNoticeDays,
+  notificationRecipientType,
+  setNotificationRecipientType,
+  buildingType,
+}: NotificationsTabProps) {
+  return (
+    <div className="space-y-6">
+      <Card className="p-6 bg-gradient-to-br from-blue-50 to-purple-50 border-blue-200">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-blue-100">
+            <Bell className="h-5 w-5 text-blue-600" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-lg">Meeting Notification Settings</h3>
+            <p className="text-sm text-muted-foreground">
+              Configure how many days before meetings to send notices/agendas
+            </p>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <Label htmlFor="boardNoticeDays" className="text-sm font-medium">
+              Days Before Board Meeting Notice *
+            </Label>
+            <div className="flex items-center gap-3 mt-2">
+              <Input
+                id="boardNoticeDays"
+                type="number"
+                min="1"
+                max="90"
+                value={boardMeetingNoticeDays}
+                onChange={(e) => setBoardMeetingNoticeDays(parseInt(e.target.value) || 7)}
+                className="w-24"
+              />
+              <span className="text-sm text-muted-foreground">
+                days before sending notice/agenda for Board Meetings
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Default: 7 days. This is when the system will automatically send meeting notices and agendas to board members.
+            </p>
+          </div>
+
+          <div>
+            <Label htmlFor="generalNoticeDays" className="text-sm font-medium">
+              Days Before General Meeting Notice *
+            </Label>
+            <div className="flex items-center gap-3 mt-2">
+              <Input
+                id="generalNoticeDays"
+                type="number"
+                min="1"
+                max="90"
+                value={generalMeetingNoticeDays}
+                onChange={(e) => setGeneralMeetingNoticeDays(parseInt(e.target.value) || 7)}
+                className="w-24"
+              />
+              <span className="text-sm text-muted-foreground">
+                days before sending notice for General Meetings
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Default: 7 days. This is when the system will automatically send meeting notices to all {notificationRecipientType}s.
+            </p>
+          </div>
+
+          <div>
+            <Label htmlFor="recipientType" className="text-sm font-medium">
+              Send Notifications To *
+            </Label>
+            <Select
+              value={notificationRecipientType}
+              onValueChange={setNotificationRecipientType}
+              disabled={buildingType === "Housing Co-op" || buildingType === "Strata/Condo"}
+            >
+              <SelectTrigger id="recipientType" className="mt-2">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {(buildingType === "Housing Co-op") ? (
+                  <SelectItem value="resident">Residents</SelectItem>
+                ) : (
+                  <SelectItem value="owner">Owners</SelectItem>
+                )}
+              </SelectContent>
+            </Select>
+            <div className="mt-2 p-3 bg-white rounded-lg border">
+              <p className="text-xs text-muted-foreground">
+                <strong>Building Type: {buildingType}</strong>
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                {buildingType === "Housing Co-op" && (
+                  <>Housing Co-ops send notifications to <strong>Residents</strong>.</>
+                )}
+                {(buildingType === "Strata/Condo" || buildingType === "Rental") && (
+                  <>Strata/Condo buildings send notifications to <strong>Owners</strong>.</>
+                )}
+              </p>
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      <Card className="p-4 bg-blue-50 border-blue-200">
+        <div className="flex gap-3">
+          <Bell className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5" />
+          <div>
+            <h4 className="font-semibold text-sm text-blue-900 mb-1">How Notifications Work</h4>
+            <ul className="text-xs text-blue-800 space-y-1">
+              <li>• Notices/agendas will be automatically sent to {notificationRecipientType}s based on the configured days</li>
+              <li>• Board meetings typically require shorter notice periods</li>
+              <li>• General meetings may require longer notice periods per local regulations</li>
+              <li>• The system will send reminders via email to all assigned {notificationRecipientType}s</li>
+            </ul>
+          </div>
+        </div>
+      </Card>
+
+      <Card className="p-4 bg-muted/50">
+        <h4 className="font-medium text-sm mb-3">Quick Presets</h4>
+        <div className="grid grid-cols-2 gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setBoardMeetingNoticeDays(3)
+              setGeneralMeetingNoticeDays(7)
+            }}
+            className="text-xs"
+          >
+            Minimal (3/7 days)
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setBoardMeetingNoticeDays(7)
+              setGeneralMeetingNoticeDays(14)
+            }}
+            className="text-xs"
+          >
+            Standard (7/14 days)
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setBoardMeetingNoticeDays(14)
+              setGeneralMeetingNoticeDays(21)
+            }}
+            className="text-xs"
+          >
+            Extended (14/21 days)
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setBoardMeetingNoticeDays(7)
+              setGeneralMeetingNoticeDays(7)
+            }}
+            className="text-xs"
+          >
+            Reset to Default (7/7)
+          </Button>
+        </div>
+      </Card>
+    </div>
+  )
+}
 
 // ============================================
 // Documents Tab Component
@@ -534,7 +835,6 @@ interface DocumentsTabProps {
   onSuccess: () => void
 }
 
-// ⭐ NEW: Document URL interface
 interface DocumentURL {
   id: number
   building_id: number
@@ -547,13 +847,12 @@ interface DocumentURL {
 
 function DocumentsTab({ building, onSuccess }: DocumentsTabProps) {
   const [documents, setDocuments] = useState<any[]>([])
-  const [documentUrls, setDocumentUrls] = useState<DocumentURL[]>([]) // ⭐ NEW
+  const [documentUrls, setDocumentUrls] = useState<DocumentURL[]>([])
   const [uploading, setUploading] = useState(false)
   const [selectedDocType, setSelectedDocType] = useState("rules")
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [loading, setLoading] = useState(true)
 
-  // ⭐ NEW: URL form state
   const [showUrlForm, setShowUrlForm] = useState(false)
   const [urlTitle, setUrlTitle] = useState("")
   const [urlLink, setUrlLink] = useState("")
@@ -563,7 +862,7 @@ function DocumentsTab({ building, onSuccess }: DocumentsTabProps) {
 
   useEffect(() => {
     fetchDocuments()
-    fetchDocumentUrls() // ⭐ NEW
+    fetchDocumentUrls()
   }, [])
 
   const fetchDocuments = async () => {
@@ -588,7 +887,6 @@ function DocumentsTab({ building, onSuccess }: DocumentsTabProps) {
     }
   }
 
-  // ⭐ NEW: Fetch document URLs
   const fetchDocumentUrls = async () => {
     try {
       const { data, error } = await supabase
@@ -608,14 +906,12 @@ function DocumentsTab({ building, onSuccess }: DocumentsTabProps) {
     }
   }
 
-  // ⭐ NEW: Handle URL save
   const handleSaveUrl = async () => {
     if (!urlTitle.trim() || !urlLink.trim()) {
       toast.error('Title and URL are required')
       return
     }
 
-    // Basic URL validation
     try {
       new URL(urlLink)
     } catch {
@@ -644,7 +940,6 @@ function DocumentsTab({ building, onSuccess }: DocumentsTabProps) {
 
       toast.success('Reference URL added successfully!')
       
-      // Reset form
       setUrlTitle("")
       setUrlLink("")
       setUrlType("legislation")
@@ -661,7 +956,6 @@ function DocumentsTab({ building, onSuccess }: DocumentsTabProps) {
     }
   }
 
-  // ⭐ NEW: Handle URL delete
   const handleDeleteUrl = async (urlId: number) => {
     if (!confirm('Are you sure you want to delete this reference URL?')) return
 
@@ -813,7 +1107,6 @@ function DocumentsTab({ building, onSuccess }: DocumentsTabProps) {
 
   return (
     <div className="space-y-6">
-      {/* Upload Section */}
       <Card className="p-6 bg-gradient-to-br from-primary/5 to-decision-purple/5 border-primary/20">
         <h3 className="font-semibold text-lg mb-4 flex items-center gap-2">
           <Upload className="h-5 w-5 text-primary" />
@@ -882,7 +1175,6 @@ function DocumentsTab({ building, onSuccess }: DocumentsTabProps) {
         </div>
       </Card>
 
-      {/* ⭐ NEW: Reference URLs Section */}
       <Card className="p-6 bg-gradient-to-br from-blue-50 to-purple-50 border-blue-200">
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-semibold text-lg flex items-center gap-2">
@@ -984,7 +1276,6 @@ function DocumentsTab({ building, onSuccess }: DocumentsTabProps) {
           </div>
         )}
 
-        {/* URLs List */}
         <div className="space-y-2">
           {documentUrls.length > 0 ? (
             documentUrls.map((docUrl) => (
@@ -1049,7 +1340,6 @@ function DocumentsTab({ building, onSuccess }: DocumentsTabProps) {
         </div>
       </Card>
 
-      {/* Documents List */}
       <div>
         <h3 className="font-semibold text-lg mb-4 flex items-center gap-2">
           <FileText className="h-5 w-5 text-primary" />

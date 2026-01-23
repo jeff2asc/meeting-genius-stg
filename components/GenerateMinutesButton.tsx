@@ -82,7 +82,7 @@ export default function GenerateMinutesButton({
       const logoUrl: string | null =
         building?.logo_url || company?.logo_url || null
 
-      // Step 3: Fetch sections and topics
+      // Step 3: Fetch sections and topics (⭐ UPDATED: Include is_incamera fields)
       const { data: sections } = await supabase
         .from("sections")
         .select(
@@ -99,7 +99,7 @@ export default function GenerateMinutesButton({
         .eq("meeting_id", meetingId)
         .order("order_index")
 
-      // Step 4: Generate HTML (with logo)
+      // Step 4: Generate HTML (with logo and in-camera filtering)
       const minutesHtml = generateMinutesHtml(
         template,
         meeting,
@@ -251,6 +251,26 @@ export default function GenerateMinutesButton({
             .signature-line {
               margin: 15px 0;
               padding: 8px 0;
+            }
+            /* ⭐ NEW: In-camera styling */
+            .incamera-notice {
+              background-color: #fef2f2;
+              border: 2px solid #dc2626;
+              border-radius: 6px;
+              padding: 15px;
+              margin: 10px 0;
+              color: #991b1b;
+              font-style: italic;
+            }
+            .incamera-badge {
+              display: inline-block;
+              background-color: #dc2626;
+              color: white;
+              padding: 3px 8px;
+              border-radius: 4px;
+              font-size: 9pt;
+              font-weight: bold;
+              margin-left: 8px;
             }
           </style>
         </head>
@@ -569,6 +589,7 @@ function renderAttendees(section: TemplateSection, attendees: any[]): string {
   return html
 }
 
+// ⭐ UPDATED: renderTopics with in-camera filtering
 function renderTopics(sections: any[]): string {
   let html = `
     <div class="section">
@@ -584,51 +605,79 @@ function renderTopics(sections: any[]): string {
 
     if (section.topics && section.topics.length > 0) {
       section.topics.forEach((topic: any, tIdx: number) => {
+        // ⭐ NEW: Check if topic is in-camera
+        const isIncamera = topic.is_incamera === true
+
         html += `
           <div class="topic-box">
-            <div class="topic-title">${sIdx + 1}.${tIdx + 1} ${escapeHtml(
-              topic.title
+            <div class="topic-title">
+              ${sIdx + 1}.${tIdx + 1} ${escapeHtml(topic.title)}
+              ${isIncamera ? '<span class="incamera-badge">🔒 IN-CAMERA</span>' : ''}
+            </div>`
+
+        // ⭐ NEW: If in-camera, show notice instead of content
+        if (isIncamera) {
+          html += `
+            <div class="incamera-notice">
+              <strong>🔒 This topic is in-camera (confidential).</strong><br/>
+              Content has been withheld due to the sensitive nature of the discussion.`
+          
+          // Show times if recorded
+          if (topic.incamera_start_time || topic.incamera_end_time) {
+            html += `<br/><br/>`
+            if (topic.incamera_start_time) {
+              const startTime = new Date(topic.incamera_start_time).toLocaleString()
+              html += `Started: ${escapeHtml(startTime)}`
+            }
+            if (topic.incamera_end_time) {
+              const endTime = new Date(topic.incamera_end_time).toLocaleString()
+              html += `${topic.incamera_start_time ? ' | ' : ''}Ended: ${escapeHtml(endTime)}`
+            }
+          }
+          
+          html += `</div>`
+        } else {
+          // ⭐ NORMAL: Show full content for non-in-camera topics
+          if (topic.description) {
+            html += `<div class="topic-description">${escapeHtml(
+              topic.description
             )}</div>`
+          }
 
-        if (topic.description) {
-          html += `<div class="topic-description">${escapeHtml(
-            topic.description
-          )}</div>`
-        }
+          if (topic.notes && topic.notes.length > 0) {
+            topic.notes.forEach((note: any) => {
+              html += `<div class="item item-note"><span class="item-label">📝 Note:</span>${escapeHtml(
+                note.content
+              )}</div>`
+            })
+          }
 
-        if (topic.notes && topic.notes.length > 0) {
-          topic.notes.forEach((note: any) => {
-            html += `<div class="item item-note"><span class="item-label">📝 Note:</span>${escapeHtml(
-              note.content
-            )}</div>`
-          })
-        }
-
-        if (topic.tasks && topic.tasks.length > 0) {
-          topic.tasks.forEach((task: any) => {
-            const assignee =
-              task.assigned_name || task.assigned_email || "Unassigned"
-            const dueDate = task.due_date
-              ? ` (Due: ${new Date(task.due_date).toLocaleDateString()})`
-              : ""
-            html += `<div class="item item-task"><span class="item-label">✓ Task:</span>${escapeHtml(
-              task.description
-            )} - Assigned: ${escapeHtml(assignee)}${dueDate}</div>`
-          })
-        }
-
-        if (topic.decisions && topic.decisions.length > 0) {
-          topic.decisions.forEach((decision: any) => {
-            const votes =
-              decision.votes_for !== null
-                ? ` (For: ${decision.votes_for || 0}, Against: ${
-                    decision.votes_against || 0
-                  }, Abstain: ${decision.votes_abstain || 0})`
+          if (topic.tasks && topic.tasks.length > 0) {
+            topic.tasks.forEach((task: any) => {
+              const assignee =
+                task.assigned_name || task.assigned_email || "Unassigned"
+              const dueDate = task.due_date
+                ? ` (Due: ${new Date(task.due_date).toLocaleDateString()})`
                 : ""
-            html += `<div class="item item-decision"><span class="item-label">⚖️ Decision:</span>${escapeHtml(
-              decision.motion_text
-            )} - Result: ${escapeHtml(decision.result || "N/A")}${votes}</div>`
-          })
+              html += `<div class="item item-task"><span class="item-label">✓ Task:</span>${escapeHtml(
+                task.description
+              )} - Assigned: ${escapeHtml(assignee)}${dueDate}</div>`
+            })
+          }
+
+          if (topic.decisions && topic.decisions.length > 0) {
+            topic.decisions.forEach((decision: any) => {
+              const votes =
+                decision.votes_for !== null
+                  ? ` (For: ${decision.votes_for || 0}, Against: ${
+                      decision.votes_against || 0
+                    }, Abstain: ${decision.votes_abstain || 0})`
+                  : ""
+              html += `<div class="item item-decision"><span class="item-label">⚖️ Decision:</span>${escapeHtml(
+                decision.motion_text
+              )} - Result: ${escapeHtml(decision.result || "N/A")}${votes}</div>`
+            })
+          }
         }
 
         html += `</div>`
