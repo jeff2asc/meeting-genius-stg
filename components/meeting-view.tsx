@@ -304,6 +304,7 @@ export default function MeetingView({
   
   const cancelDeleteSection = () => setSectionToDelete(null)
 
+  // ⭐ UPDATED: Preserve section expanded state when editing topic title
   const updateTopic = async (id: number, updates: Partial<Topic>) => {
     if (!userCanEdit) {
       alert("You do not have permission to edit topics.")
@@ -322,7 +323,21 @@ export default function MeetingView({
         return
       }
       if (updates.title) {
+        // ⭐ PRESERVE EXPANDED STATE: Save current expanded states before refresh
+        const expandedStates = sections.reduce((acc, section) => {
+          acc[section.id] = section.isExpanded
+          return acc
+        }, {} as Record<number, boolean>)
+        
         await fetchSectionsAndTopics()
+        
+        // ⭐ RESTORE EXPANDED STATE: Restore after refresh
+        setSections(prevSections => 
+          prevSections.map(section => ({
+            ...section,
+            isExpanded: expandedStates[section.id] ?? section.isExpanded
+          }))
+        )
       }
     } catch (err) {
       console.error("Unexpected error:", err)
@@ -484,6 +499,7 @@ export default function MeetingView({
     return index > 0 ? STATUS_FLOW[index - 1] : current
   }
 
+  // ⭐ UPDATED: Added logic to reset attendee presence when going back to working_agenda
   const updateMeetingStatus = async (targetStatus: string, recorderName?: string, timekeeperName?: string | null) => {
     try {
       setLoading(true)
@@ -493,6 +509,15 @@ export default function MeetingView({
       if (targetStatus === "working_minutes" && recorderName) {
         updateData.recorder_name = recorderName
         updateData.timekeeper_name = timekeeperName
+      }
+      
+      // ⭐ RESET ATTENDEE PRESENCE when going back to working_agenda
+      if (targetStatus === "working_agenda" && meeting?.attendees) {
+        const resetAttendees = (meeting.attendees as Attendee[]).map(attendee => ({
+          ...attendee,
+          present: false
+        }))
+        updateData.attendees = resetAttendees
       }
       
       const { error } = await supabase

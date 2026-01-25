@@ -143,10 +143,18 @@ User accounts with role-based access.
 - `master`: Full system access across all companies
 - `corporate_administrator`: Manages multiple property managers within their company
 - `property_manager`: Manages buildings and meetings within their company
-- `user`: Basic access to assigned buildings
+- `user`: Basic access to assigned buildings (also used for Housing Co-op residents)
+- `owner`: Property owner with access to assigned buildings and meetings (similar permissions to regular users)
+  - Used for Strata/Condo and Rental buildings
+  - Auto-assigned when creating users in these building types
+  - Displayed as "Owner" in UI with blue badge
 - `vendor`: Receives and updates assigned tasks
 - `attendee`: View-only access to meetings they attend
-- `owner`: Property owner with access to assigned buildings and meetings (similar permissions to regular users)
+
+**Note**: 
+- The system uses 'resident' as a display label for Housing Co-op users, but this maps to the 'user' user_type in the database
+- The `notification_recipient_type` field in buildings distinguishes between 'owner' and 'resident' for notification purposes
+- User types are auto-set when creating users in BuildingDetailsModal based on building type
 
 ---
 
@@ -169,12 +177,22 @@ Properties/buildings managed by property managers.
   minutes_template: string | null
   rules_document: any | null
   rules_filename: string | null
+  board_meeting_notice_days: number | null (default: 7)
+  general_meeting_notice_days: number | null (default: 7)
+  notification_recipient_type: string | null ('owner' or 'resident', default based on building_type)
   created_at: timestamp
   updated_at: timestamp
 }
 ```
 
 **Purpose**: Represents physical buildings/properties. Each building belongs to a property manager and optionally a company.
+
+**Notification Settings**:
+- `board_meeting_notice_days`: Number of days before board meetings to send notices/agendas (default: 7)
+- `general_meeting_notice_days`: Number of days before general meetings to send notices (default: 7)
+- `notification_recipient_type`: Who receives notifications - 'owner' for Strata/Condo/Rental, 'resident' for Housing Co-op
+- Settings are managed in BuildingDetailsModal → Notifications tab
+- Recipient type is auto-set based on building type but can be manually changed for Rental buildings
 
 ---
 
@@ -198,6 +216,7 @@ Meeting records (agendas and minutes).
   recording_started_at: timestamp | null
   recording_ended_at: timestamp | null
   attendees: any | null (JSONB array of attendee objects)
+  is_incamera: boolean | null
   created_at: timestamp
   updated_at: timestamp
   finalized_at: timestamp | null
@@ -205,6 +224,12 @@ Meeting records (agendas and minutes).
 ```
 
 **Purpose**: Core meeting entity. Status flow: `working_agenda` → `agenda` → `working_minutes` → `minutes` (finalized).
+
+**In-Camera Meetings**:
+- `is_incamera`: Boolean flag to mark entire meeting as confidential/in-camera
+- When enabled, meeting is marked as confidential
+- Toggle available in meeting view header (only when meeting is not finalized)
+- Displayed with red badge and warning banner
 
 **Attendees Structure** (JSONB):
 ```json
@@ -258,12 +283,24 @@ Individual discussion topics within meetings.
   description: string | null
   order_index: number
   rolled_over_from_topic_id: number | null (self-referential foreign key)
+  is_incamera: boolean | null
+  incamera_start_time: timestamp | null
+  incamera_end_time: timestamp | null
   created_at: timestamp
   updated_at: timestamp
 }
 ```
 
 **Purpose**: Individual agenda items/topics. Can be rolled over from previous meetings via `rolled_over_from_topic_id`.
+
+**In-Camera Topics**:
+- `is_incamera`: Boolean flag to mark topic as confidential/in-camera
+- `incamera_start_time`: Timestamp when topic went in-camera
+- `incamera_end_time`: Timestamp when topic ended in-camera mode
+- When enabled, topic content is hidden in published agendas and minutes
+- Only "This topic is in-camera" notice is shown in PDF generation
+- Toggle available during meeting (working_minutes or minutes status)
+- Displayed with red badge and warning banner in topic card
 
 ---
 
@@ -701,7 +738,7 @@ The system uses a centralized permission checking system located in `lib/permiss
    - Auto-redirected to dashboard on login
    - Sees company logo in dashboard (if configured)
 
-7. **attendee** (Meeting Attendee)
+8. **attendee** (Meeting Attendee)
    - View-only access to meetings they attend
    - Cannot edit anything
    - Cannot access admin panel
@@ -741,6 +778,17 @@ All permission checks are centralized in `lib/permissions.ts`:
   - Assign roles to attendees (e.g., "Chair", "Secretary", "Member")
   - Track presence during meeting minutes phase
   - Roles displayed in PDF minutes generation
+- **In-Camera (Confidential) Meetings**
+  - Mark entire meetings as in-camera/confidential
+  - Toggle available in meeting view header
+  - Displayed with red badge and warning banner
+  - All content treated as confidential
+- **In-Camera Topics**
+  - Mark individual topics as in-camera during meeting
+  - Track in-camera start and end times
+  - Content hidden in published agendas and minutes PDFs
+  - Only "This topic is in-camera" notice shown in PDFs
+  - Toggle available in TopicCard during meeting (working_minutes/minutes status)
 
 ### 2. **Topic & Section Management**
 - Organize topics into sections
@@ -794,6 +842,12 @@ All permission checks are centralized in `lib/permissions.ts`:
     - Documents stored in Supabase Storage
     - Documents categorized by type (rules, bylaws, policies, etc.)
     - Documents used for AI analysis of meeting topics
+  - **Notification Settings**: Configure meeting notification preferences
+    - Set days before board meetings to send notices (default: 7)
+    - Set days before general meetings to send notices (default: 7)
+    - Configure notification recipient type (owner/resident)
+    - Auto-configured based on building type
+    - Quick presets for common notification schedules
   - **Reference URLs**: Add, view, and delete reference URLs for buildings
     - Separate from uploaded documents
     - Types: legislation, policy, reference, other
@@ -972,6 +1026,9 @@ app/page.tsx (Root)
    - Attendee management
    - Section/topic creation modals
    - Generate Minutes PDF button (when status is "minutes")
+   - **Improved button layout**: All action buttons in single row with consistent sizing (h-8, px-3, text-xs)
+   - **In-camera meeting toggle**: Mark entire meeting as confidential
+   - **Header layout**: Back button, title, badges, and edit button properly aligned without overlap
 
 4. **`components/admin-panel.tsx`**
    - Admin interface with tabs
@@ -1016,12 +1073,23 @@ app/page.tsx (Root)
 - `BuildingDetailsModal.tsx`: **Comprehensive building management modal** with tabs:
   - **Details Tab**: Edit building name, address, type, and property manager
   - **Users Tab**: Assign/unassign users to building, create new users inline
+    - User type auto-set based on building type (owner for Strata/Condo/Rental, user/resident for Housing Co-op)
+    - Visual badges for user types (Resident, Owner, Property Manager, etc.)
+    - User type selector shows appropriate options based on building type
   - **Documents Tab**: **Full document management** - Upload, view, and delete building documents (PDF, DOC, DOCX)
     - Documents stored in Supabase Storage
     - Documents categorized by type
     - Documents used for AI analysis context
     - **Reference URLs**: Add, view, and delete reference URLs (legislation, policy, reference, other)
     - URLs displayed alongside uploaded documents
+  - **Notifications Tab**: **Meeting notification settings**
+    - Configure days before board meetings to send notices (default: 7 days, range: 1-90)
+    - Configure days before general meetings to send notices (default: 7 days, range: 1-90)
+    - Set notification recipient type (owner or resident)
+    - Auto-set based on building type (Housing Co-op → resident, Strata/Condo/Rental → owner)
+    - Quick presets: Minimal (3/7), Standard (7/14), Extended (14/21), Reset (7/7)
+    - Information cards explaining how notifications work
+    - Settings saved when building details are saved
 - `CreateCompanyModal.tsx`: Create companies
 - `EditCompanyModal.tsx`: Edit company details and defaults (meeting sections, types, decision results)
 - `CompanyDetailsModal.tsx`: **Enhanced company management modal** with tabs:
@@ -1229,11 +1297,17 @@ working_agenda → agenda → working_minutes → minutes
 4. If no template exists, uses default template
 5. System fetches all meeting data:
    - Meeting details (title, date, type, location, etc.)
+   - Meeting in-camera status (`is_incamera`)
    - Attendees (name, email, role, present/absent status)
-   - Sections and topics
+   - Sections and topics (including topic in-camera status and times)
    - Notes for each topic
    - Tasks for each topic
    - Decisions for each topic
+6. **In-Camera Handling**: 
+   - If meeting is in-camera, all content is treated as confidential
+   - If topic is in-camera, only "This topic is in-camera" notice is shown in PDF
+   - In-camera topics show start/end times if recorded
+   - Normal topics show full content (description, notes, tasks, decisions)
 6. Generates HTML from template and data
 7. Creates isolated iframe for rendering
 8. Converts HTML to canvas using html2canvas
@@ -1254,15 +1328,23 @@ working_agenda → agenda → working_minutes → minutes
 ### 9. **Building Management Workflow**
 
 1. User opens BuildingDetailsModal from BuildingsTab
-2. Modal displays three tabs:
+2. Modal displays four tabs:
    - **Details Tab**: Edit building name, address, building type, and property manager
    - **Users Tab**: 
      - View all users assigned to the building
      - Select/deselect users from company to assign/unassign
      - Create new users inline (automatically assigned to building and company)
-   - **Documents Tab**: Placeholder for future document management
+     - User type auto-set based on building type (owner for Strata/Condo/Rental, user for Housing Co-op)
+   - **Documents Tab**: Upload, view, and delete building documents and reference URLs
+   - **Notifications Tab**: Configure meeting notification settings
+     - Set days before board meetings to send notices (default: 7)
+     - Set days before general meetings to send notices (default: 7)
+     - Set notification recipient type (owner/resident)
+     - Auto-set based on building type with manual override for Rental buildings
+     - Quick presets available (Minimal, Standard, Extended, Reset)
 3. Changes are saved to `buildings` table and `user_buildings` junction table
 4. Building users are fetched via join query on `user_buildings` table
+5. Notification settings are saved to `buildings` table and used for automated email notifications
 
 ### 10. **Company Management Workflow**
 
@@ -1344,15 +1426,17 @@ working_agenda → agenda → working_minutes → minutes
 8. System fetches analysis result from `task_analyses` table
 9. Analysis result displayed in TaskDetailsModal
 
-### 14. **Topic Refresh Callback System**
+### 14. **Topic Refresh Callback System (Auto-Reload Fix)**
 
 1. TopicCard registers a refresh callback via `onRegisterTopicRefresh` prop
 2. Callback is stored in `topicRefreshCallbackRef` in `app/page.tsx`
-3. When note/task/decision is saved via modal:
-   - Modal calls `onSave` callback
+3. When note/task/decision is created or edited via modal:
+   - Modal calls `onSave` callback after successful save
    - `app/page.tsx` executes the stored refresh callback
-   - TopicCard refreshes its history display
-4. This ensures topic history is updated immediately after adding notes/tasks/decisions
+   - TopicCard automatically refreshes its history and decisions display
+4. This ensures topic history is updated immediately after adding/editing notes/tasks/decisions
+5. **Fixed**: Previously required manual refresh; now automatically updates when modals save
+6. Callback refreshes both history items AND decisions list for complete updates
 
 ### 15. **User Type Auto-Redirect**
 
@@ -1364,7 +1448,30 @@ working_agenda → agenda → working_minutes → minutes
    - **Other types**: Start at dashboard (can navigate to admin/meetings)
 4. Prevents unauthorized access attempts
 
-### 16. **GeniusWords Management Workflow**
+### 16. **In-Camera Meeting Workflow**
+
+1. User opens meeting in meeting view
+2. User clicks "In-Camera" button in header (available when meeting is not finalized)
+3. System updates `meetings.is_incamera` to `true`
+4. Meeting header displays red "IN-CAMERA" badge
+5. Warning banner appears below header: "Confidential Meeting"
+6. All meeting content is treated as confidential
+7. User can toggle off by clicking "Remove In-Camera" button
+
+### 17. **In-Camera Topic Workflow**
+
+1. Meeting must be in `working_minutes` or `minutes` status
+2. User expands topic card in meeting view
+3. User clicks "Mark as In-Camera" button in topic card
+4. System updates `topics.is_incamera` to `true` and sets `incamera_start_time`
+5. Topic card displays red "IN-CAMERA" badge and warning banner
+6. Topic content is hidden in published agendas and minutes PDFs
+7. Only "This topic is in-camera (confidential)" notice appears in PDFs
+8. User can set `incamera_end_time` when topic discussion ends
+9. User can toggle off by clicking "In-Camera (Confidential)" button again
+10. In-camera status and times are preserved in meeting records
+
+### 18. **GeniusWords Management Workflow**
 
 1. User navigates to GeniusWords screen from user menu
 2. `GeniusWordsManager` component loads user's shortcuts
@@ -1376,7 +1483,7 @@ working_agenda → agenda → working_minutes → minutes
 4. Shortcuts are saved to `genius_words` table with `user_id`
 5. Shortcuts become available in all text inputs across the application
 
-### 17. **GeniusWords Autocomplete Workflow**
+### 19. **GeniusWords Autocomplete Workflow**
 
 1. User types in any text field (decision modal, note modal, task modal, topic description)
 2. User types `#` followed by shortcode characters
@@ -2212,16 +2319,54 @@ This is a comprehensive meeting management system with:
 - **AI-powered analysis** of topics and tasks using extracted document text
 - **Document text extraction** from PDFs, DOCX, and plain text files
 - **Email notifications** via company-specific SMTP configurations
+- **Meeting notification settings** per building (board/general meeting notice days, recipient types)
+- **In-camera (confidential) meetings and topics** with PDF content filtering
+- **Auto-reload functionality** for tasks, notes, and decisions
 - **Modern React/Next.js** architecture with TypeScript
 
 The system is designed for property management companies to manage their meeting workflows from agenda creation through minutes finalization and PDF generation, with support for multiple companies, buildings, and user roles.
 
 ---
 
-**Last Updated**: January 21, 2026
+**Last Updated**: January 25, 2026
 **Version**: Current production codebase
 
 **Recent Updates**:
+- **In-Camera (Confidential) Meetings & Topics**: Complete in-camera functionality
+  - Added `is_incamera` field to `meetings` table for marking entire meetings as confidential
+  - Added `is_incamera`, `incamera_start_time`, `incamera_end_time` fields to `topics` table
+  - Meeting-level in-camera toggle in meeting view header
+  - Topic-level in-camera toggle in TopicCard (available during meeting)
+  - In-camera content hidden in published agendas and minutes PDFs
+  - Only "This topic/meeting is in-camera" notices shown in PDFs
+  - Visual indicators: red badges and warning banners
+  - In-camera start/end time tracking for topics
+- **Auto-Reload Fix**: Task, Note, and Decision auto-refresh
+  - Fixed topic history and decisions not auto-reloading after creation
+  - Implemented refresh callback system via `onRegisterTopicRefresh`
+  - TopicCard automatically refreshes when modals save (TaskModal, NoteModal, DecisionModal)
+  - No manual refresh needed - updates happen immediately
+- **Meeting View UI Improvements**: Enhanced button layout
+  - All action buttons now in single row with consistent sizing (h-8, px-3, text-xs)
+  - Improved header layout: back button, title, badges, and edit button properly aligned
+  - No overlap between admin button, user name, and meeting view buttons
+  - Better responsive design with proper flex layouts
+- **Building Notification Settings**: Meeting notification configuration (Updated)
+  - Added `board_meeting_notice_days`, `general_meeting_notice_days`, `notification_recipient_type` fields to buildings table
+  - New Notifications tab in BuildingDetailsModal for configuring notification preferences
+  - Auto-set recipient type based on building type (Housing Co-op → resident, Strata/Condo → owner)
+  - Quick presets for notification schedules (Minimal, Standard, Extended, Reset)
+  - Configurable days before meetings to send notices/agendas
+  - Settings used for automated meeting notification emails
+- **Owner User Type**: Added 'owner' as a distinct user type
+  - Used for Strata/Condo and Rental buildings
+  - Auto-assigned when creating users in these building types
+  - Similar permissions to regular users
+  - Receives meeting notifications based on building settings
+- **User Type Auto-Assignment**: User type automatically set based on building type when creating users
+  - Housing Co-op → 'user' type (displayed as 'resident')
+  - Strata/Condo/Rental → 'owner' type
+  - Visual badges for different user types in Users tab
 - **Signup API**: Programmatic company creation endpoint
   - Added `/api/signup` endpoint for creating companies, corporate administrators, property managers, and buildings
   - API key-based authentication via `x-api-key` header
