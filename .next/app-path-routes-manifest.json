@@ -3,7 +3,7 @@
   "/api/signup/route": "/api/signup",
   "/api/transcripts/create-tasks/route": "/api/transcripts/create-tasks",
   "/api/send-email/route": "/api/send-email",
-  "/api/transcripts/upload/route": "/api/transcripts/upload",
   "/api/transcripts/list/route": "/api/transcripts/list",
+  "/api/transcripts/upload/route": "/api/transcripts/upload",
   "/page": "/"
 }
