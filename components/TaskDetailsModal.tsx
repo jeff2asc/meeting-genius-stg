@@ -663,7 +663,7 @@ export default function TaskDetailsModal({ taskId, onClose, onUpdate }: TaskDeta
                             {attachment.mime_type.split('/')[1].toUpperCase()}
                           </span>
                           <span>{formatFileSize(attachment.file_size)}</span>
-                          <span>•</span>
+                          <span>·</span>
                           <span>{new Date(attachment.created_at).toLocaleDateString()}</span>
                         </div>
                       </div>

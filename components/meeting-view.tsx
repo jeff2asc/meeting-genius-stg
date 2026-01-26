@@ -158,9 +158,9 @@ export default function MeetingView({
       setMeeting({ ...meeting, is_incamera: newValue })
       
       if (newValue) {
-        alert('ðŸ”’ Entire meeting marked as In-Camera (Confidential)')
+        alert('🔒 Entire meeting marked as In-Camera (Confidential)')
       } else {
-        alert('ðŸ”“ In-Camera removed from meeting')
+        alert('🔓 In-Camera removed from meeting')
       }
     } catch (err) {
       console.error("Unexpected error:", err)
@@ -853,7 +853,7 @@ export default function MeetingView({
               <div class="info-grid">
                 ${meeting.meeting_type ? `
                   <div class="info-item">
-                    <div class="icon">ðŸ“‹</div>
+                    <div class="icon">📋</div>
                     <div>
                       <span class="label">Meeting Type:</span>
                       <span class="value">${meeting.meeting_type}</span>
@@ -862,7 +862,7 @@ export default function MeetingView({
                 ` : ''}
                 
                 <div class="info-item">
-                  <div class="icon">ðŸ“…</div>
+                  <div class="icon">📅</div>
                   <div>
                     <span class="label">Date:</span>
                     <span class="value">${formatDate(meeting.meeting_date)}</span>
@@ -871,7 +871,7 @@ export default function MeetingView({
 
                 ${meeting.start_time ? `
                   <div class="info-item">
-                    <div class="icon">ðŸ•</div>
+                    <div class="icon">🕐</div>
                     <div>
                       <span class="label">Time:</span>
                       <span class="value">${formatTime(meeting.start_time)}</span>
@@ -881,7 +881,7 @@ export default function MeetingView({
 
                 ${meeting.location ? `
                   <div class="info-item">
-                    <div class="icon">ðŸ“</div>
+                    <div class="icon">📍</div>
                     <div>
                       <span class="label">Location:</span>
                       <span class="value">${meeting.location}</span>
@@ -891,7 +891,7 @@ export default function MeetingView({
 
                 ${meeting.strata_plan_number ? `
                   <div class="info-item">
-                    <div class="icon">ðŸ“„</div>
+                    <div class="icon">📄</div>
                     <div>
                       <span class="label">Strata Plan:</span>
                       <span class="value">${meeting.strata_plan_number}</span>
@@ -903,7 +903,7 @@ export default function MeetingView({
               <hr class="divider">
 
               <!-- Agenda -->
-              <h2 class="agenda-title">ðŸ“‹ Agenda</h2>
+              <h2 class="agenda-title">📋 Agenda</h2>
 
               ${sections.map((section, idx) => `
                 <div class="section">
@@ -1256,10 +1256,10 @@ export default function MeetingView({
             {meeting.status === "working_minutes" && (meeting.recorder_name || meeting.timekeeper_name) && (
               <div className="flex items-center gap-2 text-xs whitespace-nowrap flex-shrink-0">
                 {meeting.recorder_name && (
-                  <span>ðŸ“ <strong>{meeting.recorder_name}</strong></span>
+                  <span>📝 <strong>{meeting.recorder_name}</strong></span>
                 )}
                 {meeting.timekeeper_name && (
-                  <span>â±ï¸ <strong>{meeting.timekeeper_name}</strong></span>
+                  <span>⏱️ <strong>{meeting.timekeeper_name}</strong></span>
                 )}
               </div>
             )}
@@ -1279,7 +1279,7 @@ export default function MeetingView({
             <Badge variant="outline" className="bg-blue-50 text-blue-700 text-xs">
               {attendeeCount}
               {meeting.status === "working_minutes" || meeting.status === "minutes" 
-                ? ` Â· ${presentCount} present` 
+                ? ` · ${presentCount} present` 
                 : ''}
             </Badge>
           </div>

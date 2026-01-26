@@ -513,14 +513,18 @@ export default function BuildingDetailsModal({
                           <SelectValue placeholder="Select user type" />
                         </SelectTrigger>
                         <SelectContent>
-                          {buildingType === "Housing Co-op" && (
-                            <SelectItem value="resident">Resident</SelectItem>
-                          )}
-                          {(buildingType === "Strata/Condo" || buildingType === "Rental") && (
-                            <SelectItem value="owner">Owner</SelectItem>
-                          )}
-                          <SelectItem value="user">General User</SelectItem>
-                        </SelectContent>
+  {buildingType === "Housing Co-op" && (
+    <SelectItem value="resident">Resident</SelectItem>
+  )}
+  {(buildingType === "Strata/Condo" || buildingType === "Rental") && (
+    <SelectItem value="owner">Owner</SelectItem>
+  )}
+  <SelectItem value="user">User</SelectItem>
+  <SelectItem value="propertymanager">Property Manager</SelectItem>
+  <SelectItem value="vendor">Vendor</SelectItem>
+  <SelectItem value="attendee">Attendee</SelectItem>
+</SelectContent>
+
                       </Select>
                       <p className="text-xs text-muted-foreground mt-1">
                         {buildingType === "Housing Co-op" && "Housing Co-ops use Resident type"}
@@ -764,10 +768,10 @@ function NotificationsTab({
           <div>
             <h4 className="font-semibold text-sm text-blue-900 mb-1">How Notifications Work</h4>
             <ul className="text-xs text-blue-800 space-y-1">
-              <li>• Notices/agendas will be automatically sent to {notificationRecipientType}s based on the configured days</li>
-              <li>• Board meetings typically require shorter notice periods</li>
-              <li>• General meetings may require longer notice periods per local regulations</li>
-              <li>• The system will send reminders via email to all assigned {notificationRecipientType}s</li>
+              <li>· Notices/agendas will be automatically sent to {notificationRecipientType}s based on the configured days</li>
+              <li>· Board meetings typically require shorter notice periods</li>
+              <li>· General meetings may require longer notice periods per local regulations</li>
+              <li>· The system will send reminders via email to all assigned {notificationRecipientType}s</li>
             </ul>
           </div>
         </div>
@@ -1381,7 +1385,7 @@ function DocumentsTab({ building, onSuccess }: DocumentsTabProps) {
                       </div>
                       <p className="text-xs text-muted-foreground">
                         Uploaded {new Date(doc.created_at).toLocaleDateString()}
-                        {doc.file_size && ` • ${formatFileSize(doc.file_size)}`}
+                        {doc.file_size && ` · ${formatFileSize(doc.file_size)}`}
                       </p>
                     </div>
                   </div>

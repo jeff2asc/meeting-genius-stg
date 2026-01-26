@@ -219,10 +219,10 @@ export default function LogoTab({ companyId, currentLogoUrl, onLogoUpdate }: Log
           disabled={uploading}
         />
         <div className="text-xs text-muted-foreground space-y-1">
-          <p>• Recommended: Square image (200x200px minimum)</p>
-          <p>• Supported formats: PNG, JPG, SVG</p>
-          <p>• Maximum file size: 2MB</p>
-          <p>• Transparent background recommended for best results</p>
+          <p>· Recommended: Square image (200x200px minimum)</p>
+          <p>· Supported formats: PNG, JPG, SVG</p>
+          <p>· Maximum file size: 2MB</p>
+          <p>· Transparent background recommended for best results</p>
         </div>
       </div>
     </div>

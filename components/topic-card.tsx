@@ -466,7 +466,7 @@ export default function TopicCard({
                   type: 'task',
                   content: task.description.substring(0, 100) + (task.description.length > 100 ? '...' : ''),
                   timestamp: new Date(task.created_at).toLocaleString(),
-                  details: `Assigned to: ${assignee} • Status: ${task.status}`
+                  details: `Assigned to: ${assignee} · Status: ${task.status}`
                 })
               })
             }
@@ -679,7 +679,7 @@ export default function TopicCard({
             {(decision.result || decision.votes_for !== null || decision.votes_against !== null) && (
               <p className="text-xs text-muted-foreground">
                 {decision.result && `Result: ${decision.result}`}
-                {(decision.votes_for !== null || decision.votes_against !== null) && ` • Votes: ${decision.votes_for || 0} for, ${decision.votes_against || 0} against`}
+                {(decision.votes_for !== null || decision.votes_against !== null) && ` · Votes: ${decision.votes_for || 0} for, ${decision.votes_against || 0} against`}
                 {decision.votes_abstain !== null && decision.votes_abstain > 0 && `, ${decision.votes_abstain} abstain`}
               </p>
             )}

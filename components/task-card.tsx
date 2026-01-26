@@ -115,7 +115,7 @@ export default function TopicCard({
             type: 'task',
             content: task.description.substring(0, 100) + (task.description.length > 100 ? '...' : ''),
             timestamp: new Date(task.created_at).toLocaleString(),
-            details: `Assigned to: ${assignee} • Status: ${task.status}`
+            details: `Assigned to: ${assignee} · Status: ${task.status}`
           })
         })
       }
@@ -129,7 +129,7 @@ export default function TopicCard({
       if (decisions) {
         decisions.forEach(decision => {
           const voteText = decision.votes_for !== null || decision.votes_against !== null
-            ? ` • Votes: ${decision.votes_for || 0} for, ${decision.votes_against || 0} against`
+            ? ` · Votes: ${decision.votes_for || 0} for, ${decision.votes_against || 0} against`
             : ''
           historyItems.push({
             id: decision.id,
