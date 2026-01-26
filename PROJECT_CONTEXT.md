@@ -124,7 +124,7 @@ User accounts with role-based access.
   name: string
   email: string (unique)
   password_hash: string
-  user_type: 'master' | 'property_manager' | 'user' | 'vendor' | 'attendee' | 'corporate_administrator' | 'owner'
+  user_type: 'master' | 'property_manager' | 'user' | 'vendor' | 'attendee' | 'corporate_administrator' | 'owner' | 'resident'
   company_id: number | null (foreign key → companies.id)
   assigned_pm_id: number | null (foreign key → users.id, references property_manager)
   smtp_config: any | null
@@ -139,22 +139,31 @@ User accounts with role-based access.
 - `assigned_pm_id`: Links regular users to their assigned property manager (used for filtering and access control)
 - `company_id`: Associates user with a company for multi-tenant isolation
 
-**User Types**:
+**User Types** (8 total):
 - `master`: Full system access across all companies
 - `corporate_administrator`: Manages multiple property managers within their company
 - `property_manager`: Manages buildings and meetings within their company
-- `user`: Basic access to assigned buildings (also used for Housing Co-op residents)
-- `owner`: Property owner with access to assigned buildings and meetings (similar permissions to regular users)
+- `user`: Basic access to assigned buildings
+- `owner`: Property owner with access to assigned buildings and meetings
   - Used for Strata/Condo and Rental buildings
   - Auto-assigned when creating users in these building types
+  - Receives meeting notices via email
   - Displayed as "Owner" in UI with blue badge
+- `resident`: Housing Co-op resident with access to assigned buildings
+  - Used specifically for Housing Co-op building types
+  - Similar permissions to 'owner' and 'user' types
+  - Receives meeting notices via email
+  - Displayed as "Resident" in UI
+  - Separate database user_type (not just a display label)
 - `vendor`: Receives and updates assigned tasks
 - `attendee`: View-only access to meetings they attend
 
 **Note**: 
-- The system uses 'resident' as a display label for Housing Co-op users, but this maps to the 'user' user_type in the database
-- The `notification_recipient_type` field in buildings distinguishes between 'owner' and 'resident' for notification purposes
-- User types are auto-set when creating users in BuildingDetailsModal based on building type
+- The `notification_recipient_type` field in buildings determines which user type receives meeting notifications
+- User types are auto-set when creating users in BuildingDetailsModal based on building type:
+  - Housing Co-op → 'resident' type
+  - Strata/Condo/Rental → 'owner' type
+- Send Notice feature filters recipients by user_type ('owner' OR 'resident') from user_buildings table
 
 ---
 
@@ -730,8 +739,19 @@ The system uses a centralized permission checking system located in `lib/permiss
    - Can update task status
    - Cannot create meetings or access admin panel
    - Sees company logo in dashboard (if configured)
+   - Receives meeting notices via email
 
-6. **vendor** (Vendor/Contractor)
+6. **resident** (Housing Co-op Resident)
+   - Similar permissions to standard users and owners
+   - Used specifically for Housing Co-op building types
+   - Access to assigned buildings and meetings
+   - Can view and edit meetings
+   - Can update task status
+   - Cannot create meetings or access admin panel
+   - Sees company logo in dashboard (if configured)
+   - Receives meeting notices via email
+
+7. **vendor** (Vendor/Contractor)
    - Receives and updates assigned tasks
    - Can view meetings (read-only)
    - Can update task status for tasks assigned to them
@@ -778,6 +798,17 @@ All permission checks are centralized in `lib/permissions.ts`:
   - Assign roles to attendees (e.g., "Chair", "Secretary", "Member")
   - Track presence during meeting minutes phase
   - Roles displayed in PDF minutes generation
+- **In-Camera (Confidential) Meetings**: 
+  - Mark entire meetings or individual topics as confidential/in-camera
+  - Visual indicators with lock icons for confidential content
+  - Toggle in-camera status during working_agenda and working_minutes phases
+  - Warning banners displayed for confidential meetings
+- **Send Meeting Notices**:
+  - One-click email distribution of meeting agendas to all building owners/residents
+  - Beautiful HTML-formatted email templates with responsive design
+  - Includes meeting details, date, time, location, and full agenda with sections/topics
+  - Automatically filters recipients by user type (owner or resident) based on building settings
+  - Available during working_agenda and agenda phases
 - **In-Camera (Confidential) Meetings**
   - Mark entire meetings as in-camera/confidential
   - Toggle available in meeting view header
@@ -900,6 +931,13 @@ All permission checks are centralized in `lib/permissions.ts`:
   - Supports HTML and plain text emails
   - Used for task assignments and notifications
 - **Company-Level Email**: Each company has independent email configuration
+- **Meeting Notice Emails**: Send formatted meeting agendas to owners/residents
+  - Beautiful HTML-formatted emails with responsive design
+  - Includes meeting header, details grid, full agenda with sections and topics
+  - Professional styling with gradients, icons, and mobile responsiveness
+  - Automatically sent to all owners or residents assigned to the building
+  - Available via "Send Notice" button in meeting view
+  - Filters recipients based on user_type ('owner' or 'resident')
 
 ### 11. **GeniusWords - User Text Shortcuts**
 - **Personal Shortcuts**: Users can create custom shortcuts (starting with `#`) that expand to full text
@@ -1021,11 +1059,14 @@ app/page.tsx (Root)
    - Main meeting interface
    - Displays sections and topics
    - Drag-and-drop reordering
-   - Timer functionality
-   - Status progression controls
-   - Attendee management
-   - Section/topic creation modals
-   - Generate Minutes PDF button (when status is "minutes")
+  - Timer functionality
+  - Status progression controls
+  - Attendee management
+  - Section/topic creation modals
+  - In-camera toggle button (marks meeting as confidential)
+  - Send Notice button (emails agenda to owners/residents)
+  - Generate Agenda PDF button (during working_agenda/agenda phases)
+  - Generate Minutes PDF button (when status is "minutes")
    - **Improved button layout**: All action buttons in single row with consistent sizing (h-8, px-3, text-xs)
    - **In-camera meeting toggle**: Mark entire meeting as confidential
    - **Header layout**: Back button, title, badges, and edit button properly aligned without overlap
@@ -1471,7 +1512,41 @@ working_agenda → agenda → working_minutes → minutes
 9. User can toggle off by clicking "In-Camera (Confidential)" button again
 10. In-camera status and times are preserved in meeting records
 
-### 18. **GeniusWords Management Workflow**
+### 18. **Send Meeting Notice Workflow**
+
+1. User opens meeting in meeting view (meeting must be in `working_agenda` or `agenda` status)
+2. User clicks "Send Notice" button in meeting header action row
+3. System displays confirmation dialog:
+   - Shows building name and meeting title
+   - Warns that this will email the agenda to all assigned owners and residents
+4. User confirms to proceed
+5. System fetches building information and company_id
+6. System queries `user_buildings` table for all users assigned to the building
+7. System fetches user details filtered by `user_type` IN ('owner', 'resident')
+8. System excludes users without email addresses
+9. System generates beautiful HTML email with:
+   - Professional header with gradient background (blue)
+   - Building name and meeting title
+   - Meeting information grid: type, date, time, location, strata plan
+   - Complete agenda with numbered sections and topics
+   - Topic descriptions included (if present)
+   - Professional footer with Meeting Genius branding
+   - Responsive design for mobile devices
+10. System sends email via `/api/send-email` endpoint using company's SMTP configuration
+11. Success/error message displayed via toast notification
+12. All owners and residents receive the formatted meeting notice via email
+
+**Email Features**:
+- Professional design with gradients, icons, and spacing
+- Responsive layout that adapts to mobile screens
+- Visual hierarchy with clear sections
+- Meeting details displayed in info grid with icons
+- Sections numbered with circular badges
+- Topics displayed as ordered lists under each section
+- Footer with Meeting Genius branding
+- Accessible HTML structure
+
+### 19. **GeniusWords Management Workflow**
 
 1. User navigates to GeniusWords screen from user menu
 2. `GeniusWordsManager` component loads user's shortcuts
@@ -1483,7 +1558,7 @@ working_agenda → agenda → working_minutes → minutes
 4. Shortcuts are saved to `genius_words` table with `user_id`
 5. Shortcuts become available in all text inputs across the application
 
-### 19. **GeniusWords Autocomplete Workflow**
+### 20. **GeniusWords Autocomplete Workflow**
 
 1. User types in any text field (decision modal, note modal, task modal, topic description)
 2. User types `#` followed by shortcode characters
@@ -1493,7 +1568,7 @@ working_agenda → agenda → working_minutes → minutes
 6. Selected shortcut replaces `#shortcode` with full description text
 7. Cursor positioned after inserted text
 
-### 18. **Auto-save Topic Description Workflow**
+### 21. **Auto-save Topic Description Workflow**
 
 1. User focuses on topic description field (GeniusWordsInput)
 2. User types or modifies description
@@ -1504,7 +1579,7 @@ working_agenda → agenda → working_minutes → minutes
 7. On error, toast notification displays error message
 8. No manual save button needed
 
-### 19. **Decision Threading Workflow**
+### 22. **Decision Threading Workflow**
 
 **Creating a Thread**:
 1. User has existing decision in topic
@@ -1578,6 +1653,7 @@ meeting-genius/
 │   ├── create-section-modal.tsx  # Create section
 │   ├── create-topic-modal.tsx    # Create topic
 │   ├── AttendeeManagement.tsx   # Attendee management
+│   ├── GenerateAgendaButton.tsx  # Generate PDF agendas
 │   ├── GenerateMinutesButton.tsx # Generate PDF minutes
 │   ├── GeniusWordsManager.tsx    # Manage user text shortcuts
 │   ├── GeniusWordsInput.tsx      # Reusable input with GeniusWords autocomplete
@@ -1779,6 +1855,8 @@ All database types defined in `lib/supabase.ts` as `Database` type:
 - Includes all 7 user types (master, corporate_administrator, property_manager, user, owner, vendor, attendee)
 - Interfaces for TaskAttachment, TopicAttachment, TaskAnalysis, Company, User
 - Generic extractTextFromFile function for document processing
+- Includes 8 user types: master, corporate_administrator, property_manager, user, owner, resident, vendor, attendee
+- In-camera fields for meetings and topics (is_incamera, incamera_start_time, incamera_end_time)
 
 ### 11. **PDF Minutes Generation**
 
@@ -1800,7 +1878,7 @@ The system can generate professional PDF minutes from finalized meetings:
 
 ### 12. **Email Sending System**
 
-The system includes email functionality for sending notifications:
+The system includes comprehensive email functionality for sending notifications:
 - **API Endpoint**: `/app/api/send-email/route.ts`
 - **SMTP Configuration**: Per-company SMTP settings stored in `companies` table
 - **Email Sending**:
@@ -1808,14 +1886,29 @@ The system includes email functionality for sending notifications:
   - Verifies SMTP connection before sending
   - Supports HTML and plain text emails
   - Uses company's configured SMTP settings
+  - Beautiful HTML email templates with professional design
 - **Configuration Management**:
   - Managed in CompanyDetailsModal → Overview tab
   - Includes: host, port, username, password, from name/email, TLS settings
   - Password field is never prefilled for security
 - **Use Cases**:
-  - Task assignment notifications
-  - Meeting invitations
-  - Other system notifications
+  - **Meeting Notice Distribution**: Send formatted agendas to all building owners/residents
+    - Professional HTML email template with gradient headers
+    - Complete meeting details and full agenda with sections/topics
+    - Responsive design for mobile devices
+    - Automatic recipient filtering by user_type ('owner' or 'resident')
+    - Available via "Send Notice" button in meeting view
+  - **Task Assignment Notifications**: Notify assignees of new tasks
+  - **Meeting Invitations**: Send meeting invites and updates
+  - **Other System Notifications**: General notification emails
+- **Meeting Notice Email Features**:
+  - Professional gradient header (blue theme) with building name
+  - Meeting information grid with icons (date, time, location, type, strata plan)
+  - Complete agenda display with numbered sections
+  - Topics listed with descriptions under each section
+  - Professional footer with Meeting Genius branding
+  - Mobile-responsive design with media queries
+  - Accessible HTML structure
 
 ### 13. **Signup API**
 
@@ -2299,13 +2392,14 @@ useEffect(() => {
 
 This is a comprehensive meeting management system with:
 - **19 main database tables** (companies, users, buildings, meetings, sections, topics, notes, tasks, decisions, task_notes, minutes_templates, user_buildings, building_documents, ai_analyses, task_attachments, task_analyses, topic_attachments, building_document_urls, genius_words)
-- **7 user types** with granular permissions (master, corporate_administrator, property_manager, user, owner, vendor, attendee)
+- **8 user types** with granular permissions (master, corporate_administrator, property_manager, user, owner, resident, vendor, attendee)
 - **Multi-tenant architecture** (company → building → meeting hierarchy)
 - **Full CRUD operations** for all entities
 - **Meeting rollover** functionality
 - **Task and decision tracking** with task notes and decision threading
 - **Decision threading** for follow-up motions and amendments
-- **PDF minutes generation** with customizable templates
+- **PDF agenda and minutes generation** with customizable templates
+- **Meeting notice distribution** via beautifully formatted HTML emails to owners/residents
 - **Comprehensive admin panel** with inline creation capabilities
 - **User-building assignment** via junction table
 - **Property manager assignment** for users
@@ -2320,18 +2414,29 @@ This is a comprehensive meeting management system with:
 - **Document text extraction** from PDFs, DOCX, and plain text files
 - **Email notifications** via company-specific SMTP configurations
 - **Meeting notification settings** per building (board/general meeting notice days, recipient types)
-- **In-camera (confidential) meetings and topics** with PDF content filtering
+- **In-camera (confidential) meetings and topics** with meeting-level and topic-level privacy controls
 - **Auto-reload functionality** for tasks, notes, and decisions
 - **Modern React/Next.js** architecture with TypeScript
 
-The system is designed for property management companies to manage their meeting workflows from agenda creation through minutes finalization and PDF generation, with support for multiple companies, buildings, and user roles.
+The system is designed for property management companies to manage their meeting workflows from agenda creation through minutes finalization and PDF generation, with support for multiple companies, buildings, and user roles. It includes robust privacy features (in-camera meetings/topics), comprehensive email notification system with professional HTML templates sent to owners and residents, and detailed user role management distinguishing between owners and residents.
 
 ---
 
-**Last Updated**: January 25, 2026
+**Last Updated**: January 26, 2026
 **Version**: Current production codebase
 
 **Recent Updates**:
+- **Send Meeting Notice Feature**: Email distribution system for meeting agendas (NEW)
+  - Added "Send Notice" button in meeting view (available during working_agenda and agenda phases)
+  - Sends beautifully formatted HTML emails to all owners/residents of building
+  - Professional email template with gradients, icons, and responsive design
+  - Includes full meeting details: title, date, time, location, strata plan
+  - Shows complete agenda with all sections and topics (with descriptions)
+  - Automatically filters recipients by user_type ('owner' or 'resident')
+  - Fetches recipients from user_buildings junction table
+  - Uses company SMTP configuration for sending emails
+  - Confirmation dialog before sending with recipient count
+  - Email includes Meeting Genius branding and professional footer
 - **In-Camera (Confidential) Meetings & Topics**: Complete in-camera functionality
   - Added `is_incamera` field to `meetings` table for marking entire meetings as confidential
   - Added `is_incamera`, `incamera_start_time`, `incamera_end_time` fields to `topics` table
@@ -2339,8 +2444,9 @@ The system is designed for property management companies to manage their meeting
   - Topic-level in-camera toggle in TopicCard (available during meeting)
   - In-camera content hidden in published agendas and minutes PDFs
   - Only "This topic/meeting is in-camera" notices shown in PDFs
-  - Visual indicators: red badges and warning banners
+  - Visual indicators: red badges, lock icons, and warning banners
   - In-camera start/end time tracking for topics
+  - Toggle available only when meeting is not finalized (for meeting-level)
 - **Auto-Reload Fix**: Task, Note, and Decision auto-refresh
   - Fixed topic history and decisions not auto-reloading after creation
   - Implemented refresh callback system via `onRegisterTopicRefresh`
@@ -2351,6 +2457,7 @@ The system is designed for property management companies to manage their meeting
   - Improved header layout: back button, title, badges, and edit button properly aligned
   - No overlap between admin button, user name, and meeting view buttons
   - Better responsive design with proper flex layouts
+  - Added Send Notice button with email icon in action button row
 - **Building Notification Settings**: Meeting notification configuration (Updated)
   - Added `board_meeting_notice_days`, `general_meeting_notice_days`, `notification_recipient_type` fields to buildings table
   - New Notifications tab in BuildingDetailsModal for configuring notification preferences

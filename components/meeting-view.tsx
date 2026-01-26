@@ -5,8 +5,11 @@ import GenerateAgendaButton from "./GenerateAgendaButton"
 import GenerateMinutesButton from "./GenerateMinutesButton"
 import {
   ArrowLeft, Plus, Trash, Pencil, ChevronDown, ChevronRight, Calendar,
-  Clock, MapPin, FileText, Edit2, Play, CheckCircle, ChevronLeft, Users, Lock, Unlock, Mail
+  Clock, MapPin, FileText, Edit2, Play, CheckCircle, ChevronLeft, Users, Lock, Unlock, Mail, FileUp
 } from "lucide-react"
+import { UploadTranscriptModal } from "@/components/transcript/upload-transcript-modal"
+import { PreviewTasksModal } from "@/components/transcript/preview-tasks-modal"
+import { ViewTranscriptsModal } from "@/components/transcript/view-transcripts-modal"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -94,6 +97,11 @@ export default function MeetingView({
   const [editingSection, setEditingSection] = useState<{ id: number, title: string } | null>(null)
   const [sectionRenameValue, setSectionRenameValue] = useState("")
   const [sectionToDelete, setSectionToDelete] = useState<Section | null>(null)
+  const [showUploadTranscript, setShowUploadTranscript] = useState(false)
+  const [showPreviewTasks, setShowPreviewTasks] = useState(false)
+  const [transcriptId, setTranscriptId] = useState<number | null>(null)
+  const [extractedTasks, setExtractedTasks] = useState<any[]>([])
+  const [showViewTranscripts, setShowViewTranscripts] = useState(false)
 
   const currentUser = getCurrentUser()
   const userCanEdit = currentUser ? canEditMeeting(currentUser.user_type) : false
@@ -560,6 +568,18 @@ export default function MeetingView({
       clearInterval(timerInterval)
       setTimerInterval(null)
     }
+  }
+
+  const handleUploadSuccess = (transcriptId: number, tasks: any[]) => {
+    setTranscriptId(transcriptId)
+    setExtractedTasks(tasks)
+    setShowUploadTranscript(false)
+    setShowPreviewTasks(true)
+  }
+
+  const handleTasksCreated = () => {
+    fetchMeetingData()
+    setShowPreviewTasks(false)
   }
 
   const formatDate = (dateString: string) => {
@@ -1117,6 +1137,32 @@ export default function MeetingView({
               </Button>
             )}
 
+            {/* Upload Transcript Button */}
+            {userCanEdit && meeting.status === "working_agenda" && (
+              <Button
+                size="sm"
+                onClick={() => setShowUploadTranscript(true)}
+                variant="outline"
+                className="h-8 px-3 text-xs whitespace-nowrap flex-shrink-0 border-purple-500 text-purple-600 hover:bg-purple-50"
+              >
+                <FileUp className="h-3 w-3 mr-1" />
+                Upload Transcript
+              </Button>
+            )}
+
+            {/* View Transcripts Button */}
+            {meeting.status === "working_agenda" && (
+              <Button
+                size="sm"
+                onClick={() => setShowViewTranscripts(true)}
+                variant="outline"
+                className="h-8 px-3 text-xs whitespace-nowrap flex-shrink-0 border-gray-500 text-gray-600 hover:bg-gray-50"
+              >
+                <FileText className="h-3 w-3 mr-1" />
+                View Transcripts
+              </Button>
+            )}
+
             {/* Generate Agenda */}
             {(meeting.status === "working_agenda" || meeting.status === "agenda") && (
               <div className="flex-shrink-0">
@@ -1503,6 +1549,28 @@ export default function MeetingView({
           }}
         />
       )}
+      <UploadTranscriptModal
+        isOpen={showUploadTranscript}
+        onClose={() => setShowUploadTranscript(false)}
+        meetingId={parseInt(meetingId)}
+        onUploadSuccess={handleUploadSuccess}
+      />
+
+      <PreviewTasksModal
+        isOpen={showPreviewTasks}
+        onClose={() => setShowPreviewTasks(false)}
+        transcriptId={transcriptId || 0}
+        extractedTasks={extractedTasks}
+        sections={sections}
+        onTasksCreated={handleTasksCreated}
+      />
+
+      <ViewTranscriptsModal
+        isOpen={showViewTranscripts}
+        onClose={() => setShowViewTranscripts(false)}
+        meetingId={parseInt(meetingId)}
+      />
+
     </>
   )
 }
