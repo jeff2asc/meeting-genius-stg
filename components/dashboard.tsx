@@ -37,17 +37,10 @@ export default function Dashboard({
   const [activeTab, setActiveTab] = useState<Tab>("meetings")
   const [availableMeetingTypes, setAvailableMeetingTypes] = useState<string[]>([])
 
-  // Edit Meeting Modal state
   const [showEditMeetingModal, setShowEditMeetingModal] = useState(false)
   const [selectedMeeting, setSelectedMeeting] = useState<any>(null)
-
-  // Task Details Modal state
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null)
-
-  // Company logo state
   const [companyLogo, setCompanyLogo] = useState<string | null>(null)
-
-  // Delete Confirmation States
   const [meetingToDelete, setMeetingToDelete] = useState<any>(null)
   const [taskToDelete, setTaskToDelete] = useState<any>(null)
   const [deleting, setDeleting] = useState(false)
@@ -69,13 +62,11 @@ export default function Dashboard({
       const currentUser = getCurrentUser()
       if (!currentUser) return
 
-      // Master users: show Meeting Genius logo
       if (currentUser.user_type === 'master') {
         setCompanyLogo('/MG2 logo.png')
         return
       }
 
-      // Other users: show company logo if exists
       if (currentUser.company_id) {
         const { data, error } = await supabase
           .from('companies')
@@ -85,17 +76,17 @@ export default function Dashboard({
 
         if (error) {
           console.error('Error fetching company logo:', error)
-          setCompanyLogo('/MG2 logo.png') // Fallback
+          setCompanyLogo('/MG2 logo.png')
           return
         }
 
         if (data?.logo_url) {
           setCompanyLogo(data.logo_url)
         } else {
-          setCompanyLogo('/MG2 logo.png') // Fallback to Meeting Genius
+          setCompanyLogo('/MG2 logo.png')
         }
       } else {
-        setCompanyLogo('/MG2 logo.png') // Fallback
+        setCompanyLogo('/MG2 logo.png')
       }
     } catch (err) {
       console.error('Error fetching company logo:', err)
@@ -110,7 +101,6 @@ export default function Dashboard({
 
       let query = supabase.from('buildings').select('*')
 
-      // Filter based on user type
       if (currentUser.user_type === 'master') {
         query = query.order('name')
       } else if (currentUser.user_type === 'corporate_administrator') {
@@ -181,14 +171,12 @@ export default function Dashboard({
         .select('*, buildings(name)')
         .order('meeting_date', { ascending: false })
 
-      // Filter by building if not "All"
       if (selectedBuilding !== "All") {
         const building = buildings.find(b => b.name === selectedBuilding)
         if (building) {
           query = query.eq('building_id', building.id)
         }
       } else {
-        // Get all buildings' IDs that user has access to
         const buildingIds = buildings.map(b => b.id)
         if (buildingIds.length > 0) {
           query = query.in('building_id', buildingIds)
@@ -202,7 +190,6 @@ export default function Dashboard({
         return
       }
 
-      // Extract unique meeting types
       const meetingTypes = Array.from(new Set(data?.map(m => m.meeting_type).filter(Boolean))) as string[]
       setAvailableMeetingTypes(meetingTypes.sort())
 
@@ -234,74 +221,69 @@ export default function Dashboard({
 
   const fetchTasks = async () => {
     try {
-      // First, get all meetings for the selected building(s)
       let meetingQuery = supabase
         .from('meetings')
         .select('id')
-  
+
       if (selectedBuilding !== "All") {
         const building = buildings.find(b => b.name === selectedBuilding)
         if (building) {
           meetingQuery = meetingQuery.eq('building_id', building.id)
         }
       } else {
-        // Get all buildings' IDs that user has access to
         const buildingIds = buildings.map(b => b.id)
         if (buildingIds.length > 0) {
           meetingQuery = meetingQuery.in('building_id', buildingIds)
         }
       }
-  
+
       const { data: meetingsData, error: meetingsError } = await meetingQuery
-  
+
       if (meetingsError) {
         console.error('Error fetching meetings for tasks:', meetingsError)
         return
       }
-  
+
       const meetingIds = (meetingsData || []).map(m => m.id)
-  
+
       if (meetingIds.length === 0) {
         setTasks([])
         return
       }
-  
-      // Now get topics from those meetings
+
       const { data: topicsData, error: topicsError } = await supabase
         .from('topics')
         .select('id, title, meeting_id, meetings(id, title, building_id, buildings(name))')
         .in('meeting_id', meetingIds)
-  
+
       if (topicsError) {
         console.error('Error fetching topics:', topicsError)
         return
       }
-  
+
       const topicIds = (topicsData || []).map(t => t.id)
-  
+
       if (topicIds.length === 0) {
         setTasks([])
         return
       }
-  
-      // Finally get tasks from those topics
+
       const { data: tasksData, error: tasksError } = await supabase
         .from('tasks')
         .select('*')
         .in('topic_id', topicIds)
         .order('created_at', { ascending: false })
-  
+
       if (tasksError) {
         console.error('Error fetching tasks:', tasksError)
         return
       }
-  
-      // Map tasks with their topic/meeting/building info
+
       const formattedTasks = (tasksData || []).map(task => {
         const topic = topicsData?.find(t => t.id === task.topic_id)
         const meeting = topic?.meetings as any
         const building = meeting?.buildings as any
-  
+
         return {
           id: task.id,
           description: task.description,
@@ -316,7 +298,7 @@ export default function Dashboard({
           created_at: task.created_at
         }
       })
-  
+
       setTasks(formattedTasks)
     } catch (err) {
       console.error('Unexpected error:', err)
@@ -330,7 +312,7 @@ export default function Dashboard({
 
   const handleDeleteMeeting = async () => {
     if (!meetingToDelete) return
-    
+
     setDeleting(true)
     try {
       const { error } = await supabase
@@ -355,7 +337,7 @@ export default function Dashboard({
 
   const handleDeleteTask = async () => {
     if (!taskToDelete) return
-    
+
     setDeleting(true)
     try {
       const { error } = await supabase
@@ -504,6 +486,7 @@ export default function Dashboard({
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted">
+      {/* HEADER - Only MG Logo */}
       <header className="border-b border-border bg-card shadow-sm">
         <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between">
@@ -514,68 +497,26 @@ export default function Dashboard({
                 className="h-10 w-auto object-contain"
               />
             </div>
-            <div className="flex items-center gap-4">
-              {/* Company Logo - Right side */}
-              {companyLogo && (
-                <img 
-                  src={companyLogo} 
-                  alt="Company Logo" 
-                  className="h-10 w-10 rounded-full object-cover border-2 border-border shadow-sm"
-                />
-              )}
-              <div className="relative">
-                <Button
-                  variant="outline"
-                  className="flex items-center gap-2 bg-card"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setShowBuildingDropdown(!showBuildingDropdown)
-                  }}
-                >
-                  {selectedBuilding || "Select Building"}
-                  <ChevronDown className="h-4 w-4" />
-                </Button>
-                {showBuildingDropdown && (
-                  <>
-                    <div 
-                      className="fixed inset-0 z-40" 
-                      onClick={() => setShowBuildingDropdown(false)}
-                    />
-                    <div className="absolute right-0 mt-2 w-56 bg-card border border-border rounded-lg shadow-lg z-50">
-                      <button
-                        onClick={() => handleBuildingSelect("All")}
-                        className={`w-full px-4 py-2 text-left hover:bg-muted transition-colors first:rounded-t-lg ${
-                          selectedBuilding === "All" ? "bg-muted font-semibold" : ""
-                        }`}
-                      >
-                        All Buildings
-                      </button>
-                      {buildings.map((building) => (
-                        <button
-                          key={building.id}
-                          onClick={() => handleBuildingSelect(building.name)}
-                          className={`w-full px-4 py-2 text-left hover:bg-muted transition-colors last:rounded-b-lg ${
-                            building.name === selectedBuilding ? "bg-muted font-semibold" : ""
-                          }`}
-                        >
-                          {building.name}
-                        </button>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </div>
-              <button className="flex h-10 w-10 items-center justify-center rounded-full bg-muted hover:bg-muted/80">
-                <User className="h-5 w-5 text-foreground" />
-              </button>
-            </div>
           </div>
         </div>
       </header>
 
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+        {/* NEW LAYOUT: Logo LEFT, Title CENTER, Dropdown + Button RIGHT */}
         <div className="mb-6 flex items-center justify-between">
-          <div>
+          {/* LEFT: Company Logo */}
+          <div className="flex items-center">
+            {companyLogo && (
+              <img 
+                src={companyLogo} 
+                alt="Company Logo" 
+                className="h-16 w-16 rounded-full object-cover border-2 border-border shadow-sm"
+              />
+            )}
+          </div>
+
+          {/* CENTER: Building Name + Count */}
+          <div className="flex-1 text-center">
             <h2 className="text-2xl font-bold text-foreground">
               {selectedBuilding === "All" ? "All Buildings" : selectedBuilding}
             </h2>
@@ -585,19 +526,67 @@ export default function Dashboard({
               {activeTab === "all" && `${filteredMeetings.length} meetings, ${filteredTasks.length} tasks`}
             </p>
           </div>
-          {userCanCreateMeeting && (
-            <Button
-              onClick={onCreateMeeting}
-              disabled={buildings.length === 0}
-              className="bg-gradient-to-r from-primary to-decision-purple text-primary-foreground hover:opacity-90 disabled:opacity-50"
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              New Meeting
-            </Button>
-          )}
+
+          {/* RIGHT: All Dropdown + New Meeting Button (stacked) */}
+          <div className="flex flex-col items-end gap-2">
+            {/* Building Dropdown */}
+            <div className="relative">
+              <Button
+                variant="outline"
+                className="flex items-center gap-2 bg-card min-w-[180px] justify-center"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setShowBuildingDropdown(!showBuildingDropdown)
+                }}
+              >
+                {selectedBuilding || "Select Building"}
+                <ChevronDown className="h-4 w-4" />
+              </Button>
+              {showBuildingDropdown && (
+                <>
+                  <div 
+                    className="fixed inset-0 z-40" 
+                    onClick={() => setShowBuildingDropdown(false)}
+                  />
+                  <div className="absolute right-0 mt-2 w-56 bg-card border border-border rounded-lg shadow-lg z-50">
+                    <button
+                      onClick={() => handleBuildingSelect("All")}
+                      className={`w-full px-4 py-2 text-left hover:bg-muted transition-colors first:rounded-t-lg ${
+                        selectedBuilding === "All" ? "bg-muted font-semibold" : ""
+                      }`}
+                    >
+                      All Buildings
+                    </button>
+                    {buildings.map((building) => (
+                      <button
+                        key={building.id}
+                        onClick={() => handleBuildingSelect(building.name)}
+                        className={`w-full px-4 py-2 text-left hover:bg-muted transition-colors last:rounded-b-lg ${
+                          building.name === selectedBuilding ? "bg-muted font-semibold" : ""
+                        }`}
+                      >
+                        {building.name}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* New Meeting Button */}
+            {userCanCreateMeeting && (
+              <Button
+                onClick={onCreateMeeting}
+                disabled={buildings.length === 0}
+                className="bg-gradient-to-r from-primary to-decision-purple text-primary-foreground hover:opacity-90 disabled:opacity-50 min-w-[180px]"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                New Meeting
+              </Button>
+            )}
+          </div>
         </div>
 
-        {/* Tabs */}
         <div className="mb-6 border-b border-border">
           <div className="flex gap-4">
             <button
@@ -647,8 +636,7 @@ export default function Dashboard({
               className="w-full pl-10 pr-4 py-2 bg-card border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground"
             />
           </div>
-          
-          {/* Meeting Type Filter - Only show on meetings tab */}
+
           {(activeTab === "meetings" || activeTab === "all") && availableMeetingTypes.length > 0 && (
             <div className="relative">
               <Button
@@ -695,7 +683,6 @@ export default function Dashboard({
           )}
         </div>
 
-        {/* Meetings Tab */}
         {(activeTab === "meetings" || activeTab === "all") && (
           <Card className="border-0 bg-card shadow-md mb-6">
             {activeTab === "all" && (
@@ -775,7 +762,6 @@ export default function Dashboard({
           </Card>
         )}
 
-        {/* Tasks Tab */}
         {(activeTab === "tasks" || activeTab === "all") && (
           <Card className="border-0 bg-card shadow-md">
             {activeTab === "all" && (
@@ -870,8 +856,7 @@ export default function Dashboard({
           </Card>
         )}
       </div>
-      
-      {/* Edit Meeting Modal */}
+
       {showEditMeetingModal && selectedMeeting && (
         <EditMeetingModal
           isOpen={showEditMeetingModal}
@@ -897,7 +882,6 @@ export default function Dashboard({
         />
       )}
 
-      {/* Delete Meeting Confirmation Modal */}
       {meetingToDelete && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <Card className="w-full max-w-md p-6 m-4">
@@ -927,7 +911,6 @@ export default function Dashboard({
         </div>
       )}
 
-      {/* Delete Task Confirmation Modal */}
       {taskToDelete && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <Card className="w-full max-w-md p-6 m-4">
@@ -957,7 +940,6 @@ export default function Dashboard({
         </div>
       )}
 
-      {/* Task Details Modal */}
       {selectedTaskId && (
         <TaskDetailsModal
           taskId={selectedTaskId}

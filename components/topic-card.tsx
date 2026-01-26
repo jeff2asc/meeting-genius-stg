@@ -732,7 +732,7 @@ export default function TopicCard({
 
   return (
     <>
-      <Card className="border-0 bg-card shadow-md overflow-hidden">
+      <Card className="border-0 bg-card shadow-md overflow-hidden mb-1">
         {/* ⭐ UPDATED: Header with In-Camera indicator */}
         <div className={`border-b border-border p-2 ${isIncamera ? 'bg-gradient-to-r from-red-50 to-orange-50' : 'bg-gradient-to-r from-primary/5 to-decision-purple/5'}`}>
           <div className="flex items-center justify-between">
@@ -871,7 +871,7 @@ export default function TopicCard({
             )}
 
             {showAttachments && (
-              <div className="border-b border-border p-2 bg-muted/10">
+              <div className="border-b border-border p-1 bg-muted/10">
                 <h4 className="text-sm font-semibold text-foreground mb-1.5 flex items-center gap-2">
                   <Paperclip className="h-4 w-4" />
                   Topic Attachments ({attachments.length})
