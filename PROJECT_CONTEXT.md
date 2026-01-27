@@ -47,7 +47,8 @@
 - **Database**: Supabase (PostgreSQL)
 - **Client**: @supabase/supabase-js 2.76.1
 - **Authentication**: Custom (localStorage-based, password hashing with bcryptjs)
-- **Storage**: Supabase Storage for files (documents, attachments, logos)
+- **Storage**: Supabase Storage for files (documents, attachments, logos, transcripts)
+- **AI Integration**: Google Gemini AI (@google/generative-ai 0.24.1) for transcript analysis
 
 ### Other Dependencies
 - **Date Handling**: date-fns 4.1.0
@@ -62,6 +63,7 @@
   - mammoth (^1.11.0) - Extract text from DOCX files
   - pdf-parse (^2.4.5) - Additional PDF parsing support
   - pdfjs-dist (^5.4.449) - PDF.js library
+- **AI/ML**: @google/generative-ai (0.24.1) - Google Gemini AI integration for transcript task extraction
 
 ---
 
@@ -700,6 +702,64 @@ Stores user-specific text shortcuts (GeniusWords) for quick insertion of commonl
 
 ---
 
+### 20. **meeting_transcripts**
+Stores meeting transcript files and AI-extracted tasks.
+
+```typescript
+{
+  id: number (primary key, auto-increment)
+  meeting_id: number (foreign key → meetings.id)
+  filename: string
+  file_url: string (URL to file in Supabase storage)
+  file_size: number (bytes)
+  mime_type: string (e.g., "text/plain", "application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+  parsed_json: any (JSONB - Contains extracted tasks array)
+  tasks_created_count: number (Number of tasks actually created from this transcript)
+  uploaded_by: number | null (foreign key → users.id)
+  created_at: timestamp
+  updated_at: timestamp
+}
+```
+
+**Purpose**: Stores meeting transcript files uploaded by users, along with AI-extracted tasks from Google Gemini.
+
+**Storage**:
+- Files are stored in Supabase Storage bucket: `meeting-transcripts`
+- File path format: `{meeting_id}/{timestamp}_{filename}`
+- Supported file types: TXT, PDF, DOCX
+- Maximum file size: 10MB
+
+**AI Task Extraction**:
+- Uses Google Gemini AI (models/gemini-2.5-flash) to analyze transcript text
+- Automatically extracts action items, tasks, and follow-ups
+- For each task, AI provides:
+  - `description`: Clear, actionable task description
+  - `assigned_name`: Person assigned (if mentioned in transcript)
+  - `due_date`: Due date in YYYY-MM-DD format (if mentioned)
+  - `confidence`: AI confidence score (0-1, filtered to >= 0.5)
+- Tasks stored in `parsed_json` field as JSON array
+- Users review and approve tasks before they are created in the system
+
+**Workflow**:
+1. User uploads transcript file (TXT, PDF, or DOCX)
+2. System extracts text using documentExtractor
+3. Text sent to Google Gemini AI for task extraction
+4. AI returns array of potential tasks with metadata
+5. Transcript record saved with extracted tasks in `parsed_json`
+6. User reviews extracted tasks in preview modal
+7. User can edit task details and assign to topics
+8. User approves tasks for creation
+9. Tasks inserted into `tasks` table
+10. `tasks_created_count` updated on transcript record
+
+**Usage**:
+- Upload via "Upload Transcript" button in meeting view (working_agenda status)
+- View all uploaded transcripts via "View Transcripts" button
+- Download or view transcript files
+- Track how many tasks were created from each transcript
+
+---
+
 ## User Types & Permissions System
 
 The system uses a centralized permission checking system located in `lib/permissions.ts`.
@@ -950,7 +1010,28 @@ All permission checks are centralized in `lib/permissions.ts`:
 - **Search**: Filter shortcuts by shortcode or description in manager interface
 - **Components**: `GeniusWordsManager` for management, `GeniusWordsInput` reusable component
 
-### 12. **Document Management & AI Analysis**
+### 12. **Meeting Transcript Upload & AI Task Extraction**
+- **Transcript Upload**: Upload meeting transcripts in TXT, PDF, or DOCX format (max 10MB)
+- **AI-Powered Task Extraction**: Google Gemini AI automatically analyzes transcripts and extracts action items
+- **Intelligent Recognition**: AI identifies tasks, assignees, due dates, and provides confidence scores
+- **Task Preview & Editing**: Review extracted tasks before creation, edit descriptions, assignees, and due dates
+- **Topic Assignment**: Assign each extracted task to specific meeting topics
+- **Batch Task Creation**: Create multiple tasks at once from approved transcript tasks
+- **Transcript History**: View all uploaded transcripts for a meeting with task creation counts
+- **File Management**: Download or view transcript files directly from the system
+- **Storage**: Transcripts stored in Supabase Storage (`meeting-transcripts` bucket)
+- **Components**: 
+  - `UploadTranscriptModal`: Upload transcript files
+  - `PreviewTasksModal`: Review and edit AI-extracted tasks before creation
+  - `ViewTranscriptsModal`: View all transcripts uploaded to a meeting
+- **API Endpoints**:
+  - `/api/transcripts/upload`: Upload and process transcript files
+  - `/api/transcripts/list`: List all transcripts for a meeting
+  - `/api/transcripts/create-tasks`: Batch create approved tasks
+- **AI Model**: Uses Google Gemini 2.5 Flash for fast, accurate task extraction
+- **Confidence Filtering**: Only tasks with 50%+ confidence are shown to users
+
+### 13. **Document Management & AI Analysis**
 - **Document Upload & Storage**:
   - Upload building documents via BuildingDetailsModal → Documents tab
   - Supports PDF, DOC, DOCX, and plain text files
@@ -1065,6 +1146,8 @@ app/page.tsx (Root)
   - Section/topic creation modals
   - In-camera toggle button (marks meeting as confidential)
   - Send Notice button (emails agenda to owners/residents)
+  - Upload Transcript button (upload meeting transcripts for AI task extraction)
+  - View Transcripts button (view all uploaded transcripts)
   - Generate Agenda PDF button (during working_agenda/agenda phases)
   - Generate Minutes PDF button (when status is "minutes")
    - **Improved button layout**: All action buttons in single row with consistent sizing (h-8, px-3, text-xs)
@@ -1181,6 +1264,9 @@ All shadcn/ui style components:
 - `components/TaskDetailsModal.tsx`: **Enhanced task management** with attachments, AI analysis, and notes
 - `components/GeniusWordsManager.tsx`: Full-screen interface for managing user's text shortcuts
 - `components/GeniusWordsInput.tsx`: Reusable text input/textarea component with GeniusWords autocomplete
+- `components/transcript/upload-transcript-modal.tsx`: Upload meeting transcript files
+- `components/transcript/preview-tasks-modal.tsx`: Review and edit AI-extracted tasks
+- `components/transcript/view-transcripts-modal.tsx`: View all uploaded transcripts for a meeting
 
 #### **Utility Components**
 
@@ -1606,6 +1692,84 @@ working_agenda → agenda → working_minutes → minutes
 
 ---
 
+### 23. **Meeting Transcript Upload & AI Task Extraction Workflow**
+
+**Uploading a Transcript**:
+1. User opens meeting in meeting view (meeting must be in `working_agenda` status)
+2. User clicks "Upload Transcript" button in meeting header
+3. `UploadTranscriptModal` opens
+4. User selects transcript file (TXT, PDF, or DOCX format, max 10MB)
+5. File validated for type and size
+6. User clicks "Upload & Extract Tasks" button
+7. System uploads file to Supabase Storage (`meeting-transcripts/{meeting_id}/{timestamp}_{filename}`)
+8. System gets public URL for uploaded file
+9. System extracts text from file using `extractTextFromFile()` utility
+10. System fetches meeting sections and topics for context
+11. Transcript text sent to Google Gemini AI (`models/gemini-2.5-flash`) with detailed prompt
+12. AI analyzes transcript and returns JSON array of extracted tasks with:
+    - `description`: Clear, actionable task description
+    - `assigned_name`: Person assigned (if mentioned)
+    - `due_date`: Due date in YYYY-MM-DD format (if mentioned)
+    - `confidence`: AI confidence score (0-1)
+13. System filters tasks to only those with confidence >= 0.5
+14. Transcript record saved to `meeting_transcripts` table with:
+    - Meeting ID, filename, file URL, file size, mime type
+    - `parsed_json`: Contains extracted tasks array
+    - `tasks_created_count`: Initially 0
+    - `uploaded_by`: Current user ID
+15. Success message displayed with count of extracted tasks
+16. `PreviewTasksModal` opens automatically to review tasks
+
+**Reviewing & Approving Extracted Tasks**:
+1. `PreviewTasksModal` displays all extracted tasks
+2. Each task shows: description, assigned name, due date, topic assignment, confidence
+3. User can:
+   - **Edit** any task: modify description, assignee, due date
+   - **Assign to Topic**: Select which section and topic the task belongs to
+   - **Remove** task: Delete tasks that aren't relevant
+4. Warning shown if any tasks don't have a topic assigned
+5. User clicks "Approve & Create Tasks" button
+6. System validates all tasks have `topic_id` assigned
+7. Tasks sent to `/api/transcripts/create-tasks` endpoint
+8. Tasks inserted into `tasks` table with:
+   - `topic_id`, `description`, `assigned_name`, `due_date`, `status: 'open'`
+   - `created_by`: Current user ID
+9. `meeting_transcripts.tasks_created_count` updated with number of created tasks
+10. Success message displayed
+11. Meeting view refreshes to show newly created tasks
+12. Modal closes
+
+**Viewing Transcript History**:
+1. User clicks "View Transcripts" button in meeting view
+2. `ViewTranscriptsModal` opens
+3. System fetches all transcripts for meeting via `/api/transcripts/list`
+4. Each transcript displays:
+   - Filename and upload date
+   - File size (formatted as KB/MB)
+   - Number of tasks created from transcript
+   - Uploaded by user name
+   - Action buttons: View (opens file) and Download
+5. User can view or download any transcript file
+6. Empty state shown if no transcripts uploaded yet
+
+**AI Task Extraction Details**:
+- **Model**: Google Gemini 2.5 Flash (fast, cost-effective)
+- **Prompt Engineering**: Detailed instructions to extract only clear action items
+- **Task Recognition**: Identifies explicit ("John will...") and implicit ("We need to...") assignments
+- **Confidence Scoring**: Each task rated 0-1, filtered to >= 0.5 confidence
+- **JSON Response**: Gemini returns structured JSON with tasks array
+- **Error Handling**: Graceful fallback if AI fails (shows empty task list)
+- **Text Cleanup**: Removes markdown code blocks from Gemini response
+
+**Use Cases**:
+- Import tasks from external meeting notes or recordings
+- Quickly create multiple tasks from transcript analysis
+- Reduce manual data entry after meetings
+- Ensure no action items are missed from meeting discussions
+- Track which transcripts contributed to which tasks
+
+---
+
 ## File Structure
 
 ```
@@ -1657,6 +1821,10 @@ meeting-genius/
 │   ├── GenerateMinutesButton.tsx # Generate PDF minutes
 │   ├── GeniusWordsManager.tsx    # Manage user text shortcuts
 │   ├── GeniusWordsInput.tsx      # Reusable input with GeniusWords autocomplete
+│   ├── transcript/               # Transcript management components
+│   │   ├── upload-transcript-modal.tsx    # Upload transcript files
+│   │   ├── preview-tasks-modal.tsx         # Review AI-extracted tasks
+│   │   └── view-transcripts-modal.tsx      # View transcript history
 │   ├── topic-card.tsx            # Topic display
 │   ├── task-card.tsx             # Task display
 │   ├── meeting-card.tsx          # Meeting display
@@ -1669,14 +1837,22 @@ meeting-genius/
 │   ├── auth.ts                   # Authentication functions
 │   ├── permissions.ts            # Permission system
 │   ├── documentExtractor.ts      # Document text extraction utility (PDF, DOCX, TXT)
+│   ├── gemini.ts                 # Google Gemini AI integration for transcript task extraction
 │   └── utils.ts                  # Utility functions
 │
 ├── app/
 │   ├── api/
 │   │   ├── send-email/
 │   │   │   └── route.ts          # Email sending API endpoint (uses company SMTP)
-│   │   └── signup/
-│   │       └── route.ts          # Signup API endpoint (creates company, admin, PM, building)
+│   │   ├── signup/
+│   │   │   └── route.ts          # Signup API endpoint (creates company, admin, PM, building)
+│   │   └── transcripts/
+│   │       ├── upload/
+│   │       │   └── route.ts      # Upload transcript and extract tasks with AI
+│   │       ├── list/
+│   │       │   └── route.ts      # List all transcripts for a meeting
+│   │       └── create-tasks/
+│   │           └── route.ts      # Batch create tasks from approved transcript
 │
 ├── hooks/
 │   ├── use-mobile.ts            # Mobile detection hook
@@ -2190,6 +2366,30 @@ useEffect(() => {
 - **Cascading Deletes**: Warnings about related data being deleted
 - **Loading States**: Disabled buttons during deletion process
 
+### 15. **Google Gemini AI Integration**
+- **Library**: @google/generative-ai (^0.24.1)
+- **Model**: models/gemini-2.5-flash (fast, cost-effective)
+- **API Key**: Hardcoded in `lib/gemini.ts` for MVP testing (should move to environment variable)
+- **Use Case**: Extract action items and tasks from meeting transcripts
+- **Prompt Engineering**: 
+  - Detailed instructions for task extraction
+  - JSON response format specification
+  - Guidelines for identifying explicit and implicit assignments
+  - Confidence scoring requirements
+- **Response Processing**:
+  - Removes markdown code blocks from response
+  - Parses JSON response
+  - Validates task structure
+  - Filters tasks by confidence threshold (>= 0.5)
+- **Error Handling**: Graceful fallback if AI fails (returns empty task array)
+- **Extracted Data**:
+  - `description`: Clear, actionable task description
+  - `assigned_name`: Person assigned (null if not mentioned)
+  - `due_date`: Due date in YYYY-MM-DD format (null if not mentioned)
+  - `confidence`: AI confidence score (0-1)
+- **Performance**: Fast processing with Gemini 2.5 Flash model
+- **Cost**: Minimal cost due to efficient model selection
+
 ---
 
 ## Troubleshooting & Known Issues
@@ -2295,6 +2495,99 @@ useEffect(() => {
 - **Features**: User registration with validation
 - **Implementation**: Located in `app/api/signup/route.ts`
 
+#### 3. `/api/transcripts/upload` (POST)
+- **Purpose**: Upload meeting transcript and extract tasks using Google Gemini AI
+- **Authentication**: Requires user to be logged in
+- **Request**: FormData with file, meeting_id, user_id
+- **Process**:
+  1. Validates file type (TXT, PDF, DOCX) and size (max 10MB)
+  2. Uploads file to Supabase Storage (`meeting-transcripts` bucket)
+  3. Extracts text from file using documentExtractor
+  4. Fetches meeting sections and topics for context
+  5. Sends text to Google Gemini AI for task extraction
+  6. Filters tasks to confidence >= 0.5
+  7. Saves transcript record with extracted tasks in `parsed_json`
+  8. Returns transcript_id and extracted_tasks array
+- **Response**:
+  ```json
+  {
+    "success": true,
+    "transcript_id": 123,
+    "extracted_tasks": [
+      {
+        "description": "Task description",
+        "assigned_name": "John Doe",
+        "due_date": "2026-02-15",
+        "confidence": 0.95
+      }
+    ],
+    "message": "Successfully extracted 5 task(s)"
+  }
+  ```
+- **Implementation**: Located in `app/api/transcripts/upload/route.ts`
+
+#### 4. `/api/transcripts/list` (GET)
+- **Purpose**: List all transcripts uploaded to a meeting
+- **Authentication**: None (should be added for production)
+- **Query Parameters**: `meeting_id` (required)
+- **Response**:
+  ```json
+  {
+    "transcripts": [
+      {
+        "id": 123,
+        "meeting_id": 456,
+        "filename": "meeting-notes.pdf",
+        "file_url": "https://...",
+        "file_size": 524288,
+        "mime_type": "application/pdf",
+        "tasks_created_count": 5,
+        "created_at": "2026-01-27T10:00:00Z",
+        "users": {
+          "name": "John Doe"
+        }
+      }
+    ]
+  }
+  ```
+- **Implementation**: Located in `app/api/transcripts/list/route.ts`
+
+#### 5. `/api/transcripts/create-tasks` (POST)
+- **Purpose**: Batch create tasks from approved transcript extraction
+- **Authentication**: Requires user to be logged in
+- **Request Body**:
+  ```json
+  {
+    "transcript_id": 123,
+    "user_id": 456,
+    "tasks": [
+      {
+        "description": "Task description",
+        "assigned_name": "John Doe",
+        "assigned_email": "john@example.com",
+        "due_date": "2026-02-15",
+        "topic_id": 789
+      }
+    ]
+  }
+  ```
+- **Validation**: All tasks must have `topic_id` assigned
+- **Process**:
+  1. Validates all tasks have topic_id
+  2. Bulk inserts tasks into `tasks` table
+  3. Updates `meeting_transcripts.tasks_created_count`
+  4. Returns created task IDs
+- **Response**:
+  ```json
+  {
+    "success": true,
+    "created_count": 5,
+    "task_ids": [101, 102, 103, 104, 105],
+    "message": "Successfully created 5 task(s)"
+  }
+  ```
+- **Implementation**: Located in `app/api/transcripts/create-tasks/route.ts`
+
 ### External API Integrations
 
 #### AI Analysis Webhooks (n8n)
@@ -2386,12 +2679,21 @@ useEffect(() => {
    - Supported Formats: PDF, DOC, DOCX, TXT, images
    - Access: Authenticated users
 
+5. **meeting-transcripts**
+   - Purpose: Store meeting transcript files for AI task extraction
+   - File Path Format: `{meeting_id}/{timestamp}_{filename}`
+   - Max File Size: 10MB
+   - Supported Formats: TXT, PDF, DOCX
+   - Access: Authenticated users
+   - AI Processing: Text extracted and analyzed by Google Gemini AI
+   - Usage: Upload via meeting view, AI extracts tasks automatically
+
 ---
 
 ## Summary
 
 This is a comprehensive meeting management system with:
-- **19 main database tables** (companies, users, buildings, meetings, sections, topics, notes, tasks, decisions, task_notes, minutes_templates, user_buildings, building_documents, ai_analyses, task_attachments, task_analyses, topic_attachments, building_document_urls, genius_words)
+- **20 main database tables** (companies, users, buildings, meetings, sections, topics, notes, tasks, decisions, task_notes, minutes_templates, user_buildings, building_documents, ai_analyses, task_attachments, task_analyses, topic_attachments, building_document_urls, genius_words, meeting_transcripts)
 - **8 user types** with granular permissions (master, corporate_administrator, property_manager, user, owner, resident, vendor, attendee)
 - **Multi-tenant architecture** (company → building → meeting hierarchy)
 - **Full CRUD operations** for all entities
@@ -2400,6 +2702,7 @@ This is a comprehensive meeting management system with:
 - **Decision threading** for follow-up motions and amendments
 - **PDF agenda and minutes generation** with customizable templates
 - **Meeting notice distribution** via beautifully formatted HTML emails to owners/residents
+- **AI-powered meeting transcript analysis** with automatic task extraction using Google Gemini
 - **Comprehensive admin panel** with inline creation capabilities
 - **User-building assignment** via junction table
 - **Property manager assignment** for users
@@ -2411,6 +2714,8 @@ This is a comprehensive meeting management system with:
 - **GeniusWords text shortcuts** for user productivity
 - **Auto-save functionality** for topic descriptions
 - **AI-powered analysis** of topics and tasks using extracted document text
+- **AI-powered transcript task extraction** using Google Gemini AI
+- **Meeting transcript upload and management** with automatic task extraction
 - **Document text extraction** from PDFs, DOCX, and plain text files
 - **Email notifications** via company-specific SMTP configurations
 - **Meeting notification settings** per building (board/general meeting notice days, recipient types)
@@ -2418,14 +2723,41 @@ This is a comprehensive meeting management system with:
 - **Auto-reload functionality** for tasks, notes, and decisions
 - **Modern React/Next.js** architecture with TypeScript
 
-The system is designed for property management companies to manage their meeting workflows from agenda creation through minutes finalization and PDF generation, with support for multiple companies, buildings, and user roles. It includes robust privacy features (in-camera meetings/topics), comprehensive email notification system with professional HTML templates sent to owners and residents, and detailed user role management distinguishing between owners and residents.
+The system is designed for property management companies to manage their meeting workflows from agenda creation through minutes finalization and PDF generation, with support for multiple companies, buildings, and user roles. It includes robust privacy features (in-camera meetings/topics), comprehensive email notification system with professional HTML templates sent to owners and residents, detailed user role management distinguishing between owners and residents, and cutting-edge AI integration using Google Gemini for automatic task extraction from meeting transcripts.
 
 ---
 
-**Last Updated**: January 26, 2026
+**Last Updated**: January 27, 2026
 **Version**: Current production codebase
 
 **Recent Updates**:
+- **Meeting Transcript Upload & AI Task Extraction** (NEW - Major Feature)
+  - Added `meeting_transcripts` database table for storing transcript files
+  - Integrated Google Gemini AI (models/gemini-2.5-flash) for intelligent task extraction
+  - New dependency: @google/generative-ai (^0.24.1)
+  - Upload transcripts in TXT, PDF, or DOCX format (max 10MB)
+  - AI automatically analyzes transcripts and extracts action items with:
+    - Task descriptions
+    - Assigned persons (if mentioned)
+    - Due dates (if mentioned)
+    - Confidence scores (filtered to >= 0.5)
+  - Three new API endpoints:
+    - `/api/transcripts/upload`: Upload and process with AI
+    - `/api/transcripts/list`: View transcript history
+    - `/api/transcripts/create-tasks`: Batch create approved tasks
+  - Three new modal components:
+    - `UploadTranscriptModal`: Upload interface with file validation
+    - `PreviewTasksModal`: Review/edit/approve AI-extracted tasks
+    - `ViewTranscriptsModal`: View all uploaded transcripts with download/view options
+  - Two new buttons in meeting view header:
+    - "Upload Transcript" (purple button, working_agenda phase)
+    - "View Transcripts" (gray button, working_agenda phase)
+  - New Supabase Storage bucket: `meeting-transcripts`
+  - Transcript records track: filename, file URL, size, mime type, extracted tasks, creation count
+  - Users can edit extracted tasks before creating them
+  - Assign each task to specific meeting topics before approval
+  - Complete workflow with validation and error handling
+  - AI prompt engineered to identify explicit and implicit task assignments
 - **Send Meeting Notice Feature**: Email distribution system for meeting agendas (NEW)
   - Added "Send Notice" button in meeting view (available during working_agenda and agenda phases)
   - Sends beautifully formatted HTML emails to all owners/residents of building
