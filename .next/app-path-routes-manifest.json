@@ -1,0 +1,9 @@
+{
+  "/api/signup/route": "/api/signup",
+  "/_not-found/page": "/_not-found",
+  "/api/send-email/route": "/api/send-email",
+  "/api/transcripts/list/route": "/api/transcripts/list",
+  "/api/transcripts/upload/route": "/api/transcripts/upload",
+  "/api/transcripts/create-tasks/route": "/api/transcripts/create-tasks",
+  "/page": "/"
+}
