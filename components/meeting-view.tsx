@@ -48,6 +48,9 @@ interface Topic {
   tasks: number
   decisions: number
   order_index?: number
+  is_incamera?: boolean
+  incamera_start_time?: string | null
+  incamera_end_time?: string | null
 }
 
 
@@ -65,7 +68,6 @@ const STATUS_FLOW = [
   "working_minutes",
   "minutes"
 ] as const
-
 
 export default function MeetingView({
   meetingId,
@@ -266,7 +268,10 @@ export default function MeetingView({
             attachments: 0,
             tasks: tasksForThisTopic,
             decisions: topic.decisions?.[0]?.count || 0,
-            order_index: topic.order_index
+            order_index: topic.order_index,
+            is_incamera: topic.is_incamera,
+            incamera_start_time: topic.incamera_start_time,
+            incamera_end_time: topic.incamera_end_time
           }
         })
       }))
@@ -312,26 +317,30 @@ export default function MeetingView({
   
   const cancelDeleteSection = () => setSectionToDelete(null)
 
-  // â­ UPDATED: Preserve section expanded state when editing topic title
   const updateTopic = async (id: number, updates: Partial<Topic>) => {
     if (!userCanEdit) {
       alert("You do not have permission to edit topics.")
       return
     }
     try {
+      const updatePayload: any = {}
+
+      if (updates.title !== undefined) updatePayload.title = updates.title
+      if (updates.description !== undefined) updatePayload.description = updates.description
+      if (updates.is_incamera !== undefined) updatePayload.is_incamera = updates.is_incamera
+      if (updates.incamera_start_time !== undefined) updatePayload.incamera_start_time = updates.incamera_start_time
+      if (updates.incamera_end_time !== undefined) updatePayload.incamera_end_time = updates.incamera_end_time
+
       const { error } = await supabase
         .from("topics")
-        .update({
-          title: updates.title,
-          description: updates.description
-        })
+        .update(updatePayload)
         .eq("id", id)
+
       if (error) {
         console.error("Error updating topic:", error)
         return
       }
       if (updates.title) {
-        // â­ PRESERVE EXPANDED STATE: Save current expanded states before refresh
         const expandedStates = sections.reduce((acc, section) => {
           acc[section.id] = section.isExpanded
           return acc
@@ -339,7 +348,6 @@ export default function MeetingView({
         
         await fetchSectionsAndTopics()
         
-        // â­ RESTORE EXPANDED STATE: Restore after refresh
         setSections(prevSections => 
           prevSections.map(section => ({
             ...section,
@@ -507,7 +515,6 @@ export default function MeetingView({
     return index > 0 ? STATUS_FLOW[index - 1] : current
   }
 
-  // â­ UPDATED: Added logic to reset attendee presence when going back to working_agenda
   const updateMeetingStatus = async (targetStatus: string, recorderName?: string, timekeeperName?: string | null) => {
     try {
       setLoading(true)
@@ -519,7 +526,6 @@ export default function MeetingView({
         updateData.timekeeper_name = timekeeperName
       }
       
-      // â­ RESET ATTENDEE PRESENCE when going back to working_agenda
       if (targetStatus === "working_agenda" && meeting?.attendees) {
         const resetAttendees = (meeting.attendees as Attendee[]).map(attendee => ({
           ...attendee,
@@ -606,7 +612,6 @@ export default function MeetingView({
     return `${displayHour}:${minutes} ${ampm}`
   }
 
-  // â­ IMPROVED: Enhanced Email Design with Better Styling
   const handleSendNotice = async () => {
     if (!meeting) return
 
@@ -620,7 +625,6 @@ export default function MeetingView({
     try {
       setLoading(true)
 
-      // Fetch building to get company_id
       const { data: buildingData, error: buildingError } = await supabase
         .from('buildings')
         .select('company_id, name')
@@ -632,7 +636,6 @@ export default function MeetingView({
         return
       }
 
-      // Fetch all users assigned to this building with owner or resident type
       const { data: userBuildings, error: userBuildingsError } = await supabase
         .from('user_buildings')
         .select('user_id')
@@ -650,7 +653,6 @@ export default function MeetingView({
         return
       }
 
-      // Fetch user details (only owners and residents)
       const { data: users, error: usersError } = await supabase
         .from('users')
         .select('id, name, email, user_type')
@@ -669,7 +671,6 @@ export default function MeetingView({
         return
       }
 
-      // Prepare email content with enhanced design
       const subject = `Meeting Notice: ${meeting.title}`
       const html = `
         <!DOCTYPE html>
@@ -678,267 +679,315 @@ export default function MeetingView({
           <meta charset="UTF-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
           <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
             body {
-              margin: 0;
-              padding: 0;
               font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-              background-color: #f3f4f6;
+              background-color: #f5f7fa;
+              padding: 20px 0;
             }
-            .email-container {
-              max-width: 600px;
-              margin: 40px auto;
-              background-color: #ffffff;
-              border-radius: 12px;
+            .email-wrapper {
+              max-width: 650px;
+              margin: 0 auto;
+              background: #ffffff;
+              border-radius: 16px;
               overflow: hidden;
-              box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+              box-shadow: 0 10px 40px rgba(0, 0, 0, 0.08);
             }
             .header {
-              background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
-              color: #ffffff;
-              padding: 32px 24px;
+              background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
+              padding: 48px 32px;
               text-align: center;
+              position: relative;
             }
             .header h1 {
-              margin: 0 0 8px 0;
-              font-size: 28px;
-              font-weight: 700;
-              letter-spacing: -0.5px;
+              color: #ffffff;
+              font-size: 32px;
+              font-weight: 800;
+              margin-bottom: 12px;
+              text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
             }
-            .header .building-name {
-              font-size: 16px;
-              opacity: 0.95;
-              font-weight: 500;
+            .building-badge {
+              display: inline-block;
+              background: rgba(255, 255, 255, 0.2);
+              backdrop-filter: blur(10px);
+              color: #ffffff;
+              padding: 8px 20px;
+              border-radius: 20px;
+              font-size: 15px;
+              font-weight: 600;
+              border: 1px solid rgba(255, 255, 255, 0.3);
             }
-            .content {
-              padding: 32px 24px;
-            }
+            .content { padding: 40px 32px; }
             .info-grid {
               display: grid;
-              gap: 16px;
-              margin-bottom: 32px;
+              grid-template-columns: 1fr;
+              gap: 12px;
+              margin-bottom: 36px;
             }
-            .info-item {
+            .info-card {
+              background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+              border-left: 4px solid #3b82f6;
+              border-radius: 10px;
+              padding: 18px 20px;
               display: flex;
-              align-items: flex-start;
-              padding: 12px;
-              background-color: #f9fafb;
-              border-radius: 8px;
-              border-left: 3px solid #2563eb;
+              align-items: center;
             }
-            .info-item .icon {
-              width: 20px;
-              height: 20px;
-              margin-right: 12px;
+            .info-icon {
+              font-size: 24px;
+              margin-right: 16px;
               flex-shrink: 0;
-              color: #2563eb;
             }
-            .info-item .label {
+            .info-content { flex: 1; }
+            .info-label {
+              font-size: 12px;
+              font-weight: 700;
+              text-transform: uppercase;
+              color: #64748b;
+              letter-spacing: 0.5px;
+              margin-bottom: 4px;
+            }
+            .info-value {
+              font-size: 16px;
               font-weight: 600;
-              color: #374151;
-              margin-right: 8px;
-              min-width: 100px;
-            }
-            .info-item .value {
-              color: #1f2937;
+              color: #1e293b;
             }
             .divider {
               height: 2px;
-              background: linear-gradient(90deg, #e5e7eb 0%, #d1d5db 50%, #e5e7eb 100%);
-              margin: 32px 0;
-              border: none;
+              background: linear-gradient(90deg, transparent 0%, #cbd5e1 50%, transparent 100%);
+              margin: 36px 0;
+            }
+            .agenda-header {
+              text-align: center;
+              margin-bottom: 32px;
             }
             .agenda-title {
-              font-size: 22px;
-              font-weight: 700;
-              color: #1f2937;
-              margin-bottom: 24px;
-              padding-bottom: 12px;
-              border-bottom: 3px solid #2563eb;
-              display: inline-block;
+              font-size: 28px;
+              font-weight: 800;
+              color: #1e293b;
+              margin-bottom: 8px;
             }
-            .section {
-              margin-bottom: 24px;
-              padding: 16px;
-              background-color: #f9fafb;
-              border-radius: 8px;
-              border: 1px solid #e5e7eb;
+            .agenda-subtitle {
+              font-size: 14px;
+              color: #64748b;
+              font-weight: 500;
             }
+            .section-card {
+              background: #ffffff;
+              border: 2px solid #e2e8f0;
+              border-radius: 12px;
+              margin-bottom: 20px;
+              overflow: hidden;
+            }
+            .section-header {
+  background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
+  padding: 16px 24px 16px 32px;
+  display: flex;
+  align-items: center;
+  border-bottom: 2px solid #cbd5e1;
+}
+
+      .section-number {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: #ffffff;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  font-weight: 700;
+  margin-right: 16px;
+  flex-shrink: 0;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+  line-height: 2;           /* Change from 1 to 0 */
+  padding: 2;               /* Remove any padding */
+}
+
+
+
             .section-title {
-              font-size: 18px;
+              font-size: 20px;
               font-weight: 700;
-              color: #1f2937;
-              margin-bottom: 12px;
-              display: flex;
-              align-items: center;
+              color: #1e293b;
+              line-height: 1.2;
             }
-            .section-number {
+            .section-body { padding: 24px; }
+            .topics-list {
+              list-style: none;
+              padding: 0;
+              margin: 0;
+            }
+            .topic-item {
+              padding: 16px;
+              background: #f8fafc;
+              border-radius: 8px;
+              margin-bottom: 12px;
+              border-left: 3px solid #3b82f6;
+            }
+            .topic-item:last-child { margin-bottom: 0; }
+            .topic-number {
               display: inline-flex;
               align-items: center;
               justify-content: center;
-              width: 32px;
-              height: 32px;
-              background-color: #2563eb;
+              background: #3b82f6;
               color: #ffffff;
-              border-radius: 50%;
-              font-size: 16px;
+              font-size: 12px;
               font-weight: 700;
-              margin-right: 12px;
-              flex-shrink: 0;
-            }
-            .topics-list {
-              margin: 0;
-              padding-left: 20px;
-            }
-            .topics-list li {
-              margin-bottom: 8px;
-              color: #4b5563;
-              line-height: 1.6;
+              padding: 4px 10px;
+              border-radius: 6px;
+              margin-right: 10px;
+              vertical-align: middle;
+              line-height: 1;
             }
             .topic-title {
-              font-weight: 600;
-              color: #1f2937;
+              font-size: 16px;
+              font-weight: 700;
+              color: #1e293b;
+              line-height: 1.5;
             }
             .topic-description {
-              color: #6b7280;
+              font-size: 14px;
+              color: #64748b;
+              margin-top: 8px;
+              line-height: 1.6;
               font-style: italic;
             }
             .no-topics {
-              color: #9ca3af;
+              text-align: center;
+              padding: 24px;
+              color: #94a3b8;
+              font-size: 14px;
               font-style: italic;
-              padding-left: 44px;
             }
             .footer {
-              background-color: #f9fafb;
-              padding: 24px;
+              background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
+              padding: 32px;
               text-align: center;
-              border-top: 1px solid #e5e7eb;
+              border-top: 2px solid #cbd5e1;
             }
             .footer-text {
-              color: #6b7280;
               font-size: 13px;
-              margin: 0;
-              line-height: 1.6;
+              color: #64748b;
+              line-height: 1.8;
+              margin-bottom: 12px;
             }
-            .footer-logo {
-              color: #2563eb;
-              font-weight: 700;
-              font-size: 14px;
-              margin-top: 8px;
+            .footer-brand {
+              font-size: 16px;
+              font-weight: 800;
+              background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+              -webkit-background-clip: text;
+              -webkit-text-fill-color: transparent;
+              background-clip: text;
             }
             @media only screen and (max-width: 600px) {
-              .email-container {
-                margin: 0;
-                border-radius: 0;
-              }
-              .header h1 {
-                font-size: 24px;
-              }
-              .content {
-                padding: 24px 16px;
-              }
+              .email-wrapper { margin: 0; border-radius: 0; }
+              .header { padding: 36px 24px; }
+              .header h1 { font-size: 26px; }
+              .content { padding: 32px 20px; }
             }
           </style>
         </head>
         <body>
-          <div class="email-container">
-            <!-- Header -->
+          <div class="email-wrapper">
             <div class="header">
-              <h1>${meeting.title}</h1>
-              <div class="building-name">${buildingData.name}</div>
+              <h1>📋 Meeting Notice</h1>
+              <div class="building-badge">${buildingData.name}</div>
             </div>
-
-            <!-- Content -->
             <div class="content">
-              <!-- Meeting Information -->
               <div class="info-grid">
-                ${meeting.meeting_type ? `
-                  <div class="info-item">
-                    <div class="icon">📋</div>
-                    <div>
-                      <span class="label">Meeting Type:</span>
-                      <span class="value">${meeting.meeting_type}</span>
-                    </div>
-                  </div>
-                ` : ''}
-                
-                <div class="info-item">
-                  <div class="icon">📅</div>
-                  <div>
-                    <span class="label">Date:</span>
-                    <span class="value">${formatDate(meeting.meeting_date)}</span>
+                <div class="info-card">
+                  <div class="info-icon">📋</div>
+                  <div class="info-content">
+                    <div class="info-label">Meeting Title</div>
+                    <div class="info-value">${meeting.title}</div>
                   </div>
                 </div>
-
+                ${meeting.meeting_type ? `
+                  <div class="info-card">
+                    <div class="info-icon">🏢</div>
+                    <div class="info-content">
+                      <div class="info-label">Meeting Type</div>
+                      <div class="info-value">${meeting.meeting_type}</div>
+                    </div>
+                  </div>
+                ` : ''}
+                <div class="info-card">
+                  <div class="info-icon">📅</div>
+                  <div class="info-content">
+                    <div class="info-label">Date</div>
+                    <div class="info-value">${formatDate(meeting.meeting_date)}</div>
+                  </div>
+                </div>
                 ${meeting.start_time ? `
-                  <div class="info-item">
-                    <div class="icon">🕐</div>
-                    <div>
-                      <span class="label">Time:</span>
-                      <span class="value">${formatTime(meeting.start_time)}</span>
+                  <div class="info-card">
+                    <div class="info-icon">🕐</div>
+                    <div class="info-content">
+                      <div class="info-label">Time</div>
+                      <div class="info-value">${formatTime(meeting.start_time)}</div>
                     </div>
                   </div>
                 ` : ''}
-
                 ${meeting.location ? `
-                  <div class="info-item">
-                    <div class="icon">📍</div>
-                    <div>
-                      <span class="label">Location:</span>
-                      <span class="value">${meeting.location}</span>
+                  <div class="info-card">
+                    <div class="info-icon">📍</div>
+                    <div class="info-content">
+                      <div class="info-label">Location</div>
+                      <div class="info-value">${meeting.location}</div>
                     </div>
                   </div>
                 ` : ''}
-
                 ${meeting.strata_plan_number ? `
-                  <div class="info-item">
-                    <div class="icon">📄</div>
-                    <div>
-                      <span class="label">Strata Plan:</span>
-                      <span class="value">${meeting.strata_plan_number}</span>
+                  <div class="info-card">
+                    <div class="info-icon">📄</div>
+                    <div class="info-content">
+                      <div class="info-label">Strata Plan Number</div>
+                      <div class="info-value">${meeting.strata_plan_number}</div>
                     </div>
                   </div>
                 ` : ''}
               </div>
-
-              <hr class="divider">
-
-              <!-- Agenda -->
-              <h2 class="agenda-title">📋 Agenda</h2>
-
+              <div class="divider"></div>
+              <div class="agenda-header">
+                <h2 class="agenda-title">📋 Meeting Agenda</h2>
+                <p class="agenda-subtitle">Topics to be discussed during this meeting</p>
+              </div>
               ${sections.map((section, idx) => `
-                <div class="section">
-                  <div class="section-title">
-                    <span class="section-number">${idx + 1}</span>
-                    ${section.title}
+                <div class="section-card">
+                  <div class="section-header">
+                    <div class="section-number">${idx + 1}</div>
+                    <div class="section-title">${section.title}</div>
                   </div>
-                  ${section.topics.length > 0 ? `
-                    <ul class="topics-list">
-                      ${section.topics.map((topic, topicIdx) => `
-                        <li>
-                          <span class="topic-title">${topicIdx + 1}. ${topic.title}</span>
-                          ${topic.description ? `<br><span class="topic-description">${topic.description}</span>` : ''}
-                        </li>
-                      `).join('')}
-                    </ul>
-                  ` : '<p class="no-topics">No topics</p>'}
+                  <div class="section-body">
+                    ${section.topics.length > 0 ? `
+                      <ul class="topics-list">
+                        ${section.topics.map((topic, topicIdx) => `
+                          <li class="topic-item">
+                            <span class="topic-number">${idx + 1}.${topicIdx + 1}</span>
+                            <span class="topic-title">${topic.title}</span>
+                            ${topic.description ? `<div class="topic-description">${topic.description}</div>` : ''}
+                          </li>
+                        `).join('')}
+                      </ul>
+                    ` : '<div class="no-topics">No topics scheduled for this section</div>'}
+                  </div>
                 </div>
               `).join('')}
             </div>
-
-            <!-- Footer -->
             <div class="footer">
               <p class="footer-text">
-                This is an automated notice from Meeting Genius.<br>
+                This is an automated meeting notice from Meeting Genius.<br>
                 Please do not reply to this email.
               </p>
-              <div class="footer-logo">Meeting Genius</div>
+              <div class="footer-brand">Meeting Genius</div>
             </div>
           </div>
         </body>
         </html>
       `
 
-      // Send email via API
       const response = await fetch('/api/send-email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -954,9 +1003,9 @@ export default function MeetingView({
       const result = await response.json()
 
       if (response.ok) {
-        alert(`âœ… Notice sent successfully to ${users.length} recipient(s)!`)
+        alert(`✅ Notice sent successfully to ${users.length} recipient(s)!`)
       } else {
-        alert(`âŒ Failed to send notice: ${result.error || 'Unknown error'}`)
+        alert(`❌ Failed to send notice: ${result.error || 'Unknown error'}`)
       }
 
     } catch (error) {
@@ -990,7 +1039,6 @@ export default function MeetingView({
     <>
       <header className="border-b border-border bg-card shadow-sm sticky top-0 z-40">
         <div className="mx-auto max-w-7xl px-4 py-3 sm:px-6 lg:px-8">
-          {/* â­ ROW 1: Back button + Title + Status Badges */}
           <div className="flex items-center gap-3 mb-2">
             <Button 
               variant="ghost" 
@@ -1033,7 +1081,6 @@ export default function MeetingView({
             </div>
           </div>
 
-          {/* â­ ROW 2: In-Camera Warning (if enabled) */}
           {meeting.is_incamera && (
             <div className="mb-2 p-2 bg-red-50 border border-red-200 rounded text-xs">
               <div className="flex items-center gap-1.5 text-red-800">
@@ -1043,9 +1090,7 @@ export default function MeetingView({
             </div>
           )}
           
-          {/* â­ ROW 3: ALL ACTION BUTTONS - SINGLE LINE, SAME SIZE */}
           <div className="flex items-center gap-1.5 overflow-x-auto">
-            {/* In-Camera Toggle */}
             {userCanEdit && meeting.status !== "minutes" && (
               <Button
                 size="sm"
@@ -1069,7 +1114,6 @@ export default function MeetingView({
               </Button>
             )}
             
-            {/* Back to Previous Status */}
             {userCanEdit && canTransition(meeting.status, "backward") && (
               <Button
                 size="sm"
@@ -1082,7 +1126,6 @@ export default function MeetingView({
               </Button>
             )}
             
-            {/* Start/End Meeting */}
             {userCanEdit && canTransition(meeting.status, "forward") && (
               <Button
                 size="sm"
@@ -1111,7 +1154,6 @@ export default function MeetingView({
               </Button>
             )}
             
-            {/* Create Section */}
             {userCanEdit && (meeting.status === "working_agenda" || meeting.status === "working_minutes") && (
               <Button
                 size="sm"
@@ -1124,7 +1166,6 @@ export default function MeetingView({
               </Button>
             )}
 
-            {/* â­ Send Notice Button */}
             {userCanEdit && (meeting.status === "working_agenda" || meeting.status === "agenda") && (
               <Button
                 size="sm"
@@ -1137,7 +1178,6 @@ export default function MeetingView({
               </Button>
             )}
 
-            {/* Upload Transcript Button */}
             {userCanEdit && meeting.status === "working_agenda" && (
               <Button
                 size="sm"
@@ -1150,7 +1190,6 @@ export default function MeetingView({
               </Button>
             )}
 
-            {/* View Transcripts Button */}
             {meeting.status === "working_agenda" && (
               <Button
                 size="sm"
@@ -1163,7 +1202,6 @@ export default function MeetingView({
               </Button>
             )}
 
-            {/* Generate Agenda */}
             {(meeting.status === "working_agenda" || meeting.status === "agenda") && (
               <div className="flex-shrink-0">
                 <GenerateAgendaButton 
@@ -1173,7 +1211,6 @@ export default function MeetingView({
               </div>
             )}
             
-            {/* Generate Minutes */}
             {meeting.status === "minutes" && (
               <div className="flex-shrink-0">
                 <GenerateMinutesButton 
@@ -1183,14 +1220,12 @@ export default function MeetingView({
               </div>
             )}
             
-            {/* Timer (when recording) */}
             {isMounted && isRecording && (
               <div className="flex-shrink-0">
                 <Timer elapsedTime={elapsedTime} />
               </div>
             )}
 
-            {/* Recording Controls */}
             {isMounted && userCanEdit && (
               <>
                 {!isRecording ? (
@@ -1217,7 +1252,6 @@ export default function MeetingView({
             )}
           </div>
           
-          {/* â­ ROW 4: Meeting Metadata + Recorder Info */}
           <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground mt-2 pt-2 border-t border-border">
             <div className="flex items-center gap-3 overflow-x-auto">
               {meeting.meeting_type && (
@@ -1252,7 +1286,6 @@ export default function MeetingView({
               )}
             </div>
             
-            {/* Recorder/Timekeeper info on the right */}
             {meeting.status === "working_minutes" && (meeting.recorder_name || meeting.timekeeper_name) && (
               <div className="flex items-center gap-2 text-xs whitespace-nowrap flex-shrink-0">
                 {meeting.recorder_name && (
@@ -1267,7 +1300,6 @@ export default function MeetingView({
         </div>
       </header>
 
-      {/* ATTENDEES EXPANDABLE SECTION */}
       <div className="mx-auto max-w-4xl px-4 pt-0 sm:px-6 lg:px-8">
         <button
           onClick={() => setAttendeesExpanded(!attendeesExpanded)}
@@ -1307,7 +1339,6 @@ export default function MeetingView({
         )}
       </div>
 
-      {/* MEETING SECTIONS/TOPICS WITH DRAG AND DROP */}
       <DragDropContext onDragEnd={onDragEnd}>
         <Droppable droppableId="all-sections" type="SECTION">
           {(provided: any) => (
@@ -1321,7 +1352,7 @@ export default function MeetingView({
                   {(provided: any) => (
                     <div ref={provided.innerRef} {...provided.draggableProps}>
                       <Card className="border-0 bg-gradient-to-r from-primary/10 to-decision-purple/10 mb-1">
-                      <div className="w-full py-0 px-3 flex items-center justify-between">
+                        <div className="w-full py-0 px-3 flex items-center justify-between">
                           <div className="flex items-center gap-3">
                             <div {...provided.dragHandleProps} onClick={() => toggleSection(section.id)} className="cursor-pointer">
                               {section.isExpanded ? (
@@ -1473,7 +1504,6 @@ export default function MeetingView({
         </Droppable>
       </DragDropContext>
 
-      {/* Section Delete Confirmation Modal */}
       {sectionToDelete && (
         <div className="fixed inset-0 bg-black bg-opacity-40 z-50 flex items-center justify-center">
           <div className="bg-white border p-6 rounded-lg shadow-lg max-w-md w-full">
@@ -1489,7 +1519,6 @@ export default function MeetingView({
         </div>
       )}
 
-      {/* Recorder Selection Modal */}
       {showRecorderModal && (
         <SelectRecorderModal
           isOpen={showRecorderModal}
@@ -1502,7 +1531,6 @@ export default function MeetingView({
         />
       )}
 
-      {/* Modals */}
       {showCreateSectionModal && userCanEdit && (
         <CreateSectionModal
           meetingId={meetingId}
@@ -1549,6 +1577,7 @@ export default function MeetingView({
           }}
         />
       )}
+
       <UploadTranscriptModal
         isOpen={showUploadTranscript}
         onClose={() => setShowUploadTranscript(false)}
@@ -1570,7 +1599,6 @@ export default function MeetingView({
         onClose={() => setShowViewTranscripts(false)}
         meetingId={parseInt(meetingId)}
       />
-
     </>
   )
 }

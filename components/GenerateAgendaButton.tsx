@@ -17,6 +17,9 @@ interface Topic {
   description: string | null
   section_id: number | null
   order_index: number
+  is_incamera?: boolean
+  incamera_start_time?: string | null
+  incamera_end_time?: string | null
 }
 
 interface Section {
@@ -31,7 +34,6 @@ export default function GenerateAgendaButton({
 }: GenerateAgendaButtonProps) {
   const [generating, setGenerating] = useState(false)
 
-  // Only show for working_agenda and agenda statuses
   if (meetingStatus !== "working_agenda" && meetingStatus !== "agenda") {
     return null
   }
@@ -40,9 +42,6 @@ export default function GenerateAgendaButton({
     setGenerating(true)
 
     try {
-      console.log("📄 Generating agenda for meetingId =", meetingId)
-
-      // Fetch meeting + building + company (for logo)
       const { data: meeting, error: meetingError } = await supabase
         .from("meetings")
         .select(`
@@ -61,24 +60,15 @@ export default function GenerateAgendaButton({
         .eq("id", meetingId)
         .single()
 
-      console.log("📄 Meeting data:", meeting)
-      if (meetingError) {
-        console.error("❌ Meeting fetch error:", meetingError)
-        throw meetingError
-      }
+      if (meetingError) throw meetingError
 
-      // Fetch sections and topics
       const { data: sections, error: sectionsError } = await supabase
         .from("sections")
         .select("*")
         .eq("meeting_id", meetingId)
         .order("order_index")
 
-      console.log("📄 Sections:", sections)
-      if (sectionsError) {
-        console.error("❌ Sections fetch error:", sectionsError)
-        throw sectionsError
-      }
+      if (sectionsError) throw sectionsError
 
       const { data: topics, error: topicsError } = await supabase
         .from("topics")
@@ -86,13 +76,8 @@ export default function GenerateAgendaButton({
         .eq("meeting_id", meetingId)
         .order("order_index")
 
-      console.log("📄 Topics:", topics)
-      if (topicsError) {
-        console.error("❌ Topics fetch error:", topicsError)
-        throw topicsError
-      }
+      if (topicsError) throw topicsError
 
-      // Generate PDF directly using jsPDF
       await generatePDF(meeting, sections || [], topics || [])
     } catch (error) {
       console.error("Error generating agenda:", error)
@@ -102,12 +87,9 @@ export default function GenerateAgendaButton({
     }
   }
 
-  // Helper: load image URL and convert to data URL for jsPDF
   const loadImageAsDataUrl = async (url: string): Promise<string | null> => {
     try {
-      console.log("🖼 Fetching logo from URL:", url)
       const res = await fetch(url)
-      console.log("🖼 Logo fetch response status:", res.status)
       if (!res.ok) return null
       const blob = await res.blob()
       return await new Promise((resolve) => {
@@ -116,7 +98,6 @@ export default function GenerateAgendaButton({
         reader.readAsDataURL(blob)
       })
     } catch (e) {
-      console.error("Failed to load logo image:", e)
       return null
     }
   }
@@ -125,13 +106,12 @@ export default function GenerateAgendaButton({
     const pdf = new jsPDF("p", "mm", "a4")
     const pageWidth = pdf.internal.pageSize.getWidth()
     const pageHeight = pdf.internal.pageSize.getHeight()
-    const margin = 20
+    const margin = 18
     let yPosition = margin
+    let currentPage = 1
 
     const building = meeting.buildings
     const company = building?.companies
-    console.log("🏢 Building from meeting:", building)
-    console.log("🏢 Company from building:", company)
 
     const meetingDate = new Date(meeting.meeting_date).toLocaleDateString("en-US", {
       weekday: "long",
@@ -140,101 +120,192 @@ export default function GenerateAgendaButton({
       day: "numeric"
     })
 
-    // Compute logo URL: prefer building logo, fallback to company logo
-    const logoUrl: string | null =
-      building?.logo_url || company?.logo_url || null
-
-    console.log("🖼 Resolved logoUrl =", logoUrl)
-
-    // Try to load logo (if present)
+    const logoUrl: string | null = building?.logo_url || company?.logo_url || null
     let logoDataUrl: string | null = null
+    
     if (logoUrl) {
       logoDataUrl = await loadImageAsDataUrl(logoUrl)
-      console.log("🖼 Logo data URL loaded?", !!logoDataUrl)
-    } else {
-      console.log("🖼 No logo URL available for this meeting")
     }
 
-    // Helper function to add new page if needed
+    // 🎨 MODERN COLOR SCHEME
+    const colors = {
+      navy: [15, 35, 90],
+      blue: [41, 98, 255],
+      lightBlue: [100, 140, 255],
+      skyBlue: [220, 235, 255],
+      red: [220, 38, 38],
+      white: [255, 255, 255],
+      lightGray: [245, 248, 250],
+      mediumGray: [156, 163, 175],
+      darkGray: [31, 41, 55],
+      border: [209, 213, 219]
+    }
+
+    const setColor = (color: number[], type: 'fill' | 'text' | 'draw' = 'fill') => {
+      if (type === 'fill') pdf.setFillColor(color[0], color[1], color[2])
+      else if (type === 'text') pdf.setTextColor(color[0], color[1], color[2])
+      else if (type === 'draw') pdf.setDrawColor(color[0], color[1], color[2])
+    }
+
+    const drawStripedBackground = () => {
+      setColor(colors.skyBlue, 'fill')
+      pdf.rect(0, 0, pageWidth, 80, "F")
+      
+      pdf.setLineWidth(0.5)
+      setColor([210, 230, 255], 'draw')
+      for (let i = -80; i < pageWidth + 80; i += 8) {
+        pdf.line(i, 0, i + 80, 80)
+      }
+    }
+
+    const addContinuationHeader = () => {
+      setColor(colors.navy, 'fill')
+      pdf.rect(0, 0, pageWidth, 8, "F")
+      
+      pdf.setFontSize(9)
+      setColor(colors.white, 'text')
+      pdf.setFont("helvetica", "bold")
+      pdf.text(meeting.title || "Meeting Agenda", margin, 5.5)
+      
+      yPosition = 16
+    }
+
+    const addNewPage = () => {
+      pdf.addPage()
+      currentPage++
+      addContinuationHeader()
+    }
+
     const checkPageBreak = (spaceNeeded: number) => {
-      if (yPosition + spaceNeeded > pageHeight - margin) {
-        pdf.addPage()
-        yPosition = margin
+      if (yPosition + spaceNeeded > pageHeight - 18) {
+        addNewPage()
         return true
       }
       return false
     }
 
-    // Header with logo + title bar
-    // Background bar
-    pdf.setFillColor(37, 99, 235) // Blue
-    pdf.rect(0, 0, pageWidth, 40, "F")
+    const addPageFooter = () => {
+      const footerY = pageHeight - 10
+      
+      setColor(colors.navy, 'fill')
+      pdf.rect(0, footerY - 3, pageWidth, 15, "F")
 
-    // Draw logo on the left if available
+      pdf.setFontSize(8)
+      setColor(colors.white, 'text')
+      pdf.setFont("helvetica", "normal")
+      
+      pdf.text(building?.name || "", margin, footerY + 1)
+      pdf.text(`Page ${currentPage}`, pageWidth / 2, footerY + 1, { align: "center" })
+      pdf.text("Meeting Genius", pageWidth - margin, footerY + 1, { align: "right" })
+    }
+
+    // ==================== COVER PAGE ====================
+    
+    drawStripedBackground()
+
+    setColor(colors.navy, 'fill')
+    pdf.rect(0, 0, pageWidth, 80, "F")
+
     if (logoDataUrl) {
       try {
-        const logoHeight = 20
-        const logoWidth = 40 // approximate
-        const logoX = margin
-        const logoY = 10
-        console.log("🖼 Adding logo to PDF at", { logoX, logoY, logoWidth, logoHeight })
-        pdf.addImage(logoDataUrl, "PNG", logoX, logoY, logoWidth, logoHeight)
+        setColor(colors.white, 'fill')
+        pdf.circle(margin + 12, 18, 10, "F")
+        
+        pdf.addImage(logoDataUrl, "PNG", margin + 2, 8, 20, 20, undefined, 'FAST')
       } catch (e) {
-        console.error("Failed to add logo to PDF:", e)
+        console.error("Logo error:", e)
       }
-    } else {
-      console.log("🖼 Skipping logo drawing (no logoDataUrl)")
     }
 
-    // Title and building name centered
-    pdf.setFontSize(24)
-    pdf.setTextColor("#FFFFFF")
+    pdf.setFontSize(42)
+    setColor(colors.white, 'text')
     pdf.setFont("helvetica", "bold")
-    pdf.text("MEETING AGENDA", pageWidth / 2, 16, { align: "center" })
+    pdf.text("MEETING", pageWidth / 2, 38, { align: "center" })
+    pdf.text("AGENDA", pageWidth / 2, 52, { align: "center" })
 
     pdf.setFontSize(16)
-    pdf.text(building?.name || "Building", pageWidth / 2, 30, { align: "center" })
+    setColor(colors.lightBlue, 'text')
+    pdf.setFont("helvetica", "normal")
+    pdf.text(building?.name || "Building", pageWidth / 2, 64, { align: "center" })
 
-    yPosition = 55
+    pdf.setFontSize(11)
+    setColor([200, 220, 255], 'text')
+    pdf.text(meeting.meeting_type || "Council Meeting", pageWidth / 2, 72, { align: "center" })
 
-    // Meeting Details Box
-    pdf.setFillColor(243, 244, 246)
-    pdf.rect(margin, yPosition, pageWidth - 2 * margin, 50, "F")
+    yPosition = 92
 
-    pdf.setFontSize(10)
-    pdf.setTextColor("#374151")
+    // ==================== INFO CARD ====================
+    
+    checkPageBreak(50)
+    
+    const cardWidth = pageWidth - 2 * margin
+    
+    setColor([180, 190, 200], 'fill')
+    pdf.roundedRect(margin + 1, yPosition + 1, cardWidth, 48, 5, 5, "F")
+    
+    setColor(colors.white, 'fill')
+    pdf.roundedRect(margin, yPosition, cardWidth, 48, 5, 5, "F")
+    
+    setColor(colors.blue, 'fill')
+    pdf.roundedRect(margin, yPosition, cardWidth, 8, 5, 5, "F")
+    pdf.rect(margin, yPosition + 5, cardWidth, 3, "F")
+    
+    // Header text - CLEAN TEXT ONLY
+    pdf.setFontSize(11)
+    setColor(colors.white, 'text')
     pdf.setFont("helvetica", "bold")
+    pdf.text("MEETING INFORMATION", margin + 6, yPosition + 5.5)
 
-    let detailY = yPosition + 10
-    const addDetail = (label: string, value: string) => {
+    // Info items - CLEAN TEXT, PROGRAMMATIC UPPERCASE
+    let infoY = yPosition + 16
+    const col1X = margin + 6
+    const col2X = margin + cardWidth/2 + 3
+
+    const addInfoItem = (label: string, value: string, column: 1 | 2) => {
+      const x = column === 1 ? col1X : col2X
+      
+      pdf.setFontSize(9)
+      setColor(colors.navy, 'text')
       pdf.setFont("helvetica", "bold")
-      pdf.text(label, margin + 5, detailY)
+      pdf.text(label.toUpperCase(), x, infoY)
+      
+      pdf.setFontSize(10)
+      setColor(colors.darkGray, 'text')
       pdf.setFont("helvetica", "normal")
-      pdf.text(value, margin + 50, detailY)
-      detailY += 8
+      const lines = pdf.splitTextToSize(value, cardWidth/2 - 12)
+      pdf.text(lines[0], x, infoY + 4)
+      
+      return lines.length > 1
     }
 
-    addDetail("Meeting Type:", meeting.meeting_type || "Council Meeting")
-    addDetail("Date:", meetingDate)
-    if (meeting.start_time) addDetail("Time:", meeting.start_time)
-    if (meeting.location) addDetail("Location:", meeting.location)
-    if (building?.address) addDetail("Building Address:", building.address)
+    addInfoItem("Date", meetingDate, 1)
+    if (meeting.start_time) addInfoItem("Time", meeting.start_time, 2)
+    
+    infoY += 10
+    
+    if (meeting.location) addInfoItem("Location", meeting.location, 1)
+    if (building?.address) addInfoItem("Address", building.address, 2)
+    
+    infoY += 10
+    
+    if (meeting.strata_plan_number) addInfoItem("Strata Plan", meeting.strata_plan_number, 1)
 
-    yPosition = detailY + 10
+    yPosition += 56
 
-    // Agenda Items Header
-    checkPageBreak(20)
-    pdf.setFontSize(16)
-    pdf.setTextColor("#1e40af")
+    // ==================== AGENDA ITEMS ====================
+    
+    checkPageBreak(25)
+    
+    setColor(colors.navy, 'fill')
+    pdf.rect(margin - 5, yPosition - 3, pageWidth - 2 * margin + 10, 14, "F")
+    
+    pdf.setFontSize(20)
+    setColor(colors.white, 'text')
     pdf.setFont("helvetica", "bold")
-    pdf.text("Agenda Items", margin, yPosition)
-    yPosition += 2
-    pdf.setDrawColor(147, 197, 253)
-    pdf.setLineWidth(1)
-    pdf.line(margin, yPosition, pageWidth - margin, yPosition)
-    yPosition += 10
+    pdf.text("AGENDA ITEMS", margin, yPosition + 6)
+    
+    yPosition += 18
 
-    // Group topics by section
     const topicsBySection = topics.reduce((acc, topic) => {
       const sectionId = topic.section_id || "unsectioned"
       if (!acc[sectionId]) acc[sectionId] = []
@@ -242,125 +313,195 @@ export default function GenerateAgendaButton({
       return acc
     }, {} as Record<string | number, Topic[]>)
 
-    let itemNumber = 1
+    let sectionNum = 1
 
-    // Add sections with topics
     sections.forEach((section) => {
       const sectionTopics = topicsBySection[section.id] || []
+      const sortedTopics = [...sectionTopics].sort((a, b) => (a.order_index || 0) - (b.order_index || 0))
 
-      checkPageBreak(15)
-      pdf.setFontSize(14)
-      pdf.setTextColor("#2563eb")
+      checkPageBreak(20)
+      
+      const sectionHeaderHeight = 10
+      
+      setColor(colors.lightBlue, 'fill')
+      pdf.roundedRect(margin, yPosition, pageWidth - 2 * margin, sectionHeaderHeight, 3, 3, "F")
+      
+      setColor(colors.navy, 'fill')
+      pdf.circle(margin + 5, yPosition + 5, 4, "F")
+      
+      pdf.setFontSize(10)
+      setColor(colors.white, 'text')
       pdf.setFont("helvetica", "bold")
-      pdf.text(`${itemNumber}. ${section.title}`, margin, yPosition)
-      yPosition += 8
+      pdf.text(sectionNum.toString(), margin + 5, yPosition + 6.5, { align: "center" })
+      
+      pdf.setFontSize(13)
+      setColor(colors.white, 'text')
+      pdf.text(section.title.toUpperCase(), margin + 12, yPosition + 6.5)
+      
+      yPosition += sectionHeaderHeight + 5
 
-      if (sectionTopics.length > 0) {
-        sectionTopics.forEach((topic: Topic, idx: number) => {
-          checkPageBreak(20)
+      if (sortedTopics.length > 0) {
+        sortedTopics.forEach((topic: Topic, idx: number) => {
+          const isIncamera = topic.is_incamera === true
+          const hasDesc = !isIncamera && topic.description
+          const cardHeight = hasDesc ? 22 : 13
+          
+          checkPageBreak(cardHeight + 4)
 
-          // Topic box
-          pdf.setFillColor(249, 250, 251)
-          const boxHeight = topic.description ? 20 : 12
-          pdf.rect(margin + 5, yPosition - 5, pageWidth - 2 * margin - 10, boxHeight, "F")
+          setColor([210, 210, 210], 'fill')
+          pdf.roundedRect(margin + 9, yPosition + 0.8, pageWidth - 2 * margin - 18, cardHeight, 3, 3, "F")
+          
+          setColor(isIncamera ? [255, 240, 240] : colors.white, 'fill')
+          pdf.roundedRect(margin + 8, yPosition, pageWidth - 2 * margin - 16, cardHeight, 3, 3, "F")
+          
+          setColor(isIncamera ? colors.red : colors.blue, 'fill')
+          pdf.rect(margin + 8, yPosition, 4, cardHeight, "F")
 
-          // Blue left border
-          pdf.setFillColor(96, 165, 250)
-          pdf.rect(margin + 5, yPosition - 5, 2, boxHeight, "F")
-
-          // Topic title
-          pdf.setFontSize(11)
-          pdf.setTextColor("#374151")
+          setColor(isIncamera ? colors.red : colors.navy, 'fill')
+          pdf.circle(margin + 18, yPosition + 5, 3, "F")
+          
+          pdf.setFontSize(8)
+          setColor(colors.white, 'text')
           pdf.setFont("helvetica", "bold")
-          pdf.text(`${itemNumber}.${idx + 1} ${topic.title}`, margin + 10, yPosition)
-          yPosition += 6
+          pdf.text(`${sectionNum}.${idx + 1}`, margin + 18, yPosition + 6.2, { align: "center" })
 
-          // Topic description
-          if (topic.description) {
+          pdf.setFontSize(11)
+          setColor(colors.darkGray, 'text')
+          pdf.setFont("helvetica", "bold")
+          
+          let title = topic.title
+          if (isIncamera) title += " [CONFIDENTIAL]"
+          
+          const titleLines = pdf.splitTextToSize(title, pageWidth - 2 * margin - 35)
+          pdf.text(titleLines[0], margin + 24, yPosition + 6)
+
+          if (isIncamera) {
+            pdf.setFontSize(9)
+            pdf.setFont("helvetica", "italic")
+            setColor(colors.red, 'text')
+            pdf.text("CONFIDENTIAL - In-Camera Session", margin + 24, yPosition + 11)
+          } else if (hasDesc) {
             pdf.setFontSize(9)
             pdf.setFont("helvetica", "normal")
-            pdf.setTextColor("#6b7280")
-            const descLines = pdf.splitTextToSize(topic.description, pageWidth - 2 * margin - 20)
-            descLines.forEach((line: string) => {
-              checkPageBreak(5)
-              pdf.text(line, margin + 10, yPosition)
-              yPosition += 4
+            setColor(colors.mediumGray, 'text')
+            const descLines = pdf.splitTextToSize(topic.description!, pageWidth - 2 * margin - 30)
+            let descY = yPosition + 11
+            descLines.slice(0, 3).forEach((line: string) => {
+              pdf.text(line, margin + 24, descY)
+              descY += 3.5
             })
+            if (descLines.length > 3) {
+              pdf.setFont("helvetica", "italic")
+              pdf.text("(continued...)", margin + 24, descY)
+            }
           }
 
-          yPosition += 8
+          yPosition += cardHeight + 4
         })
+      } else {
+        setColor(colors.lightGray, 'fill')
+        pdf.roundedRect(margin + 8, yPosition, pageWidth - 2 * margin - 16, 10, 2, 2, "F")
+        
+        pdf.setFontSize(9)
+        setColor(colors.mediumGray, 'text')
+        pdf.setFont("helvetica", "italic")
+        pdf.text("No items scheduled for this section", margin + 12, yPosition + 6)
+        yPosition += 13
       }
 
-      itemNumber++
-      yPosition += 5
+      sectionNum++
+      yPosition += 2
     })
 
-    // Add unsectioned topics if any
+    // Unsectioned topics
     const unsectionedTopics = topicsBySection["unsectioned"] || []
     if (unsectionedTopics.length > 0) {
-      checkPageBreak(15)
-      pdf.setFontSize(14)
-      pdf.setTextColor("#2563eb")
+      const sortedUnsectioned = [...unsectionedTopics].sort((a, b) => (a.order_index || 0) - (b.order_index || 0))
+      
+      checkPageBreak(20)
+      
+      setColor(colors.lightBlue, 'fill')
+      pdf.roundedRect(margin, yPosition, pageWidth - 2 * margin, 10, 3, 3, "F")
+      
+      setColor(colors.navy, 'fill')
+      pdf.circle(margin + 5, yPosition + 5, 4, "F")
+      
+      pdf.setFontSize(10)
+      setColor(colors.white, 'text')
       pdf.setFont("helvetica", "bold")
-      pdf.text("Other Items", margin, yPosition)
-      yPosition += 8
+      pdf.text(sectionNum.toString(), margin + 5, yPosition + 6.5, { align: "center" })
+      
+      pdf.setFontSize(13)
+      pdf.text("OTHER BUSINESS", margin + 12, yPosition + 6.5)
+      
+      yPosition += 15
 
-      unsectionedTopics.forEach((topic: Topic, idx: number) => {
-        checkPageBreak(20)
+      sortedUnsectioned.forEach((topic: Topic, idx: number) => {
+        const isIncamera = topic.is_incamera === true
+        const hasDesc = !isIncamera && topic.description
+        const cardHeight = hasDesc ? 22 : 13
+        
+        checkPageBreak(cardHeight + 4)
 
-        pdf.setFillColor(249, 250, 251)
-        const boxHeight = topic.description ? 20 : 12
-        pdf.rect(margin + 5, yPosition - 5, pageWidth - 2 * margin - 10, boxHeight, "F")
+        setColor([210, 210, 210], 'fill')
+        pdf.roundedRect(margin + 9, yPosition + 0.8, pageWidth - 2 * margin - 18, cardHeight, 3, 3, "F")
+        
+        setColor(isIncamera ? [255, 240, 240] : colors.white, 'fill')
+        pdf.roundedRect(margin + 8, yPosition, pageWidth - 2 * margin - 16, cardHeight, 3, 3, "F")
+        
+        setColor(isIncamera ? colors.red : colors.blue, 'fill')
+        pdf.rect(margin + 8, yPosition, 4, cardHeight, "F")
 
-        pdf.setFillColor(96, 165, 250)
-        pdf.rect(margin + 5, yPosition - 5, 2, boxHeight, "F")
+        setColor(isIncamera ? colors.red : colors.navy, 'fill')
+        pdf.circle(margin + 18, yPosition + 5, 3, "F")
+        
+        pdf.setFontSize(8)
+        setColor(colors.white, 'text')
+        pdf.setFont("helvetica", "bold")
+        pdf.text(`${sectionNum}.${idx + 1}`, margin + 18, yPosition + 6.2, { align: "center" })
 
         pdf.setFontSize(11)
-        pdf.setTextColor("#374151")
+        setColor(colors.darkGray, 'text')
         pdf.setFont("helvetica", "bold")
-        pdf.text(`${itemNumber}.${idx + 1} ${topic.title}`, margin + 10, yPosition)
-        yPosition += 6
+        
+        let title = topic.title
+        if (isIncamera) title += " [CONFIDENTIAL]"
+        
+        const titleLines = pdf.splitTextToSize(title, pageWidth - 2 * margin - 35)
+        pdf.text(titleLines[0], margin + 24, yPosition + 6)
 
-        if (topic.description) {
+        if (isIncamera) {
+          pdf.setFontSize(9)
+          pdf.setFont("helvetica", "italic")
+          setColor(colors.red, 'text')
+          pdf.text("CONFIDENTIAL - In-Camera Session", margin + 24, yPosition + 11)
+        } else if (hasDesc) {
           pdf.setFontSize(9)
           pdf.setFont("helvetica", "normal")
-          pdf.setTextColor("#6b7280")
-          const descLines = pdf.splitTextToSize(topic.description, pageWidth - 2 * margin - 20)
-          descLines.forEach((line: string) => {
-            checkPageBreak(5)
-            pdf.text(line, margin + 10, yPosition)
-            yPosition += 4
+          setColor(colors.mediumGray, 'text')
+          const descLines = pdf.splitTextToSize(topic.description!, pageWidth - 2 * margin - 30)
+          let descY = yPosition + 11
+          descLines.slice(0, 3).forEach((line: string) => {
+            pdf.text(line, margin + 24, descY)
+            descY += 3.5
           })
+          if (descLines.length > 3) {
+            pdf.setFont("helvetica", "italic")
+            pdf.text("(continued...)", margin + 24, descY)
+          }
         }
 
-        yPosition += 8
+        yPosition += cardHeight + 4
       })
     }
 
-    // Footer
-    const footerY = pageHeight - 15
-    pdf.setDrawColor(229, 231, 235)
-    pdf.setLineWidth(0.5)
-    pdf.line(margin, footerY, pageWidth - margin, footerY)
+    const totalPages = (pdf as any).internal.getNumberOfPages()
+    for (let i = 1; i <= totalPages; i++) {
+      pdf.setPage(i)
+      currentPage = i
+      addPageFooter()
+    }
 
-    pdf.setFontSize(8)
-    pdf.setTextColor("#9ca3af")
-    pdf.setFont("helvetica", "normal")
-    pdf.text(
-      `Generated on ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}`,
-      pageWidth / 2,
-      footerY + 5,
-      { align: "center" }
-    )
-    pdf.text(
-      "Meeting Genius - Meeting Management System",
-      pageWidth / 2,
-      footerY + 10,
-      { align: "center" }
-    )
-
-    // Download PDF
     const fileName = `${meeting.title || "Meeting"}_Agenda_${new Date().toISOString().split("T")[0]}.pdf`
     pdf.save(fileName)
   }
@@ -370,7 +511,7 @@ export default function GenerateAgendaButton({
       onClick={handleGenerateAgenda}
       disabled={generating}
       variant="outline"
-      className="gap-2"
+      className="gap-2 h-8 px-3 text-xs"
     >
       {generating ? (
         <>
