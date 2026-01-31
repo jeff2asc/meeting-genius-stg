@@ -15,9 +15,11 @@ interface TaskModalProps {
   topicId: number
   onClose: () => void
   onSave?: () => void
-  // ⭐ NEW: Edit mode props
   editMode?: boolean
   existingTaskId?: number | null
+  embedded?: boolean  // ⭐ NEW: For embedded mode in tabs
+  isOpen?: boolean    // ⭐ NEW: For modal control
+  meetingId?: string  // ⭐ NEW: Optional meetingId prop
 }
 
 interface Assignee {
@@ -26,14 +28,13 @@ interface Assignee {
   present?: boolean
 }
 
-// ⭐ NEW: Attachment interface
 interface TaskAttachment {
   id?: number
   filename: string
   file_url: string
   file_size: number
   mime_type: string
-  file?: File // For new uploads before saving
+  file?: File
 }
 
 export default function TaskModal({ 
@@ -41,7 +42,10 @@ export default function TaskModal({
   onClose, 
   onSave,
   editMode = false,
-  existingTaskId = null
+  existingTaskId = null,
+  embedded = false,     // ⭐ NEW
+  isOpen = true,        // ⭐ NEW
+  meetingId: propMeetingId  // ⭐ NEW
 }: TaskModalProps) {
   const [formData, setFormData] = useState({
     description: "",
@@ -50,7 +54,6 @@ export default function TaskModal({
     sendNotification: true,
   })
 
-  // Assignee state
   const [assignees, setAssignees] = useState<Assignee[]>([])
   const [newAssigneeName, setNewAssigneeName] = useState("")
   const [newAssigneeEmail, setNewAssigneeEmail] = useState("")
@@ -61,27 +64,25 @@ export default function TaskModal({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Email preview modal state
   const [showEmailPreview, setShowEmailPreview] = useState(false)
   const [pendingTaskData, setPendingTaskData] = useState<any>(null)
 
-  // ⭐ NEW: Attachments state
   const [attachments, setAttachments] = useState<TaskAttachment[]>([])
   const [uploadingFile, setUploadingFile] = useState(false)
 
-  // ⭐ NEW: Load existing task data in edit mode
+  // ⭐ NEW: Don't render if not open (for embedded mode)
+  if (!isOpen && !embedded) return null
+
   useEffect(() => {
     if (editMode && existingTaskId) {
       loadExistingTask()
     }
   }, [editMode, existingTaskId])
 
-  // Fetch meeting_id from topic, then fetch attendees
   useEffect(() => {
     fetchMeetingIdAndAttendees()
   }, [topicId])
 
-  // ⭐ NEW: Load existing task for editing
   const loadExistingTask = async () => {
     setLoading(true)
     try {
@@ -97,20 +98,17 @@ export default function TaskModal({
         return
       }
 
-      // Populate form
       setFormData({
         description: taskData.description || "",
         dueDate: taskData.due_date || "",
         status: taskData.status || "open",
-        sendNotification: false, // Don't send notification on edit
+        sendNotification: false,
       })
 
-      // Populate assignees
       if (taskData.assignees && Array.isArray(taskData.assignees)) {
         setAssignees(taskData.assignees)
       }
 
-      // Load existing attachments
       const { data: attachmentsData } = await supabase
         .from('task_attachments')
         .select('*')
@@ -180,21 +178,18 @@ export default function TaskModal({
     }
   }
 
-  // ⭐ NEW: Handle file upload
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
 
-    // Validate file size (10MB max)
     if (file.size > 10 * 1024 * 1024) {
       alert('File size must be less than 10MB')
       return
     }
 
-    // Add to attachments list (file will be uploaded after task creation)
     const newAttachment: TaskAttachment = {
       filename: file.name,
-      file_url: '', // Will be set after upload
+      file_url: '',
       file_size: file.size,
       mime_type: file.type,
       file: file
@@ -203,18 +198,14 @@ export default function TaskModal({
     setAttachments([...attachments, newAttachment])
     alert(`${file.name} added`)
     
-    // Reset file input
     event.target.value = ''
   }
 
-  // ⭐ UPDATED: Remove attachment (handle both new and existing)
   const handleRemoveAttachment = async (index: number) => {
     const attachment = attachments[index]
     
-    // If existing attachment, delete from storage and DB
     if (attachment.id && editMode) {
       try {
-        // Delete from storage
         const urlParts = attachment.file_url.split('/task-attachments/')
         const filePath = urlParts[1]
 
@@ -226,7 +217,6 @@ export default function TaskModal({
           console.error('Error deleting file from storage:', storageError)
         }
 
-        // Delete from database
         const { error: dbError } = await supabase
           .from('task_attachments')
           .delete()
@@ -246,18 +236,15 @@ export default function TaskModal({
       }
     }
 
-    // Remove from local state
     setAttachments(attachments.filter((_, i) => i !== index))
   }
 
-  // ⭐ NEW: Format file size
   const formatFileSize = (bytes: number) => {
     if (bytes < 1024) return bytes + ' B'
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
   }
 
-  // ⭐ NEW: Get file type badge color
   const getFileTypeBadge = (mimeType: string) => {
     if (mimeType.includes('pdf')) return 'bg-red-100 text-red-800'
     if (mimeType.includes('word') || mimeType.includes('document')) return 'bg-blue-100 text-blue-800'
@@ -341,9 +328,7 @@ export default function TaskModal({
 
     const currentUser = getCurrentUser()
 
-    // ⭐ UPDATED: Handle both create and edit
     if (editMode && existingTaskId) {
-      // UPDATE existing task
       const taskData = {
         description: formData.description.trim(),
         assignees: assignees,
@@ -355,7 +340,6 @@ export default function TaskModal({
 
       await updateTask(taskData)
     } else {
-      // CREATE new task
       const externalToken = crypto.randomUUID()
       const tokenExpiry = new Date()
       tokenExpiry.setDate(tokenExpiry.getDate() + 90)
@@ -373,18 +357,15 @@ export default function TaskModal({
         created_by: currentUser?.id
       }
 
-      // If notification enabled, show email preview modal first
       if (formData.sendNotification) {
         setPendingTaskData({ taskData, externalToken })
         setShowEmailPreview(true)
       } else {
-        // If no notification, create task directly
         await createTask(taskData, null)
       }
     }
   }
 
-  // ⭐ FIXED: Update existing task with auto-refresh
   const updateTask = async (taskData: any) => {
     setSaving(true)
     setError(null)
@@ -406,17 +387,14 @@ export default function TaskModal({
 
       console.log('✅ Task updated successfully')
 
-      // Upload new attachments
       if (attachments.some(a => a.file)) {
         await uploadAttachments(existingTaskId!)
       }
 
       toast.success('Task updated successfully')
 
-      // ⭐ FIXED: Close modal first
       onClose()
 
-      // ⭐ FIXED: Trigger refresh after closing
       setTimeout(() => {
         if (onSave) {
           onSave()
@@ -429,7 +407,6 @@ export default function TaskModal({
     }
   }
 
-  // ⭐ FIXED: Create task function with attachment upload and proper refresh
   const createTask = async (taskData: any, emailTemplate: EmailTemplate | null) => {
     setSaving(true)
     setError(null)
@@ -452,27 +429,40 @@ export default function TaskModal({
       const taskId = data[0].id
       console.log('✅ Task saved successfully:', data)
 
-      // ⭐ NEW: Upload attachments after task creation
       if (attachments.length > 0) {
         await uploadAttachments(taskId)
       }
 
-      // Send email if template provided
       if (emailTemplate && meetingId) {
         await sendCustomizedEmails(emailTemplate, taskData.external_update_token)
       }
 
       toast.success('Task created successfully')
 
-      // ⭐ FIXED: Close modal first
-      onClose()
+// ✅ Reset state and clear form
+setSaving(false)
+setFormData({
+  description: "",
+  dueDate: "",
+  status: "open",
+  sendNotification: true,
+})
+setAssignees([])
+setAttachments([])
+setError(null)
 
-      // ⭐ FIXED: Trigger refresh after closing
-      setTimeout(() => {
-        if (onSave) {
-          onSave()
-        }
-      }, 100)
+// ✅ If embedded mode, stay open and ready for next task
+if (embedded) {
+  onClose() // Just marks data changed for when modal closes
+  return
+}
+
+// ✅ If standalone modal, close it
+onClose()
+if (onSave) {
+  setTimeout(() => onSave(), 100)
+}
+
     } catch (err) {
       console.error('💥 Unexpected error:', err)
       setError('An unexpected error occurred')
@@ -480,7 +470,6 @@ export default function TaskModal({
     }
   }
 
-  // ⭐ NEW: Upload attachments to storage and save to database
   const uploadAttachments = async (taskId: number) => {
     const currentUser = getCurrentUser()
     if (!currentUser) return
@@ -489,7 +478,6 @@ export default function TaskModal({
       if (!attachment.file) continue
 
       try {
-        // Upload to Supabase Storage
         const fileName = `${taskId}/${Date.now()}_${attachment.filename}`
         const filePath = fileName
 
@@ -503,12 +491,10 @@ export default function TaskModal({
           continue
         }
 
-        // Get public URL
         const { data: { publicUrl } } = supabase.storage
           .from('task-attachments')
           .getPublicUrl(filePath)
 
-        // Save to database
         const { error: dbError } = await supabase
           .from('task_attachments')
           .insert({
@@ -533,7 +519,6 @@ export default function TaskModal({
     }
   }
 
-  // Send customized emails function
   const sendCustomizedEmails = async (emailTemplate: EmailTemplate, externalToken: string) => {
     console.log('📧 Sending customized emails...')
     try {
@@ -600,7 +585,7 @@ export default function TaskModal({
 
   if (loading) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      <div className={embedded ? "p-6" : "fixed inset-0 z-50 flex items-center justify-center bg-black/50"}>
         <Card className="p-6">
           <div className="flex items-center gap-3">
             <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
@@ -611,6 +596,290 @@ export default function TaskModal({
     )
   }
 
+  // ⭐ NEW: Embedded mode content (without modal wrapper)
+  const formContent = (
+    <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded text-sm">
+          {error}
+        </div>
+      )}
+
+      <div>
+        <label className="block text-sm font-medium text-foreground mb-2">Task Description *</label>
+        <GeniusWordsInput
+          value={formData.description}
+          onChange={(value) => setFormData((prev) => ({ ...prev, description: value }))}
+          placeholder="Enter task description... (Type # for shortcuts)"
+          rows={4}
+          disabled={saving}
+        />
+      </div>
+
+      {editMode && (
+        <div>
+          <label className="block text-sm font-medium text-foreground mb-2">Status</label>
+          <select
+            name="status"
+            value={formData.status}
+            onChange={handleInputChange}
+            disabled={saving}
+            className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50"
+          >
+            <option value="open">Open</option>
+            <option value="in_progress">In Progress</option>
+            <option value="completed">Completed</option>
+            <option value="blocked">Blocked</option>
+          </select>
+        </div>
+      )}
+
+      <div>
+        <label className="block text-sm font-medium text-foreground mb-2 flex items-center gap-2">
+          <Paperclip className="h-4 w-4" />
+          Attachments ({attachments.length})
+        </label>
+        
+        <div className="mb-2">
+          <label htmlFor="task-file-upload">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={uploadingFile || saving}
+              className="cursor-pointer"
+              onClick={() => document.getElementById('task-file-upload')?.click()}
+            >
+              <Upload className="h-4 w-4 mr-2" />
+              Upload File
+            </Button>
+          </label>
+          <input
+            id="task-file-upload"
+            type="file"
+            className="hidden"
+            onChange={handleFileUpload}
+            disabled={uploadingFile || saving}
+            accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png"
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            Supported: PDF, DOC, DOCX, TXT, Images (Max 10MB)
+          </p>
+        </div>
+
+        {attachments.length > 0 && (
+          <div className="space-y-1.5 border border-border rounded-lg p-2 bg-muted/10">
+            {attachments.map((attachment, index) => (
+              <div key={index} className="flex items-center justify-between bg-background border border-border rounded-lg p-2">
+                <div className="flex items-center gap-2 flex-1 min-w-0">
+                  <Paperclip className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-xs truncate">{attachment.filename}</div>
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <span className={`px-1.5 py-0.5 rounded text-xs ${getFileTypeBadge(attachment.mime_type)}`}>
+                        {attachment.mime_type.split('/')[1]?.toUpperCase() || 'FILE'}
+                      </span>
+                      <span>{formatFileSize(attachment.file_size)}</span>
+                    </div>
+                  </div>
+                </div>
+                {!saving && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleRemoveAttachment(index)}
+                    className="text-destructive hover:text-destructive"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-foreground mb-2">Assignees *</label>
+        
+        {assignees.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+            {assignees.map((assignee, idx) => (
+              <div
+                key={idx}
+                className="flex items-center gap-2 px-3 py-1.5 bg-blue-100 text-blue-800 rounded-full text-sm border border-blue-300"
+              >
+                <div>
+                  <span className="font-medium">{assignee.name}</span>
+                  <span className="text-xs opacity-75 ml-1">({assignee.email})</span>
+                </div>
+                {!saving && (
+                  <button
+                    onClick={() => handleRemoveAssignee(assignee.email)}
+                    className="hover:bg-blue-200 rounded-full p-0.5"
+                    type="button"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <div className="text-sm font-medium text-foreground">Add Manually</div>
+            <input
+              type="text"
+              placeholder="Name"
+              value={newAssigneeName}
+              onChange={(e) => setNewAssigneeName(e.target.value)}
+              onKeyPress={(e) => handleKeyPress(e, 'name')}
+              disabled={saving}
+              className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+            />
+            <input
+              id="assignee-email-input"
+              type="email"
+              placeholder="Email"
+              value={newAssigneeEmail}
+              onChange={(e) => setNewAssigneeEmail(e.target.value)}
+              onKeyPress={(e) => handleKeyPress(e, 'email')}
+              disabled={saving}
+              className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+            />
+            <Button
+              type="button"
+              onClick={handleAddManualAssignee}
+              disabled={!newAssigneeName.trim() || !newAssigneeEmail.trim() || saving}
+              className="w-full bg-primary hover:bg-primary/90"
+            >
+              <Plus className="h-4 w-4 mr-1" />
+              Add
+            </Button>
+          </div>
+
+          <div className="space-y-2">
+            <div className="text-sm font-medium text-foreground">
+              Select from Attendees {meetingAttendees.length > 0 && `(${meetingAttendees.length})`}
+            </div>
+            {meetingAttendees.length > 0 ? (
+              <div className="border border-border rounded-lg p-2 bg-muted/20 max-h-[200px] overflow-y-auto space-y-1">
+                {meetingAttendees.map((attendee, idx) => {
+                  const isAlreadyAssigned = assignees.some(a => a.email === attendee.email)
+                  return (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => handleAddFromAttendees(attendee)}
+                      disabled={isAlreadyAssigned || saving}
+                      className={`w-full text-left px-3 py-2 rounded hover:bg-muted transition-colors ${
+                        isAlreadyAssigned ? 'opacity-50 cursor-not-allowed bg-green-50' : ''
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <div className="font-medium text-sm">{attendee.name}</div>
+                          <div className="text-xs text-muted-foreground">{attendee.email}</div>
+                        </div>
+                        {attendee.present && (
+                          <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">Present</span>
+                        )}
+                      </div>
+                      {isAlreadyAssigned && (
+                        <div className="text-xs text-green-600 font-medium mt-0.5">✓ Already assigned</div>
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
+            ) : (
+              <div className="border border-dashed border-border rounded-lg p-4 text-center text-sm text-muted-foreground">
+                No attendees added to this meeting
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-foreground mb-2">Due Date</label>
+        <input
+          type="date"
+          name="dueDate"
+          value={formData.dueDate}
+          onChange={handleInputChange}
+          disabled={saving}
+          className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
+        />
+      </div>
+
+      {!editMode && (
+        <div className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            id="sendNotification"
+            checked={formData.sendNotification}
+            onChange={handleCheckboxChange}
+            disabled={saving}
+            className="h-4 w-4 rounded border-border text-primary focus:ring-2 focus:ring-primary/50"
+          />
+          <label htmlFor="sendNotification" className="text-sm text-foreground">
+            Send email notification to assignees
+          </label>
+        </div>
+      )}
+
+      <div className="flex gap-3 pt-4">
+        <Button 
+          type="button" 
+          variant="outline" 
+          onClick={onClose} 
+          className="flex-1 bg-transparent"
+          disabled={saving}
+        >
+          Cancel
+        </Button>
+        <Button
+          type="submit"
+          className="flex-1 bg-gradient-to-r from-primary to-decision-purple text-primary-foreground hover:opacity-90"
+          disabled={saving || !formData.description.trim() || assignees.length === 0}
+        >
+          {saving ? (editMode ? "Updating..." : "Creating...") : (editMode ? "Update Task" : "Create Task")}
+        </Button>
+      </div>
+    </form>
+  )
+
+  // ⭐ NEW: If embedded, return just the content without modal wrapper
+  if (embedded) {
+    return (
+      <>
+        {formContent}
+        {showEmailPreview && pendingTaskData && !editMode && (
+          <TaskEmailPreviewModal
+            assignees={assignees}
+            taskDescription={formData.description}
+            dueDate={formData.dueDate}
+            updateLink={`${window.location.origin}/task-update/${pendingTaskData.externalToken}`}
+            onConfirm={(emailTemplate) => {
+              setShowEmailPreview(false)
+              createTask(pendingTaskData.taskData, emailTemplate)
+            }}
+            onCancel={() => {
+              setShowEmailPreview(false)
+              setPendingTaskData(null)
+              setSaving(false)
+            }}
+          />
+        )}
+      </>
+    )
+  }
+
+  // ⭐ Original modal with backdrop
   return (
     <>
       <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 animate-in fade-in">
@@ -628,273 +897,10 @@ export default function TaskModal({
             </button>
           </div>
 
-          <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
-            {error && (
-              <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded text-sm">
-                {error}
-              </div>
-            )}
-
-            {/* ⭐ UPDATED: Task Description with GeniusWords */}
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-2">Task Description *</label>
-              <GeniusWordsInput
-                value={formData.description}
-                onChange={(value) => setFormData((prev) => ({ ...prev, description: value }))}
-                placeholder="Enter task description... (Type # for shortcuts)"
-                rows={4}
-                disabled={saving}
-              />
-            </div>
-
-            {/* ⭐ NEW: Status dropdown (only in edit mode) */}
-            {editMode && (
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">Status</label>
-                <select
-                  name="status"
-                  value={formData.status}
-                  onChange={handleInputChange}
-                  disabled={saving}
-                  className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50"
-                >
-                  <option value="open">Open</option>
-                  <option value="in_progress">In Progress</option>
-                  <option value="completed">Completed</option>
-                  <option value="blocked">Blocked</option>
-                </select>
-              </div>
-            )}
-
-            {/* ⭐ NEW: Attachments Section */}
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-2 flex items-center gap-2">
-                <Paperclip className="h-4 w-4" />
-                Attachments ({attachments.length})
-              </label>
-              
-              {/* Upload Button */}
-              <div className="mb-2">
-                <label htmlFor="task-file-upload">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={uploadingFile || saving}
-                    className="cursor-pointer"
-                    onClick={() => document.getElementById('task-file-upload')?.click()}
-                  >
-                    <Upload className="h-4 w-4 mr-2" />
-                    Upload File
-                  </Button>
-                </label>
-                <input
-                  id="task-file-upload"
-                  type="file"
-                  className="hidden"
-                  onChange={handleFileUpload}
-                  disabled={uploadingFile || saving}
-                  accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png"
-                />
-                <p className="text-xs text-muted-foreground mt-1">
-                  Supported: PDF, DOC, DOCX, TXT, Images (Max 10MB)
-                </p>
-              </div>
-
-              {/* Attachments List */}
-              {attachments.length > 0 && (
-                <div className="space-y-1.5 border border-border rounded-lg p-2 bg-muted/10">
-                  {attachments.map((attachment, index) => (
-                    <div key={index} className="flex items-center justify-between bg-background border border-border rounded-lg p-2">
-                      <div className="flex items-center gap-2 flex-1 min-w-0">
-                        <Paperclip className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <div className="font-medium text-xs truncate">{attachment.filename}</div>
-                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                            <span className={`px-1.5 py-0.5 rounded text-xs ${getFileTypeBadge(attachment.mime_type)}`}>
-                              {attachment.mime_type.split('/')[1]?.toUpperCase() || 'FILE'}
-                            </span>
-                            <span>{formatFileSize(attachment.file_size)}</span>
-                          </div>
-                        </div>
-                      </div>
-                      {!saving && (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleRemoveAttachment(index)}
-                          className="text-destructive hover:text-destructive"
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Assignees Section */}
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-2">Assignees *</label>
-              
-              {/* Current Assignees (Bubbles) */}
-              {assignees.length > 0 && (
-                <div className="flex flex-wrap gap-2 mb-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
-                  {assignees.map((assignee, idx) => (
-                    <div
-                      key={idx}
-                      className="flex items-center gap-2 px-3 py-1.5 bg-blue-100 text-blue-800 rounded-full text-sm border border-blue-300"
-                    >
-                      <div>
-                        <span className="font-medium">{assignee.name}</span>
-                        <span className="text-xs opacity-75 ml-1">({assignee.email})</span>
-                      </div>
-                      {!saving && (
-                        <button
-                          onClick={() => handleRemoveAssignee(assignee.email)}
-                          className="hover:bg-blue-200 rounded-full p-0.5"
-                          type="button"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-4">
-                {/* Left: Manual Add */}
-                <div className="space-y-2">
-                  <div className="text-sm font-medium text-foreground">Add Manually</div>
-                  <input
-                    type="text"
-                    placeholder="Name"
-                    value={newAssigneeName}
-                    onChange={(e) => setNewAssigneeName(e.target.value)}
-                    onKeyPress={(e) => handleKeyPress(e, 'name')}
-                    disabled={saving}
-                    className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  />
-                  <input
-                    id="assignee-email-input"
-                    type="email"
-                    placeholder="Email"
-                    value={newAssigneeEmail}
-                    onChange={(e) => setNewAssigneeEmail(e.target.value)}
-                    onKeyPress={(e) => handleKeyPress(e, 'email')}
-                    disabled={saving}
-                    className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  />
-                  <Button
-                    type="button"
-                    onClick={handleAddManualAssignee}
-                    disabled={!newAssigneeName.trim() || !newAssigneeEmail.trim() || saving}
-                    className="w-full bg-primary hover:bg-primary/90"
-                  >
-                    <Plus className="h-4 w-4 mr-1" />
-                    Add
-                  </Button>
-                </div>
-
-                {/* Right: Select from Attendees */}
-                <div className="space-y-2">
-                  <div className="text-sm font-medium text-foreground">
-                    Select from Attendees {meetingAttendees.length > 0 && `(${meetingAttendees.length})`}
-                  </div>
-                  {meetingAttendees.length > 0 ? (
-                    <div className="border border-border rounded-lg p-2 bg-muted/20 max-h-[200px] overflow-y-auto space-y-1">
-                      {meetingAttendees.map((attendee, idx) => {
-                        const isAlreadyAssigned = assignees.some(a => a.email === attendee.email)
-                        return (
-                          <button
-                            key={idx}
-                            type="button"
-                            onClick={() => handleAddFromAttendees(attendee)}
-                            disabled={isAlreadyAssigned || saving}
-                            className={`w-full text-left px-3 py-2 rounded hover:bg-muted transition-colors ${
-                              isAlreadyAssigned ? 'opacity-50 cursor-not-allowed bg-green-50' : ''
-                            }`}
-                          >
-                            <div className="flex items-center justify-between">
-                              <div className="flex-1">
-                                <div className="font-medium text-sm">{attendee.name}</div>
-                                <div className="text-xs text-muted-foreground">{attendee.email}</div>
-                              </div>
-                              {attendee.present && (
-                                <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">Present</span>
-                              )}
-                            </div>
-                            {isAlreadyAssigned && (
-                              <div className="text-xs text-green-600 font-medium mt-0.5">✓ Already assigned</div>
-                            )}
-                          </button>
-                        )
-                      })}
-                    </div>
-                  ) : (
-                    <div className="border border-dashed border-border rounded-lg p-4 text-center text-sm text-muted-foreground">
-                      No attendees added to this meeting
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-2">Due Date</label>
-              <input
-                type="date"
-                name="dueDate"
-                value={formData.dueDate}
-                onChange={handleInputChange}
-                disabled={saving}
-                className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
-              />
-            </div>
-
-            {/* Send Notification Checkbox (only in create mode) */}
-            {!editMode && (
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="sendNotification"
-                  checked={formData.sendNotification}
-                  onChange={handleCheckboxChange}
-                  disabled={saving}
-                  className="h-4 w-4 rounded border-border text-primary focus:ring-2 focus:ring-primary/50"
-                />
-                <label htmlFor="sendNotification" className="text-sm text-foreground">
-                  Send email notification to assignees
-                </label>
-              </div>
-            )}
-
-            <div className="flex gap-3 pt-4">
-              <Button 
-                type="button" 
-                variant="outline" 
-                onClick={onClose} 
-                className="flex-1 bg-transparent"
-                disabled={saving}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                className="flex-1 bg-gradient-to-r from-primary to-decision-purple text-primary-foreground hover:opacity-90"
-                disabled={saving || !formData.description.trim() || assignees.length === 0}
-              >
-                {saving ? (editMode ? "Updating..." : "Creating...") : (editMode ? "Update Task" : "Create Task")}
-              </Button>
-            </div>
-          </form>
+          {formContent}
         </Card>
       </div>
 
-      {/* Email Preview Modal (only in create mode) */}
       {showEmailPreview && pendingTaskData && !editMode && (
         <TaskEmailPreviewModal
           assignees={assignees}

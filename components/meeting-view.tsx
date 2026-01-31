@@ -7,6 +7,7 @@ import {
   ArrowLeft, Plus, Trash, Pencil, ChevronDown, ChevronRight, Calendar,
   Clock, MapPin, FileText, Edit2, Play, CheckCircle, ChevronLeft, Users, Lock, Unlock, Mail, FileUp
 } from "lucide-react"
+
 import { UploadTranscriptModal } from "@/components/transcript/upload-transcript-modal"
 import { PreviewTasksModal } from "@/components/transcript/preview-tasks-modal"
 import { ViewTranscriptsModal } from "@/components/transcript/view-transcripts-modal"
@@ -23,6 +24,8 @@ import SelectRecorderModal from "./SelectRecorderModal"
 import { supabase, getCurrentUser } from "@/lib/supabase"
 import { canEditMeeting, isReadOnly } from "@/lib/permissions"
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd'
+import UnifiedItemModal from "./UnifiedItemModal"
+
 
 
 interface MeetingViewProps {
@@ -104,6 +107,10 @@ export default function MeetingView({
   const [transcriptId, setTranscriptId] = useState<number | null>(null)
   const [extractedTasks, setExtractedTasks] = useState<any[]>([])
   const [showViewTranscripts, setShowViewTranscripts] = useState(false)
+  const [showUnifiedModal, setShowUnifiedModal] = useState(false)
+const [selectedTopicForModal, setSelectedTopicForModal] = useState<number | null>(null)
+const [defaultTab, setDefaultTab] = useState<'task' | 'note' | 'decision'>('task')
+
 
   const currentUser = getCurrentUser()
   const userCanEdit = currentUser ? canEditMeeting(currentUser.user_type) : false
@@ -217,9 +224,14 @@ export default function MeetingView({
       return []
     }
   }
-
   const fetchSectionsAndTopics = async () => {
     try {
+      // ✅ SAVE current expanded states BEFORE fetching
+      const expandedStates = sections.reduce((acc, section) => {
+        acc[section.id] = section.isExpanded
+        return acc
+      }, {} as Record<number, boolean>)
+  
       const { data: sectionsData, error: sectionsError } = await supabase
         .from("sections")
         .select("*")
@@ -230,7 +242,7 @@ export default function MeetingView({
         console.error("Error fetching sections:", sectionsError)
         return
       }
-
+  
       const { data: topicsData, error: topicsError } = await supabase
         .from("topics")
         .select(`
@@ -245,21 +257,21 @@ export default function MeetingView({
         console.error("Error fetching topics:", topicsError)
         return
       }
-
+  
       const allOpenTasks = await fetchOpenTasksFromPreviousMeetings()
-
+  
       const sectionsWithTopics: Section[] = (sectionsData || []).map((section) => ({
         id: section.id,
         title: section.title,
         order_index: section.order_index,
-        isExpanded: false,
+        isExpanded: expandedStates[section.id] ?? false, // ✅ RESTORE expanded state
         topics: (topicsData || []).filter(
           (topic) => topic.section_id === section.id
         ).map((topic) => {
           const tasksForThisTopic = allOpenTasks.filter(
             task => task.topics?.title === topic.title
           ).length
-
+  
           return {
             id: topic.id,
             title: topic.title,
@@ -275,12 +287,13 @@ export default function MeetingView({
           }
         })
       }))
-
+  
       setSections(sectionsWithTopics)
     } catch (err) {
       console.error("Unexpected error fetching sections/topics:", err)
     }
   }
+  
 
   const handleAddTopic = (sectionId: number, sectionTitle: string) => {
     if (!userCanEdit) {
@@ -1451,9 +1464,22 @@ export default function MeetingView({
                                             meetingStatus={meeting.status}
                                             onUpdate={updates => updateTopic(topic.id, updates)}
                                             onDelete={id => deleteTopic(id)}
-                                            onTaskClick={() => onTaskClick(topic.id)}
-                                            onNoteClick={() => onNoteClick(topic.id)}
-                                            onDecisionClick={() => onDecisionClick(topic.id)}
+                                            onTaskClick={() => {
+                                              setSelectedTopicForModal(topic.id)
+                                              setDefaultTab('task')
+                                              setShowUnifiedModal(true)
+                                            }}
+                                            onNoteClick={() => {
+                                              setSelectedTopicForModal(topic.id)
+                                              setDefaultTab('note')
+                                              setShowUnifiedModal(true)
+                                            }}
+                                            onDecisionClick={() => {
+                                              setSelectedTopicForModal(topic.id)
+                                              setDefaultTab('decision')
+                                              setShowUnifiedModal(true)
+                                            }}
+                                            
                                             onRegisterRefresh={onRegisterTopicRefresh}
                                             isReadOnly={userIsReadOnly || meeting.status === "minutes"}
                                             onEditDecision={(decisionId, topicId) => {
@@ -1599,6 +1625,37 @@ export default function MeetingView({
         onClose={() => setShowViewTranscripts(false)}
         meetingId={parseInt(meetingId)}
       />
+     {showUnifiedModal && selectedTopicForModal && (
+  <UnifiedItemModal
+    isOpen={showUnifiedModal}
+    onClose={() => {
+      setShowUnifiedModal(false)
+      
+      // ✅ Find the section containing this topic and toggle it twice
+      const sectionWithTopic = sections.find(section => 
+        section.topics.some(topic => topic.id === selectedTopicForModal)
+      )
+      
+      if (sectionWithTopic) {
+        // Close the section
+        toggleSection(sectionWithTopic.id)
+        
+        // Wait a bit, then open it again (forces re-render)
+        setTimeout(() => {
+          toggleSection(sectionWithTopic.id)
+        }, 50)
+      }
+    }}
+    topicId={selectedTopicForModal}
+    meetingId={meetingId}
+    onSave={() => {}}
+    defaultTab={defaultTab}
+  />
+)}
+
+
+
+
     </>
   )
 }

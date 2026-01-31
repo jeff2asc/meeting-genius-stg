@@ -1146,6 +1146,7 @@ app/page.tsx (Root)
   - Section/topic creation modals
   - In-camera toggle button (marks meeting as confidential)
   - Send Notice button (emails agenda to owners/residents)
+  - SelectRecorderModal (select recorder/device for meeting audio)
   - Upload Transcript button (upload meeting transcripts for AI task extraction)
   - View Transcripts button (view all uploaded transcripts)
   - Generate Agenda PDF button (during working_agenda/agenda phases)
@@ -1155,9 +1156,9 @@ app/page.tsx (Root)
    - **Header layout**: Back button, title, badges, and edit button properly aligned without overlap
 
 4. **`components/admin-panel.tsx`**
-   - Admin interface with tabs
-   - Users, Buildings, Companies, Minutes Templates tabs
-   - Modal management for CRUD operations
+   - Admin interface with tabs: Users, Buildings, Companies, Minutes Templates
+   - Opens **BuildingDetailsModal** when clicking a building (main building management)
+   - Modal management for CRUD (CreateUserModal, CreateBuildingModal, CreateCompanyModal, etc.)
 
 #### **Modal Components**
 
@@ -1188,13 +1189,11 @@ app/page.tsx (Root)
 - `components/AttendeeManagement.tsx`: Manage meeting attendees with role assignment and presence tracking
 - `components/GenerateMinutesButton.tsx`: Generate PDF minutes from finalized meetings
 - `components/ProfileSettingsModal.tsx`: User profile settings (name, email, password)
+- `components/SelectRecorderModal.tsx`: Select recorder/device for meeting audio recording
 
 #### **Admin Components** (`components/admin/`)
 
-- `CreateUserModal.tsx`: Create users with company and building assignment
-- `CreateBuildingModal.tsx`: Create buildings with property manager assignment
-- `EditBuildingModal.tsx`: Edit building details
-- `BuildingDetailsModal.tsx`: **Comprehensive building management modal** with tabs:
+- `BuildingDetailsModal.tsx`: **Main building modal** (opened from admin Buildings tab when clicking a building). Tabs:
   - **Details Tab**: Edit building name, address, type, and property manager
   - **Users Tab**: Assign/unassign users to building, create new users inline
     - User type auto-set based on building type (owner for Strata/Condo/Rental, user/resident for Housing Co-op)
@@ -1214,6 +1213,9 @@ app/page.tsx (Root)
     - Quick presets: Minimal (3/7), Standard (7/14), Extended (14/21), Reset (7/7)
     - Information cards explaining how notifications work
     - Settings saved when building details are saved
+- `EditBuildingModal.tsx`: Edit building details (used within BuildingDetailsModal Details tab)
+- `CreateUserModal.tsx`: Create users with company and building assignment
+- `CreateBuildingModal.tsx`: Create buildings with property manager assignment
 - `CreateCompanyModal.tsx`: Create companies
 - `EditCompanyModal.tsx`: Edit company details and defaults (meeting sections, types, decision results)
 - `CompanyDetailsModal.tsx`: **Enhanced company management modal** with tabs:
@@ -1777,27 +1779,40 @@ meeting-genius/
 ├── app/
 │   ├── layout.tsx              # Root layout with metadata
 │   ├── page.tsx                 # Main application entry point
-│   └── globals.css              # Global styles
+│   ├── globals.css              # Global styles
+│   ├── api/                     # API routes
+│   │   ├── send-email/
+│   │   │   └── route.ts         # Email sending (company SMTP)
+│   │   ├── signup/
+│   │   │   └── route.ts         # Signup (company, admin, PM, building)
+│   │   └── transcripts/
+│   │       ├── upload/
+│   │       │   └── route.ts     # Upload transcript + AI task extraction
+│   │       ├── list/
+│   │       │   └── route.ts    # List transcripts for a meeting
+│   │       └── create-tasks/
+│   │           └── route.ts     # Batch create tasks from transcript
+│   └── react-beautiful-dnd.d.ts
 │
 ├── components/
 │   ├── admin/                   # Admin panel components
-│   │   ├── CreateUserModal.tsx
-│   │   ├── CreateBuildingModal.tsx
-│   │   ├── EditBuildingModal.tsx
-│   │   ├── CreateCompanyModal.tsx
-│   │   ├── EditCompanyModal.tsx
-│   │   ├── CompanyDetailsModal.tsx
-│   │   ├── UsersTab.tsx
+│   │   ├── AssignUsersToCompanyModal.tsx
+│   │   ├── BuildingCard.tsx
+│   │   ├── BuildingDetailsModal.tsx    # Main building modal (tabs: Details, Users, Documents, Notifications)
 │   │   ├── BuildingsTab.tsx
-│   │   ├── CompaniesTab.tsx
+│   │   ├── CompanyCard.tsx
+│   │   ├── CompanyDetailsModal.tsx
+│   │   ├── CreateBuildingModal.tsx
+│   │   ├── CreateCompanyModal.tsx
+│   │   ├── CreateUserModal.tsx
+│   │   ├── DocumentManagementModal.tsx
+│   │   ├── EditBuildingModal.tsx
+│   │   ├── EditCompanyModal.tsx
+│   │   ├── LogoTab.tsx                 # Company logo management
 │   │   ├── MinutesTemplatesTab.tsx
 │   │   ├── UserCard.tsx
-│   │   ├── BuildingCard.tsx
-│   │   ├── CompanyCard.tsx
-│   │   ├── DocumentManagementModal.tsx
+│   │   ├── UsersTab.tsx
 │   │   ├── ViewDocumentModal.tsx
-│   │   ├── AssignUsersToCompanyModal.tsx
-│   │   └── LogoTab.tsx                 # Company logo management
 │   │
 │   ├── ui/                      # shadcn/ui components
 │   │   ├── button.tsx
@@ -1821,6 +1836,8 @@ meeting-genius/
 │   ├── GenerateMinutesButton.tsx # Generate PDF minutes
 │   ├── GeniusWordsManager.tsx    # Manage user text shortcuts
 │   ├── GeniusWordsInput.tsx      # Reusable input with GeniusWords autocomplete
+│   ├── ProfileSettingsModal.tsx   # User profile (name, email, password)
+│   ├── SelectRecorderModal.tsx   # Select recorder for meeting audio
 │   ├── transcript/               # Transcript management components
 │   │   ├── upload-transcript-modal.tsx    # Upload transcript files
 │   │   ├── preview-tasks-modal.tsx         # Review AI-extracted tasks
@@ -1840,20 +1857,6 @@ meeting-genius/
 │   ├── gemini.ts                 # Google Gemini AI integration for transcript task extraction
 │   └── utils.ts                  # Utility functions
 │
-├── app/
-│   ├── api/
-│   │   ├── send-email/
-│   │   │   └── route.ts          # Email sending API endpoint (uses company SMTP)
-│   │   ├── signup/
-│   │   │   └── route.ts          # Signup API endpoint (creates company, admin, PM, building)
-│   │   └── transcripts/
-│   │       ├── upload/
-│   │       │   └── route.ts      # Upload transcript and extract tasks with AI
-│   │       ├── list/
-│   │       │   └── route.ts      # List all transcripts for a meeting
-│   │       └── create-tasks/
-│   │           └── route.ts      # Batch create tasks from approved transcript
-│
 ├── hooks/
 │   ├── use-mobile.ts            # Mobile detection hook
 │   └── use-toast.ts             # Toast notifications
@@ -1865,7 +1868,7 @@ meeting-genius/
 ├── package.json                 # Dependencies
 ├── tsconfig.json                 # TypeScript config
 ├── next.config.mjs              # Next.js config
-├── tailwind.config.js           # Tailwind config
+├── postcss.config.mjs           # PostCSS (Tailwind 4)
 └── components.json               # shadcn/ui config
 ```
 

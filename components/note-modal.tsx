@@ -14,6 +14,9 @@ interface NoteModalProps {
   onSave?: () => void
   editMode?: boolean
   existingNoteId?: number | null
+  embedded?: boolean
+  isOpen?: boolean
+  meetingId?: string
 }
 
 export default function NoteModal({ 
@@ -21,13 +24,18 @@ export default function NoteModal({
   onClose, 
   onSave,
   editMode = false,
-  existingNoteId = null
+  existingNoteId = null,
+  embedded = false,
+  isOpen = true,
+  meetingId
 }: NoteModalProps) {
   const [content, setContent] = useState("")
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
+
+  if (!isOpen && !embedded) return null
 
   useEffect(() => {
     if (editMode && existingNoteId) {
@@ -82,15 +90,20 @@ export default function NoteModal({
 
       toast.success('Note deleted successfully')
       
-      // ⭐ FIXED: Close first, then trigger refresh
-      onClose()
+      // ✅ Clear state
+      setDeleting(false)
       
-      // ⭐ FIXED: Trigger refresh after a small delay
-      setTimeout(() => {
-        if (onSave) {
-          onSave()
-        }
-      }, 100)
+      // ✅ If embedded, just notify parent (doesn't close modal)
+      if (embedded) {
+        onClose() // This just marks that data changed
+        return
+      }
+      
+      // ✅ If standalone modal, close it
+      onClose()
+      if (onSave) {
+        setTimeout(() => onSave(), 100)
+      }
     } catch (err) {
       console.error('Unexpected error:', err)
       toast.error('An unexpected error occurred')
@@ -113,6 +126,7 @@ export default function NoteModal({
       const currentUser = getCurrentUser()
 
       if (editMode && existingNoteId) {
+        // UPDATE EXISTING NOTE
         const { error: updateError } = await supabase
           .from('notes')
           .update({
@@ -129,7 +143,23 @@ export default function NoteModal({
 
         console.log('✅ Note updated successfully')
         toast.success('Note updated successfully')
+        
+        // ✅ Reset state
+        setSaving(false)
+        
+        // ✅ If embedded, just notify and stay open
+        if (embedded) {
+          onClose() // Just marks data changed, doesn't close
+          return
+        }
+        
+        // ✅ If standalone, close modal
+        onClose()
+        if (onSave) {
+          setTimeout(() => onSave(), 100)
+        }
       } else {
+        // CREATE NEW NOTE
         const { error: insertError } = await supabase
           .from('notes')
           .insert({
@@ -147,17 +177,25 @@ export default function NoteModal({
 
         console.log('✅ Note saved successfully')
         toast.success('Note created successfully')
-      }
-
-      // ⭐ FIXED: Close modal first
-      onClose()
-
-      // ⭐ FIXED: Trigger refresh after closing
-      setTimeout(() => {
-        if (onSave) {
-          onSave()
+        
+        // ✅ CRITICAL: Reset state and clear form BEFORE notifying parent
+        setSaving(false)
+        setContent('') // Clear the form
+        setError(null)
+        
+        // ✅ If embedded mode, DON'T close - just notify parent
+        if (embedded) {
+          onClose() // This just marks that data needs refresh when modal closes
+          // Modal stays open, form is cleared, ready for next note
+          return
         }
-      }, 100)
+        
+        // ✅ If standalone modal, close it
+        onClose()
+        if (onSave) {
+          setTimeout(() => onSave(), 100)
+        }
+      }
     } catch (err) {
       console.error('Unexpected error:', err)
       setError('An unexpected error occurred')
@@ -167,7 +205,7 @@ export default function NoteModal({
 
   if (loading) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      <div className={embedded ? "p-6" : "fixed inset-0 z-50 flex items-center justify-center bg-black/50"}>
         <Card className="p-6">
           <div className="flex items-center gap-3">
             <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
@@ -176,6 +214,71 @@ export default function NoteModal({
         </Card>
       </div>
     )
+  }
+
+  const formContent = (
+    <form onSubmit={handleSubmit} className="p-6 space-y-4">
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded text-sm">
+          {error}
+        </div>
+      )}
+
+      <div>
+        <label className="block text-sm font-medium text-foreground mb-2">
+          Note Content *
+        </label>
+        <GeniusWordsInput
+          value={content}
+          onChange={setContent}
+          placeholder="Enter note content... (Type # for shortcuts)"
+          rows={6}
+          disabled={saving || deleting}
+        />
+      </div>
+
+      <div className="flex gap-3 pt-4">
+        {editMode && existingNoteId && (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleDelete}
+            disabled={saving || deleting}
+            className="text-red-600 border-red-600 hover:bg-red-50"
+          >
+            <Trash2 className="h-4 w-4 mr-2" />
+            {deleting ? "Deleting..." : "Delete"}
+          </Button>
+        )}
+        
+        <div className="flex-1"></div>
+        
+        {/* Only show Cancel in standalone mode */}
+        {!embedded && (
+          <Button 
+            type="button" 
+            variant="outline" 
+            onClick={onClose} 
+            className="flex-1"
+            disabled={saving || deleting}
+          >
+            Cancel
+          </Button>
+        )}
+        
+        <Button
+          type="submit"
+          className="flex-1 bg-note-blue text-white hover:bg-note-blue/90"
+          disabled={saving || deleting || !content.trim()}
+        >
+          {saving ? (editMode ? "Updating..." : "Saving...") : (editMode ? "Update Note" : "Save Note")}
+        </Button>
+      </div>
+    </form>
+  )
+
+  if (embedded) {
+    return formContent
   }
 
   return (
@@ -194,60 +297,7 @@ export default function NoteModal({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          {error && (
-            <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded text-sm">
-              {error}
-            </div>
-          )}
-
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-2">
-              Note Content *
-            </label>
-            <GeniusWordsInput
-              value={content}
-              onChange={setContent}
-              placeholder="Enter note content... (Type # for shortcuts)"
-              rows={6}
-              disabled={saving || deleting}
-            />
-          </div>
-
-          <div className="flex gap-3 pt-4">
-            {editMode && existingNoteId && (
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleDelete}
-                disabled={saving || deleting}
-                className="text-red-600 border-red-600 hover:bg-red-50"
-              >
-                <Trash2 className="h-4 w-4 mr-2" />
-                {deleting ? "Deleting..." : "Delete"}
-              </Button>
-            )}
-            
-            <div className="flex-1"></div>
-            
-            <Button 
-              type="button" 
-              variant="outline" 
-              onClick={onClose} 
-              className="flex-1"
-              disabled={saving || deleting}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              className="flex-1 bg-note-blue text-white hover:bg-note-blue/90"
-              disabled={saving || deleting || !content.trim()}
-            >
-              {saving ? (editMode ? "Updating..." : "Saving...") : (editMode ? "Update Note" : "Save Note")}
-            </Button>
-          </div>
-        </form>
+        {formContent}
       </Card>
     </div>
   )

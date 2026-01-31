@@ -60,6 +60,7 @@ export default function GenerateMinutesButton({
             name,
             address,
             logo_url,
+            building_type,
             company_id,
             companies(
               logo_url
@@ -82,7 +83,7 @@ export default function GenerateMinutesButton({
       const logoUrl: string | null =
         building?.logo_url || company?.logo_url || null
 
-      // Step 3: Fetch sections and topics (⭐ UPDATED: Include is_incamera fields)
+      // Step 3: Fetch sections and topics
       const { data: sections } = await supabase
         .from("sections")
         .select(
@@ -158,101 +159,143 @@ export default function GenerateMinutesButton({
               margin: 12px 0 8px 0;
               page-break-after: avoid;
             }
+            
+            /* ⭐ Professional Header Layout */
             .page-header {
-              text-align: center;
-              border-bottom: 2px solid #1f2937;
-              padding-bottom: 12px;
+              display: flex;
+              align-items: flex-start;
+              justify-content: space-between;
+              padding-bottom: 15px;
               margin-bottom: 25px;
+              border-bottom: 3px solid #1f2937;
             }
+            
+            .page-header-left {
+              flex-shrink: 0;
+            }
+            
             .page-header-logo {
-              max-height: 60px;
-              max-width: 180px;
+              max-height: 70px;
+              max-width: 200px;
               object-fit: contain;
-              margin-bottom: 8px;
             }
+            
+            .page-header-right {
+              flex-grow: 1;
+              text-align: right;
+              padding-left: 20px;
+            }
+            
+            .page-title {
+              font-size: 28pt;
+              font-weight: bold;
+              color: #1f2937;
+              margin-bottom: 5px;
+              letter-spacing: 0.5px;
+              text-transform: uppercase;
+            }
+            
+            .page-subtitle {
+              font-size: 16pt;
+              color: #6b7280;
+              font-weight: 500;
+              margin-top: 5px;
+            }
+            
             .section { 
               margin-bottom: 25px;
               page-break-inside: avoid;
             }
             .section-header {
-              background-color: #f0f4f8;
-              padding: 10px 15px;
-              border-left: 4px solid #2563eb;
-              margin-bottom: 12px;
-              font-size: 14pt;
+              background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
+              color: white;
+              padding: 12px 18px;
+              margin-bottom: 15px;
+              font-size: 13pt;
               font-weight: bold;
+              border-radius: 4px;
+              box-shadow: 0 2px 4px rgba(0,0,0,0.1);
             }
             .field-row {
-              padding: 5px 0;
+              padding: 8px 0;
               display: flex;
+              border-bottom: 1px solid #f3f4f6;
+            }
+            .field-row:last-child {
+              border-bottom: none;
             }
             .field-label {
               font-weight: 600;
               min-width: 160px;
-              color: #1f2937;
+              color: #374151;
             }
             .field-value {
-              color: #4b5563;
+              color: #1f2937;
+              flex: 1;
             }
             table {
               width: 100%;
               border-collapse: collapse;
               margin: 10px 0;
+              box-shadow: 0 1px 3px rgba(0,0,0,0.1);
             }
             th {
-              background-color: #e5e7eb;
-              padding: 8px 12px;
+              background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
+              padding: 10px 12px;
               text-align: left;
               font-weight: 600;
               border: 1px solid #d1d5db;
+              color: #374151;
             }
             td {
-              padding: 8px 12px;
+              padding: 10px 12px;
               border: 1px solid #d1d5db;
+              background: white;
+            }
+            tr:hover td {
+              background-color: #f9fafb;
             }
             .topic-box {
               border: 1px solid #e5e7eb;
               border-radius: 6px;
-              padding: 15px;
-              margin-bottom: 15px;
+              padding: 18px;
+              margin-bottom: 18px;
               background: #fafbfc;
               page-break-inside: avoid;
+              box-shadow: 0 1px 3px rgba(0,0,0,0.05);
             }
             .topic-title {
               font-weight: bold;
               font-size: 12pt;
               color: #1f2937;
-              margin-bottom: 8px;
+              margin-bottom: 10px;
+              padding-bottom: 8px;
+              border-bottom: 2px solid #e5e7eb;
             }
             .topic-description {
-              color: #6b7280;
-              margin-bottom: 10px;
+              color: #4b5563;
+              margin-bottom: 12px;
               line-height: 1.6;
             }
             .item {
-              margin: 8px 0;
-              padding: 10px 12px;
-              border-left: 3px solid;
+              margin: 10px 0;
+              padding: 12px 15px;
+              border-left: 4px solid;
               background: white;
               font-size: 10pt;
+              border-radius: 0 4px 4px 0;
+              box-shadow: 0 1px 2px rgba(0,0,0,0.05);
             }
-            .item-note { border-color: #3b82f6; }
-            .item-task { border-color: #10b981; }
-            .item-decision { border-color: #8b5cf6; }
+            .item-decision { 
+              border-color: #8b5cf6;
+              background: #faf5ff;
+            }
             .item-label {
               font-weight: 600;
-              margin-right: 5px;
+              margin-right: 8px;
             }
-            .footer-signatures {
-              margin-top: 30px;
-              padding-top: 20px;
-              border-top: 1px solid #e5e7eb;
-            }
-            .signature-line {
-              margin: 15px 0;
-              padding: 8px 0;
-            }
-            /* ⭐ NEW: In-camera styling */
+            
+            /* ⭐ In-camera styling */
             .incamera-notice {
               background-color: #fef2f2;
               border: 2px solid #dc2626;
@@ -266,7 +309,7 @@ export default function GenerateMinutesButton({
               display: inline-block;
               background-color: #dc2626;
               color: white;
-              padding: 3px 8px;
+              padding: 4px 10px;
               border-radius: 4px;
               font-size: 9pt;
               font-weight: bold;
@@ -468,14 +511,24 @@ function generateMinutesHtml(
 ): string {
   const building = meeting.buildings
 
+  // ⭐ Determine if this is MINUTES or AGENDA based on meeting status
+  const isMinutes = meeting.status === 'minutes' || meeting.status === 'working_minutes'
+  const documentType = isMinutes ? 'MEETING MINUTES' : 'MEETING AGENDA'
+
+  // ⭐ Professional header with logo on left, title on right
   let html = `
     <div class="page-header">
-      ${
-        logoUrl
-          ? `<img src="${escapeHtml(logoUrl)}" alt="Logo" class="page-header-logo" />`
-          : ""
-      }
-      <h1>${escapeHtml(meeting.title)}</h1>
+      <div class="page-header-left">
+        ${
+          logoUrl
+            ? `<img src="${escapeHtml(logoUrl)}" alt="Logo" class="page-header-logo" />`
+            : ""
+        }
+      </div>
+      <div class="page-header-right">
+        <div class="page-title">${documentType}</div>
+        <div class="page-subtitle">${escapeHtml(meeting.title)}</div>
+      </div>
     </div>
   `
 
@@ -486,9 +539,8 @@ function generateMinutesHtml(
       html += renderAttendees(templateSection, meeting.attendees || [])
     } else if (templateSection.id === "topics") {
       html += renderTopics(sections)
-    } else if (templateSection.id === "footer") {
-      html += renderFooter(templateSection)
     }
+    // ⭐ Footer removed - not included in minutes PDF
   })
 
   return html
@@ -504,18 +556,47 @@ function escapeHtml(text: string): string {
     .replace(/'/g, "&#039;")
 }
 
+// ⭐ Helper function to format time without seconds
+function formatTimeWithoutSeconds(timeString: string | null): string {
+  if (!timeString) return "N/A"
+  
+  // Handle different time formats
+  // If it contains AM/PM, just remove seconds if present
+  if (timeString.includes('AM') || timeString.includes('PM')) {
+    return timeString.replace(/:\d{2}\s*(AM|PM)/i, ' $1')
+  }
+  
+  // If it's in 24-hour format (HH:MM:SS or HH:MM)
+  const timeParts = timeString.split(':')
+  if (timeParts.length >= 2) {
+    const hours = parseInt(timeParts[0])
+    const minutes = timeParts[1]
+    
+    // Convert to 12-hour format without seconds
+    const period = hours >= 12 ? 'PM' : 'AM'
+    const displayHours = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours
+    
+    return `${displayHours}:${minutes} ${period}`
+  }
+  
+  return timeString
+}
+
+// ⭐ CORRECTED: renderHeader - ONLY hide Strata Plan if empty
 function renderHeader(section: TemplateSection, meeting: any, building: any): string {
   const visibleFields = section.fields
     .filter((f) => f.visible)
     .sort((a, b) => a.order - b.order)
 
-  let html = `
-    <div class="section">
-      <div class="section-header">
-        ${section.icon} ${section.label}
-      </div>`
+  // ⭐ NO section header - just the fields directly
+  let html = `<div class="section">`
 
   visibleFields.forEach((field) => {
+    // ⭐ ONLY skip Strata Plan if it's empty/null
+    if (field.id === "strata_plan" && !meeting.strata_plan_number) {
+      return
+    }
+
     let value = ""
     switch (field.id) {
       case "building_name":
@@ -539,7 +620,8 @@ function renderHeader(section: TemplateSection, meeting: any, building: any): st
           : "N/A"
         break
       case "start_time":
-        value = meeting.start_time || "N/A"
+        // ⭐ Format time without seconds
+        value = formatTimeWithoutSeconds(meeting.start_time)
         break
       case "location":
         value = meeting.location || "N/A"
@@ -589,7 +671,7 @@ function renderAttendees(section: TemplateSection, attendees: any[]): string {
   return html
 }
 
-// ⭐ UPDATED: renderTopics with in-camera filtering
+// ⭐ UPDATED: renderTopics - Tasks and Notes removed, only Decisions shown
 function renderTopics(sections: any[]): string {
   let html = `
     <div class="section">
@@ -605,7 +687,7 @@ function renderTopics(sections: any[]): string {
 
     if (section.topics && section.topics.length > 0) {
       section.topics.forEach((topic: any, tIdx: number) => {
-        // ⭐ NEW: Check if topic is in-camera
+        // ⭐ Check if topic is in-camera
         const isIncamera = topic.is_incamera === true
 
         html += `
@@ -615,7 +697,7 @@ function renderTopics(sections: any[]): string {
               ${isIncamera ? '<span class="incamera-badge">🔒 IN-CAMERA</span>' : ''}
             </div>`
 
-        // ⭐ NEW: If in-camera, show notice instead of content
+        // ⭐ If in-camera, show notice instead of content
         if (isIncamera) {
           html += `
             <div class="incamera-notice">
@@ -637,34 +719,17 @@ function renderTopics(sections: any[]): string {
           
           html += `</div>`
         } else {
-          // ⭐ NORMAL: Show full content for non-in-camera topics
+          // ⭐ NORMAL: Show content for non-in-camera topics
           if (topic.description) {
             html += `<div class="topic-description">${escapeHtml(
               topic.description
             )}</div>`
           }
 
-          if (topic.notes && topic.notes.length > 0) {
-            topic.notes.forEach((note: any) => {
-              html += `<div class="item item-note"><span class="item-label">📝 Note:</span>${escapeHtml(
-                note.content
-              )}</div>`
-            })
-          }
+          // ⭐ Notes removed - not included in minutes PDF
+          // ⭐ Tasks removed - managed separately through task interface
 
-          if (topic.tasks && topic.tasks.length > 0) {
-            topic.tasks.forEach((task: any) => {
-              const assignee =
-                task.assigned_name || task.assigned_email || "Unassigned"
-              const dueDate = task.due_date
-                ? ` (Due: ${new Date(task.due_date).toLocaleDateString()})`
-                : ""
-              html += `<div class="item item-task"><span class="item-label">✓ Task:</span>${escapeHtml(
-                task.description
-              )} - Assigned: ${escapeHtml(assignee)}${dueDate}</div>`
-            })
-          }
-
+          // ✅ Decisions are kept - they are formal records that belong in minutes
           if (topic.decisions && topic.decisions.length > 0) {
             topic.decisions.forEach((decision: any) => {
               const votes =
@@ -689,25 +754,4 @@ function renderTopics(sections: any[]): string {
 
   html += `</div>`
   return html
-}
-
-function renderFooter(section: TemplateSection): string {
-  return `
-    <div class="footer-signatures">
-      <div class="section-header">
-        ${section.icon} ${section.label}
-      </div>
-      <div class="signature-line">
-        <strong>Meeting Adjourned:</strong> ________________________________
-      </div>
-      <div class="signature-line">
-        <strong>Minutes Prepared By:</strong> ________________________________
-      </div>
-      <div class="signature-line">
-        <strong>Signature:</strong> ________________________________
-      </div>
-      <div class="signature-line">
-        <strong>Date:</strong> ________________________________
-      </div>
-    </div>`
 }
