@@ -384,7 +384,7 @@ export default function TaskModal({
     }
   }
 
-  // ⭐ NEW: Update existing task
+  // ⭐ FIXED: Update existing task with auto-refresh
   const updateTask = async (taskData: any) => {
     setSaving(true)
     setError(null)
@@ -411,13 +411,17 @@ export default function TaskModal({
         await uploadAttachments(existingTaskId!)
       }
 
-      // Call onSave BEFORE closing
-      if (onSave) {
-        onSave()
-      }
+      toast.success('Task updated successfully')
 
-      await new Promise(resolve => setTimeout(resolve, 100))
+      // ⭐ FIXED: Close modal first
       onClose()
+
+      // ⭐ FIXED: Trigger refresh after closing
+      setTimeout(() => {
+        if (onSave) {
+          onSave()
+        }
+      }, 100)
     } catch (err) {
       console.error('💥 Unexpected error:', err)
       setError('An unexpected error occurred')
@@ -458,15 +462,17 @@ export default function TaskModal({
         await sendCustomizedEmails(emailTemplate, taskData.external_update_token)
       }
 
-      // ⭐ FIXED: Call onSave BEFORE closing to trigger refresh
-      if (onSave) {
-        onSave()
-      }
+      toast.success('Task created successfully')
 
-      // ⭐ FIXED: Small delay to ensure refresh completes
-      await new Promise(resolve => setTimeout(resolve, 100))
-
+      // ⭐ FIXED: Close modal first
       onClose()
+
+      // ⭐ FIXED: Trigger refresh after closing
+      setTimeout(() => {
+        if (onSave) {
+          onSave()
+        }
+      }, 100)
     } catch (err) {
       console.error('💥 Unexpected error:', err)
       setError('An unexpected error occurred')

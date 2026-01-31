@@ -1,17 +1,17 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { X } from "lucide-react"
+import { X, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { supabase, getCurrentUser } from "@/lib/supabase"
 import GeniusWordsInput from "./GeniusWordsInput"
+import { toast } from "sonner"
 
 interface NoteModalProps {
   topicId: number
   onClose: () => void
   onSave?: () => void
-  // ⭐ NEW: Edit mode props
   editMode?: boolean
   existingNoteId?: number | null
 }
@@ -27,15 +27,14 @@ export default function NoteModal({
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
-  // ⭐ NEW: Load existing note data in edit mode
   useEffect(() => {
     if (editMode && existingNoteId) {
       loadExistingNote()
     }
   }, [editMode, existingNoteId])
 
-  // ⭐ NEW: Load existing note for editing
   const loadExistingNote = async () => {
     setLoading(true)
     try {
@@ -51,13 +50,51 @@ export default function NoteModal({
         return
       }
 
-      // Populate form
       setContent(noteData.content || "")
     } catch (err) {
       console.error('Error loading note:', err)
       setError('Failed to load note')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!existingNoteId || !editMode) return
+    
+    if (!confirm('Are you sure you want to delete this note? This action cannot be undone.')) {
+      return
+    }
+
+    setDeleting(true)
+    try {
+      const { error: deleteError } = await supabase
+        .from('notes')
+        .delete()
+        .eq('id', existingNoteId)
+
+      if (deleteError) {
+        console.error('Error deleting note:', deleteError)
+        toast.error('Failed to delete note')
+        setDeleting(false)
+        return
+      }
+
+      toast.success('Note deleted successfully')
+      
+      // ⭐ FIXED: Close first, then trigger refresh
+      onClose()
+      
+      // ⭐ FIXED: Trigger refresh after a small delay
+      setTimeout(() => {
+        if (onSave) {
+          onSave()
+        }
+      }, 100)
+    } catch (err) {
+      console.error('Unexpected error:', err)
+      toast.error('An unexpected error occurred')
+      setDeleting(false)
     }
   }
 
@@ -75,9 +112,7 @@ export default function NoteModal({
     try {
       const currentUser = getCurrentUser()
 
-      // ⭐ UPDATED: Handle both create and edit
       if (editMode && existingNoteId) {
-        // UPDATE existing note
         const { error: updateError } = await supabase
           .from('notes')
           .update({
@@ -93,8 +128,8 @@ export default function NoteModal({
         }
 
         console.log('✅ Note updated successfully')
+        toast.success('Note updated successfully')
       } else {
-        // CREATE new note
         const { error: insertError } = await supabase
           .from('notes')
           .insert({
@@ -111,17 +146,18 @@ export default function NoteModal({
         }
 
         console.log('✅ Note saved successfully')
+        toast.success('Note created successfully')
       }
 
-      // ⭐ FIXED: Call onSave BEFORE closing to trigger refresh
-      if (onSave) {
-        onSave()
-      }
-
-      // ⭐ FIXED: Small delay to ensure refresh completes
-      await new Promise(resolve => setTimeout(resolve, 100))
-
+      // ⭐ FIXED: Close modal first
       onClose()
+
+      // ⭐ FIXED: Trigger refresh after closing
+      setTimeout(() => {
+        if (onSave) {
+          onSave()
+        }
+      }, 100)
     } catch (err) {
       console.error('Unexpected error:', err)
       setError('An unexpected error occurred')
@@ -152,7 +188,7 @@ export default function NoteModal({
           <button
             onClick={onClose}
             className="flex h-8 w-8 items-center justify-center rounded hover:bg-muted transition-colors"
-            disabled={saving}
+            disabled={saving || deleting}
           >
             <X className="h-5 w-5" />
           </button>
@@ -165,7 +201,6 @@ export default function NoteModal({
             </div>
           )}
 
-          {/* ⭐ UPDATED: Note Content with GeniusWords */}
           <div>
             <label className="block text-sm font-medium text-foreground mb-2">
               Note Content *
@@ -175,24 +210,39 @@ export default function NoteModal({
               onChange={setContent}
               placeholder="Enter note content... (Type # for shortcuts)"
               rows={6}
-              disabled={saving}
+              disabled={saving || deleting}
             />
           </div>
 
           <div className="flex gap-3 pt-4">
+            {editMode && existingNoteId && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleDelete}
+                disabled={saving || deleting}
+                className="text-red-600 border-red-600 hover:bg-red-50"
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                {deleting ? "Deleting..." : "Delete"}
+              </Button>
+            )}
+            
+            <div className="flex-1"></div>
+            
             <Button 
               type="button" 
               variant="outline" 
               onClick={onClose} 
               className="flex-1"
-              disabled={saving}
+              disabled={saving || deleting}
             >
               Cancel
             </Button>
             <Button
               type="submit"
               className="flex-1 bg-note-blue text-white hover:bg-note-blue/90"
-              disabled={saving || !content.trim()}
+              disabled={saving || deleting || !content.trim()}
             >
               {saving ? (editMode ? "Updating..." : "Saving...") : (editMode ? "Update Note" : "Save Note")}
             </Button>

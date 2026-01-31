@@ -54,6 +54,7 @@ export default function TaskDetailsModal({ taskId, onClose, onUpdate }: TaskDeta
   const [isEditingStatus, setIsEditingStatus] = useState(false)
   const [selectedStatus, setSelectedStatus] = useState("")
   const [showAiAnalysis, setShowAiAnalysis] = useState(false)
+  const [deletingTask, setDeletingTask] = useState(false)
 
   const currentUser = getCurrentUser()
 
@@ -145,7 +146,6 @@ export default function TaskDetailsModal({ taskId, onClose, onUpdate }: TaskDeta
     }
   }
 
-  // ⭐ NEW: Fetch AI analysis
   const fetchAIAnalysis = async () => {
     try {
       const { data, error } = await supabase
@@ -169,7 +169,6 @@ export default function TaskDetailsModal({ taskId, onClose, onUpdate }: TaskDeta
     }
   }
 
-  // ⭐ NEW: Handle AI Analysis
   const handleAnalyzeWithAI = async () => {
     if (!task) return
 
@@ -177,7 +176,6 @@ export default function TaskDetailsModal({ taskId, onClose, onUpdate }: TaskDeta
     toast.info('Analyzing task with AI...')
 
     try {
-      // Get building ID from task -> topic -> meeting -> building
       const { data: topic, error: topicError } = await supabase
         .from('topics')
         .select('meeting_id')
@@ -216,15 +214,12 @@ export default function TaskDetailsModal({ taskId, onClose, onUpdate }: TaskDeta
 
       console.log('Fetching building documents for building ID:', building.id)
 
-      // Extract building documents
       const buildingDocuments = await fetchAndExtractBuildingDocuments(building.id)
       console.log(`Extracted ${buildingDocuments.length} building documents`)
 
-      // Extract task attachments
       const taskAttachments = await fetchAndExtractTaskAttachments(taskId)
       console.log(`Extracted ${taskAttachments.length} task attachments`)
 
-      // Prepare payload for n8n webhook
       const payload = {
         task_id: taskId,
         task_description: task.description,
@@ -236,7 +231,6 @@ export default function TaskDetailsModal({ taskId, onClose, onUpdate }: TaskDeta
 
       console.log('Sending payload to n8n webhook:', payload)
 
-      // Send to n8n webhook
       const response = await fetch('https://rulesengine.asccreative.com/webhook/ac3f411b-401a-4a97-ae07-f241dbc2d1ed', {
         method: 'POST',
         headers: {
@@ -254,7 +248,6 @@ export default function TaskDetailsModal({ taskId, onClose, onUpdate }: TaskDeta
 
       toast.success('AI analysis complete!')
       
-      // Fetch the updated analysis
       await fetchAIAnalysis()
       setShowAiAnalysis(true)
     } catch (err) {
@@ -296,11 +289,72 @@ export default function TaskDetailsModal({ taskId, onClose, onUpdate }: TaskDeta
     }
   }
 
+  const handleDeleteTaskNote = async (noteId: number) => {
+    if (!confirm('Are you sure you want to delete this note?')) return
+
+    try {
+      const { error } = await supabase
+        .from('task_notes')
+        .delete()
+        .eq('id', noteId)
+
+      if (error) {
+        console.error('Error deleting note:', error)
+        toast.error('Failed to delete note')
+        return
+      }
+
+      toast.success('Note deleted successfully')
+      await fetchTaskNotes()
+      if (onUpdate) onUpdate()
+    } catch (err) {
+      console.error('Unexpected error:', err)
+      toast.error('Failed to delete note')
+    }
+  }
+
+  // ⭐ FIXED: Handle delete entire task with auto-refresh
+  const handleDeleteTask = async () => {
+    if (!confirm('Are you sure you want to delete this entire task? This will delete all associated notes and attachments. This action cannot be undone.')) {
+      return
+    }
+
+    setDeletingTask(true)
+    try {
+      const { error } = await supabase
+        .from('tasks')
+        .delete()
+        .eq('id', taskId)
+
+      if (error) {
+        console.error('Error deleting task:', error)
+        toast.error('Failed to delete task')
+        setDeletingTask(false)
+        return
+      }
+
+      toast.success('Task deleted successfully')
+      
+      // ⭐ FIXED: Close first
+      onClose()
+      
+      // ⭐ FIXED: Trigger refresh after closing
+      setTimeout(() => {
+        if (onUpdate) {
+          onUpdate()
+        }
+      }, 100)
+    } catch (err) {
+      console.error('Unexpected error:', err)
+      toast.error('Failed to delete task')
+      setDeletingTask(false)
+    }
+  }
+
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
 
-    // Validate file size (10MB max)
     if (file.size > 10 * 1024 * 1024) {
       toast.error('File size must be less than 10MB')
       return
@@ -308,7 +362,6 @@ export default function TaskDetailsModal({ taskId, onClose, onUpdate }: TaskDeta
 
     setUploadingFile(true)
     try {
-      // Upload to Supabase Storage
       const fileExt = file.name.split('.').pop()
       const fileName = `${Date.now()}_${file.name}`
       const filePath = `${taskId}/${fileName}`
@@ -323,12 +376,10 @@ export default function TaskDetailsModal({ taskId, onClose, onUpdate }: TaskDeta
         return
       }
 
-      // Get public URL
       const { data: { publicUrl } } = supabase.storage
         .from('task-attachments')
         .getPublicUrl(filePath)
 
-      // Save to database
       const { error: dbError } = await supabase
         .from('task_attachments')
         .insert({
@@ -354,7 +405,6 @@ export default function TaskDetailsModal({ taskId, onClose, onUpdate }: TaskDeta
       toast.error('Failed to upload file')
     } finally {
       setUploadingFile(false)
-      // Reset file input
       event.target.value = ''
     }
   }
@@ -363,11 +413,9 @@ export default function TaskDetailsModal({ taskId, onClose, onUpdate }: TaskDeta
     if (!confirm(`Delete ${attachment.filename}?`)) return
 
     try {
-      // Extract file path from URL
       const urlParts = attachment.file_url.split('/task-attachments/')
       const filePath = urlParts[1]
 
-      // Delete from storage
       const { error: storageError } = await supabase.storage
         .from('task-attachments')
         .remove([filePath])
@@ -376,7 +424,6 @@ export default function TaskDetailsModal({ taskId, onClose, onUpdate }: TaskDeta
         console.error('Error deleting file from storage:', storageError)
       }
 
-      // Delete from database
       const { error: dbError } = await supabase
         .from('task_attachments')
         .delete()
@@ -482,6 +529,7 @@ export default function TaskDetailsModal({ taskId, onClose, onUpdate }: TaskDeta
           <button
             onClick={onClose}
             className="flex h-8 w-8 items-center justify-center rounded hover:bg-muted transition-colors"
+            disabled={deletingTask}
           >
             <X className="h-5 w-5" />
           </button>
@@ -492,7 +540,6 @@ export default function TaskDetailsModal({ taskId, onClose, onUpdate }: TaskDeta
           <div>
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-sm font-medium text-muted-foreground">Description</h3>
-              {/* ⭐ NEW: AI Analysis Button */}
               <Button
                 onClick={handleAnalyzeWithAI}
                 disabled={analyzingWithAI}
@@ -507,7 +554,7 @@ export default function TaskDetailsModal({ taskId, onClose, onUpdate }: TaskDeta
             <p className="text-foreground bg-muted/30 p-4 rounded-lg">{task.description}</p>
           </div>
 
-          {/* ⭐ NEW: AI Analysis Results */}
+          {/* AI Analysis Results */}
           {aiAnalysis && (
             <div className="border-t border-border pt-6">
               <button
@@ -622,7 +669,6 @@ export default function TaskDetailsModal({ taskId, onClose, onUpdate }: TaskDeta
               Attachments ({attachments.length})
             </h3>
 
-            {/* Upload Button */}
             <div className="mb-4">
               <label htmlFor="file-upload">
                 <Button
@@ -649,7 +695,6 @@ export default function TaskDetailsModal({ taskId, onClose, onUpdate }: TaskDeta
               </p>
             </div>
 
-            {/* Attachments List */}
             <div className="space-y-2">
               {attachments.length > 0 ? (
                 attachments.map(attachment => (
@@ -700,7 +745,6 @@ export default function TaskDetailsModal({ taskId, onClose, onUpdate }: TaskDeta
               Notes ({notes.length})
             </h3>
 
-            {/* Add Note */}
             <div className="mb-4">
               <textarea
                 value={newNote}
@@ -718,7 +762,6 @@ export default function TaskDetailsModal({ taskId, onClose, onUpdate }: TaskDeta
               </Button>
             </div>
 
-            {/* Notes List */}
             <div className="space-y-3">
               {notes.length > 0 ? (
                 notes.map(note => (
@@ -728,9 +771,19 @@ export default function TaskDetailsModal({ taskId, onClose, onUpdate }: TaskDeta
                         <User className="h-4 w-4 text-muted-foreground" />
                         <span className="font-medium text-sm">{note.creator_name}</span>
                       </div>
-                      <span className="text-xs text-muted-foreground">
-                        {new Date(note.created_at).toLocaleString()}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground">
+                          {new Date(note.created_at).toLocaleString()}
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDeleteTaskNote(note.id)}
+                          className="text-red-600 hover:text-red-700 h-6 w-6 p-0"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </div>
                     </div>
                     <p className="text-foreground whitespace-pre-wrap">{note.content}</p>
                   </div>
@@ -742,9 +795,21 @@ export default function TaskDetailsModal({ taskId, onClose, onUpdate }: TaskDeta
           </div>
         </div>
 
-        {/* Footer */}
-        <div className="border-t border-border p-4 bg-muted/20">
-          <Button onClick={onClose} variant="outline" className="w-full">
+        {/* Footer with Delete and Close buttons */}
+        <div className="border-t border-border p-4 bg-muted/20 flex gap-3">
+          <Button 
+            onClick={handleDeleteTask} 
+            variant="outline" 
+            disabled={deletingTask}
+            className="text-red-600 border-red-600 hover:bg-red-50"
+          >
+            <Trash2 className="h-4 w-4 mr-2" />
+            {deletingTask ? "Deleting..." : "Delete Task"}
+          </Button>
+          
+          <div className="flex-1"></div>
+          
+          <Button onClick={onClose} variant="outline" disabled={deletingTask}>
             Close
           </Button>
         </div>

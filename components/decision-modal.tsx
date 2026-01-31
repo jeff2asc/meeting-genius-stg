@@ -1,12 +1,11 @@
 "use client"
 
-
 import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { X } from "lucide-react"
+import { X, Trash2 } from "lucide-react"
 import { supabase, getCurrentUser } from "@/lib/supabase"
-
+import { toast } from "sonner"
 
 interface DecisionModalProps {
   isOpen: boolean
@@ -14,13 +13,10 @@ interface DecisionModalProps {
   topicId: number
   meetingId: number
   onSave?: () => void
-  // ⭐ NEW: Edit mode props
   editMode?: boolean
   existingDecisionId?: number | null
-  // ⭐ NEW: Threading props
   parentDecisionId?: number | null
 }
-
 
 interface Attendee {
   name: string
@@ -28,15 +24,12 @@ interface Attendee {
   present: boolean
 }
 
-
 interface GeniusWord {
   id: number
   shortcode: string
   description: string
 }
 
-
-// ⭐ NEW: Decision interface for loading existing decisions
 interface Decision {
   id: number
   topic_id: number
@@ -49,7 +42,6 @@ interface Decision {
   recorded_at: string
   edited_at: string | null
 }
-
 
 export default function DecisionModal({
   isOpen,
@@ -67,11 +59,11 @@ export default function DecisionModal({
   const [votesAgainst, setVotesAgainst] = useState<number | "">("")
   const [votesAbstain, setVotesAbstain] = useState<number | "">("")
   const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [decisionResults, setDecisionResults] = useState<string[]>([])
   const [attendees, setAttendees] = useState<Attendee[]>([])
   
-  // ⭐ NEW: Parent decision info for display
   const [parentDecision, setParentDecision] = useState<Decision | null>(null)
   
   // @ Mention Autocomplete State
@@ -92,9 +84,7 @@ export default function DecisionModal({
   const suggestionsRef = useRef<HTMLDivElement>(null)
   const geniusSuggestionsRef = useRef<HTMLDivElement>(null)
 
-
   const currentUser = getCurrentUser()
-
 
   useEffect(() => {
     if (isOpen) {
@@ -102,20 +92,16 @@ export default function DecisionModal({
       fetchAttendees()
       fetchGeniusWords()
       
-      // ⭐ NEW: Load existing decision if in edit mode
       if (editMode && existingDecisionId) {
         loadExistingDecision(existingDecisionId)
       }
       
-      // ⭐ NEW: Load parent decision if creating a threaded decision
       if (parentDecisionId) {
         loadParentDecision(parentDecisionId)
       }
     }
   }, [isOpen, meetingId, editMode, existingDecisionId, parentDecisionId])
 
-
-  // ⭐ NEW: Load existing decision for editing
   const loadExistingDecision = async (decisionId: number) => {
     try {
       const { data, error } = await supabase
@@ -124,13 +110,11 @@ export default function DecisionModal({
         .eq('id', decisionId)
         .single()
 
-
       if (error) {
         console.error('Error loading decision:', error)
         setError('Failed to load decision')
         return
       }
-
 
       if (data) {
         setMotionText(data.motion_text)
@@ -145,8 +129,6 @@ export default function DecisionModal({
     }
   }
 
-
-  // ⭐ NEW: Load parent decision for display
   const loadParentDecision = async (decisionId: number) => {
     try {
       const { data, error } = await supabase
@@ -155,12 +137,10 @@ export default function DecisionModal({
         .eq('id', decisionId)
         .single()
 
-
       if (error) {
         console.error('Error loading parent decision:', error)
         return
       }
-
 
       if (data) {
         setParentDecision(data)
@@ -170,7 +150,6 @@ export default function DecisionModal({
     }
   }
 
-
   const fetchDecisionResults = async () => {
     try {
       const { data: meetingData, error: meetingError } = await supabase
@@ -179,12 +158,10 @@ export default function DecisionModal({
         .eq("id", meetingId)
         .single()
 
-
       if (meetingError || !meetingData) {
         console.error("Error fetching meeting:", meetingError)
         return
       }
-
 
       const { data: buildingData, error: buildingError } = await supabase
         .from("buildings")
@@ -192,12 +169,10 @@ export default function DecisionModal({
         .eq("id", meetingData.building_id)
         .single()
 
-
       if (buildingError || !buildingData || !buildingData.company_id) {
         console.error("Error fetching building:", buildingError)
         return
       }
-
 
       const { data: companyData, error: companyError } = await supabase
         .from("companies")
@@ -205,12 +180,10 @@ export default function DecisionModal({
         .eq("id", buildingData.company_id)
         .single()
 
-
       if (companyError) {
         console.error("Error fetching company:", companyError)
         return
       }
-
 
       if (companyData?.default_decision_results) {
         setDecisionResults(companyData.default_decision_results)
@@ -223,7 +196,6 @@ export default function DecisionModal({
     }
   }
 
-
   const fetchAttendees = async () => {
     try {
       const { data: meetingData, error } = await supabase
@@ -232,12 +204,10 @@ export default function DecisionModal({
         .eq("id", meetingId)
         .single()
 
-
       if (error) {
         console.error("Error fetching attendees:", error)
         return
       }
-
 
       if (meetingData?.attendees) {
         setAttendees(meetingData.attendees as Attendee[])
@@ -247,10 +217,8 @@ export default function DecisionModal({
     }
   }
 
-
   const fetchGeniusWords = async () => {
     if (!currentUser?.id) return
-
 
     try {
       const { data, error } = await supabase
@@ -258,7 +226,6 @@ export default function DecisionModal({
         .select('id, shortcode, description')
         .eq('user_id', currentUser.id)
         .order('shortcode', { ascending: true })
-
 
       if (!error && data) {
         setGeniusWords(data)
@@ -268,7 +235,6 @@ export default function DecisionModal({
     }
   }
 
-
   const handleMotionTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const text = e.target.value
     const cursorPos = e.target.selectionStart
@@ -276,24 +242,18 @@ export default function DecisionModal({
     setMotionText(text)
     setCursorPosition(cursorPos)
 
-
-    // Check for @ mention and # GeniusWords
     const textBeforeCursor = text.substring(0, cursorPos)
     const atIndex = textBeforeCursor.lastIndexOf("@")
     const hashIndex = textBeforeCursor.lastIndexOf("#")
     
-    // Determine which trigger is most recent
     const mostRecentIsAt = atIndex > hashIndex
     
     if (mostRecentIsAt && atIndex !== -1) {
-      // Handle @ mention
       const textAfterAt = textBeforeCursor.substring(atIndex + 1)
       
-      // Check if there's a space after @ (which would close the mention)
       if (!textAfterAt.includes(" ") && !textAfterAt.includes("\n")) {
         setMentionStartIndex(atIndex)
         
-        // Filter attendees based on text after @
         const filtered = attendees.filter(attendee =>
           attendee.name.toLowerCase().includes(textAfterAt.toLowerCase())
         )
@@ -306,16 +266,13 @@ export default function DecisionModal({
         setShowSuggestions(false)
       }
     } else if (!mostRecentIsAt && hashIndex !== -1) {
-      // Handle # GeniusWords
       const textAfterHash = textBeforeCursor.substring(hashIndex + 1)
       
       if (!textAfterHash.includes(" ") && !textAfterHash.includes("\n")) {
         setGeniusStartIndex(hashIndex)
         
-        // Filter GeniusWords - search without the # prefix
         const searchTerm = textAfterHash.toLowerCase()
         const filtered = geniusWords.filter(gw => {
-          // Remove # from shortcode for comparison
           const shortcodeWithoutHash = gw.shortcode.replace(/^#/, '').toLowerCase()
           return shortcodeWithoutHash.includes(searchTerm) || 
                  gw.shortcode.toLowerCase().includes(`#${searchTerm}`)
@@ -334,10 +291,8 @@ export default function DecisionModal({
     }
   }
 
-
   const insertMention = (attendee: Attendee) => {
     if (mentionStartIndex === -1) return
-
 
     const beforeMention = motionText.substring(0, mentionStartIndex)
     const afterCursor = motionText.substring(cursorPosition)
@@ -347,8 +302,6 @@ export default function DecisionModal({
     setShowSuggestions(false)
     setMentionStartIndex(-1)
 
-
-    // Set cursor position after inserted name
     setTimeout(() => {
       if (textareaRef.current) {
         const newCursorPos = mentionStartIndex + attendee.name.length + 1
@@ -358,10 +311,8 @@ export default function DecisionModal({
     }, 0)
   }
 
-
   const insertGeniusWord = (geniusWord: GeniusWord) => {
     if (geniusStartIndex === -1) return
-
 
     const beforeGenius = motionText.substring(0, geniusStartIndex)
     const afterCursor = motionText.substring(cursorPosition)
@@ -370,7 +321,6 @@ export default function DecisionModal({
     setMotionText(newText)
     setShowGeniusSuggestions(false)
     setGeniusStartIndex(-1)
-
 
     setTimeout(() => {
       if (textareaRef.current) {
@@ -381,9 +331,7 @@ export default function DecisionModal({
     }, 0)
   }
 
-
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    // Handle @ mention suggestions
     if (showSuggestions) {
       if (e.key === "ArrowDown") {
         e.preventDefault()
@@ -402,8 +350,6 @@ export default function DecisionModal({
       return
     }
 
-
-    // Handle # GeniusWords suggestions
     if (showGeniusSuggestions) {
       if (e.key === "ArrowDown") {
         e.preventDefault()
@@ -423,6 +369,45 @@ export default function DecisionModal({
     }
   }
 
+  // ⭐ FIXED: Handle delete decision with auto-refresh
+  const handleDelete = async () => {
+    if (!existingDecisionId || !editMode) return
+    
+    if (!confirm('Are you sure you want to delete this decision? This will also delete any threaded decisions under it. This action cannot be undone.')) {
+      return
+    }
+
+    setDeleting(true)
+    try {
+      const { error: deleteError } = await supabase
+        .from('decisions')
+        .delete()
+        .eq('id', existingDecisionId)
+
+      if (deleteError) {
+        console.error('Error deleting decision:', deleteError)
+        toast.error('Failed to delete decision')
+        setDeleting(false)
+        return
+      }
+
+      toast.success('Decision deleted successfully')
+      
+      // ⭐ FIXED: Close first, then trigger refresh
+      handleClose()
+      
+      // ⭐ FIXED: Trigger refresh after a small delay
+      setTimeout(() => {
+        if (onSave) {
+          onSave()
+        }
+      }, 100)
+    } catch (err) {
+      console.error('Unexpected error:', err)
+      toast.error('An unexpected error occurred')
+      setDeleting(false)
+    }
+  }
 
   const handleSave = async () => {
     if (!motionText.trim()) {
@@ -430,13 +415,10 @@ export default function DecisionModal({
       return
     }
 
-
     setSaving(true)
     setError(null)
 
-
     try {
-      // ⭐ NEW: Edit existing decision
       if (editMode && existingDecisionId) {
         const { error: updateError } = await supabase
           .from("decisions")
@@ -450,15 +432,15 @@ export default function DecisionModal({
           })
           .eq('id', existingDecisionId)
 
-
         if (updateError) {
           console.error("Error updating decision:", updateError)
           setError("Failed to update decision")
           setSaving(false)
           return
         }
+
+        toast.success('Decision updated successfully')
       } else {
-        // ⭐ NEW: Create new decision (with optional parent)
         const { error: insertError } = await supabase
           .from("decisions")
           .insert({
@@ -468,9 +450,8 @@ export default function DecisionModal({
             votes_for: votesFor === "" ? null : votesFor,
             votes_against: votesAgainst === "" ? null : votesAgainst,
             votes_abstain: votesAbstain === "" ? null : votesAbstain,
-            parent_decision_id: parentDecisionId // ⭐ NEW: Link to parent if threaded
+            parent_decision_id: parentDecisionId
           })
-
 
         if (insertError) {
           console.error("Error saving decision:", insertError)
@@ -478,24 +459,25 @@ export default function DecisionModal({
           setSaving(false)
           return
         }
+
+        toast.success('Decision created successfully')
       }
 
-
-      // ⭐ FIXED: Call onSave BEFORE closing to trigger refresh
-      if (onSave) onSave()
-      
-      // ⭐ FIXED: Small delay to ensure refresh completes
-      await new Promise(resolve => setTimeout(resolve, 100))
-      
+      // ⭐ FIXED: Close modal first
       handleClose()
+
+      // ⭐ FIXED: Trigger refresh after closing
+      setTimeout(() => {
+        if (onSave) {
+          onSave()
+        }
+      }, 100)
     } catch (err) {
       console.error("Unexpected error:", err)
       setError("An unexpected error occurred")
-    } finally {
       setSaving(false)
     }
   }
-
 
   const handleClose = () => {
     setMotionText("")
@@ -514,9 +496,7 @@ export default function DecisionModal({
     onClose()
   }
 
-
   if (!isOpen) return null
-
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 animate-in fade-in">
@@ -528,13 +508,12 @@ export default function DecisionModal({
           <button
             onClick={handleClose}
             className="flex h-8 w-8 items-center justify-center rounded hover:bg-muted transition-colors"
+            disabled={saving || deleting}
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
-
-        {/* ⭐ NEW: Parent Decision Display */}
         {parentDecision && (
           <div className="mb-4 p-3 bg-purple-50 border border-purple-200 rounded-lg">
             <div className="flex items-start gap-2">
@@ -549,16 +528,13 @@ export default function DecisionModal({
           </div>
         )}
 
-
         {error && (
           <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded text-sm mb-4">
             {error}
           </div>
         )}
 
-
         <div className="space-y-4">
-          {/* Motion Text with @ Autocomplete */}
           <div className="relative">
             <label className="block text-sm font-medium text-foreground mb-2">
               Motion / Resolution Text <span className="text-red-500">*</span>
@@ -573,10 +549,9 @@ export default function DecisionModal({
               onKeyDown={handleKeyDown}
               placeholder="E.g., Motion by @John Smith, seconded by @Jane Doe, to approve the budget..."
               className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary min-h-[120px]"
-              disabled={saving}
+              disabled={saving || deleting}
             />
             
-            {/* @ Mention Suggestions Dropdown */}
             {showSuggestions && (
               <div
                 ref={suggestionsRef}
@@ -599,8 +574,6 @@ export default function DecisionModal({
               </div>
             )}
 
-
-            {/* # GeniusWords Suggestions Dropdown */}
             {showGeniusSuggestions && (
               <div
                 ref={geniusSuggestionsRef}
@@ -628,8 +601,6 @@ export default function DecisionModal({
             )}
           </div>
 
-
-          {/* Result Dropdown */}
           <div>
             <label className="block text-sm font-medium text-foreground mb-2">
               Result
@@ -638,7 +609,7 @@ export default function DecisionModal({
               value={result}
               onChange={(e) => setResult(e.target.value)}
               className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-              disabled={saving}
+              disabled={saving || deleting}
             >
               <option value="">Select result...</option>
               {decisionResults.map((res) => (
@@ -649,8 +620,6 @@ export default function DecisionModal({
             </select>
           </div>
 
-
-          {/* Voting Counts */}
           <div className="grid grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium text-foreground mb-2">
@@ -663,7 +632,7 @@ export default function DecisionModal({
                 onChange={(e) => setVotesFor(e.target.value === "" ? "" : parseInt(e.target.value))}
                 placeholder="0"
                 className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                disabled={saving}
+                disabled={saving || deleting}
               />
             </div>
             <div>
@@ -677,7 +646,7 @@ export default function DecisionModal({
                 onChange={(e) => setVotesAgainst(e.target.value === "" ? "" : parseInt(e.target.value))}
                 placeholder="0"
                 className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                disabled={saving}
+                disabled={saving || deleting}
               />
             </div>
             <div>
@@ -691,26 +660,39 @@ export default function DecisionModal({
                 onChange={(e) => setVotesAbstain(e.target.value === "" ? "" : parseInt(e.target.value))}
                 placeholder="0"
                 className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                disabled={saving}
+                disabled={saving || deleting}
               />
             </div>
           </div>
         </div>
 
-
         <div className="flex gap-3 mt-6">
+          {editMode && existingDecisionId && (
+            <Button
+              onClick={handleDelete}
+              variant="outline"
+              disabled={saving || deleting}
+              className="text-red-600 border-red-600 hover:bg-red-50"
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              {deleting ? "Deleting..." : "Delete"}
+            </Button>
+          )}
+          
+          <div className="flex-1"></div>
+          
           <Button
             onClick={handleClose}
             variant="outline"
             className="flex-1"
-            disabled={saving}
+            disabled={saving || deleting}
           >
             Cancel
           </Button>
           <Button
             onClick={handleSave}
             className="flex-1 bg-decision-purple hover:bg-decision-purple/90 text-white"
-            disabled={saving}
+            disabled={saving || deleting}
           >
             {saving ? "Saving..." : editMode ? "Update Decision" : "Save Decision"}
           </Button>

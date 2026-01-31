@@ -1,7 +1,10 @@
 "use client"
 
-import { Filter } from "lucide-react"
+import { useState, useMemo } from "react"
+import { Filter, Search, X } from "lucide-react"
 import { Card } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Button } from "@/components/ui/button"
 import UserCard from "./UserCard"
 
 interface UserRow {
@@ -46,10 +49,26 @@ export default function UsersTab({
   onEditUser,
   onDeleteUser,
 }: UsersTabProps) {
+  // Add search state
+  const [searchQuery, setSearchQuery] = useState("")
+
   const canManageUser = (user: UserRow) => {
     if (isMaster) return true
     return true
   }
+
+  // Apply search filter on top of existing filters
+  const searchFilteredUsers = useMemo(() => {
+    if (!searchQuery.trim()) return filteredUsers
+
+    const query = searchQuery.toLowerCase()
+    return filteredUsers.filter(
+      (user) =>
+        user.name.toLowerCase().includes(query) ||
+        user.email.toLowerCase().includes(query) ||
+        user.user_type.toLowerCase().replace(/_/g, " ").includes(query)
+    )
+  }, [filteredUsers, searchQuery])
 
   return (
     <>
@@ -62,6 +81,39 @@ export default function UsersTab({
         </p>
       </div>
 
+      {/* Search Field */}
+      <Card className="p-4 mb-4">
+        <div className="flex items-center gap-2 mb-3">
+          <Search className="h-4 w-4 text-muted-foreground" />
+          <h3 className="font-semibold text-foreground">Search Users</h3>
+        </div>
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Search by name, email, or user type..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-9 pr-9"
+          />
+          {searchQuery && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="absolute right-1 top-1/2 h-7 w-7 -translate-y-1/2 p-0"
+              onClick={() => setSearchQuery("")}
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
+        {searchQuery && (
+          <p className="text-xs text-muted-foreground mt-2">
+            Found {searchFilteredUsers.length} user{searchFilteredUsers.length !== 1 ? "s" : ""} matching "{searchQuery}"
+          </p>
+        )}
+      </Card>
+
+      {/* Filters Card */}
       <Card className="p-4 mb-6">
         <div className="flex items-center gap-2 mb-3">
           <Filter className="h-4 w-4 text-muted-foreground" />
@@ -109,7 +161,7 @@ export default function UsersTab({
           </div>
         </div>
         <p className="text-xs text-muted-foreground mt-3">
-          Showing {filteredUsers.length} of {users.length} users
+          Showing {searchFilteredUsers.length} of {users.length} users
         </p>
       </Card>
 
@@ -119,7 +171,7 @@ export default function UsersTab({
         </div>
       ) : (
         <div className="grid gap-4">
-          {filteredUsers.map((user) => {
+          {searchFilteredUsers.map((user) => {
             const canManage = canManageUser(user)
             return (
               <UserCard
@@ -133,9 +185,13 @@ export default function UsersTab({
         </div>
       )}
 
-      {filteredUsers.length === 0 && !loading && (
+      {searchFilteredUsers.length === 0 && !loading && (
         <div className="text-center py-12 border-2 border-dashed border-border rounded-lg">
-          <p className="text-muted-foreground">No users found matching filters</p>
+          <p className="text-muted-foreground">
+            {searchQuery
+              ? `No users found matching "${searchQuery}"`
+              : "No users found matching filters"}
+          </p>
         </div>
       )}
     </>

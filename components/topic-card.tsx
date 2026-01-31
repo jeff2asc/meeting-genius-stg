@@ -27,6 +27,18 @@ function useDebounce<T>(value: T, delay: number): T {
   return debouncedValue
 }
 
+// ⭐ UPDATED: Helper function to format ISO string to local datetime string for input
+const formatToLocalDateTimeString = (isoString: string) => {
+  if (!isoString) return ''
+  const date = new Date(isoString)
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  const hours = String(date.getHours()).padStart(2, '0')
+  const minutes = String(date.getMinutes()).padStart(2, '0')
+  return `${year}-${month}-${day}T${hours}:${minutes}`
+}
+
 interface Topic {
   id: number
   title: string
@@ -34,7 +46,6 @@ interface Topic {
   attachments: number
   tasks: number
   decisions: number
-  // ⭐ NEW: In-camera fields
   is_incamera?: boolean
   incamera_start_time?: string | null
   incamera_end_time?: string | null
@@ -49,7 +60,6 @@ interface HistoryItem {
   attachmentUrl?: string
 }
 
-// ⭐ NEW: Decision interface with threading support
 interface Decision {
   id: number
   topic_id: number
@@ -61,14 +71,14 @@ interface Decision {
   parent_decision_id: number | null
   recorded_at: string
   edited_at: string | null
-  children?: Decision[] // For nested decisions
+  children?: Decision[]
 }
 
 interface TopicCardProps {
   topic: Topic
   topicNumber: number
   meetingId: number
-  meetingStatus?: string  // ⭐ NEW: To check if meeting has started
+  meetingStatus?: string
   onUpdate: (updates: Partial<Topic>) => void
   onDelete: (topicId: number) => void
   onTaskClick: () => void
@@ -76,10 +86,8 @@ interface TopicCardProps {
   onDecisionClick: () => void
   onRegisterRefresh?: (topicId: number, callback: () => void) => void
   isReadOnly?: boolean
-  // ⭐ UPDATED: Include topicId in callbacks
   onEditDecision?: (decisionId: number, topicId: number) => void
   onAddThreadedDecision?: (parentDecisionId: number, topicId: number) => void
-  // ⭐ NEW: Edit callbacks for task and note
   onEditTask?: (taskId: number, topicId: number) => void
   onEditNote?: (noteId: number, topicId: number) => void
 }
@@ -88,7 +96,7 @@ export default function TopicCard({
   topic, 
   topicNumber,
   meetingId,
-  meetingStatus,  // ⭐ NEW
+  meetingStatus,
   onUpdate,
   onDelete,
   onTaskClick,
@@ -113,36 +121,31 @@ export default function TopicCard({
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null)
   const [showAiResult, setShowAiResult] = useState(false)
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null)
-  
+
   const [attachments, setAttachments] = useState<TopicAttachment[]>([])
   const [uploadingFile, setUploadingFile] = useState(false)
   const [showAttachments, setShowAttachments] = useState(false)
 
-  // ⭐ NEW: Threaded decisions state
   const [decisions, setDecisions] = useState<Decision[]>([])
   const [loadingDecisions, setLoadingDecisions] = useState(false)
 
-  // ⭐ NEW: In-camera state
   const [isIncamera, setIsIncamera] = useState(topic.is_incamera || false)
   const [incameraStartTime, setIncameraStartTime] = useState(topic.incamera_start_time || "")
   const [incameraEndTime, setIncameraEndTime] = useState(topic.incamera_end_time || "")
 
-  // ⭐ UPDATED: 3-second debounced description for auto-save
   const debouncedDescription = useDebounce(editedDescription, 3000)
 
   const currentUser = getCurrentUser()
   const titleInputRef = useRef<HTMLInputElement>(null)
 
-  // ⭐ Check if meeting has started (only show in-camera during meeting)
   const isMeetingStarted = meetingStatus === 'working_minutes' || meetingStatus === 'minutes'
 
-  // ⭐ FIXED: Register callback that refreshes BOTH history AND decisions
   useEffect(() => {
     if (onRegisterRefresh) {
       onRegisterRefresh(topic.id, () => {
         console.log('🔄 REFRESH CALLBACK TRIGGERED for topic:', topic.id)
         fetchHistory()
-        fetchDecisions() // ⭐ ADDED: Also refresh decisions
+        fetchDecisions()
       })
     }
   }, [topic.id, onRegisterRefresh])
@@ -152,23 +155,16 @@ export default function TopicCard({
       fetchHistory()
       fetchAiAnalysis()
       fetchTopicAttachments()
-      fetchDecisions() // ⭐ NEW
+      fetchDecisions()
     }
   }, [topic.id, isExpanded])
 
-  // ⭐ NEW: Auto-save description when debounced value changes
   useEffect(() => {
-    // Don't save on initial load
     if (debouncedDescription === topic.description) return
-    
-    // Don't save if empty and original was empty
     if (!debouncedDescription && !topic.description) return
-    
-    // Auto-save
     handleAutoSaveDescription()
   }, [debouncedDescription])
 
-  // Update local state when topic prop changes
   useEffect(() => {
     setEditedDescription(topic.description || "")
     setEditedTitle(topic.title)
@@ -177,7 +173,6 @@ export default function TopicCard({
     setIncameraEndTime(topic.incamera_end_time || "")
   }, [topic.description, topic.title, topic.is_incamera, topic.incamera_start_time, topic.incamera_end_time])
 
-  // ⭐ NEW: Handle in-camera toggle
   const handleIncameraToggle = async () => {
     if (isReadOnly) {
       alert('You do not have permission to modify topics.')
@@ -187,8 +182,7 @@ export default function TopicCard({
     const newValue = !isIncamera
     setIsIncamera(newValue)
 
-    // Auto-update start time when enabling
-    if (newValue && !incameraStartTime) {
+    if (newValue) {
       const now = new Date().toISOString()
       setIncameraStartTime(now)
       await onUpdate({ 
@@ -202,20 +196,90 @@ export default function TopicCard({
     toast.success(newValue ? '🔒 Topic marked as In-Camera' : '🔓 In-Camera removed')
   }
 
-  // ⭐ NEW: Handle time updates
   const handleTimeUpdate = async (field: 'start' | 'end', value: string) => {
     if (isReadOnly) return
 
+    const isoValue = value ? new Date(value).toISOString() : ''
+
     if (field === 'start') {
-      setIncameraStartTime(value)
-      await onUpdate({ incamera_start_time: value })
+      setIncameraStartTime(isoValue)
+      await onUpdate({ incamera_start_time: isoValue })
     } else {
-      setIncameraEndTime(value)
-      await onUpdate({ incamera_end_time: value })
+      setIncameraEndTime(isoValue)
+      await onUpdate({ incamera_end_time: isoValue })
     }
   }
 
-  // ⭐ NEW: Fetch decisions with threading structure
+  // ⭐ NEW: Delete handlers
+  const handleDeleteNote = async (noteId: number) => {
+    if (!confirm('Are you sure you want to delete this note?')) return
+
+    try {
+      const { error } = await supabase
+        .from('notes')
+        .delete()
+        .eq('id', noteId)
+
+      if (error) {
+        console.error('Error deleting note:', error)
+        toast.error('Failed to delete note')
+        return
+      }
+
+      toast.success('Note deleted successfully')
+      fetchHistory()
+    } catch (err) {
+      console.error('Unexpected error:', err)
+      toast.error('Failed to delete note')
+    }
+  }
+
+  const handleDeleteTask = async (taskId: number) => {
+    if (!confirm('Are you sure you want to delete this task?')) return
+
+    try {
+      const { error } = await supabase
+        .from('tasks')
+        .delete()
+        .eq('id', taskId)
+
+      if (error) {
+        console.error('Error deleting task:', error)
+        toast.error('Failed to delete task')
+        return
+      }
+
+      toast.success('Task deleted successfully')
+      fetchHistory()
+    } catch (err) {
+      console.error('Unexpected error:', err)
+      toast.error('Failed to delete task')
+    }
+  }
+
+  const handleDeleteDecision = async (decisionId: number) => {
+    if (!confirm('Are you sure you want to delete this decision? This will also delete any threaded decisions under it.')) return
+
+    try {
+      const { error } = await supabase
+        .from('decisions')
+        .delete()
+        .eq('id', decisionId)
+
+      if (error) {
+        console.error('Error deleting decision:', error)
+        toast.error('Failed to delete decision')
+        return
+      }
+
+      toast.success('Decision deleted successfully')
+      fetchDecisions()
+    } catch (err) {
+      console.error('Unexpected error:', err)
+      toast.error('Failed to delete decision')
+    }
+  }
+
   const fetchDecisions = async () => {
     setLoadingDecisions(true)
     try {
@@ -231,16 +295,13 @@ export default function TopicCard({
       }
 
       if (data) {
-        // Build threaded structure
         const decisionsMap = new Map<number, Decision>()
         const rootDecisions: Decision[] = []
 
-        // First pass: create all decision objects
         data.forEach(d => {
           decisionsMap.set(d.id, { ...d, children: [] })
         })
 
-        // Second pass: build parent-child relationships
         data.forEach(d => {
           const decision = decisionsMap.get(d.id)!
           if (d.parent_decision_id) {
@@ -248,7 +309,6 @@ export default function TopicCard({
             if (parent) {
               parent.children!.push(decision)
             } else {
-              // Parent not found, treat as root
               rootDecisions.push(decision)
             }
           } else {
@@ -287,39 +347,39 @@ export default function TopicCard({
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
-  
+
     if (file.size > 10 * 1024 * 1024) {
       alert('File size must be less than 10MB')
       return
     }
-  
+
     setUploadingFile(true)
     try {
       const currentUser = getCurrentUser()
-      
+
       if (!currentUser) {
         alert('You must be logged in to upload files')
         setUploadingFile(false)
         return
       }
-  
+
       const fileName = `${topic.id}/${Date.now()}_${file.name}`
       const filePath = fileName
-  
+
       const { error: uploadError } = await supabase.storage
         .from('topic-attachments')
         .upload(filePath, file)
-  
+
       if (uploadError) {
         console.error('Error uploading file:', uploadError)
         alert('Failed to upload file: ' + uploadError.message)
         return
       }
-  
+
       const { data: { publicUrl } } = supabase.storage
         .from('topic-attachments')
         .getPublicUrl(filePath)
-  
+
       const { error: dbError } = await supabase
         .from('topic_attachments')
         .insert({
@@ -330,16 +390,16 @@ export default function TopicCard({
           mime_type: file.type,
           uploaded_by: currentUser.id
         })
-  
+
       if (dbError) {
         console.error('Error saving attachment:', dbError)
         alert('Failed to save attachment: ' + dbError.message)
         return
       }
-  
+
       alert('File uploaded successfully')
       await fetchTopicAttachments()
-      
+
       onUpdate({ attachments: attachments.length + 1 })
     } catch (err) {
       console.error('Unexpected error:', err)
@@ -378,7 +438,7 @@ export default function TopicCard({
 
       alert('Attachment deleted')
       await fetchTopicAttachments()
-      
+
       onUpdate({ attachments: attachments.length - 1 })
     } catch (err) {
       console.error('Unexpected error:', err)
@@ -474,8 +534,6 @@ export default function TopicCard({
         }
       }
 
-      // ⭐ REMOVED: Old decision fetching (now handled by fetchDecisions separately)
-
       historyItems.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
       setHistory(historyItems)
     } catch (err) {
@@ -509,10 +567,10 @@ export default function TopicCard({
       alert('Please add a description first before analyzing with AI')
       return
     }
-    
+
     setAnalyzingAI(true)
     setShowAiResult(false)
-    
+
     try {
       const { data: topicData, error: topicError } = await supabase
         .from('topics')
@@ -594,21 +652,17 @@ export default function TopicCard({
     }
   }
 
-  // ⭐ FIXED: Auto-save description without refreshing history
   const handleAutoSaveDescription = async () => {
     if (isReadOnly) return
     if (saving) return
-    
+
     setSaving(true)
     await onUpdate({ description: editedDescription })
     setSaving(false)
-    // ⭐ Don't refresh history on auto-save - keeps card open
-    
-    // Show subtle alert
+
     console.log('Description saved')
   }
 
-  // ⭐ UPDATED: Save title only
   const handleSaveTitle = async () => {
     if (saving) return
     setSaving(true)
@@ -649,20 +703,19 @@ export default function TopicCard({
     }
   }
 
-  // ⭐ NEW: Render decision with children recursively
+  // ⭐ UPDATED: Render decision with DELETE button
   const renderDecision = (decision: Decision, depth: number = 0) => {
     const hasChildren = decision.children && decision.children.length > 0
-    
+
     return (
       <div key={decision.id} className={depth > 0 ? 'ml-6 mt-2' : ''}>
         <div className="flex flex-col gap-1 rounded bg-background border border-border px-2 py-1.5 relative">
-          {/* Threading indicator for nested decisions */}
           {depth > 0 && (
             <div className="absolute -left-3 top-3 text-purple-400">
               <CornerDownRight className="h-4 w-4" />
             </div>
           )}
-          
+
           <div className="flex-1">
             <div className="flex gap-2 items-center mb-1">
               <span className="text-xs font-medium px-2 py-0.5 rounded border bg-decision-purple/10 text-decision-purple border-decision-purple/20">
@@ -684,10 +737,10 @@ export default function TopicCard({
               </p>
             )}
           </div>
-          
-          {/* ⭐ FIXED: Action Buttons with topicId */}
+
+          {/* ⭐ UPDATED: Action Buttons with DELETE */}
           {!isReadOnly && (
-            <div className="flex gap-2 mt-2">
+            <div className="grid grid-cols-3 gap-2 mt-2">
               <Button
                 size="sm"
                 variant="outline"
@@ -697,7 +750,7 @@ export default function TopicCard({
                     onEditDecision(decision.id, topic.id)
                   }
                 }}
-                className="flex-1 text-purple-600 border-purple-600 hover:bg-purple-50"
+                className="text-purple-600 border-purple-600 hover:bg-purple-50"
               >
                 <Edit2 className="h-3 w-3 mr-1" />
                 Edit
@@ -711,16 +764,25 @@ export default function TopicCard({
                     onAddThreadedDecision(decision.id, topic.id)
                   }
                 }}
-                className="flex-1 text-purple-600 border-purple-600 hover:bg-purple-50"
+                className="text-purple-600 border-purple-600 hover:bg-purple-50"
               >
                 <Plus className="h-3 w-3 mr-1" />
-                Add Threaded Decision
+                Thread
+              </Button>
+              {/* ⭐ NEW: Delete Button */}
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => handleDeleteDecision(decision.id)}
+                className="text-red-600 border-red-600 hover:bg-red-50"
+              >
+                <Trash2 className="h-3 w-3 mr-1" />
+                Delete
               </Button>
             </div>
           )}
         </div>
-        
-        {/* Render children recursively */}
+
         {hasChildren && (
           <div className="mt-1">
             {decision.children!.map(child => renderDecision(child, depth + 1))}
@@ -733,7 +795,6 @@ export default function TopicCard({
   return (
     <>
       <Card className="border-0 bg-card shadow-md overflow-hidden mb-1">
-        {/* ⭐ UPDATED: Header with In-Camera indicator */}
         <div className={`border-b border-border p-2 ${isIncamera ? 'bg-gradient-to-r from-red-50 to-orange-50' : 'bg-gradient-to-r from-primary/5 to-decision-purple/5'}`}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3 flex-1">
@@ -744,8 +805,7 @@ export default function TopicCard({
                 <ChevronDown className={`h-5 w-5 transition-transform ${isExpanded ? "" : "-rotate-90"}`} />
               </button>
               <span className="text-sm font-semibold text-muted-foreground">Topic {topicNumber}</span>
-              
-              {/* ⭐ NEW: In-Camera Badge */}
+
               {isIncamera && (
                 <span className="flex items-center gap-1 px-2 py-1 bg-red-100 text-red-700 border border-red-300 rounded text-xs font-semibold">
                   <Lock className="h-3 w-3" />
@@ -770,7 +830,23 @@ export default function TopicCard({
                 </h3>
               )}
             </div>
+
             <div className="flex items-center gap-2">
+              {!isReadOnly && isMeetingStarted && (
+                <button
+                  onClick={handleIncameraToggle}
+                  className={`flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded transition-all border-2 ${
+                    isIncamera 
+                      ? 'bg-red-50 border-red-300 text-red-700 hover:bg-red-100' 
+                      : 'bg-muted hover:bg-muted/80 border-border hover:border-red-300'
+                  }`}
+                  title={isIncamera ? "Remove In-Camera status" : "Mark as In-Camera (Confidential)"}
+                >
+                  {isIncamera ? <Lock className="h-4 w-4" /> : <Unlock className="h-4 w-4" />}
+                  {isIncamera ? 'In-Camera' : 'In-Camera'}
+                </button>
+              )}
+
               <button
                 onClick={() => setShowAttachments(!showAttachments)}
                 className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium bg-muted hover:bg-muted/80 rounded transition-colors"
@@ -779,25 +855,54 @@ export default function TopicCard({
                 <Paperclip className="h-4 w-4" />
                 {attachments.length}
               </button>
+
               {!isEditingTitle && !isReadOnly && (
                 <div className="flex items-center gap-1">
                   <button
                     onClick={handleEditTitle}
                     className="flex h-8 w-8 items-center justify-center rounded hover:bg-muted transition-colors text-primary"
                     title="Edit title"
-                  ><Edit2 className="h-4 w-4" /></button>
+                  >
+                    <Edit2 className="h-4 w-4" />
+                  </button>
                   <button
                     onClick={() => setShowDeleteConfirm(true)}
                     className="flex h-8 w-8 items-center justify-center rounded hover:bg-muted transition-colors text-destructive"
                     title="Delete topic"
-                  ><Trash2 className="h-4 w-4" /></button>
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
                 </div>
               )}
             </div>
           </div>
+
+          {!isReadOnly && isMeetingStarted && isIncamera && (
+            <div className="mt-2 pt-2 border-t border-border/50">
+              <div className="flex items-center gap-3 text-xs">
+                <div className="flex items-center gap-1">
+                  <label className="text-muted-foreground font-medium">Start:</label>
+                  <input
+                    type="datetime-local"
+                    value={formatToLocalDateTimeString(incameraStartTime)}
+                    onChange={(e) => handleTimeUpdate('start', e.target.value)}
+                    className="px-2 py-1 rounded border border-border text-xs bg-background"
+                  />
+                </div>
+                <div className="flex items-center gap-1">
+                  <label className="text-muted-foreground font-medium">End:</label>
+                  <input
+                    type="datetime-local"
+                    value={formatToLocalDateTimeString(incameraEndTime)}
+                    onChange={(e) => handleTimeUpdate('end', e.target.value)}
+                    className="px-2 py-1 rounded border border-border text-xs bg-background"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Title Edit Buttons */}
         {isEditingTitle && !isReadOnly && (
           <div className="px-2 py-1.5 bg-muted/20 border-b border-border flex gap-2">
             <Button onClick={handleCancelTitle} variant="outline" className="flex-1">
@@ -811,51 +916,6 @@ export default function TopicCard({
 
         {isExpanded && (
           <>
-            {/* ⭐ NEW: In-Camera Control Section - Only show during meeting */}
-            {!isReadOnly && isMeetingStarted && (
-              <div className="border-b border-border p-3 bg-muted/5">
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={handleIncameraToggle}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-lg border-2 transition-all ${
-                      isIncamera 
-                        ? 'bg-red-50 border-red-300 text-red-700 hover:bg-red-100' 
-                        : 'bg-background border-border hover:border-primary/50'
-                    }`}
-                  >
-                    {isIncamera ? <Lock className="h-4 w-4" /> : <Unlock className="h-4 w-4" />}
-                    <span className="text-sm font-medium">
-                      {isIncamera ? 'In-Camera (Confidential)' : 'Mark as In-Camera'}
-                    </span>
-                  </button>
-
-                  {isIncamera && (
-                    <div className="flex-1 flex items-center gap-2 text-xs">
-                      <div className="flex items-center gap-1">
-                        <label className="text-muted-foreground">Start:</label>
-                        <input
-                          type="datetime-local"
-                          value={incameraStartTime ? new Date(incameraStartTime).toISOString().slice(0, 16) : ''}
-                          onChange={(e) => handleTimeUpdate('start', e.target.value ? new Date(e.target.value).toISOString() : '')}
-                          className="px-2 py-1 rounded border border-border text-xs"
-                        />
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <label className="text-muted-foreground">End:</label>
-                        <input
-                          type="datetime-local"
-                          value={incameraEndTime ? new Date(incameraEndTime).toISOString().slice(0, 16) : ''}
-                          onChange={(e) => handleTimeUpdate('end', e.target.value ? new Date(e.target.value).toISOString() : '')}
-                          className="px-2 py-1 rounded border border-border text-xs"
-                        />
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* ⭐ UPDATED: Show warning if in-camera */}
             {isIncamera && (
               <div className="border-b border-border p-3 bg-red-50">
                 <div className="flex items-start gap-2 text-sm text-red-800">
@@ -952,7 +1012,6 @@ export default function TopicCard({
               </div>
             )}
 
-            {/* ⭐ UPDATED: Always Editable Description with GeniusWords */}
             <div className="p-2 border-b border-border">
               {!isReadOnly ? (
                 <>
@@ -973,8 +1032,7 @@ export default function TopicCard({
                   {topic.description || <span className="text-muted-foreground">No description yet...</span>}
                 </div>
               )}
-              
-              {/* AI Analysis Button */}
+
               {editedDescription && !isReadOnly && (
                 <div className="flex gap-2 mt-2">
                   <Button
@@ -1004,8 +1062,7 @@ export default function TopicCard({
                   )}
                 </div>
               )}
-              
-              {/* AI Analysis Result */}
+
               {showAiResult && aiAnalysis && (
                 <div className="mt-3 p-3 bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-200 rounded-lg">
                   <div className="flex items-center gap-2 mb-2">
@@ -1047,150 +1104,115 @@ export default function TopicCard({
               </div>
             )}
 
-            <div className="p-2 bg-muted/20">
-              <h4 className="text-sm font-semibold text-foreground mb-1.5">History by Type</h4>
-              
-              {/* ⭐ NEW: Decisions Section with Threading */}
-              <div className="mb-2">
-                <div className="flex items-center gap-2 mb-1">
-                  <Scale className="h-4 w-4 text-decision-purple" />
-                  <span className="font-semibold text-xs uppercase">Decisions</span>
-                </div>
-                <div className="space-y-1">
-                  {loadingDecisions && <div className="text-xs text-muted-foreground px-2">Loading...</div>}
-                  {!loadingDecisions && decisions.length > 0 ? (
-                    decisions.map(decision => renderDecision(decision))
-                  ) : (
-                    !loadingDecisions && <div className="text-xs text-muted-foreground px-2">
-                      {isReadOnly 
-                        ? 'No decisions yet.'
-                        : 'No decisions yet. Click the button above to add one.'}
+            <div className="p-2">
+              <h3 className="text-sm font-semibold text-foreground mb-2 flex items-center gap-2">
+                📋 History & Progress
+              </h3>
+
+              {loadingHistory ? (
+                <p className="text-xs text-muted-foreground text-center py-4">Loading...</p>
+              ) : history.length > 0 || decisions.length > 0 ? (
+                <div className="space-y-2">
+                  {decisions.length > 0 && (
+                    <div className="space-y-2 mb-3">
+                      <h4 className="text-xs font-semibold text-muted-foreground uppercase">Decisions</h4>
+                      {decisions.map(decision => renderDecision(decision))}
                     </div>
                   )}
-                </div>
-              </div>
 
-              {/* ⭐ UPDATED: Tasks Section with Edit Button */}
-              <div className="mb-2">
-                <div className="flex items-center gap-2 mb-1">
-                  <CheckSquare className="h-4 w-4 text-task-green" />
-                  <span className="font-semibold text-xs uppercase">Tasks</span>
-                </div>
-                <div className="space-y-1">
-                  {loadingHistory && <div className="text-xs text-muted-foreground px-2">Loading...</div>}
-                  {!loadingHistory && history.filter(h => h.type === "task").length > 0 ? (
-                    history.filter(h => h.type === "task").map(item => (
-                      <div 
-                        key={item.id} 
-                        className="flex flex-col gap-1 rounded bg-background border border-border px-2 py-1.5"
-                      >
-                        <div className="flex-1">
-                          <div className="flex gap-2 items-center mb-1">
-                            <span className={`text-xs font-medium px-2 py-0.5 rounded border ${getHistoryBadgeColor(item.type)}`}>
-                              {item.type.toUpperCase()}
-                            </span>
-                            <span className="text-xs text-muted-foreground">{item.timestamp}</span>
-                          </div>
-                          <p className="text-sm text-foreground mb-1">{item.content}</p>
-                          {item.details && (
-                            <p className="text-xs text-muted-foreground">{item.details}</p>
-                          )}
-                        </div>
-                        {/* ⭐ NEW: Task action buttons */}
-                        {!isReadOnly && (
-                          <div className="flex gap-2 mt-1">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => {
-                                console.log('View task details:', item.id)
-                                setSelectedTaskId(item.id)
-                              }}
-                              className="flex-1 text-task-green border-task-green hover:bg-task-green/10"
-                            >
-                              <CheckSquare className="h-3 w-3 mr-1" />
-                              View Details
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => {
-                                console.log('Edit task clicked:', item.id, topic.id)
-                                if (onEditTask) {
-                                  onEditTask(item.id, topic.id)
-                                }
-                              }}
-                              className="flex-1 text-task-green border-task-green hover:bg-task-green/10"
-                            >
-                              <Edit2 className="h-3 w-3 mr-1" />
-                              Edit
-                            </Button>
-                          </div>
-                        )}
+                  {/* ⭐ UPDATED: Show other history items with DELETE buttons */}
+                  {history.map(item => (
+                    <div
+                      key={`${item.type}-${item.id}`}
+                      className="flex flex-col gap-1 rounded bg-background border border-border px-2 py-1.5 cursor-pointer hover:border-primary/50 transition-colors"
+                      onClick={() => {
+                        if (item.type === 'task') {
+                          setSelectedTaskId(item.id)
+                        }
+                      }}
+                    >
+                      <div className="flex gap-2 items-center">
+                        <span className={`text-xs font-medium px-2 py-0.5 rounded border ${getHistoryBadgeColor(item.type)}`}>
+                          {item.type.toUpperCase()}
+                        </span>
+                        <span className="text-xs text-muted-foreground">{item.timestamp}</span>
                       </div>
-                    ))
-                  ) : (
-                    !loadingHistory && <div className="text-xs text-muted-foreground px-2">
-                      {isReadOnly 
-                        ? 'No tasks yet.'
-                        : 'No tasks yet. Click the button above to add one.'}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* ⭐ UPDATED: Notes Section with Edit Button */}
-              <div className="mb-2 last:mb-0">
-                <div className="flex items-center gap-2 mb-1">
-                  <FileText className="h-4 w-4 text-note-blue" />
-                  <span className="font-semibold text-xs uppercase">Notes</span>
-                </div>
-                <div className="space-y-1">
-                  {loadingHistory && <div className="text-xs text-muted-foreground px-2">Loading...</div>}
-                  {!loadingHistory && history.filter(h => h.type === "note").length > 0 ? (
-                    history.filter(h => h.type === "note").map(item => (
-                      <div 
-                        key={item.id} 
-                        className="flex flex-col gap-1 rounded bg-background border border-border px-2 py-1.5"
-                      >
-                        <div className="flex-1">
-                          <div className="flex gap-2 items-center mb-1">
-                            <span className={`text-xs font-medium px-2 py-0.5 rounded border ${getHistoryBadgeColor(item.type)}`}>
-                              {item.type.toUpperCase()}
-                            </span>
-                            <span className="text-xs text-muted-foreground">{item.timestamp}</span>
-                          </div>
-                          <p className="text-sm text-foreground mb-1">{item.content}</p>
-                          {item.details && (
-                            <p className="text-xs text-muted-foreground">{item.details}</p>
-                          )}
-                        </div>
-                        {/* ⭐ NEW: Edit Note Button */}
-                        {!isReadOnly && onEditNote && (
+                      <p className="text-sm text-foreground">{item.content}</p>
+                      {item.details && (
+                        <p className="text-xs text-muted-foreground">{item.details}</p>
+                      )}
+                      {/* ⭐ UPDATED: Action buttons with DELETE for tasks */}
+                      {item.type === 'task' && !isReadOnly && (
+                        <div className="grid grid-cols-2 gap-2 mt-1">
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => {
-                              console.log('Edit note clicked:', item.id, topic.id)
-                              onEditNote(item.id, topic.id)
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              if (onEditTask) {
+                                onEditTask(item.id, topic.id)
+                              }
                             }}
-                            className="w-full text-note-blue border-note-blue hover:bg-note-blue/10"
+                            className="text-green-600 border-green-600 hover:bg-green-50"
                           >
                             <Edit2 className="h-3 w-3 mr-1" />
-                            Edit Note
+                            Edit
                           </Button>
-                        )}
-                      </div>
-                    ))
-                  ) : (
-                    !loadingHistory && <div className="text-xs text-muted-foreground px-2">
-                      {isReadOnly 
-                        ? 'No notes yet.'
-                        : 'No notes yet. Click the button above to add one.'}
+                          {/* ⭐ NEW: Delete Task Button */}
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleDeleteTask(item.id)
+                            }}
+                            className="text-red-600 border-red-600 hover:bg-red-50"
+                          >
+                            <Trash2 className="h-3 w-3 mr-1" />
+                            Delete
+                          </Button>
+                        </div>
+                      )}
+                      {/* ⭐ UPDATED: Action buttons with DELETE for notes */}
+                      {item.type === 'note' && !isReadOnly && (
+                        <div className="grid grid-cols-2 gap-2 mt-1">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              if (onEditNote) {
+                                onEditNote(item.id, topic.id)
+                              }
+                            }}
+                            className="text-blue-600 border-blue-600 hover:bg-blue-50"
+                          >
+                            <Edit2 className="h-3 w-3 mr-1" />
+                            Edit
+                          </Button>
+                          {/* ⭐ NEW: Delete Note Button */}
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleDeleteNote(item.id)
+                            }}
+                            className="text-red-600 border-red-600 hover:bg-red-50"
+                          >
+                            <Trash2 className="h-3 w-3 mr-1" />
+                            Delete
+                          </Button>
+                        </div>
+                      )}
                     </div>
-                  )}
+                  ))}
                 </div>
-              </div>
+              ) : (
+                <p className="text-center text-xs text-muted-foreground py-3">
+                  No history yet. Add notes, tasks, or decisions to get started!
+                </p>
+              )}
             </div>
           </>
         )}
@@ -1200,9 +1222,6 @@ export default function TopicCard({
         <TaskDetailsModal
           taskId={selectedTaskId}
           onClose={() => setSelectedTaskId(null)}
-          onUpdate={() => {
-            fetchHistory()
-          }}
         />
       )}
     </>

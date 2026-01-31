@@ -1,0 +1,34 @@
+0:00 Hey Jeffrey, I, uhm, I just finished a board meeting. I used Meeting Genius for the first time. So, uhm, on the whole it worked out really, really well.
+0:10 Uhm, there are a few things that we need to take a look at, so, uh, here we go. Uhm, number one is, uhm, as you can see, I'm looking at some junk tasks that were put in there and I have no way to delete them, so I wonder if you can add a delete task, excuse me, delete task button down in this in this
+0:32 view so that we can actually remove a task because I don't want them showing up in the minutes. And I saw the in-camera, uh, stuff came in, that's fantastic.
+0:45 Uhm, I want to, uh, put the icon up here, so if we can design an icon and put it in this rope here, that'd be great.
+0:53 Uhm, I did see this came up. Unfortunately, it, it came up with dates that are in the future. I'm not exactly what this time zone is, uhm, but it's not the current one.
+1:05 So, we need to, uhm, we need to have it on local time maybe if we check the browser time or something like that but whatever it is we need to sort that out because it's really confusing and it's actually where I spent most of my time.
+1:20 Everything else worked pretty well, but I had to go back and, and choose the right day and, oh, see, anyway, so, uhm, there's some issues there.
+1:28 Uh, so if you can just, uhm, automatically set the time for the current time, uhm, that would be great. Just thinking about the in-camera stuff, uhm, maybe we could actually, uhm, have a way of putting it down here in like a radio box, click on, click off kind of thing.
+1:45 I know you're looking for space to put the time in there, so maybe put it down in the bottom here.
+1:50 I just like to keep some of this space back. The other thing I was going to ask is whether there's a way how we can have two modal boxes open at the same time, namely a decision and a task, or maybe even three, if there's some kind of layering or side-by-side mechanism that we can use to have them open
+2:13 , because I found, not often, but from time to time, I was recording a task at the same time as a decision, and it would be nice to have some way to do that concurrently instead of having to close one and open the other.
+2:26 Can I also ask you to take another look at the screen refresh to refresh a task once you've entered them and the decision.
+2:37 It worked sometimes it didn't work other times so it was a little hard to find. But near the end, in particular, when I was at the very bottom, it didn't seem to be doing it as well.
+2:46 I had to actually close out the application, open it up again a couple of times just to make sure that I'd written something there.
+2:53 So if you can take a look at the refresh, that would be great. And the last thing has to do with the minutes.
+3:04 First of all, we need to put it in the header with this. This is a series of minutes or agenda.
+3:09 You know, it has to say the word minutes or agenda. We don't need the header up here where it says header.
+3:16 We don't need that. The attendees, we do, obviously. Now, the one thing that really caught my attention is that we've got decisions in here, but we've also got notes and tasks.
+3:31 Neither the note nor the task should be in the minutes. They can be in the agenda, not the task, just the note.
+3:41 The task is managed separately and should never be in either one of those documents, right? So the task is done through the task interface etc etc so if you can remove that and the notes from agenda but keep the notes in the I'm sorry keep them in the agenda but out of the minutes because the minutes
+4:01 go to other people and etc etc so that'd be great similar if you can take get rid of this footer we don't we don't need to say footer um yeah that's it for that and there was one other thing uh we currently have the layout uh you've got a layout for this which is one layout here um and i'm wondering 
+4:26 if there's a post our time that should be no seconds we don't seconds for that. I am wondering if we can take up the strata plan number two here we don't need that for this type of meeting.
+4:37 This is a hazard co-op the meeting type is a or a billing type is a hazard co-op there is no strata plan for that it'd just be the strata plan number um but it brings me to the bigger question is if there is a way that we can have a wizard designer for the template with all of these elements in there
+4:55 so that people can go and design it the way they want and that would include the background um I sent you a sample design of a of a series of minutes and the minutes are the format is usually unique to the building but it can't to the sort of the company but it can be unique to the building as well so
+5:17 we need a way for them to at least on a per unit company basis design what the layout is going to be because they're going to want their company logo up here and a few other things right so this is not the final layout we need to have a wizard designer for the agenda layout which is a bigger part of 
+5:37 the job I know it's a fairly large work amount of work but we can at least start working on that that'd be great going back to the app what's this record button for because I've never really known and And, yeah, didn't seem to be useful today.
+5:54 I couldn't figure out what it was used for, so. On the. The activity center, the first page where people see when they log in.
+6:05 I noticed you've got select building up there. Can we set a default, like, it's actually not picking off the buildings.
+6:11 There's no list of it, it just says all buildings or all of them, so there's a bug there, but can we set the default to all?
+6:17 Just so that there's no, uhm, confusion about, you know, because I actually have to click and, uhm, and go in there and check it all.
+6:25 So I'm gonna just go through this and check the tasks that I assigned today. In the task assignment, can we actually provide a variable so that we can actually pull off what the placeholder is?
+6:40 It's the, the, uhm, the task in the body text, uhm, we've got it here in the subject line, but we don't have it in the body text.
+6:49 So, you know, this is a task for Tim. This is my, what I wrote in there, but if we can put that in here, uhm, that would be great.
+6:55 Uhm, okay. And the rest of it, actually, I'm gonna test it now to make sure it works. It sends out an email, but other than that, it looks great.
