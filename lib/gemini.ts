@@ -21,20 +21,47 @@ interface ExtractedTask {
   assigned_name: string | null;
   due_date: string | null;
   confidence: number;
+  suggested_topic_id: number | null;
+  suggested_topic_title: string | null;
 }
 
 interface TaskExtractionResult {
   tasks: ExtractedTask[];
 }
 
+interface Topic {
+  id: number;
+  title: string;
+}
+
+interface Section {
+  id: number;
+  title: string;
+  topics: Topic[];
+}
+
 /**
  * Extract tasks from transcript text using Gemini AI
  */
 export async function extractTasksFromTranscript(
-  transcriptText: string
+  transcriptText: string,
+  sections?: Section[]
 ): Promise<ExtractedTask[]> {
   try {
     const model = genAI.getGenerativeModel({ model: "models/gemini-2.5-flash" });
+
+    // Build topics list for the prompt
+    let topicsContext = "";
+    if (sections && sections.length > 0) {
+      topicsContext = "\n\nAvailable meeting topics:\n";
+      sections.forEach((section) => {
+        if (section.topics && section.topics.length > 0) {
+          section.topics.forEach((topic) => {
+            topicsContext += `- Topic ID ${topic.id}: "${topic.title}" (in section: ${section.title})\n`;
+          });
+        }
+      });
+    }
 
     const prompt = `You are an AI assistant that extracts action items and tasks from meeting transcripts.
 
@@ -45,7 +72,9 @@ For each task, provide:
 2. assigned_name: The name of the person assigned (if mentioned), otherwise null
 3. due_date: The due date in YYYY-MM-DD format (if mentioned), otherwise null
 4. confidence: A number between 0 and 1 indicating your confidence in this being a task
-
+5. suggested_topic_id: The ID of the most relevant topic from the list below (if applicable), otherwise null
+6. suggested_topic_title: The title of the suggested topic (if applicable), otherwise null
+${topicsContext}
 Return ONLY valid JSON in this exact format:
 {
   "tasks": [
@@ -53,7 +82,9 @@ Return ONLY valid JSON in this exact format:
       "description": "Follow up with contractor about elevator repair",
       "assigned_name": "John Smith",
       "due_date": "2024-02-15",
-      "confidence": 0.95
+      "confidence": 0.95,
+      "suggested_topic_id": 123,
+      "suggested_topic_title": "Elevator Maintenance"
     }
   ]
 }
@@ -65,6 +96,8 @@ Guidelines:
 - If no person is mentioned, use null for assigned_name
 - If no date is mentioned, use null for due_date
 - Confidence should reflect how certain you are this is an actionable task
+- Try to match tasks to the most relevant topic from the available topics list
+- If no relevant topic exists, set suggested_topic_id and suggested_topic_title to null
 
 Transcript:
 ${transcriptText}
