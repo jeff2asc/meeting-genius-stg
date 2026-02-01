@@ -1146,6 +1146,7 @@ app/page.tsx (Root)
   - Section/topic creation modals
   - In-camera toggle button (marks meeting as confidential)
   - Send Notice button (emails agenda to owners/residents)
+  - **UnifiedItemModal**: Single modal with tabs for Tasks, Notes, and Decisions (per topic)
   - SelectRecorderModal (select recorder/device for meeting audio)
   - Upload Transcript button (upload meeting transcripts for AI task extraction)
   - View Transcripts button (view all uploaded transcripts)
@@ -1164,7 +1165,9 @@ app/page.tsx (Root)
 
 - `components/create-meeting-modal.tsx`: Create new meetings with rollover support
 - `components/EditMeetingModal.tsx`: Edit meeting details
-- `components/task-modal.tsx`: Create/edit tasks with GeniusWords support
+- `components/task-modal.tsx`: Create/edit tasks with GeniusWords support; uses **TaskEmailPreviewModal** to preview/customize task assignment email before sending
+- `components/TaskEmailPreviewModal.tsx`: Preview and customize task assignment email (subject, greeting, body, additional notes, button/footer) before sending to assignees
+- `components/UnifiedItemModal.tsx`: **Unified topic items modal** – single modal with tabs for Tasks, Notes, and Decisions (used from meeting-view for a topic)
 - `components/TaskDetailsModal.tsx`: **Enhanced task details modal** with:
   - View task details (description, status, assignees, due date)
   - Task notes management (view, add notes)
@@ -1190,6 +1193,12 @@ app/page.tsx (Root)
 - `components/GenerateMinutesButton.tsx`: Generate PDF minutes from finalized meetings
 - `components/ProfileSettingsModal.tsx`: User profile settings (name, email, password)
 - `components/SelectRecorderModal.tsx`: Select recorder/device for meeting audio recording
+
+#### **Layout & Navigation**
+
+- `components/AuthenticatedLayout.tsx`: Wraps content with Header and main container (optional layout for authenticated pages)
+- `components/Header.tsx`: App header – logo, brand, and UserNav (or Login link when not authenticated)
+- `components/UserNav.tsx`: User dropdown menu – profile, settings, logout (used by Header)
 
 #### **Admin Components** (`components/admin/`)
 
@@ -1821,31 +1830,38 @@ meeting-genius/
 │   │   └── ... (40+ components)
 │   │
 │   ├── admin-panel.tsx          # Main admin interface
-│   ├── dashboard.tsx             # Main dashboard
-│   ├── meeting-view.tsx         # Meeting interface
+│   ├── AuthenticatedLayout.tsx   # Layout wrapper: Header + main content (optional use)
+│   ├── AttendeeManagement.tsx   # Attendee management
 │   ├── create-meeting-modal.tsx  # Create meeting
-│   ├── EditMeetingModal.tsx      # Edit meeting
-│   ├── task-modal.tsx            # Task creation/editing
-│   ├── TaskDetailsModal.tsx      # Task details with notes
-│   ├── note-modal.tsx            # Note creation/editing
-│   ├── decision-modal.tsx        # Decision recording
 │   ├── create-section-modal.tsx  # Create section
 │   ├── create-topic-modal.tsx    # Create topic
-│   ├── AttendeeManagement.tsx   # Attendee management
+│   ├── dashboard.tsx             # Main dashboard
+│   ├── decision-modal.tsx        # Decision recording
+│   ├── EditMeetingModal.tsx      # Edit meeting
 │   ├── GenerateAgendaButton.tsx  # Generate PDF agendas
 │   ├── GenerateMinutesButton.tsx # Generate PDF minutes
-│   ├── GeniusWordsManager.tsx    # Manage user text shortcuts
 │   ├── GeniusWordsInput.tsx      # Reusable input with GeniusWords autocomplete
+│   ├── GeniusWordsManager.tsx    # Manage user text shortcuts
+│   ├── Header.tsx                 # App header (logo, UserNav / Login)
+│   ├── meeting-view.tsx         # Meeting interface
+│   ├── meeting-card.tsx          # Meeting display
+│   ├── MinutesTemplatesTab.tsx   # Minutes templates (root; also in admin/)
+│   ├── note-modal.tsx            # Note creation/editing
+│   ├── page.tsx                   # Optional page wrapper component
 │   ├── ProfileSettingsModal.tsx   # User profile (name, email, password)
 │   ├── SelectRecorderModal.tsx   # Select recorder for meeting audio
+│   ├── task-card.tsx             # Task display
+│   ├── task-modal.tsx            # Task creation/editing (uses TaskEmailPreviewModal)
+│   ├── TaskDetailsModal.tsx      # Task details with notes
+│   ├── TaskEmailPreviewModal.tsx  # Preview/customize task assignment email
+│   ├── topic-card.tsx            # Topic display
+│   ├── timer.tsx                 # Meeting timer
+│   ├── UnifiedItemModal.tsx      # Unified modal: Tasks / Notes / Decisions tabs per topic
+│   ├── UserNav.tsx                # User dropdown (profile, settings, logout)
 │   ├── transcript/               # Transcript management components
 │   │   ├── upload-transcript-modal.tsx    # Upload transcript files
 │   │   ├── preview-tasks-modal.tsx         # Review AI-extracted tasks
 │   │   └── view-transcripts-modal.tsx      # View transcript history
-│   ├── topic-card.tsx            # Topic display
-│   ├── task-card.tsx             # Task display
-│   ├── meeting-card.tsx          # Meeting display
-│   ├── timer.tsx                 # Meeting timer
 │   ├── login-form.tsx            # Login form
 │   └── theme-provider.tsx        # Theme management
 │

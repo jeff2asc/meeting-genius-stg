@@ -50,7 +50,7 @@ ${g}`}({domain:b.host,address:v,statement:m,uri:b.href,version:"1",chainId:x,non
               logo_url
             )
           )
-        `).eq("id",e).single();if(r)throw r;let{data:n,error:i}=await nU.from("sections").select("*").eq("meeting_id",e).order("order_index");if(i)throw i;let{data:a,error:s}=await nU.from("topics").select("*").eq("meeting_id",e).order("order_index");if(s)throw s;await o(t,n||[],a||[])}catch(e){console.error("Error generating agenda:",e),alert("Failed to generate agenda PDF")}finally{n(!1)}},a=async e=>{try{let t=await fetch(e);if(!t.ok)return null;let r=await t.blob();return await new Promise(e=>{let t=new FileReader;t.onloadend=()=>e(t.result),t.readAsDataURL(r)})}catch(e){return null}},o=async(e,t,r)=>{let n=new n7.Ay("p","mm","a4"),i=n.internal.pageSize.getWidth(),o=n.internal.pageSize.getHeight(),s=18,l=1,d=e.buildings,c=d?.companies,A=new Date(e.meeting_date).toLocaleDateString("en-US",{weekday:"long",year:"numeric",month:"long",day:"numeric"}),u=d?.logo_url||c?.logo_url||null,p=null;u&&(p=await a(u));let h={navy:[15,35,90],blue:[41,98,255],lightBlue:[100,140,255],skyBlue:[220,235,255],red:[220,38,38],white:[255,255,255],lightGray:[245,248,250],mediumGray:[156,163,175],darkGray:[31,41,55]},f=(e,t="fill")=>{"fill"===t?n.setFillColor(e[0],e[1],e[2]):"text"===t?n.setTextColor(e[0],e[1],e[2]):"draw"===t&&n.setDrawColor(e[0],e[1],e[2])},m=()=>{f(h.navy,"fill"),n.rect(0,0,i,8,"F"),n.setFontSize(9),f(h.white,"text"),n.setFont("helvetica","bold"),n.text(e.title||"Meeting Agenda",18,5.5),s=16},g=()=>{n.addPage(),l++,m()},b=e=>s+e>o-18&&(g(),!0),y=()=>{let e=o-10;f(h.navy,"fill"),n.rect(0,e-3,i,15,"F"),n.setFontSize(8),f(h.white,"text"),n.setFont("helvetica","normal"),n.text(d?.name||"",18,e+1),n.text(`Page ${l}`,i/2,e+1,{align:"center"}),n.text("Meeting Genius",i-18,e+1,{align:"right"})};if((()=>{f(h.skyBlue,"fill"),n.rect(0,0,i,80,"F"),n.setLineWidth(.5),f([210,230,255],"draw");for(let e=-80;e<i+80;e+=8)n.line(e,0,e+80,80)})(),f(h.navy,"fill"),n.rect(0,0,i,80,"F"),p)try{f(h.white,"fill"),n.circle(30,18,10,"F"),n.addImage(p,"PNG",20,8,20,20,void 0,"FAST")}catch(e){console.error("Logo error:",e)}n.setFontSize(42),f(h.white,"text"),n.setFont("helvetica","bold"),n.text("MEETING",i/2,38,{align:"center"}),n.text("AGENDA",i/2,52,{align:"center"}),n.setFontSize(16),f(h.lightBlue,"text"),n.setFont("helvetica","normal"),n.text(d?.name||"Building",i/2,64,{align:"center"}),n.setFontSize(11),f([200,220,255],"text"),n.text(e.meeting_type||"Council Meeting",i/2,72,{align:"center"}),s=92,b(50);let v=i-36;f([180,190,200],"fill"),n.roundedRect(19,s+1,v,48,5,5,"F"),f(h.white,"fill"),n.roundedRect(18,s,v,48,5,5,"F"),f(h.blue,"fill"),n.roundedRect(18,s,v,8,5,5,"F"),n.rect(18,s+5,v,3,"F"),n.setFontSize(11),f(h.white,"text"),n.setFont("helvetica","bold"),n.text("MEETING INFORMATION",24,s+5.5);let x=s+16,w=18+v/2+3,_=(e,t,r)=>{let i=1===r?24:w;n.setFontSize(9),f(h.navy,"text"),n.setFont("helvetica","bold"),n.text(e.toUpperCase(),i,x),n.setFontSize(10),f(h.darkGray,"text"),n.setFont("helvetica","normal");let a=n.splitTextToSize(t,v/2-12);return n.text(a[0],i,x+4),a.length>1};_("Date",A,1),e.start_time&&_("Time",e.start_time,2),x+=10,e.location&&_("Location",e.location,1),d?.address&&_("Address",d.address,2),x+=10,e.strata_plan_number&&_("Strata Plan",e.strata_plan_number,1),s+=56,b(25),f(h.navy,"fill"),n.rect(13,s-3,i-36+10,14,"F"),n.setFontSize(20),f(h.white,"text"),n.setFont("helvetica","bold"),n.text("AGENDA ITEMS",18,s+6),s+=18;let B=r.reduce((e,t)=>{let r=t.section_id||"unsectioned";return e[r]||(e[r]=[]),e[r].push(t),e},{}),C=1;t.forEach(e=>{let t=[...B[e.id]||[]].sort((e,t)=>(e.order_index||0)-(t.order_index||0));b(20),f(h.lightBlue,"fill"),n.roundedRect(18,s,i-36,10,3,3,"F"),f(h.navy,"fill"),n.circle(23,s+5,4,"F"),n.setFontSize(10),f(h.white,"text"),n.setFont("helvetica","bold"),n.text(C.toString(),23,s+6.5,{align:"center"}),n.setFontSize(13),f(h.white,"text"),n.text(e.title.toUpperCase(),30,s+6.5),s+=15,t.length>0?t.forEach((e,t)=>{let r=!0===e.is_incamera,a=!r&&e.description,o=a?22:13;b(o+4),f([210,210,210],"fill"),n.roundedRect(27,s+.8,i-36-18,o,3,3,"F"),f(r?[255,240,240]:h.white,"fill"),n.roundedRect(26,s,i-36-16,o,3,3,"F"),f(r?h.red:h.blue,"fill"),n.rect(26,s,4,o,"F"),f(r?h.red:h.navy,"fill"),n.circle(36,s+5,3,"F"),n.setFontSize(8),f(h.white,"text"),n.setFont("helvetica","bold"),n.text(`${C}.${t+1}`,36,s+6.2,{align:"center"}),n.setFontSize(11),f(h.darkGray,"text"),n.setFont("helvetica","bold");let l=e.title;r&&(l+=" [CONFIDENTIAL]");let d=n.splitTextToSize(l,i-36-35);if(n.text(d[0],42,s+6),r)n.setFontSize(9),n.setFont("helvetica","italic"),f(h.red,"text"),n.text("CONFIDENTIAL - In-Camera Session",42,s+11);else if(a){n.setFontSize(9),n.setFont("helvetica","normal"),f(h.mediumGray,"text");let t=n.splitTextToSize(e.description,i-36-30),r=s+11;t.slice(0,3).forEach(e=>{n.text(e,42,r),r+=3.5}),t.length>3&&(n.setFont("helvetica","italic"),n.text("(continued...)",42,r))}s+=o+4}):(f(h.lightGray,"fill"),n.roundedRect(26,s,i-36-16,10,2,2,"F"),n.setFontSize(9),f(h.mediumGray,"text"),n.setFont("helvetica","italic"),n.text("No items scheduled for this section",30,s+6),s+=13),C++,s+=2});let D=B.unsectioned||[];if(D.length>0){let e=[...D].sort((e,t)=>(e.order_index||0)-(t.order_index||0));b(20),f(h.lightBlue,"fill"),n.roundedRect(18,s,i-36,10,3,3,"F"),f(h.navy,"fill"),n.circle(23,s+5,4,"F"),n.setFontSize(10),f(h.white,"text"),n.setFont("helvetica","bold"),n.text(C.toString(),23,s+6.5,{align:"center"}),n.setFontSize(13),n.text("OTHER BUSINESS",30,s+6.5),s+=15,e.forEach((e,t)=>{let r=!0===e.is_incamera,a=!r&&e.description,o=a?22:13;b(o+4),f([210,210,210],"fill"),n.roundedRect(27,s+.8,i-36-18,o,3,3,"F"),f(r?[255,240,240]:h.white,"fill"),n.roundedRect(26,s,i-36-16,o,3,3,"F"),f(r?h.red:h.blue,"fill"),n.rect(26,s,4,o,"F"),f(r?h.red:h.navy,"fill"),n.circle(36,s+5,3,"F"),n.setFontSize(8),f(h.white,"text"),n.setFont("helvetica","bold"),n.text(`${C}.${t+1}`,36,s+6.2,{align:"center"}),n.setFontSize(11),f(h.darkGray,"text"),n.setFont("helvetica","bold");let l=e.title;r&&(l+=" [CONFIDENTIAL]");let d=n.splitTextToSize(l,i-36-35);if(n.text(d[0],42,s+6),r)n.setFontSize(9),n.setFont("helvetica","italic"),f(h.red,"text"),n.text("CONFIDENTIAL - In-Camera Session",42,s+11);else if(a){n.setFontSize(9),n.setFont("helvetica","normal"),f(h.mediumGray,"text");let t=n.splitTextToSize(e.description,i-36-30),r=s+11;t.slice(0,3).forEach(e=>{n.text(e,42,r),r+=3.5}),t.length>3&&(n.setFont("helvetica","italic"),n.text("(continued...)",42,r))}s+=o+4})}let N=n.internal.getNumberOfPages();for(let e=1;e<=N;e++)n.setPage(e),l=e,y();let U=`${e.title||"Meeting"}_Agenda_${new Date().toISOString().split("T")[0]}.pdf`;n.save(U)};return(0,b.jsx)(ez,{onClick:i,disabled:r,variant:"outline",className:"gap-2 h-8 px-3 text-xs",children:r?(0,b.jsxs)(b.Fragment,{children:[(0,b.jsx)(n8,{className:"h-4 w-4 animate-spin"}),"Generating..."]}):(0,b.jsxs)(b.Fragment,{children:[(0,b.jsx)(n9,{className:"h-4 w-4"}),"Download Agenda"]})})}var it=r(94424);function ir({meetingId:e,buildingId:t}){let[r,n]=(0,y.useState)(!1),i=async()=>{n(!0);try{let{data:r}=await nU.from("minutes_templates").select("*").eq("building_id",t).maybeSingle(),i=r?.blocks?.sections?r.blocks:{sections:[{id:"header",label:"Header",icon:"\uD83D\uDCCB",backgroundColor:"#f8fafc",fields:[{id:"building_name",label:"Building Name",visible:!0,order:1},{id:"meeting_type",label:"Meeting Type",visible:!0,order:2},{id:"meeting_date",label:"Meeting Date",visible:!0,order:3},{id:"start_time",label:"Start Time",visible:!0,order:4},{id:"location",label:"Location",visible:!0,order:5},{id:"strata_plan",label:"Strata Plan Number",visible:!0,order:6}]},{id:"attendees",label:"Attendees",icon:"\uD83D\uDC65",backgroundColor:"#ffffff",fields:[{id:"present",label:"Present",visible:!0,order:1},{id:"absent",label:"Absent",visible:!0,order:2},{id:"regrets",label:"Regrets",visible:!0,order:3}]},{id:"topics",label:"Topics & Notes",icon:"\uD83D\uDCDD",backgroundColor:"#ffffff",fields:[]},{id:"decisions",label:"Decisions & Votes",icon:"⚖️",backgroundColor:"#ffffff",fields:[]},{id:"footer",label:"Footer",icon:"✍️",backgroundColor:"#f8fafc",fields:[{id:"adjournment",label:"Meeting Adjourned",visible:!0,order:1},{id:"next_meeting",label:"Next Meeting Date",visible:!0,order:2},{id:"prepared_by",label:"Minutes Prepared By",visible:!0,order:3},{id:"signatures",label:"Signatures",visible:!0,order:4}]}]},{data:a,error:o}=await nU.from("meetings").select(`
+        `).eq("id",e).single();if(r)throw r;let{data:n,error:i}=await nU.from("sections").select("*").eq("meeting_id",e).order("order_index");if(i)throw i;let{data:a,error:s}=await nU.from("topics").select("*").eq("meeting_id",e).order("order_index");if(s)throw s;await o(t,n||[],a||[])}catch(e){console.error("Error generating agenda:",e),alert("Failed to generate agenda PDF")}finally{n(!1)}},a=async e=>{try{let t=await fetch(e);if(!t.ok)return null;let r=await t.blob();return await new Promise(e=>{let t=new FileReader;t.onloadend=()=>e(t.result),t.readAsDataURL(r)})}catch(e){return null}},o=async(e,t,r)=>{let n=new n7.Ay("p","mm","a4"),i=n.internal.pageSize.getWidth(),o=n.internal.pageSize.getHeight(),s=18,l=1,d=e.buildings,c=d?.companies,A=new Date(e.meeting_date).toLocaleDateString("en-US",{weekday:"long",year:"numeric",month:"long",day:"numeric"}),u=d?.logo_url||c?.logo_url||null,p=null;u&&(p=await a(u));let h={navy:[15,35,90],blue:[41,98,255],lightBlue:[100,140,255],skyBlue:[220,235,255],red:[220,38,38],white:[255,255,255],lightGray:[245,248,250],mediumGray:[156,163,175],darkGray:[31,41,55]},f=(e,t="fill")=>{"fill"===t?n.setFillColor(e[0],e[1],e[2]):"text"===t?n.setTextColor(e[0],e[1],e[2]):"draw"===t&&n.setDrawColor(e[0],e[1],e[2])},m=()=>{f(h.navy,"fill"),n.rect(0,0,i,8,"F"),n.setFontSize(9),f(h.white,"text"),n.setFont("helvetica","bold"),n.text(e.title||"Meeting Agenda",18,5.5),s=16},g=()=>{n.addPage(),l++,m()},b=e=>s+e>o-18&&(g(),!0),y=()=>{let e=o-10;f(h.navy,"fill"),n.rect(0,e-3,i,15,"F"),n.setFontSize(8),f(h.white,"text"),n.setFont("helvetica","normal"),n.text(d?.name||"",18,e+1),n.text(`Page ${l}`,i/2,e+1,{align:"center"}),n.text("Meeting Genius",i-18,e+1,{align:"right"})};if((()=>{f(h.skyBlue,"fill"),n.rect(0,0,i,80,"F"),n.setLineWidth(.5),f([210,230,255],"draw");for(let e=-80;e<i+80;e+=8)n.line(e,0,e+80,80)})(),f(h.navy,"fill"),n.rect(0,0,i,80,"F"),p)try{f(h.white,"fill"),n.circle(30,18,10,"F"),n.addImage(p,"PNG",20,8,20,20,void 0,"FAST")}catch(e){console.error("Logo error:",e)}n.setFontSize(42),f(h.white,"text"),n.setFont("helvetica","bold"),n.text("MEETING",i/2,38,{align:"center"}),n.text("AGENDA",i/2,52,{align:"center"}),n.setFontSize(16),f(h.lightBlue,"text"),n.setFont("helvetica","normal"),n.text(d?.name||"Building",i/2,64,{align:"center"}),n.setFontSize(11),f([200,220,255],"text"),n.text(e.meeting_type||"Council Meeting",i/2,72,{align:"center"}),s=92,b(50);let v=i-36;f([180,190,200],"fill"),n.roundedRect(19,s+1,v,48,5,5,"F"),f(h.white,"fill"),n.roundedRect(18,s,v,48,5,5,"F"),f(h.blue,"fill"),n.roundedRect(18,s,v,8,5,5,"F"),n.rect(18,s+5,v,3,"F"),n.setFontSize(11),f(h.white,"text"),n.setFont("helvetica","bold"),n.text("MEETING INFORMATION",24,s+5.5);let x=s+16,w=18+v/2+3,_=(e,t,r)=>{let i=1===r?24:w;n.setFontSize(9),f(h.navy,"text"),n.setFont("helvetica","bold"),n.text(e.toUpperCase(),i,x),n.setFontSize(10),f(h.darkGray,"text"),n.setFont("helvetica","normal");let a=n.splitTextToSize(t,v/2-12);return n.text(a[0],i,x+4),a.length>1};_("Date",A,1),e.start_time&&_("Time",e.start_time,2),x+=10,e.location&&_("Location",e.location,1),d?.address&&_("Address",d.address,2),x+=10,e.strata_plan_number&&_("Strata Plan",e.strata_plan_number,1),s+=56,b(25),f(h.navy,"fill"),n.rect(13,s-3,i-36+10,14,"F"),n.setFontSize(20),f(h.white,"text"),n.setFont("helvetica","bold"),n.text("AGENDA ITEMS",18,s+6),s+=18;let B=r.reduce((e,t)=>{let r=t.section_id||"unsectioned";return e[r]||(e[r]=[]),e[r].push(t),e},{}),C=1;t.forEach(e=>{let t=[...B[e.id]||[]].sort((e,t)=>(e.order_index||0)-(t.order_index||0));b(20),f(h.lightBlue,"fill"),n.roundedRect(18,s,i-36,10,3,3,"F"),f(h.navy,"fill"),n.circle(23,s+5,4,"F"),n.setFontSize(10),f(h.white,"text"),n.setFont("helvetica","bold"),n.text(C.toString(),23,s+6.5,{align:"center"}),n.setFontSize(13),f(h.white,"text"),n.text(e.title.toUpperCase(),30,s+6.5),s+=15,t.length>0?t.forEach((e,t)=>{let r=!0===e.is_incamera,a=!r&&e.description,o=a?22:13;b(o+4),f([210,210,210],"fill"),n.roundedRect(27,s+.8,i-36-18,o,3,3,"F"),f(r?[255,240,240]:h.white,"fill"),n.roundedRect(26,s,i-36-16,o,3,3,"F"),f(r?h.red:h.blue,"fill"),n.rect(26,s,4,o,"F"),f(r?h.red:h.navy,"fill"),n.circle(36,s+5,3,"F"),n.setFontSize(8),f(h.white,"text"),n.setFont("helvetica","bold"),n.text(`${C}.${t+1}`,36,s+6.2,{align:"center"}),n.setFontSize(11),f(h.darkGray,"text"),n.setFont("helvetica","bold");let l=e.title;r&&(l+=" [CONFIDENTIAL]");let d=n.splitTextToSize(l,i-36-35);if(n.text(d[0],42,s+6),r)n.setFontSize(9),n.setFont("helvetica","italic"),f(h.red,"text"),n.text("CONFIDENTIAL - In-Camera Session",42,s+11);else if(a){n.setFontSize(9),n.setFont("helvetica","normal"),f(h.mediumGray,"text");let t=n.splitTextToSize(e.description,i-36-30),r=s+11;t.slice(0,3).forEach(e=>{n.text(e,42,r),r+=3.5}),t.length>3&&(n.setFont("helvetica","italic"),n.text("(continued...)",42,r))}s+=o+4}):(f(h.lightGray,"fill"),n.roundedRect(26,s,i-36-16,10,2,2,"F"),n.setFontSize(9),f(h.mediumGray,"text"),n.setFont("helvetica","italic"),n.text("No items scheduled for this section",30,s+6),s+=13),C++,s+=2});let D=B.unsectioned||[];if(D.length>0){let e=[...D].sort((e,t)=>(e.order_index||0)-(t.order_index||0));b(20),f(h.lightBlue,"fill"),n.roundedRect(18,s,i-36,10,3,3,"F"),f(h.navy,"fill"),n.circle(23,s+5,4,"F"),n.setFontSize(10),f(h.white,"text"),n.setFont("helvetica","bold"),n.text(C.toString(),23,s+6.5,{align:"center"}),n.setFontSize(13),n.text("OTHER BUSINESS",30,s+6.5),s+=15,e.forEach((e,t)=>{let r=!0===e.is_incamera,a=!r&&e.description,o=a?22:13;b(o+4),f([210,210,210],"fill"),n.roundedRect(27,s+.8,i-36-18,o,3,3,"F"),f(r?[255,240,240]:h.white,"fill"),n.roundedRect(26,s,i-36-16,o,3,3,"F"),f(r?h.red:h.blue,"fill"),n.rect(26,s,4,o,"F"),f(r?h.red:h.navy,"fill"),n.circle(36,s+5,3,"F"),n.setFontSize(8),f(h.white,"text"),n.setFont("helvetica","bold"),n.text(`${C}.${t+1}`,36,s+6.2,{align:"center"}),n.setFontSize(11),f(h.darkGray,"text"),n.setFont("helvetica","bold");let l=e.title;r&&(l+=" [CONFIDENTIAL]");let d=n.splitTextToSize(l,i-36-35);if(n.text(d[0],42,s+6),r)n.setFontSize(9),n.setFont("helvetica","italic"),f(h.red,"text"),n.text("CONFIDENTIAL - In-Camera Session",42,s+11);else if(a){n.setFontSize(9),n.setFont("helvetica","normal"),f(h.mediumGray,"text");let t=n.splitTextToSize(e.description,i-36-30),r=s+11;t.slice(0,3).forEach(e=>{n.text(e,42,r),r+=3.5}),t.length>3&&(n.setFont("helvetica","italic"),n.text("(continued...)",42,r))}s+=o+4})}let N=n.internal.getNumberOfPages();for(let e=1;e<=N;e++)n.setPage(e),l=e,y();let U=`${e.title||"Meeting"}_Agenda_${new Date().toISOString().split("T")[0]}.pdf`;n.save(U)};return(0,b.jsx)(ez,{onClick:i,disabled:r,variant:"outline",className:"gap-2 h-8 px-3 text-xs",children:r?(0,b.jsxs)(b.Fragment,{children:[(0,b.jsx)(n8,{className:"h-4 w-4 animate-spin"}),"Generating..."]}):(0,b.jsxs)(b.Fragment,{children:[(0,b.jsx)(n9,{className:"h-4 w-4"}),"Download Agenda"]})})}var it=r(94424);function ir({meetingId:e,buildingId:t}){let[r,n]=(0,y.useState)(!1),i=async()=>{n(!0);try{let{data:r}=await nU.from("minutes_templates").select("*").eq("building_id",t).maybeSingle(),i=r?.blocks?.sections?r.blocks:{sections:[{id:"header",label:"Meeting Details",icon:"\uD83D\uDCCB",backgroundColor:"#f8fafc",fields:[{id:"building_name",label:"Building Name",visible:!0,order:1},{id:"meeting_type",label:"Meeting Type",visible:!0,order:2},{id:"meeting_date",label:"Meeting Date",visible:!0,order:3},{id:"start_time",label:"Start Time",visible:!0,order:4},{id:"location",label:"Location",visible:!0,order:5},{id:"strata_plan",label:"Strata Plan Number",visible:!0,order:6}]},{id:"attendees",label:"Attendees",icon:"\uD83D\uDC65",backgroundColor:"#ffffff",fields:[{id:"present",label:"Present",visible:!0,order:1},{id:"absent",label:"Absent",visible:!0,order:2},{id:"regrets",label:"Regrets",visible:!0,order:3}]},{id:"topics",label:"Topics & Discussion",icon:"\uD83D\uDCDD",backgroundColor:"#ffffff",fields:[]},{id:"decisions",label:"Decisions & Votes",icon:"⚖️",backgroundColor:"#ffffff",fields:[]}]},{data:a,error:o}=await nU.from("meetings").select(`
           *,
           buildings(
             name,
@@ -70,21 +70,21 @@ ${g}`}({domain:b.host,address:v,statement:m,uri:b.href,version:"1",chainId:x,non
             tasks(description, assigned_name, assigned_email, due_date, status),
             decisions(motion_text, result, votes_for, votes_against, votes_abstain)
           )
-        `).eq("meeting_id",e).order("order_index"),A=function(e,t,r,n){let i=t.buildings,a="minutes"===t.status||"working_minutes"===t.status,o=`
+        `).eq("meeting_id",e).order("order_index"),A=function(e,t,r,n){let i=t.buildings,a="minutes"===t.status||"working_minutes"===t.status,o=a?"MEETING MINUTES":"MEETING AGENDA",s=`
     <div class="page-header">
       <div class="page-header-left">
-        ${n?`<img src="${ii(n)}" alt="Logo" class="page-header-logo" />`:""}
+        ${n?`<img src="${ii(n)}" alt="Logo" class="page-header-logo" />`:'<div style="padding: 10px 20px; font-weight: 700; font-size: 14pt; color: #1e40af;">Meeting Genius</div>'}
       </div>
       <div class="page-header-right">
-        <div class="page-title">${a?"MEETING MINUTES":"MEETING AGENDA"}</div>
+        <div class="page-title">${o}</div>
         <div class="page-subtitle">${ii(t.title)}</div>
       </div>
     </div>
-  `;return e.sections.forEach(e=>{var n,a,s;let l,d;"header"===e.id?o+=function(e,t,r){let n=e.fields.filter(e=>e.visible).sort((e,t)=>e.order-t.order),i='<div class="section">';return n.forEach(e=>{if("strata_plan"===e.id&&!t.strata_plan_number)return;let n="";switch(e.id){case"building_name":n=r?.name||"N/A";break;case"meeting_type":n=t.meeting_type||"N/A";break;case"meeting_date":n=t.meeting_date?new Date(t.meeting_date+"T00:00:00Z").toLocaleDateString("en-US",{weekday:"long",year:"numeric",month:"long",day:"numeric",timeZone:"UTC"}):"N/A";break;case"start_time":n=function(e){if(!e)return"N/A";if(e.includes("AM")||e.includes("PM"))return e.replace(/:\d{2}\s*(AM|PM)/i," $1");let t=e.split(":");if(t.length>=2){let e=parseInt(t[0]),r=t[1];return`${0===e?12:e>12?e-12:e}:${r} ${e>=12?"PM":"AM"}`}return e}(t.start_time);break;case"location":n=t.location||"N/A";break;case"strata_plan":n=t.strata_plan_number||"N/A"}i+=`
+  `;return e.sections.forEach(e=>{var n,a,o,l;let d,c;"header"===e.id?s+=function(e,t,r){let n=e.fields.filter(e=>e.visible).sort((e,t)=>e.order-t.order),i='<div class="meeting-details">';return n.forEach(e=>{if("strata_plan"===e.id&&!t.strata_plan_number)return;let n="";switch(e.id){case"building_name":n=r?.name||"N/A";break;case"meeting_type":n=t.meeting_type||"N/A";break;case"meeting_date":n=t.meeting_date?new Date(t.meeting_date+"T00:00:00Z").toLocaleDateString("en-US",{weekday:"long",year:"numeric",month:"long",day:"numeric",timeZone:"UTC"}):"N/A";break;case"start_time":n=function(e){if(!e)return"N/A";if(e.includes("AM")||e.includes("PM"))return e.replace(/:\d{2}\s*(AM|PM)/i," $1");let t=e.split(":");if(t.length>=2){let e=parseInt(t[0]),r=t[1];return`${0===e?12:e>12?e-12:e}:${r} ${e>=12?"PM":"AM"}`}return e}(t.start_time);break;case"location":n=t.location||"N/A";break;case"strata_plan":n=t.strata_plan_number||"N/A"}i+=`
       <div class="field-row">
         <span class="field-label">${ii(e.label)}:</span>
         <span class="field-value">${ii(n)}</span>
-      </div>`}),i+="</div>"}(e,t,i):"attendees"===e.id?o+=(n=e,a=t.attendees||[],l=`
+      </div>`}),i+="</div>"}(e,t,i):"attendees"===e.id?s+=(n=e,a=t.attendees||[],d=`
     <div class="section">
       <div class="section-header">
         ${n.icon} ${n.label}
@@ -97,24 +97,26 @@ ${g}`}({domain:b.host,address:v,statement:m,uri:b.href,version:"1",chainId:x,non
             <th>Status</th>
           </tr>
         </thead>
-        <tbody>`,a.forEach(e=>{l+=`
+        <tbody>`,a.forEach(e=>{d+=`
       <tr>
         <td>${ii(e.name)}</td>
         <td>${ii(e.role||"-")}</td>
         <td>${e.present?"✓ Present":"✗ Absent"}</td>
-      </tr>`}),l+="</tbody></table></div>"):"topics"===e.id&&(o+=(s=r,d=`
+      </tr>`}),d+="</tbody></table></div>"):"topics"===e.id&&(s+=(o=r,l=0,c=`
     <div class="section">
       <div class="section-header">
         📝 Topics & Discussion
-      </div>`,s.forEach((e,t)=>{let r="string"==typeof e.title?e.title:"",n=r.replace(/^\s*\d+(\.\d+)*\s*[\).\-\:]*\s*/,"");d+=`<h2>${t+1}. ${ii(n||r)}</h2>`,e.topics&&e.topics.length>0?e.topics.forEach((e,r)=>{let n=!0===e.is_incamera;if(d+=`
+      </div>`,o.forEach((e,t)=>{let r="string"==typeof e.title?e.title:"",n=r.replace(/^\s*\d+(\.\d+)*\s*[\).\-\:]*\s*/,"");c+=`<h2>${t+1}. ${ii(n||r)}</h2>`,e.topics&&e.topics.length>0?e.topics.forEach((e,r)=>{if(!0===e.is_incamera){c+=`
+            <div class="incamera-title-line">
+              <span style="font-weight: 700; font-size: 11pt; color: #1f2937;">
+                ${t+1}.${r+1} ${ii(e.title)}
+              </span>
+              <span class="incamera-badge">🔒 IN-CAMERA</span>
+            </div>`;return}c+=`
           <div class="topic-box">
             <div class="topic-title">
               ${t+1}.${r+1} ${ii(e.title)}
-              ${n?'<span class="incamera-badge">\uD83D\uDD12 IN-CAMERA</span>':""}
-            </div>`,n){if(d+=`
-            <div class="incamera-notice">
-              <strong>🔒 This topic is in-camera (confidential).</strong><br/>
-              Content has been withheld due to the sensitive nature of the discussion.`,e.incamera_start_time||e.incamera_end_time){if(d+="<br/><br/>",e.incamera_start_time){let t=new Date(e.incamera_start_time).toLocaleString();d+=`Started: ${ii(t)}`}if(e.incamera_end_time){let t=new Date(e.incamera_end_time).toLocaleString();d+=`${e.incamera_start_time?" | ":""}Ended: ${ii(t)}`}}d+="</div>"}else e.description&&(d+=`<div class="topic-description">${ii(e.description)}</div>`),e.decisions&&e.decisions.length>0&&e.decisions.forEach(e=>{let t=null!==e.votes_for?` (For: ${e.votes_for||0}, Against: ${e.votes_against||0}, Abstain: ${e.votes_abstain||0})`:"";d+=`<div class="item item-decision"><span class="item-label">⚖️ Decision:</span>${ii(e.motion_text)} - Result: ${ii(e.result||"N/A")}${t}</div>`});d+="</div>"}):d+='<p style="padding: 15px; color: #6b7280; font-style: italic;">No topics recorded for this section.</p>'}),d+="</div>"))}),o}(i,a,c||[],d),u=document.createElement("iframe");u.style.position="absolute",u.style.left="-9999px",u.style.width="210mm",u.style.border="none",document.body.appendChild(u);let p=u.contentDocument||u.contentWindow?.document;if(!p)throw Error("Cannot access iframe document");p.open(),p.write(`
+            </div>`,e.description&&(c+=`<div class="topic-description">${ii(e.description)}</div>`),e.decisions&&e.decisions.length>0&&e.decisions.forEach(e=>{let t=null!==e.votes_for?` (For: ${e.votes_for||0}, Against: ${e.votes_against||0}, Abstain: ${e.votes_abstain||0})`:"";c+=`<div class="item item-decision"><span class="item-label">⚖️ Decision:</span>${ii(e.motion_text)} - Result: ${ii(e.result||"N/A")}${t}</div>`}),c+="</div>"}):c+='<p style="padding: 15px; color: #6b7280; font-style: italic;">No topics recorded for this section.</p>'}),c+="</div>"))}),s}(i,a,c||[],d),u=document.createElement("iframe");u.style.position="absolute",u.style.left="-9999px",u.style.width="210mm",u.style.border="none",document.body.appendChild(u);let p=u.contentDocument||u.contentWindow?.document;if(!p)throw Error("Cannot access iframe document");p.open(),p.write(`
         <!DOCTYPE html>
         <html>
         <head>
@@ -132,182 +134,232 @@ ${g}`}({domain:b.host,address:v,statement:m,uri:b.href,version:"1",chainId:x,non
             body { 
               font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
               font-size: 11pt;
-              line-height: 1.5;
-              color: #333;
+              line-height: 1.6;
+              color: #1f2937;
               background: white;
               padding: 0;
               margin: 0;
             }
-            h1 { 
-              font-size: 20pt; 
-              margin-bottom: 20px;
-              page-break-after: avoid;
-            }
-            h2 { 
-              font-size: 14pt; 
-              margin: 15px 0 10px 0;
-              page-break-after: avoid;
-            }
-            h3 { 
-              font-size: 12pt; 
-              margin: 12px 0 8px 0;
-              page-break-after: avoid;
-            }
             
-            /* ⭐ Professional Header Layout */
+            /* ⭐ IMPROVED: Professional Header with Gradient */
             .page-header {
+              background: linear-gradient(135deg, #1e40af 0%, #3b82f6 50%, #60a5fa 100%);
+              padding: 35px 30px;
+              margin: -20px -20px 30px -20px;
+              border-radius: 8px;
+              box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
               display: flex;
-              align-items: flex-start;
+              align-items: center;
               justify-content: space-between;
-              padding-bottom: 15px;
-              margin-bottom: 25px;
-              border-bottom: 3px solid #1f2937;
             }
             
             .page-header-left {
               flex-shrink: 0;
+              background: white;
+              padding: 12px 16px;
+              border-radius: 6px;
+              box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
             }
             
             .page-header-logo {
-              max-height: 70px;
-              max-width: 200px;
+              max-height: 60px;
+              max-width: 180px;
               object-fit: contain;
+              display: block;
             }
             
             .page-header-right {
               flex-grow: 1;
               text-align: right;
-              padding-left: 20px;
+              padding-left: 25px;
             }
             
             .page-title {
-              font-size: 28pt;
-              font-weight: bold;
-              color: #1f2937;
-              margin-bottom: 5px;
-              letter-spacing: 0.5px;
+              font-size: 32pt;
+              font-weight: 700;
+              color: white;
+              margin-bottom: 8px;
+              letter-spacing: 1px;
               text-transform: uppercase;
+              text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
             }
             
             .page-subtitle {
               font-size: 16pt;
-              color: #6b7280;
+              color: #dbeafe;
               font-weight: 500;
               margin-top: 5px;
             }
             
-            .section { 
-              margin-bottom: 25px;
-              page-break-inside: avoid;
+            /* ⭐ IMPROVED: Meeting Details Grid */
+            .meeting-details {
+              background: linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%);
+              border: 2px solid #e5e7eb;
+              border-radius: 8px;
+              padding: 25px;
+              margin-bottom: 30px;
+              box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
             }
-            .section-header {
-              background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
-              color: white;
-              padding: 12px 18px;
-              margin-bottom: 15px;
-              font-size: 13pt;
-              font-weight: bold;
-              border-radius: 4px;
-              box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            }
+            
             .field-row {
-              padding: 8px 0;
+              padding: 10px 0;
               display: flex;
-              border-bottom: 1px solid #f3f4f6;
+              align-items: baseline;
+              border-bottom: 1px solid #e5e7eb;
             }
+            
             .field-row:last-child {
               border-bottom: none;
             }
+            
             .field-label {
-              font-weight: 600;
-              min-width: 160px;
+              font-weight: 700;
+              min-width: 180px;
               color: #374151;
+              font-size: 11pt;
             }
+            
             .field-value {
               color: #1f2937;
               flex: 1;
+              font-size: 11pt;
             }
+            
+            /* ⭐ IMPROVED: Section Headers with Yellow Accent */
+            .section {
+              margin-bottom: 30px;
+              page-break-inside: avoid;
+            }
+            
+            .section-header {
+              background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+              color: #78350f;
+              padding: 14px 20px;
+              margin-bottom: 20px;
+              font-size: 14pt;
+              font-weight: 700;
+              border-radius: 6px;
+              box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+              border-left: 5px solid #b45309;
+            }
+            
+            /* ⭐ IMPROVED: Attendees Table */
             table {
               width: 100%;
               border-collapse: collapse;
-              margin: 10px 0;
-              box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-            }
-            th {
-              background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
-              padding: 10px 12px;
-              text-align: left;
-              font-weight: 600;
-              border: 1px solid #d1d5db;
-              color: #374151;
-            }
-            td {
-              padding: 10px 12px;
-              border: 1px solid #d1d5db;
-              background: white;
-            }
-            tr:hover td {
-              background-color: #f9fafb;
-            }
-            .topic-box {
-              border: 1px solid #e5e7eb;
+              margin: 15px 0;
+              box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
               border-radius: 6px;
-              padding: 18px;
-              margin-bottom: 18px;
-              background: #fafbfc;
-              page-break-inside: avoid;
-              box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-            }
-            .topic-title {
-              font-weight: bold;
-              font-size: 12pt;
-              color: #1f2937;
-              margin-bottom: 10px;
-              padding-bottom: 8px;
-              border-bottom: 2px solid #e5e7eb;
-            }
-            .topic-description {
-              color: #4b5563;
-              margin-bottom: 12px;
-              line-height: 1.6;
-            }
-            .item {
-              margin: 10px 0;
-              padding: 12px 15px;
-              border-left: 4px solid;
-              background: white;
-              font-size: 10pt;
-              border-radius: 0 4px 4px 0;
-              box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-            }
-            .item-decision { 
-              border-color: #8b5cf6;
-              background: #faf5ff;
-            }
-            .item-label {
-              font-weight: 600;
-              margin-right: 8px;
+              overflow: hidden;
             }
             
-            /* ⭐ In-camera styling */
-            .incamera-notice {
-              background-color: #fef2f2;
-              border: 2px solid #dc2626;
-              border-radius: 6px;
-              padding: 15px;
-              margin: 10px 0;
-              color: #991b1b;
-              font-style: italic;
+            th {
+              background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);
+              color: white;
+              padding: 12px 15px;
+              text-align: left;
+              font-weight: 600;
+              font-size: 11pt;
             }
+            
+            td {
+              padding: 12px 15px;
+              border: 1px solid #e5e7eb;
+              background: white;
+              font-size: 10.5pt;
+            }
+            
+            tr:nth-child(even) td {
+              background-color: #f9fafb;
+            }
+            
+            tr:hover td {
+              background-color: #eff6ff;
+            }
+            
+            /* ⭐ IMPROVED: Topic Cards */
+            h2 {
+              font-size: 13pt;
+              color: #1e40af;
+              font-weight: 700;
+              margin: 20px 0 15px 0;
+              padding-bottom: 8px;
+              border-bottom: 2px solid #3b82f6;
+              page-break-after: avoid;
+            }
+            
+            .topic-box {
+              border: 2px solid #e5e7eb;
+              border-radius: 8px;
+              padding: 20px;
+              margin-bottom: 20px;
+              background: white;
+              page-break-inside: avoid;
+              box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+            }
+            
+            .topic-title {
+              font-weight: 700;
+              font-size: 12pt;
+              color: #1f2937;
+              margin-bottom: 12px;
+              padding-bottom: 10px;
+              border-bottom: 2px solid #fbbf24;
+            }
+            
+            .topic-description {
+              color: #4b5563;
+              margin-bottom: 15px;
+              line-height: 1.7;
+              font-size: 10.5pt;
+            }
+            
+            /* ⭐ IMPROVED: Decision Items */
+            .item {
+              margin: 12px 0;
+              padding: 14px 18px;
+              border-left: 5px solid;
+              background: white;
+              font-size: 10.5pt;
+              border-radius: 0 6px 6px 0;
+              box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+            }
+            
+            .item-decision { 
+              border-color: #8b5cf6;
+              background: linear-gradient(135deg, #faf5ff 0%, #f5f3ff 100%);
+            }
+            
+            .item-label {
+              font-weight: 700;
+              margin-right: 8px;
+              color: #6d28d9;
+            }
+            
+            /* ⭐ NEW: In-Camera Simple Title Line */
+            .incamera-title-line {
+              margin: 15px 0;
+              padding: 10px 0;
+              border-bottom: 1px solid #e5e7eb;
+            }
+            
             .incamera-badge {
               display: inline-block;
-              background-color: #dc2626;
+              background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
               color: white;
-              padding: 4px 10px;
-              border-radius: 4px;
+              padding: 5px 12px;
+              border-radius: 5px;
               font-size: 9pt;
-              font-weight: bold;
-              margin-left: 8px;
+              font-weight: 700;
+              margin-left: 10px;
+              box-shadow: 0 2px 4px rgba(220, 38, 38, 0.3);
+            }
+            
+            /* ⭐ Print Optimization */
+            @media print {
+              .page-header {
+                margin: 0 0 30px 0;
+              }
             }
           </style>
         </head>
