@@ -111,7 +111,7 @@ ${g}`}({domain:b.host,address:v,statement:m,uri:b.href,version:"1",chainId:x,non
               <span style="font-weight: 700; font-size: 11pt; color: #1f2937;">
                 ${t+1}.${r+1} ${ii(e.title)}
               </span>
-              <span class="incamera-badge">🔒 IN-CAMERA</span>
+              
             </div>`;return}c+=`
           <div class="topic-box">
             <div class="topic-title">

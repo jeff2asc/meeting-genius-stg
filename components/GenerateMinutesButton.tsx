@@ -722,7 +722,7 @@ function renderTopics(sections: any[], isMinutes: boolean): string {
               <span style="font-weight: 700; font-size: 11pt; color: #1f2937;">
                 ${sIdx + 1}.${tIdx + 1} ${escapeHtml(topic.title)}
               </span>
-              <span class="incamera-badge">🔒 IN-CAMERA</span>
+              
             </div>`
           return // Skip everything else for this topic
         }
