@@ -5,22 +5,7 @@ import { X, Users, Building2, UserCheck, Home, Plus, Trash2, UserCog, Image as I
 import { Button } from "@/components/ui/button"
 import LogoTab from "./LogoTab"
 import { Card } from "@/components/ui/card"
-import { supabase } from "@/lib/supabase"
-
-interface Company {
-  id: number
-  name: string
-  created_at: string
-  smtp_host: string | null
-  smtp_port: number | null
-  logo_url: string | null
-  smtp_user: string | null
-  smtp_password: string | null
-  smtp_from_name: string | null
-  smtp_from_email: string | null
-  smtp_use_tls: boolean | null
-}
-
+import { supabase, type Company } from "@/lib/supabase"
 
 interface CompanyDetailsModalProps {
   isOpen: boolean
@@ -1219,7 +1204,7 @@ export default function CompanyDetailsModal({
 {activeTab === "logo" && company && (
   <LogoTab
     companyId={company.id}
-    currentLogoUrl={company.logo_url}
+    currentLogoUrl={company.logo_url ?? null}
     onLogoUpdate={fetchCompanyDetails}
   />
 )}

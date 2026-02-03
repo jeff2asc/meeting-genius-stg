@@ -975,10 +975,10 @@ All permission checks are centralized in `lib/permissions.ts`:
 
 ### 9. **PDF Minutes Generation**
 - Generate professional PDF minutes from finalized meetings
-- Customizable templates per building
+- Customizable templates per building (template editor in admin panel)
 - Includes all meeting data: header, attendees, topics, notes, tasks, decisions
-- Template editor in admin panel
-- Uses html2canvas and jsPDF for PDF generation
+- Building or company logo in PDF header (building preferred, then company)
+- Renders via off-screen iframe; html2canvas + jsPDF for multi-page PDF
 - Available when meeting status is "minutes" (finalized)
 
 ### 10. **Email Configuration & Sending**
@@ -1190,7 +1190,7 @@ app/page.tsx (Root)
 - `components/create-section-modal.tsx`: Create sections
 - `components/create-topic-modal.tsx`: Create topics with GeniusWords support
 - `components/AttendeeManagement.tsx`: Manage meeting attendees with role assignment and presence tracking
-- `components/GenerateMinutesButton.tsx`: Generate PDF minutes from finalized meetings
+- `components/GenerateMinutesButton.tsx`: Generate PDF minutes from finalized meetings (template-driven, building/company logo, iframe + html2canvas + jsPDF)
 - `components/ProfileSettingsModal.tsx`: User profile settings (name, email, password)
 - `components/SelectRecorderModal.tsx`: Select recorder/device for meeting audio recording
 
@@ -1827,9 +1827,10 @@ meeting-genius/
 │   │   ├── button.tsx
 │   │   ├── card.tsx
 │   │   ├── dialog.tsx
-│   │   └── ... (40+ components)
+│   │   └── ... (50+ components)
 │   │
 │   ├── admin-panel.tsx          # Main admin interface
+│   ├── admin-panelbackup.txt     # Backup (optional, not imported)
 │   ├── AuthenticatedLayout.tsx   # Layout wrapper: Header + main content (optional use)
 │   ├── AttendeeManagement.tsx   # Attendee management
 │   ├── create-meeting-modal.tsx  # Create meeting
@@ -2059,9 +2060,10 @@ The system can generate professional PDF minutes from finalized meetings:
 - Uses `GenerateMinutesButton` component
 - Fetches template from `minutes_templates` table (building-specific)
 - Falls back to default template if none exists
-- Generates HTML from meeting data (sections, topics, notes, tasks, decisions)
-- Converts HTML to canvas using html2canvas
-- Creates multi-page PDF using jsPDF
+- Fetches meeting with building and company (for logo: building logo preferred, then company logo)
+- Generates HTML from meeting data (sections, topics, notes, tasks, decisions), with in-camera filtering
+- Renders HTML in an off-screen iframe (210mm width) for consistent print layout
+- Converts iframe content to canvas using html2canvas, then multi-page PDF via jsPDF
 - Downloads PDF with meeting title and date in filename
 - Available only when meeting status is "minutes" (finalized)
 
