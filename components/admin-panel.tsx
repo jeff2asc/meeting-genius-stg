@@ -10,7 +10,7 @@ import { canManageCompanies, shouldFilterByCompany } from "@/lib/permissions"
 // Import all the separated components
 import CreateUserModal from "./admin/CreateUserModal"
 import CreateBuildingModal from "./admin/CreateBuildingModal"
-import BuildingDetailsModal from "./admin/BuildingDetailsModal"  // CHANGED FROM EditBuildingModal
+import BuildingDetailsModal from "./admin/BuildingDetailsModal"
 import DocumentManagementModal from "./admin/DocumentManagementModal"
 import ViewDocumentModal from "./admin/ViewDocumentModal"
 import UsersTab from "./admin/UsersTab"
@@ -67,7 +67,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
   const [showCreateUserModal, setShowCreateUserModal] = useState(false)
   const [showCreateBuildingModal, setShowCreateBuildingModal] = useState(false)
   const [showCreateCompanyModal, setShowCreateCompanyModal] = useState(false)
-  const [showBuildingDetailsModal, setShowBuildingDetailsModal] = useState(false)  // RENAMED
+  const [showBuildingDetailsModal, setShowBuildingDetailsModal] = useState(false)
   const [selectedBuilding, setSelectedBuilding] = useState<Building | null>(null)
 
   // Edit User Modal States
@@ -238,13 +238,16 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
 
   const fetchPropertyManagers = async () => {
     try {
+      // ✅ FIX: Don't filter property managers by company for Master users
+      // Property Managers can manage buildings across multiple companies
       let query = supabase
         .from("users")
         .select("id, name, email, company_id")
         .eq("user_type", "property_manager")
         .order("name")
 
-      if (userShouldFilterByCompany && currentUser?.company_id) {
+      // Only filter by company for Corporate Admins (not for Masters or PMs)
+      if (isCorporateAdmin && currentUser?.company_id) {
         query = query.eq("company_id", currentUser.company_id)
       }
 
@@ -270,7 +273,8 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
         .select("id, name, email, user_type, assigned_pm_id, company_id, created_at")
         .order("created_at", { ascending: false })
 
-      if (userShouldFilterByCompany && currentUser?.company_id) {
+      // ✅ FIX: Only filter by company for Corporate Admins, not for Property Managers
+      if (isCorporateAdmin && currentUser?.company_id) {
         usersQuery = usersQuery.eq("company_id", currentUser.company_id)
       }
 
@@ -324,10 +328,12 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
         .order("name")
 
       if (isMaster) {
-        // all
+        // Master sees ALL buildings
       } else if (isCorporateAdmin && currentUser?.company_id) {
+        // Corporate Admin sees only buildings in their company
         buildingsQuery = buildingsQuery.eq("company_id", currentUser.company_id)
       } else if (currentUser?.user_type === "property_manager") {
+        // ✅ FIX: Property Managers see ALL buildings they manage, regardless of company
         buildingsQuery = buildingsQuery.eq("manager_id", currentUser.id)
       } else {
         setBuildings([])

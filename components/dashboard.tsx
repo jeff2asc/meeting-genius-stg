@@ -46,12 +46,14 @@ export default function Dashboard({
   const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
+    console.log('🚀 Dashboard mounted - starting fetchBuildings...')
     fetchBuildings()
     fetchCompanyLogo()
   }, [])
 
   useEffect(() => {
     if (selectedBuilding) {
+      console.log('🔄 Selected building changed:', selectedBuilding)
       fetchMeetings()
       fetchTasks()
     }
@@ -97,75 +99,121 @@ export default function Dashboard({
   const fetchBuildings = async () => {
     try {
       const currentUser = getCurrentUser()
-      if (!currentUser) return
+      console.log('🔍 Current User:', currentUser)
+      
+      if (!currentUser) {
+        console.error('❌ No current user found!')
+        return
+      }
 
       let query = supabase.from('buildings').select('*')
 
       if (currentUser.user_type === 'master') {
+        console.log('👑 Master user - fetching ALL buildings')
         query = query.order('name')
       } else if (currentUser.user_type === 'corporate_administrator') {
         if (currentUser.company_id) {
+          console.log('🏢 Corporate Admin - fetching buildings for company_id:', currentUser.company_id)
           query = query.eq('company_id', currentUser.company_id).order('name')
         } else {
-          console.warn('Corporate Admin has no company_id')
+          console.warn('⚠️ Corporate Admin has no company_id')
           setBuildings([])
           setLoading(false)
+          setSelectedBuilding("All")
+          if (onBuildingSelected) {
+            onBuildingSelected("All")
+          }
           return
         }
       } else if (currentUser.user_type === 'property_manager') {
+        console.log('🏘️ Property Manager - fetching buildings for manager_id:', currentUser.id)
         query = query.eq('manager_id', currentUser.id).order('name')
       } else {
+        console.log('👤 Regular user - fetching assigned buildings')
         const { data: userBuildings, error: userBuildingsError } = await supabase
           .from('user_buildings')
           .select('building_id')
           .eq('user_id', currentUser.id)
 
         if (userBuildingsError) {
-          console.error('Error fetching user buildings:', userBuildingsError)
+          console.error('❌ Error fetching user buildings:', userBuildingsError)
           setBuildings([])
           setLoading(false)
+          setSelectedBuilding("All")
+          if (onBuildingSelected) {
+            onBuildingSelected("All")
+          }
           return
         }
 
         const buildingIds = userBuildings?.map(ub => ub.building_id) || []
+        console.log('📋 User building IDs:', buildingIds)
+        
         if (buildingIds.length === 0) {
+          console.warn('⚠️ User has no buildings assigned')
           setBuildings([])
           setLoading(false)
+          setSelectedBuilding("All")
+          if (onBuildingSelected) {
+            onBuildingSelected("All")
+          }
           return
         }
 
         query = query.in('id', buildingIds).order('name')
       }
 
+      console.log('📤 Executing buildings query...')
       const { data, error } = await query
 
+      console.log('📊 Buildings Query Result:', { 
+        success: !error,
+        error: error,
+        buildingCount: data?.length || 0,
+        buildings: data 
+      })
+
       if (error) {
-        console.error('Error fetching buildings:', error)
+        console.error('❌ Error fetching buildings:', error)
         setBuildings([])
         setLoading(false)
-        return
-      }
-
-      setBuildings(data || [])
-      if (onBuildingsLoaded) {
-        onBuildingsLoaded(data || [])
-      }
-
-      if (data && data.length > 0) {
         setSelectedBuilding("All")
         if (onBuildingSelected) {
           onBuildingSelected("All")
         }
+        return
+      }
+
+      console.log('✅ Buildings fetched successfully:', data)
+      console.log('📍 Setting buildings state with', data?.length || 0, 'buildings')
+      
+      setBuildings(data || [])
+      
+      if (onBuildingsLoaded) {
+        onBuildingsLoaded(data || [])
+      }
+
+      setSelectedBuilding("All")
+      console.log('✅ Selected building set to "All"')
+      
+      if (onBuildingSelected) {
+        onBuildingSelected("All")
       }
     } catch (err) {
-      console.error('Unexpected error:', err)
+      console.error('❌ Unexpected error in fetchBuildings:', err)
+      setSelectedBuilding("All")
+      if (onBuildingSelected) {
+        onBuildingSelected("All")
+      }
     } finally {
+      console.log('🏁 fetchBuildings completed, setting loading = false')
       setLoading(false)
     }
   }
 
   const fetchMeetings = async () => {
     try {
+      console.log('📅 fetchMeetings called for building:', selectedBuilding)
       let query = supabase
         .from('meetings')
         .select('*, buildings(name)')
@@ -178,17 +226,25 @@ export default function Dashboard({
         }
       } else {
         const buildingIds = buildings.map(b => b.id)
+        console.log('🏢 Building IDs for meetings query:', buildingIds)
         if (buildingIds.length > 0) {
           query = query.in('building_id', buildingIds)
+        } else {
+          console.warn('⚠️ No buildings to fetch meetings for')
+          setMeetings([])
+          setAvailableMeetingTypes([])
+          return
         }
       }
 
       const { data, error } = await query
 
       if (error) {
-        console.error('Error fetching meetings:', error)
+        console.error('❌ Error fetching meetings:', error)
         return
       }
+
+      console.log('✅ Meetings fetched:', data?.length || 0)
 
       const meetingTypes = Array.from(new Set(data?.map(m => m.meeting_type).filter(Boolean))) as string[]
       setAvailableMeetingTypes(meetingTypes.sort())
@@ -215,7 +271,7 @@ export default function Dashboard({
 
       setMeetings(formattedMeetings)
     } catch (err) {
-      console.error('Unexpected error:', err)
+      console.error('❌ Unexpected error in fetchMeetings:', err)
     }
   }
 
@@ -234,6 +290,9 @@ export default function Dashboard({
         const buildingIds = buildings.map(b => b.id)
         if (buildingIds.length > 0) {
           meetingQuery = meetingQuery.in('building_id', buildingIds)
+        } else {
+          setTasks([])
+          return
         }
       }
 
@@ -476,6 +535,8 @@ export default function Dashboard({
     )
   }
 
+  console.log('🎨 Rendering dashboard - loading:', loading, 'buildings:', buildings.length, 'selectedBuilding:', selectedBuilding)
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted flex items-center justify-center">
@@ -536,6 +597,7 @@ export default function Dashboard({
                 className="flex items-center gap-2 bg-card min-w-[180px] justify-center"
                 onClick={(e) => {
                   e.stopPropagation()
+                  console.log('🔽 Building dropdown clicked')
                   setShowBuildingDropdown(!showBuildingDropdown)
                 }}
               >

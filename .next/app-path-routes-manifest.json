@@ -1,9 +1,10 @@
 {
-  "/api/send-email/route": "/api/send-email",
-  "/api/signup/route": "/api/signup",
-  "/api/transcripts/list/route": "/api/transcripts/list",
-  "/api/transcripts/upload/route": "/api/transcripts/upload",
-  "/api/transcripts/create-tasks/route": "/api/transcripts/create-tasks",
   "/_not-found/page": "/_not-found",
-  "/page": "/"
+  "/api/transcripts/create-tasks/route": "/api/transcripts/create-tasks",
+  "/api/transcripts/upload/route": "/api/transcripts/upload",
+  "/api/signup/route": "/api/signup",
+  "/api/send-email/route": "/api/send-email",
+  "/api/transcripts/list/route": "/api/transcripts/list",
+  "/page": "/",
+  "/task-update/[token]/page": "/task-update/[token]"
 }
