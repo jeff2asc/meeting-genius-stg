@@ -207,14 +207,18 @@ export default function GenerateAgendaButton({
     }
 
     // ==================== COVER PAGE ====================
+    
     drawStripedBackground()
+
     setColor(colors.navy, "fill")
     pdf.rect(0, 0, pageWidth, 80, "F")
+
 
     if (logoDataUrl) {
       try {
         setColor(colors.white, "fill")
         pdf.circle(margin + 12, 18, 10, "F")
+        
         pdf.addImage(logoDataUrl, "PNG", margin + 2, 8, 20, 20, undefined, "FAST")
       } catch (e) {
         console.error("Logo error:", e)
@@ -226,75 +230,96 @@ export default function GenerateAgendaButton({
     pdf.setFont("helvetica", "bold")
     pdf.text("MEETING", pageWidth / 2, 38, { align: "center" })
     pdf.text("AGENDA", pageWidth / 2, 52, { align: "center" })
+
     pdf.setFontSize(16)
     setColor(colors.lightBlue, "text")
     pdf.setFont("helvetica", "normal")
     pdf.text(building?.name || "Building", pageWidth / 2, 64, { align: "center" })
+
     pdf.setFontSize(11)
     setColor([200, 220, 255], "text")
     pdf.text(meeting.meeting_type || "Council Meeting", pageWidth / 2, 72, { align: "center" })
+
     yPosition = 92
 
     // ==================== INFO CARD ====================
     checkPageBreak(50)
+    
     const cardWidth = pageWidth - 2 * margin
+    
     setColor([180, 190, 200], "fill")
     pdf.roundedRect(margin + 1, yPosition + 1, cardWidth, 48, 5, 5, "F")
+    
     setColor(colors.white, "fill")
     pdf.roundedRect(margin, yPosition, cardWidth, 48, 5, 5, "F")
+    
     setColor(colors.blue, "fill")
     pdf.roundedRect(margin, yPosition, cardWidth, 8, 5, 5, "F")
     pdf.rect(margin, yPosition + 5, cardWidth, 3, "F")
+    // Header text - CLEAN TEXT ONLY
     pdf.setFontSize(11)
     setColor(colors.white, "text")
     pdf.setFont("helvetica", "bold")
     pdf.text("MEETING INFORMATION", margin + 6, yPosition + 5.5)
+
+    // Info items - CLEAN TEXT, PROGRAMMATIC UPPERCASE
     let infoY = yPosition + 16
     const col1X = margin + 6
-    const col2X = margin + cardWidth / 2 + 3
+    const col2X = margin + cardWidth/2 + 3
+
     const addInfoItem = (label: string, value: string, column: 1 | 2) => {
       const x = column === 1 ? col1X : col2X
+      
       pdf.setFontSize(9)
       setColor(colors.navy, "text")
       pdf.setFont("helvetica", "bold")
       pdf.text(label.toUpperCase(), x, infoY)
+      
       pdf.setFontSize(10)
       setColor(colors.darkGray, "text")
       pdf.setFont("helvetica", "normal")
-      const lines = pdf.splitTextToSize(value, cardWidth / 2 - 12)
+      const lines = pdf.splitTextToSize(value, cardWidth/2 - 12)
       pdf.text(lines[0], x, infoY + 4)
+      
       return lines.length > 1
     }
+
     addInfoItem("Date", meetingDate, 1)
     if (meeting.start_time) addInfoItem("Time", meeting.start_time, 2)
+    
     infoY += 10
+    
     if (meeting.location) addInfoItem("Location", meeting.location, 1)
     if (building?.address) addInfoItem("Address", building.address, 2)
+    
     infoY += 10
+    
     if (meeting.strata_plan_number) addInfoItem("Strata Plan", meeting.strata_plan_number, 1)
+
     yPosition += 56
 
     // ==================== AGENDA ITEMS ====================
     checkPageBreak(25)
+    
     setColor(colors.navy, "fill")
     pdf.rect(margin - 5, yPosition - 3, pageWidth - 2 * margin + 10, 14, "F")
+    
     pdf.setFontSize(20)
     setColor(colors.white, "text")
     pdf.setFont("helvetica", "bold")
     pdf.text("AGENDA ITEMS", margin, yPosition + 6)
+    
     yPosition += 18
 
-    const topicsBySection = topics.reduce(
-      (acc, topic) => {
-        const sectionId = topic.section_id ?? "unsectioned"
-        if (!acc[sectionId]) acc[sectionId] = []
-        acc[sectionId].push(topic)
-        return acc
-      },
-      {} as Record<string | number, Topic[]>
-    )
+    const topicsBySection = topics.reduce((acc, topic) => {
+      const sectionId = topic.section_id || "unsectioned"
+      if (!acc[sectionId]) acc[sectionId] = []
+      acc[sectionId].push(topic)
+      return acc
+    }, {} as Record<string | number, Topic[]>)
 
     let sectionNum = 1
+
     sections.forEach((section) => {
       const sectionTopics = topicsBySection[section.id] || []
       const sortedTopics = [...sectionTopics].sort((a, b) => (a.order_index || 0) - (b.order_index || 0))

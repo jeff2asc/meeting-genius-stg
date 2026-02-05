@@ -22,6 +22,7 @@ import {
   getPageCount
 } from "@/lib/canvasUtils"
 import { CANVAS_TEMPLATES, TemplateKey } from "@/lib/defaultCanvasTemplates"
+import { OLD_AGENDA_DEFAULT_TEMPLATE } from "@/lib/oldAgendaTemplate"
 import { convertSimpleTemplateToCanvas } from "@/lib/simpleToCanvasConverter"
 import { supabase, type Company } from "@/lib/supabase"
 import { generateCanvasPDF } from "@/lib/canvasPDFGenerator"
@@ -158,11 +159,10 @@ export default function AgendaTemplateCanvas({ company, onBack }: AgendaTemplate
         addToHistory(convertedElements)
         setHasLoadedInitial(true)
       } else {
-        console.log('No template found. Loading default Professional template...')
+        console.log('No template found. Loading OLD AGENDA DEFAULT template...')
         setHasSimpleTemplate(false)
         
-        const template = CANVAS_TEMPLATES['professional']
-        const defaultElements = JSON.parse(JSON.stringify(template.elements)) as CanvasElementType[]
+        const defaultElements = JSON.parse(JSON.stringify(OLD_AGENDA_DEFAULT_TEMPLATE)) as CanvasElementType[]
         setElements(defaultElements)
         addToHistory(defaultElements)
         setHasLoadedInitial(true)
@@ -701,7 +701,8 @@ export default function AgendaTemplateCanvas({ company, onBack }: AgendaTemplate
 
       {/* Main Content Area - no inner scroll; page scrolls with content */}
       <div className="flex-1 flex min-h-0">
-        <ComponentLibrary onAddElement={handleAddElement} />
+        {/* ComponentLibrary hidden for agenda - users can only move existing elements */}
+        {/* <ComponentLibrary onAddElement={handleAddElement} /> */}
 
 
         {/* MULTI-PAGE CANVAS */}
