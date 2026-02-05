@@ -333,6 +333,7 @@ export default function CanvasElement({
         previewValue = getDynamicFieldName(fieldType as any)
     }
 
+    const isAgendaOrAttendees = fieldType === 'topics_list' || fieldType === 'sections_list' || fieldType === 'attendees_list'
     return (
       <div
         style={{
@@ -342,11 +343,11 @@ export default function CanvasElement({
           color,
           width: '100%',
           height: '100%',
-          overflow: 'auto',
+          overflow: isAgendaOrAttendees ? 'visible' : 'auto',
           wordWrap: 'break-word',
           whiteSpace: 'pre-wrap',
-          fontFamily: (fieldType === 'topics_list' || fieldType === 'sections_list' || fieldType === 'attendees_list') 
-            ? 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' 
+          fontFamily: isAgendaOrAttendees
+            ? 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace'
             : 'inherit',
           display: 'flex',
           alignItems: 'flex-start',

@@ -340,7 +340,7 @@ async function renderDynamicElement(
       break
     case 'topics_list':
     case 'sections_list':
-      renderSectionsAndTopicsWithPagination(pdf, sections, topics, x, y, width)
+      renderSectionsAndTopicsWithPagination(pdf, element, sections, topics, x, y, width)
       return // Exit early since we handled rendering directly
     case 'attendees_list':
       renderAttendeesListWithPagination(pdf, meeting.attendees, x, y, width)
@@ -384,9 +384,10 @@ async function renderDynamicElement(
 
 // ============== HELPER FUNCTIONS ==============
 
-// Multi-page rendering for sections and topics
+// Multi-page rendering for sections and topics (uses element position + style so PDF matches canvas)
 function renderSectionsAndTopicsWithPagination(
   pdf: jsPDF,
+  element: CanvasElement,
   sections: Section[],
   topics: Topic[],
   startX: number,
@@ -394,12 +395,13 @@ function renderSectionsAndTopicsWithPagination(
   maxWidth: number
 ) {
   let currentY = startY
-  const lineHeight = 14
-  const fontSize = 11
-  
+  const fontSize = element.style?.fontSize ? parseInt(String(element.style.fontSize), 10) : 11
+  const lineHeight = Math.round(fontSize * 1.35)
+  const textColor = element.style?.color || '#000000'
+
   pdf.setFontSize(fontSize)
   pdf.setFont('helvetica', 'normal')
-  pdf.setTextColor('#000000')
+  pdf.setTextColor(textColor)
   
   sections.forEach((section, sectionIndex) => {
     const sectionNumber = sectionIndex + 1

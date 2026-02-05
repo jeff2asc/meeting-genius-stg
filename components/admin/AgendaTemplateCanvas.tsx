@@ -624,7 +624,7 @@ export default function AgendaTemplateCanvas({ company, onBack }: AgendaTemplate
       <div className="border-b border-border bg-card px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <Button variant="ghost" onClick={onBack}>
-            ← Back to Simple Editor
+            ← Back
           </Button>
           <div className="h-6 w-px bg-border" />
           <div>
@@ -716,6 +716,9 @@ export default function AgendaTemplateCanvas({ company, onBack }: AgendaTemplate
 
         {/* MULTI-PAGE CANVAS */}
         <div className="flex-1 overflow-visible bg-muted/30 p-8" onClick={handleCanvasClick}>
+          <p className="text-xs text-muted-foreground mb-2 text-center">
+            Preview uses sample data. The downloaded agenda PDF will use the meeting&apos;s actual sections and topics, so page count may differ.
+          </p>
           <div className="flex flex-col items-center justify-start min-h-full gap-0">
             {Array.from({ length: pageCount }).map((_, pageIndex) => (
               <div key={pageIndex} className="relative">
