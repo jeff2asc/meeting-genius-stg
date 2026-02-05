@@ -651,7 +651,11 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
 
         {/* ⭐⭐ NEW: Agenda Templates Tab Content */}
         {activeTab === "agenda" && (
-          <AgendaTemplatesTab companies={companies} loading={loading} />
+          <AgendaTemplatesTab
+            companies={companies}
+            buildings={getBuildingsList()}
+            loading={loading}
+          />
         )}
       </div>
 

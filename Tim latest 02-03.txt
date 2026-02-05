@@ -1,0 +1,281 @@
+(Transcribed by TurboScribe.ai. Go Unlimited to remove this message.)
+
+Can you hear me? I can now. How are you? Not too bad. Not too bad. 
+
+How are you? Not too bad. Okay. Is everything okay with your little son? Yeah.
+
+Okay. Good. All right. 
+
+Cool. All right. Do you have a dog? No, no, no. 
+
+Okay. I don't normally either, but I just have a dog that we're taking care of. And I've been realizing how much work it is. 
+
+And let's put it that way. So anyway, yeah, I think it's just for a few days, but yeah, my wife was always complaining. She wanted her not complaining, but trying to get me to sign on to having a dog. 
+
+And now I'm starting to how much extra work it's going to be. So we'll see how long that lasts, but anyway. All right. 
+
+Where are we at? I am totally trying to catch up on the day today. Oh yeah. Sure. 
+
+Okay. Close that off. Sure. 
+
+We'll talk about that. Okay. Let's start.
+
+Okay. All right. Yesterday, last weekend, there was an issue around the attachment that we fixed and then I think it's working now. 
+
+Okay. Good. Okay. 
+
+But let's start with the this one. For example, I have this in camera, this hi. And when I have, when I download the... Right. 
+
+What does that mean? Hi. Hey. Oh, that's the topic. 
+
+Okay. All right. The topic name. 
+
+Okay. Okay. And then I also added some edit design a bit. 
+
+Okay. Can we set up a way to design those, you know, have the main blocks, but like change the backgrounds a little bit or, and specifically thinking like to the headers and the layout of... Yeah. I added that to the, like for next week or this week.
+
+Okay. Okay. So, but I have this one and then, as you can see, the icon that is not showing, only the decision is now showing the notes. 
+
+It's not showing anymore. As far as the topic description. Okay. 
+
+And then there's one. Let's go to the agenda. I don't read the agenda. 
+
+There's two here. Also, it's the send notice. So I also wanted that to be... Okay. 
+
+Yes. Yes. Yes. 
+
+Right. I'm going to send that. So what list is that actually sending to? Come to the owners or resident of that certain building.
+
+So how do I know where they are? Where is that? Can you show me where that is? Send admin to the building. And then for example, you create the tier user. Good. 
+
+Okay. Good. Good. 
+
+Good. Okay. Okay. 
+
+So just a sidebar on that. That's really good. I'm happy to see that.
+
+One thing I'd like to start thinking about is that how, if someone has say 10 buildings and they have, I don't know, 2000 people that they take care of, we need a fast way of importing that information. And it can either be coming in the form of an Excel spreadsheet. So we need to look at some tools and how to import them.
+
+Or it could be coming through an API call to a third-party application as well. Right? So we need to start thinking about how we're going to get that information into the system or at least get access to that information. Right.
+
+Just let me just write it down. Yeah. First one is the design. 
+
+Yes. Per building or per company. Per building.
+
+Per company. Per company. From the import. 
+
+Yeah. An Excel spreadsheet import and then API access for the, like that would be a public API that we could publish. That we can work with third-party vendors like Power Strata and Yardi and other accounting companies that already have all that information. 
+
+So that would be a third. So the first one is an import process to add users like the residents and the owners. On either company or building for users, right? Definitely building. 
+
+This would be, yeah, company and building. Yes, you're right. Company and building. 
+
+Yeah. So it's going to be either a spreadsheet or API. Yeah. 
+
+API calls. Okay. I'm going to check the send notice. 
+
+I think it's there now. You know, one sec for one of the calls that I'm using as the owner. There you go. 
+
+Great. Okay. And then on the agenda, agenda. 
+
+Oh, sorry. Oh yeah. And there I just jumped some quick. 
+
+I did this search. Good. Good. 
+
+Good. Good. Okay. 
+
+Excellent. And then as you can see the all. Yeah. 
+
+It's not working, is it? Okay. It's whenever I load, it's going to be all. There you go. 
+
+And then, first of all, I open again. So let's download the agenda. I think it's just a quick look on it.
+
+Oh, I need to fix this. But it looks like this though. Yeah. 
+
+It needs that. Okay. All right. 
+
+Good. It's much better now than our original one. And then.
+
+Oh, yeah. Oh, yeah. First of all, we're going to create the topic here.
+
+Maintenance. Yes. And you want the multiple here, right? To open multiple, right? Yes. 
+
+The multiple is exactly what I did is like this. So, for example, like I'm going to try here. Note.
+
+That's note one. And then if I go here, I can still go back here. It's still there.
+
+It's not iterated. And then this decision one. And then if I want this to save.
+
+It's going to be empty, but it's saved now. So if I do this note two, but I'm not going to save yet. So this decision one, I'm going to save.
+
+Yes. This decision two. One, two, three. 
+
+Save. Let's see. So I created four. 
+
+Two notes and two decisions. So if I close this. Maintenance.
+
+Yeah. Maintenance. There you go. 
+
+Good. So users can now create either tasks, notes, or decisions. Okay. 
+
+You've just, I like it, but you just added another layer, another level to it. Okay. So, wow. 
+
+Yeah, I want to think about that one for a minute. Because you see what's happening is that every time someone hits either a note, task, or decision, they come up with another interface whether they're going to have a task, note, or decision, right? So it changes the interface. Just the design.
+
+Yeah. It's not a bad thing. I'm just kind of thinking it through a little bit.
+
+Do you want like bubbles in the messenger.com? Or the messenger app? Have you ever tried that? No, I don't. Can you show me what that looks like? Facebook Messenger. When you open, it's going to show something like this on the app to open up another decision.
+
+So it's like hidden. So like this. No, no, no, no. 
+
+I don't think so. I think. Yeah. 
+
+Can you go back? Yeah. We've got buttons explicitly for notes, task notes, and notes, tasks, and decisions, right? So, oh, you've got it there too. Yeah. 
+
+Even if I created the server, there's something. When I created here, for example, when I created the task here, it will still send the emailing. And the second level will pop up the, let me just try this one.
+
+Let me just test this. Yeah. Send email to one person.
+
+After the email is sent, as you can see, it free me again. It still continue doing here. And then as I close here.
+
+Yeah, no, I like that. Just scroll up a tiny bit. I just want to think this through a second.
+
+Is it the functionality or is it just the design? It's the design. You see where we have the blue note, the green task, and the purple decision? They're basically being, after you click any one of them, they're basically going to another screen, right? And so, I'm kind of thinking maybe we just need, we can take out, if you go back to where you were. Yeah. 
+
+Maintenance. Yeah. We can just, we can, where it has note, task, and decision button, we can make one button, right? Yeah, we can. 
+
+But currently, whatever you selected, it's going to be the selected on the tab. Yeah, no, that's what I'm saying is that we have to select it twice. If someone selects notes, expecting the note thing to come up, right? No, I click the task. 
+
+I'm going to click the task. Yeah, but click note. Yeah. 
+
+Okay. Click note. Go back and click note or decision. 
+
+It doesn't matter to me. Oh, I see. You've got a contact sensitive. 
+
+Okay. Oh, okay. All right. 
+
+Let's try that. Let's try that. It's opening up the selected one. 
+
+Yeah, there's that contact. Yeah, there's one in contact. Okay. 
+
+All right. Fine. Let's try that. 
+
+Let's see what happens. That sounds good. Right. 
+
+I'm going to think about that a little bit, but yeah. Okay. Yeah, sure, sure. 
+
+Just let me know if you want changes. Yeah, but it looks good. It works functionally right now. 
+
+So, okay. All right. Let's move on. 
+
+That's good. I'll think about that one. Okay. 
+
+Also, fix the upload here in a test real quick. We have done this one last week, I think. It should work now, but I'm not sure if it's the problem with this GMA, but it's not selecting one of the topic, but you can push it, but no, you can see it's working on the server side as well. 
+
+We're using Gemini here? A Gemini account? Yeah, yeah. We are using Gemini. Oh, that makes sense. 
+
+What about using Olama? I'm waiting for the... I thought you guys are going to talk about the server. You're going to give me access to a server, like every server. Access to which server? The one where you're going to put the Olama.
+
+That's why I still use the... Oh, I see. Okay. So, I need to... Okay. 
+
+I'm sorry. No worries. No worries. 
+
+No worries. Okay. So, I need to set up Olama server.
+
+Okay. Okay. Another one is just a quick... One of our problem before is to see this logo, I need to go to our view, I need to click the logo. 
+
+Now, I fix the... Show me like this as well. Oh, show me. Show me.
+
+No, I mean, showing now just on this one. I need to go here to see. Oh, right, right, right, right, right, right, right. 
+
+Okay. Okay. Let's just take a look and see what else. 
+
+I sent you a lot of stuff last time. So, there we go. Not that one.
+
+The all, it's one also. And then the problem with your permission status, I tested it with different accounts. Yeah, yeah, yeah, yeah. 
+
+Permissions, let's talk about that because there's a big deal. Yeah, I tested that on different other accounts and it works on every account I tested. So, I'm not sure what happened to your account.
+
+Okay. So, how do we fix it? So, in my account, can you go to my account and let's just take a look at it because... Okay. Which one? It's the bottom one. 
+
+Okay. What's the password? C1G3456. Yeah. 
+
+Okay. Yeah. Only on your accounts that all have fixed on mine.
+
+There we go. Here, you're not seeing anything. Yeah, yeah, exactly. 
+
+I'm not seeing company or anything, right? Is this the account like different property manager on different one? I should be. Yeah, this one, I should be a property manager on, yeah, a lot of buildings. Maybe that's the issue. 
+
+I think my logic currently doesn't have the able to hold like one. Let me try to test another property manager. Let's try Sarah. 
+
+Sarah, yeah, sure. One year on your account, maybe. I think the code that's ready to handle like multiple for our user for like multiple buildings or I think multiple buildings. 
+
+Okay. But I think multiple companies on each user. So it's the logic on that.
+
+Okay. And also, yeah, go ahead. But on the other, like the video that you sent about the footers, about the removal of tasks and notes, I think this one at the header part was also removed.
+
+Right. That's from your videos. Yeah, yeah, yeah, exactly. 
+
+Yeah. Yeah. For my meeting, I had a meeting on Thursday. 
+
+Exactly. Okay. Yeah, yeah, yeah. 
+
+Those are still working on? Is that what you're saying? No, no, no. That's already done. Yeah. 
+
+Okay. I thought so. Okay. 
+
+Okay, good. Yeah. So if we can just work out how we can have them build multiple page layouts for the agendas and for the minutes, that would be great.
+
+Do you want like a draggable? Yeah, I'd like a draggable function. You know, we know that it's not so much the question of the draggable part, because I think you've already done a lot of that. It's a question of the design. 
+
+You know, some people don't like a blue banner, or they may want to have a photo behind it, or they may want to have a different layout that looks like a spreadsheet. I actually sent you a sample one some months ago. I can resend it again.
+
+Can I show you like an old work of mine, see if that's what you're looking for? Sure. I hope that this is still working. Okay.
+
+So this one, I'll just show you something where you can, like this, you can add here like a blocks, and then you can drag. You can something like that. Right. 
+
+Like if you go to the hero section, as an example, or features, any one of those, can you designate the colors? Can you designate the image you want in the background? All that good stuff. Yeah, yeah, yeah. Yeah, exactly. 
+
+That's more like what we're looking for. And yeah, so the issue there are images and also sort of background. Let me just show you. 
+
+I thought I sent it to you, but let me just let me check to see if I have it on. Stop sharing my screen. Give me a second. 
+
+Okay. Where is that dot? That would be in up here. And I think the only one we currently have is just like the, what can be, what will be hidden and what will be not. 
+
+And then the, what do you call this? The sorting order. I think that's what we currently just said. Yeah, yeah. 
+
+But that's, yeah. But in the design, oh, anyway. It's not the show design yet, right? Yeah, yeah, exactly. 
+
+Yeah, I'm boarding. I'm boarding. Do I still have that? No, I have not. 
+
+So let's go back to here and let's go to there, there, there, and let's go again. Yeah, here we go. Yeah. 
+
+I'm just trying to find the right one. Just give me a second. There we go. 
+
+Okay. I'll share. Sorry. 
+
+Share my screen. Okay. Can you see it? There we go. 
+
+Okay. So what I'd like to do is have a way, see, it's not just about background colors. It's about location of all the key information, right? So we have this information.
+
+I'd like to be able to basically drag and drop the agenda here and put it at the top or something like that, right? But these elements are all things. These are all objects that we have, information, excuse me, that we have in the database. And this is the kind of layout that I currently use right now, right? And so that's kind of what I'm looking at is if we can modify this layout here, where basically this whole section up here, right? So if there's a way we can do that. 
+
+Yes, that or everything outside the... Well, yeah, this part should be fairly easy because these are the sections, right? And these are the topics in here, right? So yeah, so that part should be fairly easy. I think we probably already have that nailed down. I don't think we need to mess around with that too much.
+
+What I'm mostly worried about is this part up here, right? Just that layout. Some people like it this way and some people like the way you have it right now, which is very vertical. Are we just talking about the minutes or the agenda? Yeah, both.
+
+Yeah, so what do we need to do? Let me just add another task. We need to have the design logic. Sure. 
+
+Do you need this? No, it's okay. I get what you mean. Okay, good.
+
+We need to have that design logic group. This is per company, right? Per company, correct. Yes.
+
+Per company. Per company for minutes and agenda. Let me just specify the current we have is the order and hide and unhide. 
+
+Pardon. Inside the PDF template. Okay, anything else, Tim? No, I think that's enough to keep us going for a little while.
+
+Once we get this nailed down, maybe next week you and I can start talking about what the next major build on this is going to be. Janus, Janus. Yeah, we haven't talked about Janus, the Janus integration, right? Have you thought about how to do the Janus integration? To be honest, this week I just focused on the bugs that you said I need to fix on all the bugs.
+
+Okay. I fixed other bugs aside from the features I show you. Okay.
+
+(This file is longer than 30 minutes. Go Unlimited at TurboScribe.ai to transcribe files up to 10 hours long.)

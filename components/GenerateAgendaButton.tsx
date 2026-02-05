@@ -4,6 +4,7 @@ import { useState } from "react"
 import { FileDown, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { supabase } from "@/lib/supabase"
+import { generateCanvasPDF } from "@/lib/canvasPDFGenerator"
 import jsPDF from "jspdf"
 
 interface GenerateAgendaButtonProps {
@@ -78,6 +79,19 @@ export default function GenerateAgendaButton({
 
       if (topicsError) throw topicsError
 
+      const companyId = meeting?.buildings?.company_id
+      if (companyId) {
+        const { data: template } = await supabase
+          .from("company_agenda_templates")
+          .select("blocks")
+          .eq("company_id", companyId)
+          .single()
+        const elements = template?.blocks?.canvas?.elements
+        if (elements && Array.isArray(elements) && elements.length > 0) {
+          await generateCanvasPDF(elements, meeting, sections || [], topics || [])
+          return
+        }
+      }
       await generatePDF(meeting, sections || [], topics || [])
     } catch (error) {
       console.error("Error generating agenda:", error)

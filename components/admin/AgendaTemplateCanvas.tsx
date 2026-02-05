@@ -157,11 +157,6 @@ export default function AgendaTemplateCanvas({ company, onBack }: AgendaTemplate
         setElements(convertedElements)
         addToHistory(convertedElements)
         setHasLoadedInitial(true)
-        
-        setTimeout(() => {
-          const message = '✨ Your Simple Mode template has been loaded into the canvas! This is your current design. You can now customize it with drag-and-drop, or click "Load Template" to choose a different starter template.'
-          alert(message)
-        }, 500)
       } else {
         console.log('No template found. Loading default Professional template...')
         setHasSimpleTemplate(false)
@@ -171,11 +166,6 @@ export default function AgendaTemplateCanvas({ company, onBack }: AgendaTemplate
         setElements(defaultElements)
         addToHistory(defaultElements)
         setHasLoadedInitial(true)
-        
-        setTimeout(() => {
-          const message = '✨ Welcome to Advanced Canvas! We\'ve loaded a Professional template to get you started. Click "Load Template" to choose a different starter, or start customizing this one.'
-          alert(message)
-        }, 500)
       }
     } catch (err) {
       console.error('Unexpected error:', err)
