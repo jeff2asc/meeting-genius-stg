@@ -1,16 +1,4 @@
-"use client"
-
-import { useState } from "react"
-import { FileDown, Loader2 } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { supabase } from "@/lib/supabase"
-import { generateCanvasPDF } from "@/lib/canvasPDFGenerator"
 import jsPDF from "jspdf"
-
-interface GenerateAgendaButtonProps {
-  meetingId: number
-  meetingStatus: string
-}
 
 interface Topic {
   id: number
@@ -51,27 +39,15 @@ interface TemplateConfig {
 
 const loadImageAsDataUrl = async (url: string): Promise<string | null> => {
   try {
-    console.log('🖼️ Loading image from:', url)
-    const res = await fetch(url, { mode: 'cors' })
-    if (!res.ok) {
-      console.error('❌ Image fetch failed:', res.status)
-      return null
-    }
+    const res = await fetch(url)
+    if (!res.ok) return null
     const blob = await res.blob()
     return await new Promise((resolve) => {
       const reader = new FileReader()
-      reader.onloadend = () => {
-        console.log('✅ Image loaded as base64')
-        resolve(reader.result as string)
-      }
-      reader.onerror = () => {
-        console.error('❌ FileReader error')
-        resolve(null)
-      }
+      reader.onloadend = () => resolve(reader.result as string)
       reader.readAsDataURL(blob)
     })
   } catch (e) {
-    console.error('❌ Image load exception:', e)
     return null
   }
 }
@@ -99,23 +75,11 @@ export const generatePDF = async (
     day: "numeric"
   })
 
-  // 📷 FIXED: Proper logo URL priority and logging
   const logoUrl: string | null = building?.logo_url || company?.logo_url || null
-  console.log('📷 Building Logo URL:', building?.logo_url)
-  console.log('📷 Company Logo URL:', company?.logo_url)
-  console.log('📷 Final Logo URL:', logoUrl)
-  
   let logoDataUrl: string | null = null
   
   if (logoUrl) {
     logoDataUrl = await loadImageAsDataUrl(logoUrl)
-    if (logoDataUrl) {
-      console.log('✅ Logo converted to base64 successfully')
-    } else {
-      console.warn('⚠️ Logo conversion to base64 failed')
-    }
-  } else {
-    console.warn('⚠️ No logo URL available')
   }
 
   // Get template configuration or use defaults
@@ -264,17 +228,13 @@ export const generatePDF = async (
 
   if (logoDataUrl) {
     try {
-      console.log('🎨 Adding logo to PDF...')
       setColor(colors.white, 'fill')
       pdf.circle(margin + 12, 18, 10, "F")
       
       pdf.addImage(logoDataUrl, "PNG", margin + 2, 8, 20, 20, undefined, 'FAST')
-      console.log('✅ Logo added to PDF successfully')
     } catch (e) {
-      console.error("❌ Logo rendering error:", e)
+      console.error("Logo error:", e)
     }
-  } else {
-    console.warn('⚠️ No logo to render - logoDataUrl is null')
   }
 
   pdf.setFontSize(42)
@@ -639,24 +599,7 @@ export const generatePDF = async (
     yPosition += sectionHeaderHeight + 5
 
     if (sortedTopics.length > 0) {
-      if (sectionsLayout === "two_column") {
-        const columnGap = 6
-        const columnWidth = (pageWidth - 2 * margin - columnGap - 16) / 2
-        
-        sortedTopics.forEach((topic: Topic, idx: number) => {
-          const topicNum = `${sectionNum}.${idx + 1}`
-          const isLeftColumn = idx % 2 === 0
-          
-          if (isLeftColumn) {
-            renderTopicCard(topic, topicNum, columnWidth)
-          } else {
-            const savedY = yPosition
-            yPosition -= (topic.description && showTopicDescriptions ? 26 : 17)
-            renderTopicCard(topic, topicNum, columnWidth)
-            yPosition = Math.max(yPosition, savedY)
-          }
-        })
-      } else if (sectionsLayout === "compact") {
+      if (sectionsLayout === "compact") {
         sortedTopics.forEach((topic: Topic, idx: number) => {
           const isIncamera = topic.is_incamera === true
           const cardHeight = 10
@@ -785,152 +728,4 @@ export const generatePDF = async (
 
   const fileName = `${meeting.title || "Meeting"}_Agenda_${new Date().toISOString().split("T")[0]}.pdf`
   pdf.save(fileName)
-}
-
-export default function GenerateAgendaButton({
-  meetingId,
-  meetingStatus
-}: GenerateAgendaButtonProps) {
-  const [generating, setGenerating] = useState(false)
-
-  if (meetingStatus !== "working_agenda" && meetingStatus !== "agenda") {
-    return null
-  }
-
-  const handleGenerateAgenda = async () => {
-    setGenerating(true)
-
-    try {
-      console.log('🎯 Starting Agenda Generation for Meeting ID:', meetingId)
-      
-      // 📷 FIXED: Fetch meeting with complete building and company logo data
-      const { data: meeting, error: meetingError } = await supabase
-        .from("meetings")
-        .select(`
-          *,
-          buildings!inner(
-            id,
-            name,
-            address,
-            building_type,
-            logo_url,
-            company_id,
-            companies (
-              id,
-              name,
-              logo_url
-            )
-          )
-        `)
-        .eq("id", meetingId)
-        .single()
-
-      if (meetingError) {
-        console.error('❌ Meeting fetch error:', meetingError)
-        throw meetingError
-      }
-
-      console.log('✅ Meeting data fetched')
-      console.log('📷 Building:', meeting.buildings?.name)
-      console.log('📷 Building Logo URL:', meeting.buildings?.logo_url)
-      console.log('📷 Company:', meeting.buildings?.companies?.name)
-      console.log('📷 Company Logo URL:', meeting.buildings?.companies?.logo_url)
-
-      const companyId = meeting.buildings?.company_id
-
-      // Fetch company agenda template (if exists)
-      let template: TemplateConfig | null = null
-      if (companyId) {
-        const { data: templateData } = await supabase
-          .from("company_agenda_templates")
-          .select("blocks")
-          .eq("company_id", companyId)
-          .maybeSingle()
-
-        // 🎉 CHECK FOR CANVAS MODE FIRST
-        if (templateData?.blocks?.canvas?.mode === 'advanced' && templateData?.blocks?.canvas?.elements) {
-          console.log('🎨 Using Advanced Canvas PDF Generator - TRUE WYSIWYG rendering')
-          
-          // Fetch sections and topics for canvas renderer
-          const { data: sections, error: sectionsError } = await supabase
-            .from("sections")
-            .select("*")
-            .eq("meeting_id", meetingId)
-            .order("order_index")
-
-          if (sectionsError) throw sectionsError
-
-          const { data: topics, error: topicsError } = await supabase
-            .from("topics")
-            .select("*")
-            .eq("meeting_id", meetingId)
-            .order("order_index")
-
-          if (topicsError) throw topicsError
-
-          // Use canvas PDF generator for pixel-perfect rendering
-          await generateCanvasPDF(
-            templateData.blocks.canvas.elements,
-            meeting,  // 📷 Pass full meeting with enriched building/company data
-            sections || [],
-            topics || []
-          )
-          
-          return // Exit early - canvas handled it
-        }
-
-        // Otherwise use simple template
-        if (templateData?.blocks?.sections) {
-          template = templateData.blocks as TemplateConfig
-        }
-      }
-
-      // Fetch sections and topics for simple template renderer
-      const { data: sections, error: sectionsError } = await supabase
-        .from("sections")
-        .select("*")
-        .eq("meeting_id", meetingId)
-        .order("order_index")
-
-      if (sectionsError) throw sectionsError
-
-      const { data: topics, error: topicsError } = await supabase
-        .from("topics")
-        .select("*")
-        .eq("meeting_id", meetingId)
-        .order("order_index")
-
-      if (topicsError) throw topicsError
-
-      // Use simple template PDF generator (fallback)
-      console.log('📄 Using Simple Template PDF Generator')
-      await generatePDF(meeting, sections || [], topics || [], template)
-    } catch (error) {
-      console.error("❌ Error generating agenda:", error)
-      alert("Failed to generate agenda PDF")
-    } finally {
-      setGenerating(false)
-    }
-  }
-
-  return (
-    <Button
-      onClick={handleGenerateAgenda}
-      disabled={generating}
-      variant="outline"
-      className="gap-2 h-8 px-3 text-xs"
-    >
-      {generating ? (
-        <>
-          <Loader2 className="h-4 w-4 animate-spin" />
-          Generating...
-        </>
-      ) : (
-        <>
-          <FileDown className="h-4 w-4" />
-          Download Agenda
-        </>
-      )}
-    </Button>
-  )
 }
