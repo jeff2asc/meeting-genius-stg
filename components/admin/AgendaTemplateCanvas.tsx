@@ -128,45 +128,15 @@ export default function AgendaTemplateCanvas({ company, onBack }: AgendaTemplate
 
   const loadTemplate = async () => {
     try {
-      const { data, error } = await supabase
-        .from('company_agenda_templates')
-        .select('blocks')
-        .eq('company_id', company.id)
-        .single()
-
-
-      if (error && error.code !== 'PGRST116') {
-        console.error('Error loading template:', error)
-        return
-      }
-
-
-      if (data?.blocks?.canvas?.elements) {
-        console.log('Loading saved Canvas template...')
-        setElements(data.blocks.canvas.elements)
-        addToHistory(data.blocks.canvas.elements)
-        setHasLoadedInitial(true)
-        
-        if (data?.blocks?.sections) {
-          setHasSimpleTemplate(true)
-        }
-      } else if (data?.blocks?.sections) {
-        console.log('Converting Simple template to Canvas...')
-        setHasSimpleTemplate(true)
-        
-        const convertedElements = convertSimpleTemplateToCanvas(data.blocks)
-        setElements(convertedElements)
-        addToHistory(convertedElements)
-        setHasLoadedInitial(true)
-      } else {
-        console.log('No template found. Loading OLD AGENDA DEFAULT template...')
-        setHasSimpleTemplate(false)
-        
-        const defaultElements = JSON.parse(JSON.stringify(OLD_AGENDA_DEFAULT_TEMPLATE)) as CanvasElementType[]
-        setElements(defaultElements)
-        addToHistory(defaultElements)
-        setHasLoadedInitial(true)
-      }
+      // ALWAYS load the OLD AGENDA DEFAULT template
+      // (Ignore any saved templates - fresh start with the hardcoded agenda layout)
+      console.log('🔄 Loading OLD AGENDA DEFAULT template (clean slate)...')
+      setHasSimpleTemplate(false)
+      
+      const defaultElements = JSON.parse(JSON.stringify(OLD_AGENDA_DEFAULT_TEMPLATE)) as CanvasElementType[]
+      setElements(defaultElements)
+      addToHistory(defaultElements)
+      setHasLoadedInitial(true)
     } catch (err) {
       console.error('Unexpected error:', err)
     }
