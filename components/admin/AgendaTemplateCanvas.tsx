@@ -619,7 +619,7 @@ export default function AgendaTemplateCanvas({ company, onBack }: AgendaTemplate
 
 
   return (
-    <div className="flex flex-col h-screen bg-background">
+    <div className="flex flex-col min-h-screen bg-background overflow-y-auto">
       {/* Top Toolbar */}
       <div className="border-b border-border bg-card px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-4">
@@ -709,13 +709,13 @@ export default function AgendaTemplateCanvas({ company, onBack }: AgendaTemplate
       </div>
 
 
-      {/* Main Content Area */}
-      <div className="flex-1 flex overflow-hidden">
+      {/* Main Content Area - no inner scroll; page scrolls with content */}
+      <div className="flex-1 flex min-h-0">
         <ComponentLibrary onAddElement={handleAddElement} />
 
 
         {/* MULTI-PAGE CANVAS */}
-        <div className="flex-1 overflow-auto bg-muted/30 p-8" onClick={handleCanvasClick}>
+        <div className="flex-1 overflow-visible bg-muted/30 p-8" onClick={handleCanvasClick}>
           <div className="flex flex-col items-center justify-start min-h-full gap-0">
             {Array.from({ length: pageCount }).map((_, pageIndex) => (
               <div key={pageIndex} className="relative">

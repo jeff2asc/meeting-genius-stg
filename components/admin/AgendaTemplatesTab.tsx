@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { FileText, Sparkles } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -14,17 +14,11 @@ interface AgendaTemplatesTabProps {
 
 export default function AgendaTemplatesTab({ companies, loading }: AgendaTemplatesTabProps) {
   const [selectedCompanyId, setSelectedCompanyId] = useState<number | null>(null)
-  const [showCanvas, setShowCanvas] = useState(true)
-
-  useEffect(() => {
-    if (companies.length > 0 && !selectedCompanyId) {
-      setSelectedCompanyId(companies[0].id)
-    }
-  }, [companies])
+  const [showCanvas, setShowCanvas] = useState(false)
 
   const selectedCompany = companies.find(c => c.id === selectedCompanyId)
 
-  // When company is selected and we're showing canvas, show Advanced Canvas
+  // Only show Advanced Canvas when user has selected a company and opened the editor
   if (selectedCompany && showCanvas) {
     return (
       <AgendaTemplateCanvas
@@ -60,13 +54,15 @@ export default function AgendaTemplatesTab({ companies, loading }: AgendaTemplat
             <div className="flex-1 flex items-center gap-4">
               <label className="text-sm font-semibold text-foreground whitespace-nowrap">Select Company:</label>
               <select
-                value={selectedCompanyId || ""}
+                value={selectedCompanyId ?? ""}
                 onChange={(e) => {
-                  setSelectedCompanyId(Number(e.target.value))
-                  setShowCanvas(true)
+                  const val = e.target.value
+                  setSelectedCompanyId(val ? Number(val) : null)
+                  setShowCanvas(false)
                 }}
                 className="flex-1 px-3 py-2 bg-background border border-border rounded focus:outline-none focus:ring-2 focus:ring-primary/50"
               >
+                <option value="">Select a company...</option>
                 {companies.map(company => (
                   <option key={company.id} value={company.id}>
                     {company.name}
