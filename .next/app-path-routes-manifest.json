@@ -1,9 +1,9 @@
 {
-  "/_not-found/page": "/_not-found",
-  "/api/send-email/route": "/api/send-email",
   "/api/signup/route": "/api/signup",
-  "/api/transcripts/list/route": "/api/transcripts/list",
+  "/_not-found/page": "/_not-found",
   "/api/transcripts/create-tasks/route": "/api/transcripts/create-tasks",
+  "/api/send-email/route": "/api/send-email",
+  "/api/transcripts/list/route": "/api/transcripts/list",
   "/api/transcripts/upload/route": "/api/transcripts/upload",
   "/page": "/",
   "/task-update/[token]/page": "/task-update/[token]"
