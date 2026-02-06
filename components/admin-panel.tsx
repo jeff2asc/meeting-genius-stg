@@ -17,7 +17,6 @@ import UsersTab from "./admin/UsersTab"
 import BuildingsTab from "./admin/BuildingsTab"
 import CompaniesTab from "./admin/CompaniesTab"
 import MinutesTemplatesTab from "./admin/MinutesTemplatesTab"
-import AgendaTemplatesTab from "./admin/AgendaTemplatesTab"  // ⭐ NEW IMPORT
 import CreateCompanyModal from "./admin/CreateCompanyModal"
 import EditCompanyModal from "./admin/EditCompanyModal"
 import CompanyDetailsModal from "./admin/CompanyDetailsModal"
@@ -55,8 +54,7 @@ interface Building {
   users?: Array<{ id: number; name: string; email: string; user_type: string }>
 }
 
-// ⭐ UPDATED: Added "agenda" to TabType
-type TabType = "users" | "buildings" | "companies" | "minutes" | "agenda"
+type TabType = "users" | "buildings" | "companies" | "minutes"
 
 export default function AdminPanel({ onBack }: AdminPanelProps) {
   const [activeTab, setActiveTab] = useState<TabType>("users")
@@ -589,17 +587,6 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
             >
               📄 Minutes Templates
             </button>
-            {/* ⭐⭐ NEW: Agenda Templates Tab */}
-            <button
-              onClick={() => setActiveTab("agenda")}
-              className={`pb-2 px-1 font-medium text-sm transition-colors ${
-                activeTab === "agenda"
-                  ? "text-primary border-b-2 border-primary"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              📋 Agenda Templates
-            </button>
           </div>
         </div>
       </header>
@@ -647,15 +634,6 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
 
         {activeTab === "minutes" && (
           <MinutesTemplatesTab buildings={getBuildingsList()} loading={loading} />
-        )}
-
-        {/* ⭐⭐ NEW: Agenda Templates Tab Content */}
-        {activeTab === "agenda" && (
-          <AgendaTemplatesTab
-            companies={companies}
-            buildings={getBuildingsList()}
-            loading={loading}
-          />
         )}
       </div>
 
