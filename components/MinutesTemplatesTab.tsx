@@ -1,7 +1,7 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { GripVertical, Save, FileText } from "lucide-react"
+import { useState, useEffect, useRef, useCallback } from "react"
+import { GripVertical, Save, FileText, Loader2, Undo, Home } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { supabase } from "@/lib/supabase"
@@ -12,6 +12,7 @@ interface Building {
   address: string | null
   manager_id: number
   company_id: number | null
+  building_type?: string
   created_at: string
 }
 
@@ -20,278 +21,1515 @@ interface MinutesTemplatesTabProps {
   loading: boolean
 }
 
-type BlockType = "header" | "attendees" | "topics" | "decisions" | "footer"
-
-interface TemplateBlock {
-  id: BlockType
+interface CoverPageElement {
+  id: string
   label: string
-  icon: string
-  description: string
+  enabled: boolean
+  x: number
+  y: number
+  align: "left" | "center" | "right"
 }
 
-const DEFAULT_BLOCKS: TemplateBlock[] = [
-  { id: "header", label: "Header", icon: "📋", description: "Building name, meeting type, date, time, location" },
-  { id: "attendees", label: "Attendees", icon: "👥", description: "Present, absent, regrets" },
-  { id: "topics", label: "Topics & Notes", icon: "📝", description: "Discussion topics with descriptions and notes" },
-  { id: "decisions", label: "Decisions & Votes", icon: "⚖️", description: "Motions, results, vote counts" },
-  { id: "footer", label: "Footer", icon: "✍️", description: "Adjournment, signatures, next meeting" }
+interface TemplateField {
+  id: string
+  label: string
+  order: number
+  enabled: boolean
+  showFullList?: boolean
+}
+
+interface TemplateState {
+  coverPageElements: CoverPageElement[]
+  infoCardFields: TemplateField[]
+  coverPageColor: string
+  infoCardAccentColor: string
+  sectionHeadersColor: string
+  motionBoxesColor: string
+  actionItemsColor: string
+  voteResultsColor: string
+  coverPageHeight: number
+}
+
+interface Template {
+  id?: number
+  building_id: number
+  coverpage_elements: CoverPageElement[]
+  infocard_fields: TemplateField[]
+  coverpage_color: string
+  infocard_accent_color: string
+  section_headers_color: string
+  motion_boxes_color: string
+  action_items_color: string
+  vote_results_color: string
+  coverpage_height: number
+}
+
+interface Meeting {
+  id: number
+  title: string
+  meeting_date: string
+  start_time: string | null
+  end_time: string | null
+  location: string | null
+  meeting_type: string | null
+  chair_person: string | null
+  minute_taker: string | null
+  attendees: any[] | null
+  status: string
+  buildings: {
+    id: number
+    name: string
+    address: string | null
+    logo_url: string | null
+    company_id: number | null
+    companies: {
+      logo_url: string | null
+    } | null
+  }
+}
+
+interface Attendee {
+  name: string
+  email?: string | null
+  role?: string | null
+  present?: boolean
+  attendance_status?: "present" | "absent" | "proxy"
+}
+
+const DEFAULT_COVERPAGE_ELEMENTS: CoverPageElement[] = [
+  {
+    id: "logo",
+    label: "Building / Company Logo",
+    enabled: true,
+    x: 10,
+    y: 15,
+    align: "left",
+  },
+  {
+    id: "title",
+    label: "MEETING MINUTES",
+    enabled: true,
+    x: 50,
+    y: 40,
+    align: "center",
+  },
+  {
+    id: "building_name",
+    label: "Building Name",
+    enabled: true,
+    x: 50,
+    y: 60,
+    align: "center",
+  },
+  {
+    id: "meeting_type",
+    label: "Meeting Type",
+    enabled: true,
+    x: 50,
+    y: 70,
+    align: "center",
+  },
 ]
 
-export default function MinutesTemplatesTab({ buildings, loading }: MinutesTemplatesTabProps) {
-  const [selectedBuildingId, setSelectedBuildingId] = useState<number | null>(null)
-  const [blocks, setBlocks] = useState<TemplateBlock[]>(DEFAULT_BLOCKS)
+const DEFAULT_INFOCARD_FIELDS: TemplateField[] = [
+  { id: "date", label: "Meeting Date", order: 1, enabled: true },
+  { id: "start_time", label: "Start Time", order: 2, enabled: true },
+  { id: "end_time", label: "End Time", order: 3, enabled: true },
+  { id: "location", label: "Location", order: 4, enabled: true },
+  {
+    id: "attendees",
+    label: "Attendees",
+    order: 5,
+    enabled: true,
+    showFullList: false,
+  },
+  { id: "chair_person", label: "Chair Person", order: 6, enabled: true },
+  { id: "minute_taker", label: "Minute Taker", order: 7, enabled: true },
+]
+
+export default function MinutesTemplatesTab({
+  buildings,
+  loading,
+}: MinutesTemplatesTabProps) {
+  const [selectedBuildingId, setSelectedBuildingId] = useState<number | null>(
+    null
+  )
+
+  const [coverPageElements, setCoverPageElements] =
+    useState<CoverPageElement[]>(DEFAULT_COVERPAGE_ELEMENTS)
+  const [infoCardFields, setInfoCardFields] =
+    useState<TemplateField[]>(DEFAULT_INFOCARD_FIELDS)
+  const [coverPageColor, setCoverPageColor] = useState("#1e3a8a")
+  const [infoCardAccentColor, setInfoCardAccentColor] = useState("#2563eb")
+  const [sectionHeadersColor, setSectionHeadersColor] = useState("#2563eb")
+  const [motionBoxesColor, setMotionBoxesColor] = useState("#10b981")
+  const [actionItemsColor, setActionItemsColor] = useState("#f59e0b")
+  const [voteResultsColor, setVoteResultsColor] = useState("#8b5cf6")
+  const [coverPageHeight, setCoverPageHeight] = useState(500)
+
   const [saving, setSaving] = useState(false)
-  const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
   const [hasChanges, setHasChanges] = useState(false)
   const [loadingTemplate, setLoadingTemplate] = useState(false)
+  const [templateId, setTemplateId] = useState<number | null>(null)
+
+  const [history, setHistory] = useState<TemplateState[]>([])
+  const [historyIndex, setHistoryIndex] = useState(-1)
+
+  const [draggingElementId, setDraggingElementId] = useState<string | null>(
+    null
+  )
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 })
+  const coverPageRef = useRef<HTMLDivElement>(null)
+
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
+
+  const [meeting, setMeeting] = useState<Meeting | null>(null)
+  const [attendees, setAttendees] = useState<Attendee[]>([])
+  const [loadingMeeting, setLoadingMeeting] = useState(false)
+
+  const [sectionsData, setSectionsData] = useState<any[]>([])
+  const [topicsData, setTopicsData] = useState<any[]>([])
+  const [decisionsData, setDecisionsData] = useState<any[]>([])
+  const [tasksData, setTasksData] = useState<any[]>([])
 
   useEffect(() => {
     if (buildings.length > 0 && !selectedBuildingId) {
       setSelectedBuildingId(buildings[0].id)
     }
-  }, [buildings])
+  }, [buildings, selectedBuildingId])
+
+  const saveToHistory = useCallback(() => {
+    const currentState: TemplateState = {
+      coverPageElements: [...coverPageElements],
+      infoCardFields: [...infoCardFields],
+      coverPageColor,
+      infoCardAccentColor,
+      sectionHeadersColor,
+      motionBoxesColor,
+      actionItemsColor,
+      voteResultsColor,
+      coverPageHeight,
+    }
+
+    setHistory((prev) => {
+      const newHistory = prev.slice(0, historyIndex + 1)
+      newHistory.push(currentState)
+      return newHistory.slice(-20)
+    })
+    setHistoryIndex((prev) => Math.min(prev + 1, 19))
+  }, [
+    coverPageElements,
+    infoCardFields,
+    coverPageColor,
+    infoCardAccentColor,
+    sectionHeadersColor,
+    motionBoxesColor,
+    actionItemsColor,
+    voteResultsColor,
+    coverPageHeight,
+    historyIndex,
+  ])
+
+  const handleUndo = () => {
+    if (historyIndex > 0) {
+      const prevState = history[historyIndex - 1]
+      setCoverPageElements(prevState.coverPageElements)
+      setInfoCardFields(prevState.infoCardFields)
+      setCoverPageColor(prevState.coverPageColor)
+      setInfoCardAccentColor(prevState.infoCardAccentColor)
+      setSectionHeadersColor(prevState.sectionHeadersColor)
+      setMotionBoxesColor(prevState.motionBoxesColor)
+      setActionItemsColor(prevState.actionItemsColor)
+      setVoteResultsColor(prevState.voteResultsColor)
+      setCoverPageHeight(prevState.coverPageHeight)
+      setHistoryIndex((prev) => prev - 1)
+      setHasChanges(true)
+    }
+  }
 
   useEffect(() => {
-    if (selectedBuildingId) {
-      loadTemplate()
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "z") {
+        e.preventDefault()
+        handleUndo()
+      }
     }
+
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [historyIndex, history])
+
+  useEffect(() => {
+    if (!selectedBuildingId) return
+    loadTemplate(selectedBuildingId)
+    loadMostRecentMeeting(selectedBuildingId)
   }, [selectedBuildingId])
 
-  const loadTemplate = async () => {
-    if (!selectedBuildingId) return
+  const loadMostRecentMeeting = async (buildingId: number) => {
+    setLoadingMeeting(true)
+    try {
+      let { data: meetingData, error } = await supabase
+        .from("meetings")
+        .select(
+          `
+          *,
+          buildings(
+            id,
+            name,
+            address,
+            logo_url,
+            company_id,
+            companies(
+              logo_url
+            )
+          )
+        `
+        )
+        .eq("building_id", buildingId)
+        .in("status", ["minutes", "workingminutes"])
+        .order("meeting_date", { ascending: false })
+        .limit(1)
+        .maybeSingle()
 
+      if ((error && (error as any).code === "PGRST116") || !meetingData) {
+        const fallback = await supabase
+          .from("meetings")
+          .select(
+            `
+            *,
+            buildings(
+              id,
+              name,
+              address,
+              logo_url,
+              company_id,
+              companies(
+                logo_url
+              )
+            )
+          `
+          )
+          .eq("building_id", buildingId)
+          .order("meeting_date", { ascending: false })
+          .limit(1)
+          .maybeSingle()
+
+        meetingData = fallback.data as any
+        error = fallback.error
+      }
+
+      if (error || !meetingData) {
+        setMeeting(null)
+        setAttendees([])
+        setSectionsData([])
+        setTopicsData([])
+        setDecisionsData([])
+        setTasksData([])
+        return
+      }
+
+      setMeeting(meetingData as any)
+
+      const meetingAttendees = (meetingData.attendees as Attendee[]) || []
+      setAttendees(meetingAttendees)
+
+      await loadMinutesContent(meetingData.id)
+    } catch (err) {
+      console.error("Error loading meeting", err)
+      setMeeting(null)
+      setAttendees([])
+      setSectionsData([])
+      setTopicsData([])
+      setDecisionsData([])
+      setTasksData([])
+    } finally {
+      setLoadingMeeting(false)
+    }
+  }
+
+  const loadMinutesContent = async (meetingId: number) => {
+    try {
+      const { data: sections, error: sectionsError } = await supabase
+        .from("sections")
+        .select("*")
+        .eq("meeting_id", meetingId)
+        .order("order_index")
+
+      if (sectionsError) throw sectionsError
+
+      const { data: topics, error: topicsError } = await supabase
+        .from("topics")
+        .select("*")
+        .eq("meeting_id", meetingId)
+        .order("order_index")
+
+      if (topicsError) throw topicsError
+
+      const topicIds = (topics || []).map((t: any) => t.id)
+
+      let decisions: any[] = []
+      let tasks: any[] = []
+
+      if (topicIds.length > 0) {
+        const { data: decisionsData, error: decisionsError } = await supabase
+          .from("decisions")
+          .select("*")
+          .in("topic_id", topicIds)
+          .order("recorded_at")
+
+        if (decisionsError) throw decisionsError
+
+        const { data: tasksData, error: tasksError } = await supabase
+          .from("tasks")
+          .select("*")
+          .in("topic_id", topicIds)
+          .order("created_at")
+
+        if (tasksError) throw tasksError
+
+        decisions = decisionsData || []
+        tasks = tasksData || []
+      }
+
+      setSectionsData(sections || [])
+      setTopicsData(topics || [])
+      setDecisionsData(decisions)
+      setTasksData(tasks)
+    } catch (err) {
+      console.error("Error loading minutes content", err)
+      setSectionsData([])
+      setTopicsData([])
+      setDecisionsData([])
+      setTasksData([])
+    }
+  }
+
+  const loadTemplate = async (buildingId: number) => {
     setLoadingTemplate(true)
     try {
       const { data, error } = await supabase
-        .from('minutes_templates')
-        .select('blocks')
-        .eq('building_id', selectedBuildingId)
-        .single()
+        .from("minutes_templates")
+        .select("*")
+        .eq("building_id", buildingId)
+        .maybeSingle()
 
-      if (error) {
-        if (error.code === 'PGRST116') {
-          // No template exists yet, use defaults
-          setBlocks(DEFAULT_BLOCKS)
-        } else {
-          console.error('Error loading template:', error)
-        }
-      } else if (data && data.blocks) {
-        // Reconstruct blocks from saved IDs
-        const savedBlockIds = data.blocks as BlockType[]
-        const reconstructedBlocks = savedBlockIds
-          .map(id => DEFAULT_BLOCKS.find(b => b.id === id))
-          .filter(Boolean) as TemplateBlock[]
-        
-        setBlocks(reconstructedBlocks)
+      if (error && (error as any).code !== "PGRST116") {
+        console.error("Error loading template", error)
       }
-      
+
+      if (!data) {
+        setCoverPageElements(DEFAULT_COVERPAGE_ELEMENTS)
+        setInfoCardFields(DEFAULT_INFOCARD_FIELDS)
+        setCoverPageColor("#1e3a8a")
+        setInfoCardAccentColor("#2563eb")
+        setSectionHeadersColor("#2563eb")
+        setMotionBoxesColor("#10b981")
+        setActionItemsColor("#f59e0b")
+        setVoteResultsColor("#8b5cf6")
+        setCoverPageHeight(500)
+        setTemplateId(null)
+        setHasChanges(false)
+        saveToHistory()
+        return
+      }
+
+      setTemplateId(data.id)
+      setCoverPageColor(data.coverpage_color || "#1e3a8a")
+      setInfoCardAccentColor(data.infocard_accent_color || "#2563eb")
+      setSectionHeadersColor(data.section_headers_color || "#2563eb")
+      setMotionBoxesColor(data.motion_boxes_color || "#10b981")
+      setActionItemsColor(data.action_items_color || "#f59e0b")
+      setVoteResultsColor(data.vote_results_color || "#8b5cf6")
+      setCoverPageHeight(data.coverpage_height || 500)
+      setCoverPageElements(
+        data.coverpage_elements || DEFAULT_COVERPAGE_ELEMENTS
+      )
+      setInfoCardFields(data.infocard_fields || DEFAULT_INFOCARD_FIELDS)
       setHasChanges(false)
+      saveToHistory()
     } catch (err) {
-      console.error('Unexpected error:', err)
+      console.error("Error loading template", err)
     } finally {
       setLoadingTemplate(false)
     }
   }
 
-  const handleDragStart = (index: number) => {
+  const handleCoverMouseDown = (
+    e: React.MouseEvent,
+    elementId: string
+  ): void => {
+    saveToHistory()
+    const element = coverPageElements.find((el) => el.id === elementId)
+    if (!element || !coverPageRef.current) return
+
+    const rect = coverPageRef.current.getBoundingClientRect()
+    const elementX = (element.x / 100) * rect.width
+    const elementY = (element.y / 100) * rect.height
+
+    setDraggingElementId(elementId)
+    setDragOffset({ x: e.clientX - elementX, y: e.clientY - elementY })
+  }
+
+  const handleCoverMouseMove = (e: React.MouseEvent): void => {
+    if (!draggingElementId || !coverPageRef.current) return
+
+    const rect = coverPageRef.current.getBoundingClientRect()
+    const newX = ((e.clientX - dragOffset.x) / rect.width) * 100
+    const newY = ((e.clientY - dragOffset.y) / rect.height) * 100
+
+    const clampedX = Math.max(0, Math.min(100, newX))
+    const clampedY = Math.max(0, Math.min(100, newY))
+
+    setCoverPageElements((prev) =>
+      prev.map((el) =>
+        el.id === draggingElementId ? { ...el, x: clampedX, y: clampedY } : el
+      )
+    )
+    setHasChanges(true)
+  }
+
+  const handleCoverMouseUp = (): void => {
+    setDraggingElementId(null)
+  }
+
+  const handleInfoDragStart = (index: number) => {
+    saveToHistory()
     setDraggedIndex(index)
   }
 
-  const handleDragOver = (e: React.DragEvent, index: number) => {
+  const handleInfoDragOver = (e: React.DragEvent, index: number) => {
     e.preventDefault()
-    
     if (draggedIndex === null || draggedIndex === index) return
 
-    const newBlocks = [...blocks]
-    const draggedBlock = newBlocks[draggedIndex]
-    
-    newBlocks.splice(draggedIndex, 1)
-    newBlocks.splice(index, 0, draggedBlock)
-    
-    setBlocks(newBlocks)
+    const fields = [...infoCardFields]
+    const draggedField = fields[draggedIndex]
+    fields.splice(draggedIndex, 1)
+    fields.splice(index, 0, draggedField)
+    fields.forEach((field, i) => (field.order = i + 1))
+
+    setInfoCardFields(fields)
     setDraggedIndex(index)
     setHasChanges(true)
   }
 
-  const handleDragEnd = () => {
+  const handleInfoDragEnd = () => {
     setDraggedIndex(null)
+  }
+
+  const toggleAttendeesDisplay = (fieldId: string) => {
+    saveToHistory()
+    setInfoCardFields((prev) =>
+      prev.map((f) =>
+        f.id === fieldId ? { ...f, showFullList: !f.showFullList } : f
+      )
+    )
+    setHasChanges(true)
   }
 
   const handleSave = async () => {
     if (!selectedBuildingId) {
-      alert('Please select a building')
+      alert("Please select a building first.")
       return
     }
 
     setSaving(true)
     try {
-      const blockIds = blocks.map(b => b.id)
+      const templateData: Partial<Template> = {
+        building_id: selectedBuildingId,
+        coverpage_elements: coverPageElements,
+        infocard_fields: infoCardFields,
+        coverpage_color: coverPageColor,
+        infocard_accent_color: infoCardAccentColor,
+        section_headers_color: sectionHeadersColor,
+        motion_boxes_color: motionBoxesColor,
+        action_items_color: actionItemsColor,
+        vote_results_color: voteResultsColor,
+        coverpage_height: coverPageHeight,
+      }
 
-      // Check if template exists
-      const { data: existing } = await supabase
-        .from('minutes_templates')
-        .select('id')
-        .eq('building_id', selectedBuildingId)
-        .single()
-
-      if (existing) {
-        // Update existing
+      if (templateId) {
         const { error } = await supabase
-          .from('minutes_templates')
-          .update({ blocks: blockIds, updated_at: new Date().toISOString() })
-          .eq('building_id', selectedBuildingId)
-
-        if (error) {
-          console.error('Error updating template:', error)
-          alert('Failed to save template')
-          return
-        }
-      } else {
-        // Insert new
-        const { error } = await supabase
-          .from('minutes_templates')
-          .insert({
-            building_id: selectedBuildingId,
-            blocks: blockIds
+          .from("minutes_templates")
+          .update({
+            ...templateData,
+            updated_at: new Date().toISOString(),
           })
+          .eq("id", templateId)
 
-        if (error) {
-          console.error('Error creating template:', error)
-          alert('Failed to save template')
-          return
-        }
+        if (error) throw error
+      } else {
+        const { data, error } = await supabase
+          .from("minutes_templates")
+          .insert(templateData as any)
+          .select()
+          .single()
+
+        if (error) throw error
+        if (data) setTemplateId(data.id)
       }
 
       setHasChanges(false)
-      alert('✅ Template saved successfully!')
+      alert(
+        "Minutes template saved. Minutes for this building will use this design."
+      )
     } catch (err) {
-      console.error('Unexpected error:', err)
-      alert('Failed to save template')
+      console.error("Error saving template", err)
+      alert("Failed to save template.")
     } finally {
       setSaving(false)
     }
   }
 
-  const selectedBuilding = buildings.find(b => b.id === selectedBuildingId)
+  const formatMeetingDate = (dateStr: string) => {
+    const date = new Date(dateStr)
+    return date.toLocaleDateString("en-US", {
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    })
+  }
 
-  return (
-    <>
-      <div className="mb-6">
-        <h2 className="text-2xl font-bold text-foreground mb-2">Minutes Templates</h2>
-        <p className="text-muted-foreground">
-          Customize the layout and order of sections in meeting minutes for each building
+  const getAttendeesCount = () => {
+    const present = attendees.filter(
+      (a) => a.attendance_status === "present" || a.present === true
+    ).length
+    const absent = attendees.filter(
+      (a) => a.attendance_status === "absent" || a.present === false
+    ).length
+    const proxy = attendees.filter(
+      (a) => a.attendance_status === "proxy"
+    ).length
+    return { present, absent, proxy }
+  }
+
+  const hexToRgb = (hex: string): [number, number, number] => {
+    const result =
+      /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)
+    return result
+      ? [
+          parseInt(result[1], 16),
+          parseInt(result[2], 16),
+          parseInt(result[3], 16),
+        ]
+      : [30, 58, 138]
+  }
+
+  const getLighterColor = (hex: string, amount: number = 80) => {
+    const [r, g, b] = hexToRgb(hex)
+    return `rgb(${Math.min(255, r + amount)}, ${Math.min(
+      255,
+      g + amount
+    )}, ${Math.min(255, b + amount)})`
+  }
+
+  const attendeesCounts = getAttendeesCount()
+
+  if (loading) {
+    return (
+      <div className="text-center py-12">
+        <Loader2 className="h-8 w-8 animate-spin mx-auto mb-2 text-primary" />
+        <p className="text-muted-foreground">Loading buildings...</p>
+      </div>
+    )
+  }
+
+  if (!loading && buildings.length === 0) {
+    return (
+      <div className="text-center py-12 border-2 border-dashed border-border rounded-lg">
+        <FileText className="h-12 w-12 mx-auto text-muted-foreground mb-2" />
+        <p className="text-muted-foreground mb-2">No buildings available</p>
+        <p className="text-sm text-muted-foreground">
+          Create a building first to manage its minutes template.
         </p>
       </div>
+    )
+  }
 
-      {loading ? (
-        <div className="text-center py-12">
-          <p className="text-muted-foreground">Loading buildings...</p>
-        </div>
-      ) : buildings.length === 0 ? (
-        <div className="text-center py-12 border-2 border-dashed border-border rounded-lg">
-          <FileText className="h-12 w-12 mx-auto text-muted-foreground mb-2" />
-          <p className="text-muted-foreground mb-2">No buildings available</p>
-          <p className="text-sm text-muted-foreground">Create a building first to manage its minutes template</p>
-        </div>
-      ) : (
-        <>
-          {/* Building Selector */}
-          <Card className="p-4 mb-6">
-            <div className="flex items-center gap-4">
-              <label className="text-sm font-semibold text-foreground">Select Building:</label>
-              <select
-                value={selectedBuildingId || ""}
-                onChange={(e) => setSelectedBuildingId(Number(e.target.value))}
-                className="flex-1 px-3 py-2 bg-background border border-border rounded focus:outline-none focus:ring-2 focus:ring-primary/50"
-              >
-                {buildings.map(building => (
-                  <option key={building.id} value={building.id}>
-                    {building.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </Card>
+  return (
+    <div className="mb-6">
+      <h2 className="text-2xl font-bold text-foreground mb-1">
+        Minutes Templates
+      </h2>
+      <p className="text-muted-foreground mb-4">
+        Building-specific template: choose a building, then design its minutes
+        layout. The preview below uses the latest meeting’s minutes for that
+        building.
+      </p>
 
-          {loadingTemplate ? (
+      <div className="mb-4">
+        <Card className="p-4 mb-6">
+          <div className="flex items-center gap-4">
+            <Home className="h-5 w-5 text-primary" />
+            <span className="text-sm font-semibold">Select Building</span>
+            <select
+              value={selectedBuildingId ?? ""}
+              onChange={(e) =>
+                setSelectedBuildingId(
+                  e.target.value ? Number(e.target.value) : null
+                )
+              }
+              className="flex-1 px-3 py-2 bg-background border border-border rounded focus:outline-none focus:ring-2 focus:ring-primary/50"
+            >
+              {buildings.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+            </select>
+
+            <Button
+              onClick={handleUndo}
+              disabled={historyIndex <= 0}
+              variant="outline"
+              size="sm"
+              className="gap-2"
+            >
+              <Undo className="h-4 w-4" />
+              Undo (Ctrl+Z)
+            </Button>
+          </div>
+        </Card>
+
+        <Card className="p-4 mb-6">
+          {loadingTemplate || loadingMeeting ? (
             <div className="text-center py-12">
-              <p className="text-muted-foreground">Loading template...</p>
+              <Loader2 className="h-8 w-8 animate-spin mx-auto mb-2 text-primary" />
+              <p className="text-muted-foreground">
+                Loading template preview...
+              </p>
+            </div>
+          ) : !meeting ? (
+            <div className="text-center py-12 border-2 border-dashed rounded-lg">
+              <FileText className="h-12 w-12 mx-auto text-muted-foreground mb-2" />
+              <p className="text-muted-foreground">
+                No meeting found for this building. Create at least one meeting
+                to see the live minutes preview.
+              </p>
             </div>
           ) : (
-            <>
-              {/* Template Editor */}
-              <Card className="p-6 mb-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <h3 className="text-lg font-semibold text-foreground">Minutes Layout</h3>
-                    <p className="text-sm text-muted-foreground">Drag blocks to reorder them</p>
+            <div className="grid grid-cols-12 gap-6 mb-6">
+              {/* Left controls */}
+              <div className="col-span-12 lg:col-span-3 space-y-4">
+                <Card className="p-4">
+                  <h3 className="text-sm font-semibold mb-3">
+                    Header Height
+                  </h3>
+                  <input
+                    type="range"
+                    min={300}
+                    max={800}
+                    value={coverPageHeight}
+                    onChange={(e) => {
+                      saveToHistory()
+                      setCoverPageHeight(Number(e.target.value))
+                      setHasChanges(true)
+                    }}
+                    className="w-full mb-2"
+                  />
+                  <div className="text-center text-sm font-semibold text-primary">
+                    {coverPageHeight}px
                   </div>
-                  <Button
-                    onClick={handleSave}
-                    disabled={saving || !hasChanges}
-                    className="bg-gradient-to-r from-primary to-decision-purple text-primary-foreground"
-                  >
-                    <Save className="h-4 w-4 mr-2" />
-                    {saving ? "Saving..." : "Save Template"}
-                  </Button>
-                </div>
+                </Card>
 
-                <div className="space-y-2">
-                  {blocks.map((block, index) => (
+                <Card className="p-4">
+                  <h3 className="text-sm font-semibold mb-3">
+                    Cover Background
+                  </h3>
+                  <input
+                    type="color"
+                    value={coverPageColor}
+                    onChange={(e) => {
+                      saveToHistory()
+                      setCoverPageColor(e.target.value)
+                      setHasChanges(true)
+                    }}
+                    className="w-full h-16 rounded border cursor-pointer mb-2"
+                  />
+                  <input
+                    type="text"
+                    value={coverPageColor}
+                    onChange={(e) => {
+                      setCoverPageColor(e.target.value)
+                      setHasChanges(true)
+                    }}
+                    className="w-full px-2 py-1 border rounded text-sm"
+                  />
+                </Card>
+
+                <Card className="p-4">
+                  <h3 className="text-sm font-semibold mb-3">
+                    Info Card Accent
+                  </h3>
+                  <input
+                    type="color"
+                    value={infoCardAccentColor}
+                    onChange={(e) => {
+                      saveToHistory()
+                      setInfoCardAccentColor(e.target.value)
+                      setHasChanges(true)
+                    }}
+                    className="w-full h-16 rounded border cursor-pointer mb-2"
+                  />
+                  <input
+                    type="text"
+                    value={infoCardAccentColor}
+                    onChange={(e) => {
+                      setInfoCardAccentColor(e.target.value)
+                      setHasChanges(true)
+                    }}
+                    className="w-full px-2 py-1 border rounded text-sm"
+                  />
+                </Card>
+
+                <Card className="p-4">
+                  <h3 className="text-sm font-semibold mb-3">
+                    Section Headers
+                  </h3>
+                  <input
+                    type="color"
+                    value={sectionHeadersColor}
+                    onChange={(e) => {
+                      saveToHistory()
+                      setSectionHeadersColor(e.target.value)
+                      setHasChanges(true)
+                    }}
+                    className="w-full h-16 rounded border cursor-pointer mb-2"
+                  />
+                  <input
+                    type="text"
+                    value={sectionHeadersColor}
+                    onChange={(e) => {
+                      setSectionHeadersColor(e.target.value)
+                      setHasChanges(true)
+                    }}
+                    className="w-full px-2 py-1 border rounded text-sm"
+                  />
+                </Card>
+
+                <Card className="p-4">
+                  <h3 className="text-sm font-semibold mb-3">
+                    Motion Boxes
+                  </h3>
+                  <input
+                    type="color"
+                    value={motionBoxesColor}
+                    onChange={(e) => {
+                      saveToHistory()
+                      setMotionBoxesColor(e.target.value)
+                      setHasChanges(true)
+                    }}
+                    className="w-full h-16 rounded border cursor-pointer mb-2"
+                  />
+                  <input
+                    type="text"
+                    value={motionBoxesColor}
+                    onChange={(e) => {
+                      setMotionBoxesColor(e.target.value)
+                      setHasChanges(true)
+                    }}
+                    className="w-full px-2 py-1 border rounded text-sm"
+                  />
+                </Card>
+
+                <Card className="p-4">
+                  <h3 className="text-sm font-semibold mb-3">
+                    Action Items
+                  </h3>
+                  <input
+                    type="color"
+                    value={actionItemsColor}
+                    onChange={(e) => {
+                      saveToHistory()
+                      setActionItemsColor(e.target.value)
+                      setHasChanges(true)
+                    }}
+                    className="w-full h-16 rounded border cursor-pointer mb-2"
+                  />
+                  <input
+                    type="text"
+                    value={actionItemsColor}
+                    onChange={(e) => {
+                      setActionItemsColor(e.target.value)
+                      setHasChanges(true)
+                    }}
+                    className="w-full px-2 py-1 border rounded text-sm"
+                  />
+                </Card>
+
+                <Card className="p-4">
+                  <h3 className="text-sm font-semibold mb-3">
+                    Vote Results
+                  </h3>
+                  <input
+                    type="color"
+                    value={voteResultsColor}
+                    onChange={(e) => {
+                      saveToHistory()
+                      setVoteResultsColor(e.target.value)
+                      setHasChanges(true)
+                    }}
+                    className="w-full h-16 rounded border cursor-pointer mb-2"
+                  />
+                  <input
+                    type="text"
+                    value={voteResultsColor}
+                    onChange={(e) => {
+                      setVoteResultsColor(e.target.value)
+                      setHasChanges(true)
+                    }}
+                    className="w-full px-2 py-1 border rounded text-sm"
+                  />
+                </Card>
+              </div>
+
+              {/* Right live preview */}
+              <div className="col-span-12 lg:col-span-9">
+                <Card className="p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-semibold">
+                      Live Minutes Preview
+                    </h3>
+                    <span className="text-xs bg-purple-100 text-purple-800 px-3 py-1 rounded-full font-semibold">
+                      {meeting.title}
+                    </span>
+                  </div>
+
+                  <div className="border-4 border-gray-400 rounded-lg overflow-y-auto bg-white shadow-2xl max-h-[1000px]">
+                    {/* Cover */}
                     <div
-                      key={block.id}
-                      draggable
-                      onDragStart={() => handleDragStart(index)}
-                      onDragOver={(e) => handleDragOver(e, index)}
-                      onDragEnd={handleDragEnd}
-                      className={`flex items-center gap-3 p-4 bg-background border-2 rounded-lg cursor-move transition-all ${
-                        draggedIndex === index 
-                          ? "border-primary bg-primary/5 opacity-50" 
-                          : "border-border hover:border-primary/50 hover:shadow-md"
-                      }`}
+                      ref={coverPageRef}
+                      className="relative text-white cursor-crosshair select-none"
+                      style={{
+                        backgroundColor: coverPageColor,
+                        height: `${coverPageHeight}px`,
+                        position: "relative",
+                      }}
+                      onMouseMove={handleCoverMouseMove}
+                      onMouseUp={handleCoverMouseUp}
+                      onMouseLeave={handleCoverMouseUp}
                     >
-                      <GripVertical className="h-5 w-5 text-muted-foreground flex-shrink-0" />
-                      <div className="flex items-center gap-3 flex-1">
-                        <span className="text-2xl">{block.icon}</span>
-                        <div>
-                          <p className="font-semibold text-foreground">{block.label}</p>
-                          <p className="text-xs text-muted-foreground">{block.description}</p>
+                      {coverPageElements
+                        .filter((el) => el.enabled)
+                        .map((element) => (
+                          <div
+                            key={element.id}
+                            className={`absolute cursor-move transition-opacity ${
+                              draggingElementId === element.id
+                                ? "opacity-70 scale-105"
+                                : "hover:opacity-90"
+                            }`}
+                            style={{
+                              left: `${element.x}%`,
+                              top: `${element.y}%`,
+                              transform:
+                                element.align === "center"
+                                  ? "translate(-50%, -50%)"
+                                  : element.align === "right"
+                                  ? "translate(-100%, -50%)"
+                                  : "translate(0, -50%)",
+                              zIndex:
+                                draggingElementId === element.id ? 50 : 10,
+                            }}
+                            onMouseDown={(e) =>
+                              handleCoverMouseDown(e, element.id)
+                            }
+                          >
+                            <div className="relative group">
+                              <GripVertical className="absolute -left-7 top-1/2 -translate-y-1/2 h-5 w-5 opacity-50 group-hover:opacity-100" />
+                              {element.id === "logo" && (
+                                <div
+                                  className="bg-white rounded-full flex items-center justify-center shadow-lg"
+                                  style={{ width: 80, height: 80 }}
+                                >
+                                  {meeting.buildings.logo_url ||
+                                  meeting.buildings.companies?.logo_url ? (
+                                    <img
+                                      src={
+                                        meeting.buildings.logo_url ||
+                                        meeting.buildings.companies?.logo_url ||
+                                        ""
+                                      }
+                                      alt="Logo"
+                                      className="w-16 h-16 object-contain"
+                                    />
+                                  ) : (
+                                    <span className="text-5xl">🏢</span>
+                                  )}
+                                </div>
+                              )}
+
+                              {element.id === "title" && (
+                                <div className="text-center">
+                                  <div className="text-5xl font-bold tracking-wider leading-tight">
+                                    MEETING
+                                  </div>
+                                  <div className="text-5xl font-bold tracking-wider leading-tight">
+                                    MINUTES
+                                  </div>
+                                </div>
+                              )}
+
+                              {element.id === "building_name" && (
+                                <div
+                                  className="text-2xl font-light tracking-wide whitespace-nowrap"
+                                  style={{
+                                    color: "rgba(200, 220, 255, 0.95)",
+                                  }}
+                                >
+                                  {meeting.buildings.name}
+                                </div>
+                              )}
+
+                              {element.id === "meeting_type" && (
+                                <div
+                                  className="text-lg font-normal tracking-wide whitespace-nowrap"
+                                  style={{
+                                    color: "rgba(200, 220, 255, 0.9)",
+                                  }}
+                                >
+                                  {meeting.meeting_type || "Council Meeting"}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+
+                    {/* Info card */}
+                    <div className="p-6 bg-gray-50">
+                      <div className="bg-white rounded-lg shadow-xl overflow-hidden border">
+                        <div
+                          className="px-4 py-3 text-white font-bold text-sm"
+                          style={{ backgroundColor: infoCardAccentColor }}
+                        >
+                          MEETING INFORMATION
+                        </div>
+                        <div className="p-4 grid grid-cols-2 gap-x-6 gap-y-4">
+                          {infoCardFields
+                            .filter((f) => f.enabled)
+                            .sort((a, b) => a.order - b.order)
+                            .map((field, index) => (
+                              <div
+                                key={field.id}
+                                draggable
+                                onDragStart={() => handleInfoDragStart(index)}
+                                onDragOver={(e) =>
+                                  handleInfoDragOver(e, index)
+                                }
+                                onDragEnd={handleInfoDragEnd}
+                                className={`group cursor-move transition-all ${
+                                  draggedIndex === index
+                                    ? "scale-105 bg-blue-50 p-2 rounded"
+                                    : "hover:bg-gray-50 p-2 rounded"
+                                } ${
+                                  field.id === "attendees" ? "col-span-2" : ""
+                                }`}
+                              >
+                                <div className="flex items-start gap-2">
+                                  <GripVertical className="h-4 w-4 text-gray-300 mt-0.5 opacity-0 group-hover:opacity-100" />
+                                  <div className="flex-1">
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <div className="text-[10px] font-bold text-gray-600 uppercase">
+                                        {field.label}
+                                      </div>
+                                      {field.id === "attendees" && (
+                                        <button
+                                          onClick={() =>
+                                            toggleAttendeesDisplay(field.id)
+                                          }
+                                          className="text-[9px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded hover:bg-blue-200"
+                                        >
+                                          {field.showFullList
+                                            ? "Show Count"
+                                            : "Show List"}
+                                        </button>
+                                      )}
+                                    </div>
+
+                                    <div className="text-xs text-gray-900 font-medium">
+                                      {field.id === "date" &&
+                                        formatMeetingDate(meeting.meeting_date)}
+                                      {field.id === "start_time" &&
+                                        (meeting.start_time || "TBA")}
+                                      {field.id === "end_time" &&
+                                        (meeting.end_time || "TBA")}
+                                      {field.id === "location" &&
+                                        (meeting.location || "TBA")}
+                                      {field.id === "chair_person" &&
+                                        (meeting.chair_person || "TBA")}
+                                      {field.id === "minute_taker" &&
+                                        (meeting.minute_taker || "TBA")}
+                                      {field.id === "attendees" &&
+                                        (field.showFullList ? (
+                                          <div className="space-y-1 mt-1">
+                                            {attendees.length === 0 ? (
+                                              <div>No attendees recorded</div>
+                                            ) : (
+                                              <>
+                                                {attendees.filter(
+                                                  (a) =>
+                                                    a.attendance_status ===
+                                                      "present" ||
+                                                    a.present === true
+                                                ).length > 0 && (
+                                                  <div>
+                                                    <span className="font-bold text-green-700">
+                                                      Present:
+                                                    </span>{" "}
+                                                    {attendees
+                                                      .filter(
+                                                        (a) =>
+                                                          a.attendance_status ===
+                                                            "present" ||
+                                                          a.present === true
+                                                      )
+                                                      .map((a) => a.name)
+                                                      .join(", ")}
+                                                  </div>
+                                                )}
+                                                {attendees.filter(
+                                                  (a) =>
+                                                    a.attendance_status ===
+                                                      "absent" ||
+                                                    a.present === false
+                                                ).length > 0 && (
+                                                  <div>
+                                                    <span className="font-bold text-red-700">
+                                                      Absent:
+                                                    </span>{" "}
+                                                    {attendees
+                                                      .filter(
+                                                        (a) =>
+                                                          a.attendance_status ===
+                                                            "absent" ||
+                                                          a.present === false
+                                                      )
+                                                      .map((a) => a.name)
+                                                      .join(", ")}
+                                                  </div>
+                                                )}
+                                                {attendees.filter(
+                                                  (a) =>
+                                                    a.attendance_status ===
+                                                    "proxy"
+                                                ).length > 0 && (
+                                                  <div>
+                                                    <span className="font-bold text-blue-700">
+                                                      Proxy:
+                                                    </span>{" "}
+                                                    {attendees
+                                                      .filter(
+                                                        (a) =>
+                                                          a.attendance_status ===
+                                                          "proxy"
+                                                      )
+                                                      .map((a) => a.name)
+                                                      .join(", ")}
+                                                  </div>
+                                                )}
+                                              </>
+                                            )}
+                                          </div>
+                                        ) : (
+                                          `${attendeesCounts.present} Present, ${attendeesCounts.absent} Absent, ${attendeesCounts.proxy} Proxy`
+                                        ))}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
                         </div>
                       </div>
-                      <div className="text-sm text-muted-foreground font-mono">
-                        #{index + 1}
-                      </div>
                     </div>
-                  ))}
-                </div>
-              </Card>
 
-              {/* Preview Info */}
-              <Card className="p-4 bg-blue-50 border-blue-200">
-                <div className="flex items-start gap-3">
-                  <FileText className="h-5 w-5 text-blue-600 mt-0.5" />
-                  <div>
-                    <h4 className="font-semibold text-blue-900 mb-1">Template Preview</h4>
-                    <p className="text-sm text-blue-800 mb-2">
-                      When generating minutes for <strong>{selectedBuilding?.name}</strong>, sections will appear in this order:
-                    </p>
-                    <ol className="text-sm text-blue-800 space-y-1 ml-4">
-                      {blocks.map((block, index) => (
-                        <li key={block.id}>
-                          {index + 1}. {block.icon} {block.label}
-                        </li>
-                      ))}
-                    </ol>
-                    <p className="text-xs text-blue-700 mt-3">
-                      💡 <strong>Coming soon:</strong> Generate Minutes button in meeting view
-                    </p>
+                    {/* Attendees table (match PDF) */}
+                    <div className="px-6 pb-6">
+                      {attendees.length > 0 && (
+                        <div className="rounded-lg overflow-hidden border shadow-sm">
+                          <div
+                            className="px-4 py-2 text-white text-xs font-bold tracking-wide"
+                            style={{ backgroundColor: infoCardAccentColor }}
+                          >
+                            👥 ATTENDEES
+                          </div>
+                          <table className="w-full border-collapse bg-gray-50">
+                            <thead>
+                              <tr className="border-b border-gray-200">
+                                <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase w-10">
+                                  #
+                                </th>
+                                <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase">
+                                  Name
+                                </th>
+                                <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase w-32">
+                                  Role
+                                </th>
+                                <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase w-48">
+                                  Email
+                                </th>
+                                <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase w-20">
+                                  Status
+                                </th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {attendees.map((a, idx) => {
+                                const isPresent =
+                                  a.present === true ||
+                                  a.attendance_status === "present"
+                                const statusClass = isPresent
+                                  ? "bg-emerald-100 text-emerald-800"
+                                  : "bg-rose-100 text-rose-800"
+                                const statusText = isPresent
+                                  ? "Present"
+                                  : "Absent"
+                                const role = a.role || "—"
+                                const email = a.email || "—"
+
+                                return (
+                                  <tr
+                                    key={idx}
+                                    className="border-b border-gray-200 last:border-b-0 bg-white"
+                                  >
+                                    <td className="px-3 py-2 text-[11px] text-gray-700">
+                                      {idx + 1}
+                                    </td>
+                                    <td className="px-3 py-2 text-[11px] text-gray-900">
+                                      {a.name}
+                                    </td>
+                                    <td className="px-3 py-2 text-[11px] text-gray-700">
+                                      {role}
+                                    </td>
+                                    <td className="px-3 py-2 text-[11px] text-gray-700">
+                                      {email}
+                                    </td>
+                                    <td className="px-3 py-2 text-[11px]">
+                                      <span
+                                        className={`inline-block px-2 py-0.5 rounded text-[10px] font-semibold ${statusClass}`}
+                                      >
+                                        {statusText}
+                                      </span>
+                                    </td>
+                                  </tr>
+                                )
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Sections / topics / decisions / tasks */}
+                    <div className="p-6 bg-white space-y-6">
+                      {sectionsData.length === 0 ? (
+                        <div className="text-center py-8 text-muted-foreground border-2 border-dashed border-border rounded-lg">
+                          No sections/topics/decisions/tasks recorded for this
+                          meeting.
+                        </div>
+                      ) : (
+                        <>
+                          {sectionsData.map((section, sIdx) => {
+                            const sectionTopics = topicsData.filter(
+                              (t: any) => t.section_id === section.id
+                            )
+
+                            return (
+                              <div key={section.id} className="space-y-3">
+                                <div
+                                  className="px-4 py-3 text-white font-bold text-lg rounded"
+                                  style={{
+                                    backgroundColor: sectionHeadersColor,
+                                  }}
+                                >
+                                  {sIdx + 1}. {section.title}
+                                </div>
+
+                                {sectionTopics.map(
+                                  (topic: any, tIdx: number) => {
+                                    const topicDecisions = decisionsData.filter(
+                                      (d: any) => d.topic_id === topic.id
+                                    )
+                                    const topicTasks = tasksData.filter(
+                                      (t: any) => t.topic_id === topic.id
+                                    )
+                                    const isInCamera =
+                                      topic.isincamera === true
+
+                                    return (
+                                      <div
+                                        key={topic.id}
+                                        className="mt-2 ml-4 space-y-3"
+                                      >
+                                        <h3 className="text-base font-bold text-gray-900">
+                                          {sIdx + 1}.{tIdx + 1} {topic.title}
+                                        </h3>
+
+                                        {isInCamera ? (
+                                          <div className="text-xs text-red-700 bg-red-50 border border-red-200 px-3 py-2 rounded">
+                                            This topic is in-camera. Content is
+                                            confidential.
+                                          </div>
+                                        ) : (
+                                          <>
+                                            {topic.description && (
+                                              <p className="text-sm text-gray-600">
+                                                {topic.description}
+                                              </p>
+                                            )}
+
+                                            {/* Decisions / Motions */}
+                                            {topicDecisions.map(
+                                              (decision: any) => (
+                                                <div
+                                                  key={decision.id}
+                                                  className="border-2 rounded-lg p-4"
+                                                  style={{
+                                                    borderColor:
+                                                      motionBoxesColor,
+                                                    backgroundColor:
+                                                      getLighterColor(
+                                                        motionBoxesColor,
+                                                        230
+                                                      ),
+                                                  }}
+                                                >
+                                                  <div className="flex items-center gap-2 mb-2">
+                                                    <div
+                                                      className="px-3 py-1 rounded text-white font-bold text-xs"
+                                                      style={{
+                                                        backgroundColor:
+                                                          motionBoxesColor,
+                                                      }}
+                                                    >
+                                                      {(
+                                                        decision.result ||
+                                                        "MOTION"
+                                                      ).toUpperCase()}
+                                                    </div>
+                                                  </div>
+                                                  <div className="text-sm font-semibold text-gray-800 mb-3">
+                                                    {decision.motion_text}
+                                                  </div>
+                                                  {decision.votes_for !==
+                                                    null && (
+                                                    <div
+                                                      className="flex items-center gap-4 text-xs p-3 rounded"
+                                                      style={{
+                                                        backgroundColor:
+                                                          voteResultsColor,
+                                                        color: "white",
+                                                      }}
+                                                    >
+                                                      <div>
+                                                        <span className="font-bold">
+                                                          FOR:
+                                                        </span>{" "}
+                                                        {decision.votes_for || 0}
+                                                      </div>
+                                                      <div>
+                                                        <span className="font-bold">
+                                                          AGAINST:
+                                                        </span>{" "}
+                                                        {decision.votes_against ||
+                                                          0}
+                                                      </div>
+                                                      <div>
+                                                        <span className="font-bold">
+                                                          ABSTAIN:
+                                                        </span>{" "}
+                                                        {decision.votes_abstain ||
+                                                          0}
+                                                      </div>
+                                                      <div className="ml-auto font-bold">
+                                                        {decision.result ||
+                                                          "PASSED"}
+                                                      </div>
+                                                    </div>
+                                                  )}
+                                                </div>
+                                              )
+                                            )}
+
+                                            {/* Action items / Tasks */}
+                                            {topicTasks.map((task: any) => (
+                                              <div
+                                                key={task.id}
+                                                className="border-l-4 p-4 rounded"
+                                                style={{
+                                                  borderLeftColor:
+                                                    actionItemsColor,
+                                                  backgroundColor:
+                                                    getLighterColor(
+                                                      actionItemsColor,
+                                                      230
+                                                    ),
+                                                }}
+                                              >
+                                                <div className="flex items-center gap-2 mb-2">
+                                                  <div
+                                                    className="px-3 py-1 rounded text-white font-bold text-xs"
+                                                    style={{
+                                                      backgroundColor:
+                                                        actionItemsColor,
+                                                    }}
+                                                  >
+                                                    ACTION ITEM
+                                                  </div>
+                                                </div>
+                                                <div className="text-sm font-semibold text-gray-800 mb-1">
+                                                  {task.description}
+                                                </div>
+                                                <div className="text-xs text-gray-600">
+                                                  {task.assigned_name && (
+                                                    <>
+                                                      <span className="font-semibold">
+                                                        Assigned to:
+                                                      </span>{" "}
+                                                      {task.assigned_name}
+                                                    </>
+                                                  )}
+                                                  {task.due_date && (
+                                                    <>
+                                                      {" | "}
+                                                      <span className="font-semibold">
+                                                        Due:
+                                                      </span>{" "}
+                                                      {new Date(
+                                                        task.due_date
+                                                      ).toLocaleDateString()}
+                                                    </>
+                                                  )}
+                                                  {task.status && (
+                                                    <>
+                                                      {" | "}
+                                                      <span className="font-semibold">
+                                                        Status:
+                                                      </span>{" "}
+                                                      {task.status}
+                                                    </>
+                                                  )}
+                                                </div>
+                                              </div>
+                                            ))}
+                                          </>
+                                        )}
+                                      </div>
+                                    )
+                                  }
+                                )}
+                              </div>
+                            )
+                          })}
+
+                          {/* Decisions & votes summary (like PDF) */}
+                          {decisionsData.length > 0 && (
+                            <>
+                              <div
+                                className="px-4 py-3 text-white font-bold text-lg rounded mt-6"
+                                style={{
+                                  backgroundColor: sectionHeadersColor,
+                                }}
+                              >
+                                ⚖️ Decisions & Votes
+                              </div>
+                              <p className="text-xs text-gray-600 mt-1 mb-2 ml-4">
+                                Summary of all motions and vote results recorded
+                                during this meeting.
+                              </p>
+                              {decisionsData.map((decision: any) => {
+                                const topic = topicsData.find(
+                                  (t: any) => t.id === decision.topic_id
+                                )
+                                const section = sectionsData.find(
+                                  (s: any) =>
+                                    s.id === (topic ? topic.section_id : null)
+                                )
+
+                                const votes =
+                                  decision.votes_for != null
+                                    ? ` (For: ${decision.votes_for || 0}, Against: ${
+                                        decision.votes_against || 0
+                                      }, Abstain: ${
+                                        decision.votes_abstain || 0
+                                      })`
+                                    : ""
+
+                                return (
+                                  <div
+                                    key={decision.id}
+                                    className="mx-5 mb-3 p-3 rounded-lg border bg-purple-50 border-purple-200 text-xs"
+                                  >
+                                    <div className="text-[11px] text-gray-600 mb-1">
+                                      From{" "}
+                                      <strong>
+                                        {section
+                                          ? section.title
+                                          : "Unknown section"}
+                                      </strong>{" "}
+                                      →{" "}
+                                      {topic
+                                        ? topic.title
+                                        : "Unknown topic"}
+                                    </div>
+                                    <div className="font-semibold text-gray-800 mb-1">
+                                      {decision.motion_text}
+                                    </div>
+                                    {decision.result && (
+                                      <div
+                                        className="px-3 py-2 rounded text-[11px] font-medium"
+                                        style={{
+                                          backgroundColor: voteResultsColor,
+                                          color: "white",
+                                        }}
+                                      >
+                                        <strong>Result:</strong>{" "}
+                                        {decision.result}
+                                        {votes}
+                                      </div>
+                                    )}
+                                  </div>
+                                )
+                              })}
+                            </>
+                          )}
+                        </>
+                      )}
+                    </div>
+
+                    {/* Summary note */}
+                    <div className="mt-6 p-4 bg-gradient-to-r from-purple-50 to-blue-50 border-2 border-purple-300 rounded-lg">
+                      <p className="text-sm font-semibold text-purple-900">
+                        This preview uses the latest meeting for this building
+                        and applies your template. What you see here (sections,
+                        topics, motions, decisions, tasks, attendees) matches
+                        the minutes PDF; only the layout/colors change when you
+                        edit the template.
+                      </p>
+                    </div>
                   </div>
-                </div>
-              </Card>
-            </>
+
+                  <div className="flex justify-center mt-6">
+                    <Button
+                      onClick={handleSave}
+                      disabled={saving || !hasChanges}
+                      size="lg"
+                      className="px-12 py-6 text-lg shadow-lg"
+                    >
+                      <Save className="h-5 w-5 mr-3" />
+                      {saving
+                        ? "Saving..."
+                        : hasChanges
+                        ? "Save Template"
+                        : "No Changes"}
+                    </Button>
+                  </div>
+                </Card>
+              </div>
+            </div>
           )}
-        </>
-      )}
-    </>
+        </Card>
+      </div>
+    </div>
   )
 }

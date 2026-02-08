@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/select"
 import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
+import ImportUsersModal from "./ImportUsersModal"
 
 interface User {
   id: number
@@ -77,6 +78,8 @@ export default function BuildingDetailsModal({
   const [newUserType, setNewUserType] = useState("user")
   const [creatingUser, setCreatingUser] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const [showImportModal, setShowImportModal] = useState(false)
 
   useEffect(() => {
     if (isOpen && building) {
@@ -456,14 +459,25 @@ export default function BuildingDetailsModal({
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <h3 className="font-semibold text-foreground">Manage Building Users</h3>
-                <Button
-                  onClick={() => setShowAddUserForm(!showAddUserForm)}
-                  size="sm"
-                  className="bg-gradient-to-r from-primary to-decision-purple"
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add New User
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    onClick={() => setShowImportModal(true)}
+                    size="sm"
+                    variant="outline"
+                    className="border-primary text-primary hover:bg-primary hover:text-white"
+                  >
+                    <Upload className="h-4 w-4 mr-2" />
+                    Import Users
+                  </Button>
+                  <Button
+                    onClick={() => setShowAddUserForm(!showAddUserForm)}
+                    size="sm"
+                    className="bg-gradient-to-r from-primary to-decision-purple"
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add New User
+                  </Button>
+                </div>
               </div>
 
               {error && (
@@ -637,9 +651,22 @@ export default function BuildingDetailsModal({
           </Button>
         </div>
       </Card>
+
+      {/* Import Users Modal */}
+      <ImportUsersModal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        onSuccess={onSuccess}
+        buildingId={building.id}
+        buildingName={building.name}
+        buildingType={buildingType}
+        companyId={building.company_id}
+        managerId={managerId || building.manager_id}
+      />
     </div>
   )
 }
+
 // ============================================
 // Notifications Tab Component
 // ============================================
@@ -1114,51 +1141,46 @@ function DocumentsTab({ building, onSuccess }: DocumentsTabProps) {
       <Card className="p-6 bg-gradient-to-br from-primary/5 to-decision-purple/5 border-primary/20">
         <h3 className="font-semibold text-lg mb-4 flex items-center gap-2">
           <Upload className="h-5 w-5 text-primary" />
-          Upload New Document
+          Upload Building Documents
         </h3>
 
         <div className="space-y-4">
           <div>
-            <Label htmlFor="docType" className="text-sm font-medium">
-              Document Type *
-            </Label>
+            <Label htmlFor="docType">Document Type</Label>
             <Select value={selectedDocType} onValueChange={setSelectedDocType}>
-              <SelectTrigger id="docType" className="mt-1">
-                <SelectValue placeholder="Select document type" />
+              <SelectTrigger id="docType">
+                <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="statute">Statute</SelectItem>
-                <SelectItem value="rules">Rules & Regulations</SelectItem>
+                <SelectItem value="rules">Rules</SelectItem>
                 <SelectItem value="bylaws">Bylaws</SelectItem>
+                <SelectItem value="policies">Policies</SelectItem>
+                <SelectItem value="statute">Statute/Legislation</SelectItem>
                 <SelectItem value="other">Other</SelectItem>
               </SelectContent>
             </Select>
           </div>
 
           <div>
-            <Label htmlFor="fileUpload" className="text-sm font-medium">
-              Select File (PDF, DOC, DOCX) *
-            </Label>
+            <Label htmlFor="docFile">Select File (PDF, DOC, DOCX - Max 10MB)</Label>
             <Input
-              id="fileUpload"
+              id="docFile"
               type="file"
               accept=".pdf,.doc,.docx"
               onChange={handleFileSelect}
-              disabled={uploading}
               className="mt-1"
             />
             {selectedFile && (
-              <p className="text-sm text-muted-foreground mt-2">
-                Selected: <span className="font-medium">{selectedFile.name}</span> 
-                ({formatFileSize(selectedFile.size)})
+              <p className="text-xs text-muted-foreground mt-1">
+                Selected: {selectedFile.name} ({formatFileSize(selectedFile.size)})
               </p>
             )}
           </div>
 
-          <Button 
-            onClick={handleUpload} 
-            disabled={uploading || !selectedFile}
-            className="w-full bg-gradient-to-r from-primary to-decision-purple hover:opacity-90"
+          <Button
+            onClick={handleUpload}
+            disabled={!selectedFile || uploading}
+            className="w-full bg-gradient-to-r from-primary to-decision-purple"
           >
             {uploading ? (
               <>
@@ -1167,29 +1189,25 @@ function DocumentsTab({ building, onSuccess }: DocumentsTabProps) {
               </>
             ) : (
               <>
-                <FileText className="h-4 w-4 mr-2" />
+                <Upload className="h-4 w-4 mr-2" />
                 Upload Document
               </>
             )}
           </Button>
-
-          <p className="text-xs text-muted-foreground">
-            Maximum file size: 10MB. Supported formats: PDF, DOC, DOCX
-          </p>
         </div>
       </Card>
 
-      <Card className="p-6 bg-gradient-to-br from-blue-50 to-purple-50 border-blue-200">
+      {/* Reference URLs Section */}
+      <Card className="p-6 border-primary/20">
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-semibold text-lg flex items-center gap-2">
-            <LinkIcon className="h-5 w-5 text-blue-600" />
+            <LinkIcon className="h-5 w-5 text-primary" />
             Reference URLs
           </h3>
           <Button
             onClick={() => setShowUrlForm(!showUrlForm)}
             size="sm"
             variant="outline"
-            className="border-blue-300 hover:bg-blue-50"
           >
             <Plus className="h-4 w-4 mr-2" />
             Add URL
@@ -1197,213 +1215,178 @@ function DocumentsTab({ building, onSuccess }: DocumentsTabProps) {
         </div>
 
         {showUrlForm && (
-          <div className="mb-4 p-4 bg-white rounded-lg border-2 border-blue-200 space-y-3">
-            <div>
-              <Label htmlFor="urlTitle" className="text-sm font-medium">
-                Title *
-              </Label>
-              <Input
-                id="urlTitle"
-                value={urlTitle}
-                onChange={(e) => setUrlTitle(e.target.value)}
-                placeholder="e.g., Strata Property Act"
-                className="mt-1"
-              />
+          <Card className="p-4 bg-muted/50 mb-4">
+            <div className="space-y-3">
+              <div>
+                <Label htmlFor="urlTitle">Title *</Label>
+                <Input
+                  id="urlTitle"
+                  value={urlTitle}
+                  onChange={(e) => setUrlTitle(e.target.value)}
+                  placeholder="e.g., BC Strata Property Act"
+                />
+              </div>
+              <div>
+                <Label htmlFor="urlLink">URL *</Label>
+                <Input
+                  id="urlLink"
+                  type="url"
+                  value={urlLink}
+                  onChange={(e) => setUrlLink(e.target.value)}
+                  placeholder="https://example.com"
+                />
+              </div>
+              <div>
+                <Label htmlFor="urlType">Type</Label>
+                <Select value={urlType} onValueChange={setUrlType}>
+                  <SelectTrigger id="urlType">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="legislation">Legislation</SelectItem>
+                    <SelectItem value="policy">Policy</SelectItem>
+                    <SelectItem value="reference">Reference</SelectItem>
+                    <SelectItem value="other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="urlDescription">Description (Optional)</Label>
+                <Textarea
+                  id="urlDescription"
+                  value={urlDescription}
+                  onChange={(e) => setUrlDescription(e.target.value)}
+                  placeholder="Additional notes..."
+                  rows={2}
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  onClick={handleSaveUrl}
+                  disabled={savingUrl}
+                  size="sm"
+                  className="bg-gradient-to-r from-primary to-decision-purple"
+                >
+                  {savingUrl ? 'Saving...' : 'Save URL'}
+                </Button>
+                <Button
+                  onClick={() => {
+                    setShowUrlForm(false)
+                    setUrlTitle("")
+                    setUrlLink("")
+                    setUrlType("legislation")
+                    setUrlDescription("")
+                  }}
+                  variant="outline"
+                  size="sm"
+                >
+                  Cancel
+                </Button>
+              </div>
             </div>
-
-            <div>
-              <Label htmlFor="urlLink" className="text-sm font-medium">
-                URL *
-              </Label>
-              <Input
-                id="urlLink"
-                value={urlLink}
-                onChange={(e) => setUrlLink(e.target.value)}
-                placeholder="https://example.com/document"
-                className="mt-1"
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="urlType" className="text-sm font-medium">
-                Type *
-              </Label>
-              <Select value={urlType} onValueChange={setUrlType}>
-                <SelectTrigger id="urlType" className="mt-1">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="legislation">Legislation</SelectItem>
-                  <SelectItem value="policy">Policy</SelectItem>
-                  <SelectItem value="reference">Reference</SelectItem>
-                  <SelectItem value="other">Other</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <Label htmlFor="urlDescription" className="text-sm font-medium">
-                Description (Optional)
-              </Label>
-              <Textarea
-                id="urlDescription"
-                value={urlDescription}
-                onChange={(e) => setUrlDescription(e.target.value)}
-                placeholder="Brief description of this reference..."
-                className="mt-1 min-h-[60px]"
-              />
-            </div>
-
-            <div className="flex gap-2">
-              <Button
-                onClick={handleSaveUrl}
-                disabled={savingUrl}
-                size="sm"
-                className="bg-blue-600 hover:bg-blue-700"
-              >
-                {savingUrl ? 'Saving...' : 'Save URL'}
-              </Button>
-              <Button
-                onClick={() => {
-                  setShowUrlForm(false)
-                  setUrlTitle("")
-                  setUrlLink("")
-                  setUrlType("legislation")
-                  setUrlDescription("")
-                }}
-                variant="outline"
-                size="sm"
-              >
-                Cancel
-              </Button>
-            </div>
-          </div>
+          </Card>
         )}
 
-        <div className="space-y-2">
-          {documentUrls.length > 0 ? (
-            documentUrls.map((docUrl) => (
-              <Card key={docUrl.id} className="p-3 bg-white hover:shadow-md transition-shadow">
+        {documentUrls.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-4">
+            No reference URLs added yet
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {documentUrls.map((urlDoc) => (
+              <Card key={urlDoc.id} className="p-3 hover:bg-muted/50 transition-colors">
                 <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-start gap-3 flex-1">
-                    <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-blue-100 flex-shrink-0">
-                      <LinkIcon className="h-4 w-4 text-blue-600" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <LinkIcon className="h-4 w-4 text-primary flex-shrink-0" />
+                      <h4 className="font-medium text-sm truncate">{urlDoc.title}</h4>
+                      <span className={`text-xs px-2 py-0.5 rounded border ${getDocumentTypeColor(urlDoc.document_type)}`}>
+                        {urlDoc.document_type}
+                      </span>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <Badge 
-                          variant="outline" 
-                          className={`text-xs capitalize ${getDocumentTypeColor(docUrl.document_type)}`}
-                        >
-                          {docUrl.document_type}
-                        </Badge>
-                        <p className="font-medium text-sm">{docUrl.title}</p>
-                      </div>
-                      <a 
-                        href={docUrl.url} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="text-xs text-blue-600 hover:underline truncate block"
-                      >
-                        {docUrl.url}
-                      </a>
-                      {docUrl.description && (
-                        <p className="text-xs text-muted-foreground mt-1">{docUrl.description}</p>
-                      )}
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Added {new Date(docUrl.created_at).toLocaleDateString()}
-                      </p>
-                    </div>
+                    <a
+                      href={urlDoc.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-blue-600 hover:underline truncate block"
+                    >
+                      {urlDoc.url}
+                    </a>
+                    {urlDoc.description && (
+                      <p className="text-xs text-muted-foreground mt-1">{urlDoc.description}</p>
+                    )}
                   </div>
                   <div className="flex gap-1 flex-shrink-0">
                     <Button
-                      variant="outline"
                       size="sm"
-                      asChild
+                      variant="ghost"
+                      onClick={() => window.open(urlDoc.url, '_blank')}
+                      className="h-8 w-8 p-0"
                     >
-                      <a href={docUrl.url} target="_blank" rel="noopener noreferrer">
-                        <ExternalLink className="h-3 w-3" />
-                      </a>
+                      <ExternalLink className="h-4 w-4" />
                     </Button>
                     <Button
-                      variant="destructive"
                       size="sm"
-                      onClick={() => handleDeleteUrl(docUrl.id)}
+                      variant="ghost"
+                      onClick={() => handleDeleteUrl(urlDoc.id)}
+                      className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
                     >
-                      <Trash2 className="h-3 w-3" />
+                      <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
                 </div>
               </Card>
-            ))
-          ) : (
-            <p className="text-sm text-center text-muted-foreground py-4">
-              No reference URLs yet. Add external legislation, policies, or reference documents.
-            </p>
-          )}
-        </div>
+            ))}
+          </div>
+        )}
       </Card>
 
+      {/* Existing Documents */}
       <div>
-        <h3 className="font-semibold text-lg mb-4 flex items-center gap-2">
-          <FileText className="h-5 w-5 text-primary" />
+        <h3 className="font-semibold text-lg mb-3 flex items-center gap-2">
+          <FileText className="h-5 w-5" />
           Uploaded Documents ({documents.length})
         </h3>
 
         {loading ? (
-          <div className="text-center py-12">
-            <Loader2 className="h-8 w-8 text-primary animate-spin mx-auto mb-4" />
-            <p className="text-sm text-muted-foreground">Loading documents...</p>
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="h-6 w-6 animate-spin text-primary" />
           </div>
         ) : documents.length === 0 ? (
-          <Card className="p-12 text-center border-2 border-dashed">
-            <FileText className="h-16 w-16 mx-auto text-muted-foreground/30 mb-4" />
-            <h4 className="font-medium text-foreground mb-2">No Documents Yet</h4>
-            <p className="text-sm text-muted-foreground max-w-md mx-auto">
-              Upload building statutes, rules, regulations, or bylaws using the form above. 
-              These documents will be used for AI-powered meeting analysis.
-            </p>
-          </Card>
+          <p className="text-sm text-muted-foreground text-center py-8">
+            No documents uploaded yet
+          </p>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-2">
             {documents.map((doc) => (
-              <Card key={doc.id} className="p-4 hover:shadow-md transition-shadow">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3 flex-1">
-                    <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-primary/10">
-                      <FileText className="h-5 w-5 text-primary" />
+              <Card key={doc.id} className="p-3 hover:bg-muted/50 transition-colors">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <FileText className="h-4 w-4 text-primary flex-shrink-0" />
+                      <h4 className="font-medium text-sm truncate">{doc.filename}</h4>
+                      <span className={`text-xs px-2 py-0.5 rounded border ${getDocumentTypeColor(doc.document_type)}`}>
+                        {doc.document_type}
+                      </span>
                     </div>
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <Badge 
-                          variant="outline" 
-                          className={`text-xs capitalize ${getDocumentTypeColor(doc.document_type)}`}
-                        >
-                          {doc.document_type}
-                        </Badge>
-                        <p className="font-medium text-sm">{doc.filename}</p>
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        Uploaded {new Date(doc.created_at).toLocaleDateString()}
-                        {doc.file_size && ` · ${formatFileSize(doc.file_size)}`}
-                      </p>
-                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {formatFileSize(doc.file_size)} · {new Date(doc.created_at).toLocaleDateString()}
+                    </p>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex gap-1 flex-shrink-0">
                     <Button
-                      variant="outline"
                       size="sm"
-                      asChild
+                      variant="ghost"
+                      onClick={() => window.open(doc.file_url, '_blank')}
+                      className="h-8 w-8 p-0"
                     >
-                      <a href={doc.file_url} target="_blank" rel="noopener noreferrer">
-                        <ExternalLink className="h-4 w-4 mr-1" />
-                        View
-                      </a>
+                      <ExternalLink className="h-4 w-4" />
                     </Button>
                     <Button
-                      variant="destructive"
                       size="sm"
+                      variant="ghost"
                       onClick={() => handleDelete(doc.id, doc.file_url)}
+                      className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>

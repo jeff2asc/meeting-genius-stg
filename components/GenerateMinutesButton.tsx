@@ -12,23 +12,35 @@ interface GenerateMinutesButtonProps {
   buildingId: number
 }
 
+type Align = "left" | "center" | "right"
+
+interface CoverPageElement {
+  id: string
+  label: string
+  enabled: boolean
+  x: number
+  y: number
+  align: Align
+}
+
 interface TemplateField {
   id: string
   label: string
-  visible: boolean
   order: number
+  enabled: boolean
+  showFullList?: boolean
 }
 
-interface TemplateSection {
-  id: string
-  label: string
-  icon: string
-  backgroundColor: string
-  fields: TemplateField[]
-}
-
-interface TemplateConfig {
-  sections: TemplateSection[]
+interface MinutesTemplate {
+  coverPageElements: CoverPageElement[]
+  infoCardFields: TemplateField[]
+  coverPageColor: string
+  infoCardAccentColor: string
+  sectionHeadersColor: string
+  motionBoxesColor: string
+  actionItemsColor: string
+  voteResultsColor: string
+  coverPageHeight: number
 }
 
 export default function GenerateMinutesButton({
@@ -40,29 +52,137 @@ export default function GenerateMinutesButton({
   const handleGenerateMinutes = async () => {
     setGenerating(true)
     try {
-      // Step 1: Fetch template
-      const { data: templateData } = await supabase
+      // 1) Load per-building minutes template from DB (colors + layout)
+      const { data: templateRow, error: templateError } = await supabase
         .from("minutes_templates")
-        .select("*")
+        .select(
+          `
+          coverpage_elements,
+          infocard_fields,
+          coverpage_color,
+          infocard_accent_color,
+          section_headers_color,
+          motion_boxes_color,
+          action_items_color,
+          vote_results_color,
+          coverpage_height
+        `
+        )
         .eq("building_id", buildingId)
         .maybeSingle()
 
-      const template: TemplateConfig =
-        templateData?.blocks?.sections ? templateData.blocks : getDefaultTemplate()
+      if (templateError) {
+        console.error("Error loading minutes template:", templateError)
+      }
 
-      // Step 2: Fetch meeting data + building + company logo
+      const defaultTemplate: MinutesTemplate = {
+        coverPageElements: [
+          {
+            id: "logo",
+            label: "Building / Company Logo",
+            enabled: true,
+            x: 10,
+            y: 15,
+            align: "left",
+          },
+          {
+            id: "title",
+            label: "MEETING MINUTES",
+            enabled: true,
+            x: 50,
+            y: 40,
+            align: "center",
+          },
+          {
+            id: "building_name",
+            label: "Building Name",
+            enabled: true,
+            x: 50,
+            y: 60,
+            align: "center",
+          },
+          {
+            id: "meeting_type",
+            label: "Meeting Type",
+            enabled: true,
+            x: 50,
+            y: 70,
+            align: "center",
+          },
+        ],
+        infoCardFields: [
+          { id: "date", label: "Meeting Date", order: 1, enabled: true },
+          { id: "start_time", label: "Start Time", order: 2, enabled: true },
+          { id: "end_time", label: "End Time", order: 3, enabled: true },
+          { id: "location", label: "Location", order: 4, enabled: true },
+          {
+            id: "attendees",
+            label: "Attendees",
+            order: 5,
+            enabled: true,
+            showFullList: false,
+          },
+          { id: "chair_person", label: "Chair Person", order: 6, enabled: true },
+          { id: "minute_taker", label: "Minute Taker", order: 7, enabled: true },
+        ],
+        coverPageColor: "#1e3a8a",
+        infoCardAccentColor: "#2563eb",
+        sectionHeadersColor: "#2563eb",
+        motionBoxesColor: "#10b981",
+        actionItemsColor: "#f59e0b",
+        voteResultsColor: "#8b5cf6",
+        coverPageHeight: 500,
+      }
+
+      let template: MinutesTemplate = defaultTemplate
+
+      if (templateRow) {
+        template = {
+          ...defaultTemplate,
+          coverPageColor:
+            templateRow.coverpage_color || defaultTemplate.coverPageColor,
+          infoCardAccentColor:
+            templateRow.infocard_accent_color ||
+            defaultTemplate.infoCardAccentColor,
+          sectionHeadersColor:
+            templateRow.section_headers_color ||
+            defaultTemplate.sectionHeadersColor,
+          motionBoxesColor:
+            templateRow.motion_boxes_color || defaultTemplate.motionBoxesColor,
+          actionItemsColor:
+            templateRow.action_items_color || defaultTemplate.actionItemsColor,
+          voteResultsColor:
+            templateRow.vote_results_color || defaultTemplate.voteResultsColor,
+          coverPageHeight:
+            templateRow.coverpage_height || defaultTemplate.coverPageHeight,
+          coverPageElements:
+            Array.isArray(templateRow.coverpage_elements) &&
+            templateRow.coverpage_elements.length > 0
+              ? (templateRow.coverpage_elements as CoverPageElement[])
+              : defaultTemplate.coverPageElements,
+          infoCardFields:
+            Array.isArray(templateRow.infocard_fields) &&
+            templateRow.infocard_fields.length > 0
+              ? (templateRow.infocard_fields as TemplateField[])
+              : defaultTemplate.infoCardFields,
+        }
+      }
+
+      // 2) Load meeting (with building + company logos)
       const { data: meeting, error: meetingError } = await supabase
         .from("meetings")
         .select(
           `
           *,
           buildings(
+            id,
             name,
             address,
             logo_url,
             building_type,
             company_id,
             companies(
+              id,
               logo_url
             )
           )
@@ -83,32 +203,81 @@ export default function GenerateMinutesButton({
       const logoUrl: string | null =
         building?.logo_url || company?.logo_url || null
 
-      // Step 3: Fetch sections and topics
-      const { data: sections } = await supabase
+      // 3) Load sections/topics/decisions/tasks
+      const { data: sections, error: sectionsError } = await supabase
         .from("sections")
-        .select(
-          `
-          *,
-          topics(
-            *,
-            notes(content, created_at),
-            tasks(description, assigned_name, assigned_email, due_date, status),
-            decisions(motion_text, result, votes_for, votes_against, votes_abstain)
-          )
-        `
-        )
+        .select("*")
         .eq("meeting_id", meetingId)
         .order("order_index")
 
-      // Step 4: Generate HTML (with logo and in-camera filtering)
-      const minutesHtml = generateMinutesHtml(
+      if (sectionsError) {
+        console.error("Error loading sections:", sectionsError)
+      }
+
+      const { data: topics, error: topicsError } = await supabase
+        .from("topics")
+        .select("*")
+        .eq("meeting_id", meetingId)
+        .order("order_index")
+
+      if (topicsError) {
+        console.error("Error loading topics:", topicsError)
+      }
+
+      const topicIds = (topics || []).map((t: any) => t.id)
+
+      let decisions: any[] = []
+      let tasks: any[] = []
+
+      if (topicIds.length > 0) {
+        const { data: decisionsData, error: decisionsError } = await supabase
+          .from("decisions")
+          .select("*")
+          .in("topic_id", topicIds)
+          .order("recorded_at")
+
+        if (decisionsError) {
+          console.error("Error loading decisions:", decisionsError)
+        }
+
+        const { data: tasksData, error: tasksError } = await supabase
+          .from("tasks")
+          .select("*")
+          .in("topic_id", topicIds)
+          .order("created_at")
+
+        if (tasksError) {
+          console.error("Error loading tasks:", tasksError)
+        }
+
+        decisions = decisionsData || []
+        tasks = tasksData || []
+      }
+
+      const sectionsWithTopics = (sections || []).map((section: any) => ({
+        ...section,
+        topics: (topics || [])
+          .filter((t: any) => t.section_id === section.id)
+          .map((topic: any) => ({
+            ...topic,
+            decisions: decisions.filter((d: any) => d.topic_id === topic.id),
+            tasks: tasks.filter((t: any) => t.topic_id === topic.id),
+          })),
+      }))
+
+      // 4) Use attendees from meeting.attendees JSONB
+      const attendees = (meeting.attendees as any[]) || []
+
+      // 5) Build HTML using the template
+      const minutesHtml = buildMinutesHtml({
         template,
         meeting,
-        sections || [],
-        logoUrl
-      )
+        sections: sectionsWithTopics,
+        attendees,
+        logoUrl,
+      })
 
-      // Step 5: Create isolated iframe
+      // 6) Render in hidden iframe and capture to PDF
       const iframe = document.createElement("iframe")
       iframe.style.position = "absolute"
       iframe.style.left = "-9999px"
@@ -144,226 +313,240 @@ export default function GenerateMinutesButton({
               padding: 0;
               margin: 0;
             }
-            
-            /* ⭐ IMPROVED: Professional Header with Gradient */
-            .page-header {
-              background: linear-gradient(135deg, #1e40af 0%, #3b82f6 50%, #60a5fa 100%);
-              padding: 35px 30px;
-              margin: -20px -20px 30px -20px;
-              border-radius: 8px;
-              box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+
+            .cover {
+              width: 100%;
+              position: relative;
+              overflow: hidden;
+              color: white;
+            }
+
+            .cover-inner {
+              position: relative;
+              width: 100%;
+              height: 100%;
+            }
+
+            .cover-element {
+              position: absolute;
+              transform: translate(-50%, -50%);
+              white-space: nowrap;
+            }
+
+            .cover-element-left {
+              transform: translate(0, -50%);
+            }
+
+            .cover-element-right {
+              transform: translate(-100%, -50%);
+            }
+
+            .cover-logo {
+              background: white;
+              border-radius: 999px;
               display: flex;
               align-items: center;
-              justify-content: space-between;
+              justify-content: center;
+              box-shadow: 0 4px 12px rgba(0,0,0,0.3);
             }
-            
-            .page-header-left {
-              flex-shrink: 0;
-              background: white;
-              padding: 12px 16px;
-              border-radius: 6px;
-              box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-            }
-            
-            .page-header-logo {
-              max-height: 60px;
-              max-width: 180px;
+
+            .cover-logo img {
+              max-width: 80px;
+              max-height: 80px;
               object-fit: contain;
-              display: block;
             }
-            
-            .page-header-right {
-              flex-grow: 1;
-              text-align: right;
-              padding-left: 25px;
-            }
-            
-            .page-title {
-              font-size: 32pt;
-              font-weight: 700;
-              color: white;
-              margin-bottom: 8px;
-              letter-spacing: 1px;
+
+            .cover-title-line {
+              font-weight: 800;
+              letter-spacing: 3px;
               text-transform: uppercase;
-              text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
+              text-shadow: 0 2px 4px rgba(0,0,0,0.3);
             }
-            
-            .page-subtitle {
-              font-size: 16pt;
-              color: #dbeafe;
-              font-weight: 500;
-              margin-top: 5px;
+
+            .info-card {
+              margin: 24px 20px 20px 20px;
+              border-radius: 10px;
+              overflow: hidden;
+              border: 1px solid #e5e7eb;
+              box-shadow: 0 2px 6px rgba(0,0,0,0.08);
             }
-            
-            /* ⭐ IMPROVED: Meeting Details Grid */
-            .meeting-details {
-              background: linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%);
-              border: 2px solid #e5e7eb;
-              border-radius: 8px;
-              padding: 25px;
-              margin-bottom: 30px;
-              box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+
+            .info-card-header {
+              color: white;
+              padding: 10px 14px;
+              font-size: 11px;
+              font-weight: 700;
+              letter-spacing: 1px;
             }
-            
-            .field-row {
-              padding: 10px 0;
+
+            .info-card-body {
+              background: #f9fafb;
+              padding: 14px 18px;
+              display: grid;
+              grid-template-columns: 1fr 1fr;
+              gap: 10px 24px;
+            }
+
+            .info-field {
               display: flex;
-              align-items: baseline;
-              border-bottom: 1px solid #e5e7eb;
+              flex-direction: column;
+              font-size: 10px;
             }
-            
-            .field-row:last-child {
-              border-bottom: none;
-            }
-            
-            .field-label {
+
+            .info-label {
               font-weight: 700;
-              min-width: 180px;
-              color: #374151;
-              font-size: 11pt;
+              text-transform: uppercase;
+              color: #6b7280;
+              margin-bottom: 3px;
             }
-            
-            .field-value {
-              color: #1f2937;
-              flex: 1;
-              font-size: 11pt;
+
+            .info-value {
+              font-size: 11px;
+              color: #111827;
             }
-            
-            /* ⭐ IMPROVED: Section Headers with Yellow Accent */
-            .section {
-              margin-bottom: 30px;
-              page-break-inside: avoid;
+
+            .attendees-section {
+              margin: 16px 20px 20px 20px;
+              border-radius: 10px;
+              overflow: hidden;
+              border: 1px solid #e5e7eb;
+              box-shadow: 0 2px 6px rgba(0,0,0,0.04);
             }
-            
-            .section-header {
-              background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
-              color: #78350f;
-              padding: 14px 20px;
-              margin-bottom: 20px;
-              font-size: 14pt;
+            .attendees-header {
+              color: white;
+              padding: 10px 14px;
+              font-size: 11px;
               font-weight: 700;
-              border-radius: 6px;
-              box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-              border-left: 5px solid #b45309;
+              letter-spacing: 1px;
             }
-            
-            /* ⭐ IMPROVED: Attendees Table */
-            table {
+            .attendees-table {
               width: 100%;
               border-collapse: collapse;
-              margin: 15px 0;
-              box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
-              border-radius: 6px;
-              overflow: hidden;
+              background: #f9fafb;
             }
-            
-            th {
-              background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);
-              color: white;
-              padding: 12px 15px;
+            .attendees-table th {
+              padding: 8px 12px;
               text-align: left;
-              font-weight: 600;
-              font-size: 11pt;
-            }
-            
-            td {
-              padding: 12px 15px;
-              border: 1px solid #e5e7eb;
-              background: white;
-              font-size: 10.5pt;
-            }
-            
-            tr:nth-child(even) td {
-              background-color: #f9fafb;
-            }
-            
-            tr:hover td {
-              background-color: #eff6ff;
-            }
-            
-            /* ⭐ IMPROVED: Topic Cards */
-            h2 {
-              font-size: 13pt;
-              color: #1e40af;
+              font-size: 10px;
               font-weight: 700;
-              margin: 20px 0 15px 0;
-              padding-bottom: 8px;
-              border-bottom: 2px solid #3b82f6;
-              page-break-after: avoid;
+              text-transform: uppercase;
+              color: #6b7280;
+              border-bottom: 2px solid #e5e7eb;
             }
-            
-            .topic-box {
-              border: 2px solid #e5e7eb;
-              border-radius: 8px;
-              padding: 20px;
-              margin-bottom: 20px;
-              background: white;
-              page-break-inside: avoid;
-              box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-            }
-            
-            .topic-title {
-              font-weight: 700;
-              font-size: 12pt;
-              color: #1f2937;
-              margin-bottom: 12px;
-              padding-bottom: 10px;
-              border-bottom: 2px solid #fbbf24;
-            }
-            
-            .topic-description {
-              color: #4b5563;
-              margin-bottom: 15px;
-              line-height: 1.7;
-              font-size: 10.5pt;
-            }
-            
-            /* ⭐ IMPROVED: Decision Items */
-            .item {
-              margin: 12px 0;
-              padding: 14px 18px;
-              border-left: 5px solid;
-              background: white;
-              font-size: 10.5pt;
-              border-radius: 0 6px 6px 0;
-              box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
-            }
-            
-            .item-decision { 
-              border-color: #8b5cf6;
-              background: linear-gradient(135deg, #faf5ff 0%, #f5f3ff 100%);
-            }
-            
-            .item-label {
-              font-weight: 700;
-              margin-right: 8px;
-              color: #6d28d9;
-            }
-            
-            /* ⭐ NEW: In-Camera Simple Title Line */
-            .incamera-title-line {
-              margin: 15px 0;
-              padding: 10px 0;
+            .attendees-table td {
+              padding: 8px 12px;
+              font-size: 10px;
               border-bottom: 1px solid #e5e7eb;
             }
-            
-            .incamera-badge {
-              display: inline-block;
-              background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
-              color: white;
-              padding: 5px 12px;
-              border-radius: 5px;
-              font-size: 9pt;
-              font-weight: 700;
-              margin-left: 10px;
-              box-shadow: 0 2px 4px rgba(220, 38, 38, 0.3);
+            .attendees-table tr:last-child td {
+              border-bottom: none;
             }
-            
-            /* ⭐ Print Optimization */
-            @media print {
-              .page-header {
-                margin: 0 0 30px 0;
-              }
+            .status-badge {
+              display: inline-block;
+              padding: 3px 8px;
+              border-radius: 4px;
+              font-size: 9px;
+              font-weight: 600;
+            }
+            .status-present {
+              background: #d1fae5;
+              color: #065f46;
+            }
+            .status-absent {
+              background: #fee2e2;
+              color: #991b1b;
+            }
+
+            .section-header {
+              margin: 20px 20px 12px 20px;
+              padding: 8px 12px;
+              color: white;
+              border-radius: 8px;
+              font-size: 12px;
+              font-weight: 700;
+              display: inline-block;
+            }
+
+            .topic-box {
+              margin: 0 20px 14px 20px;
+              padding: 12px 14px;
+              border-radius: 8px;
+              background: #ffffff;
+              border: 1px solid #e5e7eb;
+            }
+
+            .topic-title {
+              font-size: 11px;
+              font-weight: 700;
+              margin-bottom: 6px;
+              border-bottom: 2px solid #e5e7eb;
+              padding-bottom: 4px;
+            }
+
+            .topic-description {
+              font-size: 10px;
+              color: #4b5563;
+              margin-bottom: 8px;
+            }
+
+            .item {
+              margin-top: 6px;
+              padding: 8px 10px;
+              border-radius: 6px;
+              font-size: 9.5px;
+            }
+
+            .item-motion {
+              border-left: 3px solid;
+              background: #f9fafb;
+            }
+
+            .item-action {
+              border-left: 3px solid;
+              background: #fffbeb;
+            }
+
+            .item-label {
+              font-weight: 700;
+              margin-right: 4px;
+            }
+
+            .incamera-strip {
+              margin: 16px 20px;
+              padding: 8px 10px;
+              border-radius: 6px;
+              background: #fef2f2;
+              border: 1px solid #fecaca;
+              font-size: 10px;
+              color: #b91c1c;
+            }
+
+            .decisions-section-note {
+              font-size: 9px;
+              color: #6b7280;
+              margin: 4px 20px 10px 20px;
+            }
+
+            .decision-box {
+              margin: 0 20px 12px 20px;
+              padding: 10px 12px;
+              border-radius: 8px;
+              border: 1px solid #e5e7eb;
+              background: #faf5ff;
+              font-size: 10px;
+            }
+
+            .decision-motion {
+              font-weight: 700;
+              margin-bottom: 4px;
+              color: #4b5563;
+            }
+
+            .decision-result {
+              margin-top: 4px;
+              padding: 6px 8px;
+              border-radius: 6px;
+              font-size: 9px;
             }
           </style>
         </head>
@@ -372,10 +555,8 @@ export default function GenerateMinutesButton({
       `)
       iframeDoc.close()
 
-      // Wait for fonts and layout
       await new Promise((resolve) => setTimeout(resolve, 1500))
 
-      // Step 6: Generate PDF using jsPDF with proper canvas slicing
       const pdf = new jsPDF({
         orientation: "portrait",
         unit: "mm",
@@ -399,8 +580,6 @@ export default function GenerateMinutesButton({
 
       const fullWidth = canvas.width
       const fullHeight = canvas.height
-
-      // How many canvas pixels fit into one PDF page in height
       const pageCanvasHeight =
         (usablePageHeight * canvas.width) / (pageWidth - margin * 2)
 
@@ -408,7 +587,6 @@ export default function GenerateMinutesButton({
       let pageIndex = 0
 
       while (renderedHeight < fullHeight) {
-        // Create a temporary canvas for each page slice
         const pageCanvas = document.createElement("canvas")
         pageCanvas.width = fullWidth
         pageCanvas.height = Math.min(
@@ -485,100 +663,439 @@ export default function GenerateMinutesButton({
   )
 }
 
-function getDefaultTemplate(): TemplateConfig {
-  return {
-    sections: [
-      {
-        id: "header",
-        label: "Meeting Details",
-        icon: "📋",
-        backgroundColor: "#f8fafc",
-        fields: [
-          { id: "building_name", label: "Building Name", visible: true, order: 1 },
-          { id: "meeting_type", label: "Meeting Type", visible: true, order: 2 },
-          { id: "meeting_date", label: "Meeting Date", visible: true, order: 3 },
-          { id: "start_time", label: "Start Time", visible: true, order: 4 },
-          { id: "location", label: "Location", visible: true, order: 5 },
-          {
-            id: "strata_plan",
-            label: "Strata Plan Number",
-            visible: true,
-            order: 6,
-          },
-        ],
-      },
-      {
-        id: "attendees",
-        label: "Attendees",
-        icon: "👥",
-        backgroundColor: "#ffffff",
-        fields: [
-          { id: "present", label: "Present", visible: true, order: 1 },
-          { id: "absent", label: "Absent", visible: true, order: 2 },
-          { id: "regrets", label: "Regrets", visible: true, order: 3 },
-        ],
-      },
-      {
-        id: "topics",
-        label: "Topics & Discussion",
-        icon: "📝",
-        backgroundColor: "#ffffff",
-        fields: [],
-      },
-      {
-        id: "decisions",
-        label: "Decisions & Votes",
-        icon: "⚖️",
-        backgroundColor: "#ffffff",
-        fields: [],
-      },
-    ],
-  }
-}
+// -------- Helpers to build HTML from template --------
 
-function generateMinutesHtml(
-  template: TemplateConfig,
-  meeting: any,
-  sections: any[],
+function buildMinutesHtml({
+  template,
+  meeting,
+  sections,
+  attendees,
+  logoUrl,
+}: {
+  template: MinutesTemplate
+  meeting: any
+  sections: any[]
+  attendees: any[]
   logoUrl: string | null
-): string {
+}): string {
+  const isMinutes =
+    meeting.status === "minutes" || meeting.status === "workingminutes"
+  const documentType = isMinutes ? "MEETING MINUTES" : "MEETING AGENDA"
+
   const building = meeting.buildings
 
-  // Determine if this is MINUTES or AGENDA based on meeting status
-  const isMinutes = meeting.status === 'minutes' || meeting.status === 'working_minutes'
-  const documentType = isMinutes ? 'MEETING MINUTES' : 'MEETING AGENDA'
+  let html = ""
 
-  // ⭐ Professional header with blue gradient background
-  let html = `
-    <div class="page-header">
-      <div class="page-header-left">
-        ${
-          logoUrl
-            ? `<img src="${escapeHtml(logoUrl)}" alt="Logo" class="page-header-logo" />`
-            : `<div style="padding: 10px 20px; font-weight: 700; font-size: 14pt; color: #1e40af;">Meeting Genius</div>`
-        }
-      </div>
-      <div class="page-header-right">
-        <div class="page-title">${documentType}</div>
-        <div class="page-subtitle">${escapeHtml(meeting.title)}</div>
+  const safeCoverColor =
+    template.coverPageColor && template.coverPageColor.trim()
+      ? template.coverPageColor
+      : "#1e3a8a"
+
+  // COVER
+  html += `
+    <div class="cover" style="height:${template.coverPageHeight}px;background:${safeCoverColor};">
+      <div class="cover-inner">
+        ${renderCoverElements(template.coverPageElements, {
+          logoUrl,
+          meeting,
+          building,
+          documentType,
+        })}
       </div>
     </div>
   `
 
-  template.sections.forEach((templateSection) => {
-    if (templateSection.id === "header") {
-      html += renderHeader(templateSection, meeting, building)
-    } else if (templateSection.id === "attendees") {
-      html += renderAttendees(templateSection, meeting.attendees || [])
-    } else if (templateSection.id === "topics") {
-      html += renderTopics(sections, isMinutes)
-    }
-  })
+  // INFO CARD
+  html += renderInfoCard(template, meeting, attendees)
+
+  // ATTENDEES SECTION
+  html += renderAttendeesSection(template, attendees)
+
+  // SECTIONS / TOPICS / DECISIONS
+  html += renderSectionsAndTopics(template, sections, isMinutes)
 
   return html
 }
 
-function escapeHtml(text: string): string {
+function renderCoverElements(
+  elements: CoverPageElement[],
+  ctx: {
+    logoUrl: string | null
+    meeting: any
+    building: any
+    documentType: string
+  }
+): string {
+  if (!elements || elements.length === 0) return ""
+
+  return elements
+    .filter((el) => el.enabled)
+    .map((el) => {
+      const alignClass =
+        el.align === "center"
+          ? ""
+          : el.align === "left"
+          ? "cover-element-left"
+          : "cover-element-right"
+
+      let inner = ""
+
+      if (el.id === "logo") {
+        inner = `
+          <div class="cover-logo" style="width:90px;height:90px;">
+            ${
+              ctx.logoUrl
+                ? `<img src="${escapeHtml(ctx.logoUrl)}" />`
+                : `<span style="font-size:42px;">🏢</span>`
+            }
+          </div>
+        `
+      } else if (el.id === "title") {
+        inner = `
+          <div style="text-align:center;">
+            <div class="cover-title-line" style="font-size:26px;">${escapeHtml(
+              "MEETING"
+            )}</div>
+            <div class="cover-title-line" style="font-size:26px;">${escapeHtml(
+              "MINUTES"
+            )}</div>
+          </div>
+        `
+      } else if (el.id === "building_name") {
+        inner = `
+          <div style="font-size:18px;font-weight:500;letter-spacing:1px;opacity:0.95;">
+            ${escapeHtml(ctx.building?.name || "")}
+          </div>
+        `
+      } else if (el.id === "meeting_type") {
+        inner = `
+          <div style="font-size:14px;opacity:0.9;">
+            ${escapeHtml(ctx.meeting.meeting_type || "Council Meeting")}
+          </div>
+        `
+      } else {
+        inner = `<div>${escapeHtml(el.label)}</div>`
+      }
+
+      return `
+        <div 
+          class="cover-element ${alignClass}"
+          style="left:${el.x}%;top:${el.y}%;"
+        >
+          ${inner}
+        </div>
+      `
+    })
+    .join("")
+}
+
+function renderInfoCard(
+  template: MinutesTemplate,
+  meeting: any,
+  attendees: any[]
+): string {
+  const fields = (template.infoCardFields || [])
+    .filter((f) => f.enabled)
+    .filter((f) => f.id !== "attendees")
+    .sort((a, b) => a.order - b.order)
+
+  if (fields.length === 0) return ""
+
+  let body = ""
+
+  fields.forEach((field) => {
+    let value = ""
+
+    switch (field.id) {
+      case "date":
+        value = meeting.meeting_date
+          ? formatMeetingDate(meeting.meeting_date)
+          : "TBA"
+        break
+      case "start_time":
+        value = formatTimeWithoutSeconds(meeting.start_time) || "TBA"
+        break
+      case "end_time":
+        value = formatTimeWithoutSeconds(meeting.end_time) || "TBA"
+        break
+      case "location":
+        value = meeting.location || "TBA"
+        break
+      case "chair_person":
+        value = meeting.chair_person || "TBA"
+        break
+      case "minute_taker":
+        value = meeting.minute_taker || "TBA"
+        break
+      default:
+        value = ""
+    }
+
+    body += `
+      <div class="info-field">
+        <div class="info-label">${escapeHtml(field.label)}</div>
+        <div class="info-value">${escapeHtml(value)}</div>
+      </div>
+    `
+  })
+
+  return `
+    <div class="info-card">
+      <div 
+        class="info-card-header"
+        style="background:${template.infoCardAccentColor};"
+      >
+        MEETING INFORMATION
+      </div>
+      <div class="info-card-body">
+        ${body}
+      </div>
+    </div>
+  `
+}
+
+function renderAttendeesSection(
+  template: MinutesTemplate,
+  attendees: any[]
+): string {
+  if (!attendees || attendees.length === 0) return ""
+
+  const rows = attendees
+    .map((a, idx) => {
+      const isPresent =
+        a.present === true || a.attendance_status === "present"
+      const statusClass = isPresent ? "status-present" : "status-absent"
+      const statusText = isPresent ? "Present" : "Absent"
+      const role = a.role ? escapeHtml(a.role) : "—"
+      const email = a.email ? escapeHtml(a.email) : "—"
+
+      return `
+        <tr>
+          <td>${idx + 1}</td>
+          <td>${escapeHtml(a.name)}</td>
+          <td>${role}</td>
+          <td>${email}</td>
+          <td><span class="status-badge ${statusClass}">${statusText}</span></td>
+        </tr>
+      `
+    })
+    .join("")
+
+  return `
+    <div class="attendees-section">
+      <div 
+        class="attendees-header"
+        style="background:${template.infoCardAccentColor};"
+      >
+        👥 ATTENDEES
+      </div>
+      <table class="attendees-table">
+        <thead>
+          <tr>
+            <th style="width:40px;">#</th>
+            <th>Name</th>
+            <th style="width:120px;">Role</th>
+            <th style="width:180px;">Email</th>
+            <th style="width:80px;">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows}
+        </tbody>
+      </table>
+    </div>
+  `
+}
+
+function renderSectionsAndTopics(
+  template: MinutesTemplate,
+  sections: any[],
+  isMinutes: boolean
+): string {
+  let html = ""
+
+  html += `
+    <div class="section-header" style="background:${template.sectionHeadersColor};">
+      📝 Topics & Discussion
+    </div>
+  `
+
+  sections.forEach((section, sIdx) => {
+    const rawTitle = typeof section.title === "string" ? section.title : ""
+    const cleanedTitle = rawTitle.replace(
+      /^\s*\d+(\.\d+)*\s*[\).\-\:]*\s*/,
+      ""
+    )
+
+    html += `
+      <div class="topic-box">
+        <div class="topic-title">${escapeHtml(
+          `${sIdx + 1}. ${cleanedTitle || rawTitle}`
+        )}</div>
+    `
+
+    if (section.topics && section.topics.length > 0) {
+      section.topics.forEach((topic: any) => {
+        const isIncamera = topic.isincamera === true
+        if (isIncamera) {
+          html += `
+            <div class="incamera-strip">
+              <strong>IN-CAMERA:</strong> ${escapeHtml(topic.title)}
+            </div>
+          `
+          return
+        }
+
+        html += `
+          <div class="topic-description">${escapeHtml(
+            topic.title
+          )}</div>
+        `
+
+        if (topic.description) {
+          html += `
+            <div class="topic-description">${escapeHtml(
+              topic.description
+            )}</div>
+          `
+        }
+
+        if (topic.decisions && topic.decisions.length > 0) {
+          topic.decisions.forEach((decision: any) => {
+            const votes =
+              decision.votes_for !== null &&
+              decision.votes_for !== undefined
+                ? ` (For: ${decision.votes_for || 0}, Against: ${
+                    decision.votes_against || 0
+                  }, Abstain: ${decision.votes_abstain || 0})`
+                : ""
+
+            html += `
+              <div class="item item-motion" style="border-color:${template.motionBoxesColor};">
+                <span class="item-label">⚖️ Motion:</span>${escapeHtml(
+                  decision.motion_text
+                )}
+                ${
+                  decision.result
+                    ? `<div style="margin-top:4px;font-size:9px;">
+                        <strong>Result:</strong> ${escapeHtml(
+                          decision.result
+                        )}${votes}
+                      </div>`
+                    : ""
+                }
+              </div>
+            `
+          })
+        }
+
+        if (topic.tasks && topic.tasks.length > 0) {
+          topic.tasks.forEach((task: any) => {
+            html += `
+              <div class="item item-action" style="border-color:${template.actionItemsColor};">
+                <span class="item-label">✅ Action:</span>${escapeHtml(
+                  task.description || ""
+                )}
+                <div style="margin-top:4px;font-size:9px;color:#6b7280;">
+                  ${
+                    task.assigned_name
+                      ? `<strong>Assigned to:</strong> ${escapeHtml(
+                          task.assigned_name
+                        )}`
+                      : ""
+                  }
+                  ${
+                    task.due_date
+                      ? ` | <strong>Due:</strong> ${escapeHtml(task.due_date)}`
+                      : ""
+                  }
+                  ${
+                    task.status
+                      ? ` | <strong>Status:</strong> ${escapeHtml(task.status)}`
+                      : ""
+                  }
+                </div>
+              </div>
+            `
+          })
+        }
+      })
+    } else {
+      html += `
+        <div class="topic-description" style="font-style:italic;color:#9ca3af;">
+          No topics recorded for this section.
+        </div>
+      `
+    }
+
+    html += `</div>`
+  })
+
+  const allDecisions: any[] = []
+  sections.forEach((section) => {
+    if (section.topics && section.topics.length > 0) {
+      section.topics.forEach((topic: any) => {
+        if (topic.decisions && topic.decisions.length > 0) {
+          topic.decisions.forEach((d: any) => {
+            allDecisions.push({
+              ...d,
+              topicTitle: topic.title,
+              sectionTitle: section.title,
+            })
+          })
+        }
+      })
+    }
+  })
+
+  if (allDecisions.length > 0) {
+    html += `
+      <div class="section-header" style="background:${template.sectionHeadersColor};margin-top:24px;">
+        ⚖️ Decisions & Votes
+      </div>
+      <div class="decisions-section-note">
+        Summary of all motions and vote results recorded during this meeting.
+      </div>
+    `
+
+    allDecisions.forEach((decision) => {
+      const votes =
+        decision.votes_for !== null && decision.votes_for !== undefined
+          ? ` (For: ${decision.votes_for || 0}, Against: ${
+              decision.votes_against || 0
+            }, Abstain: ${decision.votes_abstain || 0})`
+          : ""
+
+      html += `
+        <div class="decision-box">
+          <div style="font-size:9px;color:#6b7280;margin-bottom:4px;">
+            From <strong>${escapeHtml(
+              decision.sectionTitle
+            )}</strong> → ${escapeHtml(decision.topicTitle)}
+          </div>
+          <div class="decision-motion">
+            ${escapeHtml(decision.motion_text)}
+          </div>
+          ${
+            decision.result
+              ? `<div class="decision-result" style="background:${template.voteResultsColor};color:white;">
+                    <strong>Result:</strong> ${escapeHtml(
+                      decision.result
+                    )}${votes}
+                  </div>`
+              : ""
+          }
+        </div>
+      `
+    })
+  }
+
+  return html
+}
+
+// ------------ small helpers ------------
+
+function escapeHtml(text: any): string {
   if (!text) return ""
   return String(text)
     .replace(/&/g, "&amp;")
@@ -588,180 +1105,28 @@ function escapeHtml(text: string): string {
     .replace(/'/g, "&#039;")
 }
 
+function formatMeetingDate(dateStr: string): string {
+  const date = new Date(dateStr)
+  return date.toLocaleDateString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  })
+}
+
 function formatTimeWithoutSeconds(timeString: string | null): string {
-  if (!timeString) return "N/A"
-  
-  // Handle different time formats
-  if (timeString.includes('AM') || timeString.includes('PM')) {
-    return timeString.replace(/:\d{2}\s*(AM|PM)/i, ' $1')
+  if (!timeString) return ""
+  if (timeString.includes("AM") || timeString.includes("PM")) {
+    return timeString.replace(/:\d{2}\s*(AM|PM)/i, " $1")
   }
-  
-  const timeParts = timeString.split(':')
+  const timeParts = timeString.split(":")
   if (timeParts.length >= 2) {
     const hours = parseInt(timeParts[0])
     const minutes = timeParts[1]
-    
-    const period = hours >= 12 ? 'PM' : 'AM'
+    const period = hours >= 12 ? "PM" : "AM"
     const displayHours = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours
-    
     return `${displayHours}:${minutes} ${period}`
   }
-  
   return timeString
-}
-
-function renderHeader(section: TemplateSection, meeting: any, building: any): string {
-  const visibleFields = section.fields
-    .filter((f) => f.visible)
-    .sort((a, b) => a.order - b.order)
-
-  // ⭐ Wrapped in styled meeting-details box
-  let html = `<div class="meeting-details">`
-
-  visibleFields.forEach((field) => {
-    // Skip Strata Plan if empty
-    if (field.id === "strata_plan" && !meeting.strata_plan_number) {
-      return
-    }
-
-    let value = ""
-    switch (field.id) {
-      case "building_name":
-        value = building?.name || "N/A"
-        break
-      case "meeting_type":
-        value = meeting.meeting_type || "N/A"
-        break
-      case "meeting_date":
-        value = meeting.meeting_date
-          ? new Date(meeting.meeting_date + "T00:00:00Z").toLocaleDateString(
-              "en-US",
-              {
-                weekday: "long",
-                year: "numeric",
-                month: "long",
-                day: "numeric",
-                timeZone: "UTC",
-              }
-            )
-          : "N/A"
-        break
-      case "start_time":
-        value = formatTimeWithoutSeconds(meeting.start_time)
-        break
-      case "location":
-        value = meeting.location || "N/A"
-        break
-      case "strata_plan":
-        value = meeting.strata_plan_number || "N/A"
-        break
-    }
-
-    html += `
-      <div class="field-row">
-        <span class="field-label">${escapeHtml(field.label)}:</span>
-        <span class="field-value">${escapeHtml(value)}</span>
-      </div>`
-  })
-
-  html += `</div>`
-  return html
-}
-
-function renderAttendees(section: TemplateSection, attendees: any[]): string {
-  let html = `
-    <div class="section">
-      <div class="section-header">
-        ${section.icon} ${section.label}
-      </div>
-      <table>
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Role</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody>`
-
-  attendees.forEach((attendee) => {
-    html += `
-      <tr>
-        <td>${escapeHtml(attendee.name)}</td>
-        <td>${escapeHtml(attendee.role || "-")}</td>
-        <td>${attendee.present ? "✓ Present" : "✗ Absent"}</td>
-      </tr>`
-  })
-
-  html += `</tbody></table></div>`
-  return html
-}
-
-// ⭐ UPDATED: renderTopics with in-camera fix
-function renderTopics(sections: any[], isMinutes: boolean): string {
-  let html = `
-    <div class="section">
-      <div class="section-header">
-        📝 Topics & Discussion
-      </div>`
-
-  sections.forEach((section, sIdx) => {
-    const rawTitle = typeof section.title === "string" ? section.title : ""
-    const cleanedTitle = rawTitle.replace(/^\s*\d+(\.\d+)*\s*[\).\-\:]*\s*/, "")
-
-    html += `<h2>${sIdx + 1}. ${escapeHtml(cleanedTitle || rawTitle)}</h2>`
-
-    if (section.topics && section.topics.length > 0) {
-      section.topics.forEach((topic: any, tIdx: number) => {
-        const isIncamera = topic.is_incamera === true
-
-        // ⭐ If in-camera: Just show title line, NO box, NO content
-        if (isIncamera) {
-          html += `
-            <div class="incamera-title-line">
-              <span style="font-weight: 700; font-size: 11pt; color: #1f2937;">
-                ${sIdx + 1}.${tIdx + 1} ${escapeHtml(topic.title)}
-              </span>
-              
-            </div>`
-          return // Skip everything else for this topic
-        }
-
-        // ⭐ Normal topics: Show full box with content
-        html += `
-          <div class="topic-box">
-            <div class="topic-title">
-              ${sIdx + 1}.${tIdx + 1} ${escapeHtml(topic.title)}
-            </div>`
-
-        if (topic.description) {
-          html += `<div class="topic-description">${escapeHtml(
-            topic.description
-          )}</div>`
-        }
-
-        // Show decisions
-        if (topic.decisions && topic.decisions.length > 0) {
-          topic.decisions.forEach((decision: any) => {
-            const votes =
-              decision.votes_for !== null
-                ? ` (For: ${decision.votes_for || 0}, Against: ${
-                    decision.votes_against || 0
-                  }, Abstain: ${decision.votes_abstain || 0})`
-                : ""
-            html += `<div class="item item-decision"><span class="item-label">⚖️ Decision:</span>${escapeHtml(
-              decision.motion_text
-            )} - Result: ${escapeHtml(decision.result || "N/A")}${votes}</div>`
-          })
-        }
-
-        html += `</div>`
-      })
-    } else {
-      html += `<p style="padding: 15px; color: #6b7280; font-style: italic;">No topics recorded for this section.</p>`
-    }
-  })
-
-  html += `</div>`
-  return html
 }
