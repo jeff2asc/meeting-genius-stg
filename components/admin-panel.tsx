@@ -16,12 +16,14 @@ import ViewDocumentModal from "./admin/ViewDocumentModal"
 import UsersTab from "./admin/UsersTab"
 import BuildingsTab from "./admin/BuildingsTab"
 import CompaniesTab from "./admin/CompaniesTab"
-import MinutesTemplatesTab from "./admin/MinutesTemplatesTab"
 import AgendaTemplatesTab from "./admin/AgendaTemplatesTab"
 import CreateCompanyModal from "./admin/CreateCompanyModal"
 import EditCompanyModal from "./admin/EditCompanyModal"
 import CompanyDetailsModal from "./admin/CompanyDetailsModal"
 import AssignUsersToCompanyModal from "./admin/AssignUsersToCompanyModal"
+
+// UPDATED: Minutes templates designer (now per building via buildings+loading)
+import MinutesTemplatesTab from "./MinutesTemplatesTab"
 
 interface AdminPanelProps {
   onBack: () => void
@@ -88,7 +90,10 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
   const [showDocumentModal, setShowDocumentModal] = useState(false)
   const [documentFormUrl, setDocumentFormUrl] = useState("")
   const [showViewDocumentModal, setShowViewDocumentModal] = useState(false)
-  const [viewingDocument, setViewingDocument] = useState<{ building: Building; content: string } | null>(null)
+  const [viewingDocument, setViewingDocument] = useState<{
+    building: Building
+    content: string
+  } | null>(null)
 
   // Filters
   const [filterUserType, setFilterUserType] = useState<string>("all")
@@ -96,8 +101,10 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
 
   const isMaster = currentUser?.user_type === "master"
   const isCorporateAdmin = currentUser?.user_type === "corporate_administrator"
-  const canCreateUser = isMaster || currentUser?.user_type === "property_manager" || isCorporateAdmin
-  const canCreateBuilding = isMaster || currentUser?.user_type === "property_manager" || isCorporateAdmin
+  const canCreateUser =
+    isMaster || currentUser?.user_type === "property_manager" || isCorporateAdmin
+  const canCreateBuilding =
+    isMaster || currentUser?.user_type === "property_manager" || isCorporateAdmin
   const userCanManageCompanies = canManageCompanies(currentUser?.user_type || "")
   const userShouldFilterByCompany = shouldFilterByCompany(currentUser?.user_type || "")
 
@@ -118,10 +125,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
     }
   }, [buildings])
 
-  // --- USERS: EDIT / DELETE HANDLERS ---
-
   const handleEditUser = (userId: number) => {
-    console.log("Edit user", userId)
     setEditingUserId(userId)
     setShowEditUserModal(true)
   }
@@ -131,10 +135,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
     if (!confirmed) return
 
     try {
-      const { error } = await supabase
-        .from("users")
-        .delete()
-        .eq("id", userId)
+      const { error } = await supabase.from("users").delete().eq("id", userId)
 
       if (error) {
         console.error("Error deleting user:", error)
@@ -151,13 +152,10 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
 
   const fetchCompanies = async () => {
     try {
-      let companiesQuery = supabase
-        .from("companies")
-        .select("*")
-        .order("name")
+      let companiesQuery = supabase.from("companies").select("*").order("name")
 
       if (isMaster) {
-        // Master sees ALL companies
+        // Master sees all companies
       } else if (isCorporateAdmin && currentUser?.company_id) {
         companiesQuery = companiesQuery.eq("id", currentUser.company_id)
       }
@@ -201,12 +199,12 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
     const hasDocuments = buildingDocuments[building.id] || false
 
     const formUrl = hasDocuments
-      ? `https://rulesengine.asccreative.com/form/8fe10f3e-bbb7-4ef0-8911-d43c27ad8666?Building Id=${building.id}&Building Name=${encodeURIComponent(
-          building.name
-        )}`
-      : `https://rulesengine.asccreative.com/form/6a4fe687-c1f7-43ea-b6e3-687e5e9a47fa?Building Id=${building.id}&Building Name=${encodeURIComponent(
-          building.name
-        )}`
+      ? `https://rulesengine.asccreative.com/form/8fe10f3e-bbb7-4ef0-8911-d43c27ad8666?Building Id=${
+          building.id
+        }&Building Name=${encodeURIComponent(building.name)}`
+      : `https://rulesengine.asccreative.com/form/6a4fe687-c1f7-43ea-b6e3-687e5e9a47fa?Building Id=${
+          building.id
+        }&Building Name=${encodeURIComponent(building.name)}`
 
     setDocumentFormUrl(formUrl)
     setShowDocumentModal(true)
@@ -227,7 +225,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
       }
 
       setViewingDocument({
-        building: building,
+        building,
         content: data.rules_and_regulations || "No content available",
       })
       setShowViewDocumentModal(true)
@@ -239,15 +237,12 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
 
   const fetchPropertyManagers = async () => {
     try {
-      // ✅ FIX: Don't filter property managers by company for Master users
-      // Property Managers can manage buildings across multiple companies
       let query = supabase
         .from("users")
         .select("id, name, email, company_id")
         .eq("user_type", "property_manager")
         .order("name")
 
-      // Only filter by company for Corporate Admins (not for Masters or PMs)
       if (isCorporateAdmin && currentUser?.company_id) {
         query = query.eq("company_id", currentUser.company_id)
       }
@@ -274,7 +269,6 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
         .select("id, name, email, user_type, assigned_pm_id, company_id, created_at")
         .order("created_at", { ascending: false })
 
-      // ✅ FIX: Only filter by company for Corporate Admins, not for Property Managers
       if (isCorporateAdmin && currentUser?.company_id) {
         usersQuery = usersQuery.eq("company_id", currentUser.company_id)
       }
@@ -288,11 +282,13 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
 
       const { data: userBuildingsData } = await supabase
         .from("user_buildings")
-        .select(`
+        .select(
+          `
           user_id,
           building_id,
           buildings!inner(id, name)
-        `)
+        `
+        )
 
       const usersWithBuildings = (usersData || []).map((user) => {
         const userBuildings = (userBuildingsData || [])
@@ -325,16 +321,16 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
     try {
       let buildingsQuery = supabase
         .from("buildings")
-        .select("id, name, address, manager_id, company_id, building_type, created_at")
+        .select(
+          "id, name, address, manager_id, company_id, building_type, created_at"
+        )
         .order("name")
 
       if (isMaster) {
-        // Master sees ALL buildings
+        // master sees all buildings
       } else if (isCorporateAdmin && currentUser?.company_id) {
-        // Corporate Admin sees only buildings in their company
         buildingsQuery = buildingsQuery.eq("company_id", currentUser.company_id)
       } else if (currentUser?.user_type === "property_manager") {
-        // ✅ FIX: Property Managers see ALL buildings they manage, regardless of company
         buildingsQuery = buildingsQuery.eq("manager_id", currentUser.id)
       } else {
         setBuildings([])
@@ -350,10 +346,12 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
 
       const { data: userBuildingsData } = await supabase
         .from("user_buildings")
-        .select(`
+        .select(
+          `
           building_id,
           users!inner(id, name, email, user_type)
-        `)
+        `
+        )
 
       const buildingsWithUsers = (buildingsData || []).map((building) => {
         const buildingUsers = (userBuildingsData || [])
@@ -382,9 +380,13 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
 
     if (filterBuilding !== "all") {
       if (filterBuilding === "unassigned") {
-        filtered = filtered.filter((user) => !user.buildings || user.buildings.length === 0)
+        filtered = filtered.filter(
+          (user) => !user.buildings || user.buildings.length === 0
+        )
       } else {
-        filtered = filtered.filter((user) => user.buildings?.includes(filterBuilding))
+        filtered = filtered.filter((user) =>
+          user.buildings?.includes(filterBuilding)
+        )
       }
     }
 
@@ -477,9 +479,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
     setShowAssignUsersModal(true)
   }
 
-  const getBuildingsList = () => {
-    return buildings
-  }
+  const getBuildingsList = () => buildings
 
   const getAvailableUsers = () => {
     if (isCorporateAdmin && currentUser?.company_id) {
@@ -504,7 +504,12 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
         <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <Button variant="ghost" size="icon" onClick={onBack} className="hover:bg-muted">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={onBack}
+                className="hover:bg-muted"
+              >
                 <ArrowLeft className="h-5 w-5" />
               </Button>
               <div>
@@ -625,7 +630,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
             buildingDocuments={buildingDocuments}
             loading={loading}
             isMaster={isMaster}
-            onViewDetails={handleViewBuildingDetails}  
+            onViewDetails={handleViewBuildingDetails}
             onViewDocument={handleViewDocument}
             onManageDocuments={handleManageDocuments}
           />
@@ -643,6 +648,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
           />
         )}
 
+        {/* UPDATED: Minutes templates now per building, via buildings + loading */}
         {activeTab === "minutes" && (
           <MinutesTemplatesTab buildings={getBuildingsList()} loading={loading} />
         )}
@@ -652,7 +658,6 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
         )}
       </div>
 
-      {/* ALL MODALS */}
       <CreateUserModal
         isOpen={showCreateUserModal}
         onClose={() => setShowCreateUserModal(false)}
@@ -663,7 +668,6 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
         companies={companies}
       />
 
-      {/* Edit User Modal - reuses CreateUserModal with userId */}
       {showEditUserModal && editingUserId && (
         <CreateUserModal
           isOpen={showEditUserModal}
@@ -692,7 +696,6 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
         availableUsers={getAvailableUsers()}
       />
 
-      {/* Building Details Modal - REPLACED EditBuildingModal */}
       <BuildingDetailsModal
         isOpen={showBuildingDetailsModal}
         onClose={() => {
