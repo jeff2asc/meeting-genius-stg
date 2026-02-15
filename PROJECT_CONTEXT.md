@@ -51,7 +51,7 @@
 - **AI Integration**: Google Gemini AI (@google/generative-ai 0.24.1) for transcript analysis
 
 ### Other Dependencies
-- **Date Handling**: date-fns 4.1.0
+- **Date Handling**: date-fns 4.1.0; **Timezone**: `lib/timezone.ts` for UTC ↔ local conversion (formatUtcToLocalLong, formatUtcToLocalShort, etc.)
 - **Charts**: Recharts 2.15.4
 - **Notifications**: Sonner (toast notifications)
 - **Analytics**: Vercel Analytics 1.3.1
@@ -1159,9 +1159,15 @@ app/page.tsx (Root)
    - **Header layout**: Back button, title, badges, and edit button properly aligned without overlap
 
 4. **`components/admin-panel.tsx`**
-   - Admin interface with tabs: Users, Buildings, Companies, Minutes Templates
+   - Admin interface with tabs: Users, Buildings, Companies, Minutes Templates, Agenda Templates
    - Opens **BuildingDetailsModal** when clicking a building (main building management)
    - Modal management for CRUD (CreateUserModal, CreateBuildingModal, CreateCompanyModal, etc.)
+
+5. **`app/task-update/[token]/page.tsx`**
+   - **External task update page** – public route for vendors/assignees to update a task by token (no login)
+   - Validates `external_update_token` and `token_expires_at` from `tasks` table
+   - Allows updating task status, adding notes, uploading/deleting attachments
+   - Link format: `/task-update/{token}` (token sent in task assignment email)
 
 #### **Modal Components**
 
@@ -1195,6 +1201,7 @@ app/page.tsx (Root)
 - `components/GenerateMinutesButton.tsx`: Generate PDF minutes from finalized meetings (template-driven, building/company logo, iframe + html2canvas + jsPDF)
 - `components/ProfileSettingsModal.tsx`: User profile settings (name, email, password)
 - `components/SelectRecorderModal.tsx`: Select recorder/device for meeting audio recording
+- `components/meetings/RecordingPlayerModal.tsx`: Play meeting recording – play/pause, progress bar, volume, mute, download (uses meeting audio from Supabase Storage)
 
 #### **Layout & Navigation**
 
@@ -1807,13 +1814,19 @@ meeting-genius/
 │   │   │   └── route.ts         # Email sending (company SMTP)
 │   │   ├── signup/
 │   │   │   └── route.ts         # Signup (company, admin, PM, building)
+│   │   ├── users/
+│   │   │   └── bulk-import/
+│   │   │       └── route.ts     # Bulk create users from CSV (building + company context)
 │   │   └── transcripts/
 │   │       ├── upload/
 │   │       │   └── route.ts     # Upload transcript + AI task extraction
 │   │       ├── list/
-│   │       │   └── route.ts    # List transcripts for a meeting
+│   │       │   └── route.ts     # List transcripts for a meeting
 │   │       └── create-tasks/
 │   │           └── route.ts     # Batch create tasks from transcript
+│   ├── task-update/
+│   │   └── [token]/
+│   │       └── page.tsx         # External task update page (vendor/assignee by token, no login)
 │   └── react-beautiful-dnd.d.ts
 │
 ├── components/
@@ -1874,6 +1887,8 @@ meeting-genius/
 │   ├── timer.tsx                 # Meeting timer
 │   ├── UnifiedItemModal.tsx      # Unified modal: Tasks / Notes / Decisions tabs per topic
 │   ├── UserNav.tsx                # User dropdown (profile, settings, logout)
+│   ├── meetings/                 # Meeting-related components
+│   │   └── RecordingPlayerModal.tsx  # Play meeting recording (play/pause, progress, volume, download)
 │   ├── transcript/               # Transcript management components
 │   │   ├── upload-transcript-modal.tsx    # Upload transcript files
 │   │   ├── preview-tasks-modal.tsx         # Review AI-extracted tasks
@@ -1890,6 +1905,7 @@ meeting-genius/
 │   ├── pdfGenerator.ts           # jsPDF-based minutes PDF generator (template-driven)
 │   ├── canvasPDFGenerator.ts     # Canvas-style agenda/minutes PDF renderer (CanvasElement layout)
 │   ├── csvParser.ts              # CSV parser/validator for bulk user import
+│   ├── timezone.ts               # Timezone utilities (UTC ↔ local for dates/times display)
 │   └── utils.ts                  # Utility functions
 │
 ├── hooks/
@@ -2023,7 +2039,7 @@ Task status options:
 
 ### 7. **External Task Updates**
 
-Tasks have `external_update_token` and `token_expires_at` fields for vendor access without full login.
+Tasks have `external_update_token` and `token_expires_at` fields for vendor/assignee access without full login. The **Task Update page** (`app/task-update/[token]/page.tsx`) is a public route: assignees open the link from the task assignment email, validate by token, and can update task status, add notes, and upload or delete attachments. Link format: `/task-update/{token}`.
 
 ### 8. **Timer Functionality**
 
@@ -2056,7 +2072,16 @@ Attendees stored as JSONB array in `meetings.attendees`:
 - **Role Display**: Roles are displayed in the attendees table and included in PDF minutes generation
 - **Read-Only Mode**: In `minutes` (finalized) status, attendees are read-only
 
-### 10. **TypeScript Types**
+**Meeting recording playback**: `RecordingPlayerModal` (in `components/meetings/`) plays meeting audio from Supabase Storage with play/pause, progress, volume, and download.
+
+### 10. **Date/Time and Timezone**
+
+Dates and times are stored in UTC in the database. For display, `lib/timezone.ts` provides:
+- `formatUtcToLocalLong(dateString, timeString?)` – full date (e.g. "Thursday, January 8, 2026")
+- `formatUtcToLocalShort(timeString)` – time (e.g. "2:00 PM")
+- Helpers to convert UTC to local for forms and labels
+
+### 11. **TypeScript Types**
 
 All database types defined in `lib/supabase.ts` as `Database` type:
 - Ensures type safety
@@ -2072,7 +2097,7 @@ All database types defined in `lib/supabase.ts` as `Database` type:
 - Includes 8 user types: master, corporate_administrator, property_manager, user, owner, resident, vendor, attendee
 - In-camera fields for meetings and topics (is_incamera, incamera_start_time, incamera_end_time)
 
-### 11. **PDF Minutes Generation**
+### 12. **PDF Minutes Generation**
 
 The system can generate professional PDF minutes from finalized meetings:
 - Uses `GenerateMinutesButton` component
@@ -2091,7 +2116,7 @@ The system can generate professional PDF minutes from finalized meetings:
 - Template defines which sections and fields to include
 - Fields can be shown/hidden and reordered
 
-### 12. **Email Sending System**
+### 13. **Email Sending System**
 
 The system includes comprehensive email functionality for sending notifications:
 - **API Endpoint**: `/app/api/send-email/route.ts`
@@ -2125,7 +2150,7 @@ The system includes comprehensive email functionality for sending notifications:
   - Mobile-responsive design with media queries
   - Accessible HTML structure
 
-### 13. **Signup API**
+### 14. **Signup API**
 
 The system includes a programmatic signup API for creating new companies and users:
 - **API Endpoint**: `/app/api/signup/route.ts`
@@ -2627,6 +2652,23 @@ useEffect(() => {
   }
   ```
 - **Implementation**: Located in `app/api/transcripts/create-tasks/route.ts`
+
+#### 6. `/api/users/bulk-import` (POST)
+- **Purpose**: Bulk create users from CSV data (used by ImportUsersModal)
+- **Authentication**: Requires user to be logged in (admin/PM)
+- **Request Body**:
+  ```json
+  {
+    "users": [{ "name": "...", "email": "...", "user_type": "...", "password": "...", "building_name": "...", "building_id": "...", "row_number": 1 }],
+    "buildingId": 123,
+    "buildingType": "Strata/Condo",
+    "companyId": 456,
+    "managerId": 789
+  }
+  ```
+- **Process**: Creates users, assigns to building via `user_buildings`, sets user_type from building type; skips duplicates by email
+- **Response**: `{ "created": number, "skipped": number, "errors": string[] }`
+- **Implementation**: Located in `app/api/users/bulk-import/route.ts`
 
 ### External API Integrations
 
