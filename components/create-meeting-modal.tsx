@@ -44,7 +44,7 @@ type Topic = {
 export default function CreateMeetingModal({ onClose, onSuccess, buildings }: CreateMeetingModalProps) {
   const [formData, setFormData] = useState({
     title: "",
-    meetingDate: "",
+    meetingDate: new Date().toISOString().split('T')[0], // ✅ AUTO-FILL TODAY'S DATE
     location: "",
     startTime: "",
     meetingType: "",
@@ -175,10 +175,10 @@ export default function CreateMeetingModal({ onClose, onSuccess, buildings }: Cr
 
         // Step 2.1: Get sections from previous meeting
         const prevSections = await getSectionsFromMeeting(previousMeeting.id)
-        
+
         // Step 2.2: Copy sections to new meeting
         const newSections: Section[] = []
-        
+
         for (const section of prevSections) {
           const { data: newSection, error: sectionError } = await supabase
             .from('sections')
@@ -252,7 +252,7 @@ export default function CreateMeetingModal({ onClose, onSuccess, buildings }: Cr
 
         // ✅ NO TASK COPYING - Tasks will be fetched dynamically when viewing the meeting
         console.log('✅ Meeting structure created. Open tasks from previous meetings will be displayed automatically.')
-        
+
       } else {
         // ============================================
         // PATH B: Use TEMPLATE (first time this meeting type)
@@ -325,7 +325,7 @@ export default function CreateMeetingModal({ onClose, onSuccess, buildings }: Cr
       // ============================================
       onSuccess()
       onClose()
-      
+
     } catch (err) {
       console.error("Unexpected error:", err)
       setError("An unexpected error occurred")
@@ -425,6 +425,9 @@ export default function CreateMeetingModal({ onClose, onSuccess, buildings }: Cr
               required
               className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50"
             />
+            <p className="text-xs text-muted-foreground mt-1">
+              ✅ Auto-filled with today's date in your timezone
+            </p>
           </div>
 
           {/* Start Time */}

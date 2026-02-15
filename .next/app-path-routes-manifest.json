@@ -1,11 +1,11 @@
 {
-  "/_not-found/page": "/_not-found",
-  "/api/send-email/route": "/api/send-email",
-  "/api/transcripts/create-tasks/route": "/api/transcripts/create-tasks",
-  "/api/transcripts/list/route": "/api/transcripts/list",
-  "/api/transcripts/upload/route": "/api/transcripts/upload",
   "/api/signup/route": "/api/signup",
+  "/api/transcripts/create-tasks/route": "/api/transcripts/create-tasks",
   "/api/users/bulk-import/route": "/api/users/bulk-import",
+  "/api/transcripts/list/route": "/api/transcripts/list",
+  "/api/send-email/route": "/api/send-email",
+  "/api/transcripts/upload/route": "/api/transcripts/upload",
+  "/_not-found/page": "/_not-found",
   "/page": "/",
   "/task-update/[token]/page": "/task-update/[token]"
 }

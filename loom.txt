@@ -1,0 +1,19 @@
+0:02 Uh, hey Jeffrey. Uh, one thing I have noticed, um, I am going into details for this particular building. There are no buildings attached to it.
+0:12 Um, I'd like to add a building, but I don't want to add a new one. I also want to have the building to add- an existing building.
+0:19 Um, so if you can make modification to have a listing of the buildings here, so that I can pick them off, that would be great.
+0:25 Thank you. Same thing with users. We should have the ability to pick people off who are, uh, already- defined in the system as well.
+0:34 So, I am a- I am a common thread about how to assign people. I would like to add myself as a property manager to this building.
+0:48 And- and Davis is already there. Umm, so I guess I have to go back to here. Uh, I already am the corporate administrator.
+1:04 straighter. So I cannot it. See, this is the problem we had before. We can't, I can't assign myself as a corporate administrator and the property manager.
+1:12 As soon as I change myself to property manager, I lose all those permissions I had, right? So, umm, that is- It's not a cool plus.
+1:22 I should not be a corporate administrator. I should be a system administrator, but that's a whole different thing. So, we need the ability to have multiple user types for the same person.
+1:31 It's not gonna happen often, but, umm, for instance, it will happen with a one. one. Person property management company where they are both a corporate administrator and the property manager.
+1:42 And so we need to have a way. Oh, it's got the wrong email address. Okay. Anyway, uh, if we can just work up the flow where we can have, uhh, a.
+1:52 Okay. Yeah. I'm, well, what's going on here? Right. So I actually had the wrong account, which is my, my fault, but, um, but the same issue, um, still exists.
+2:02 I need to be given myself some property management rights because without those property management rights, I can't. I cannot assign myself to a building, um, as the property manager, which I should be able to do.
+2:14 So, um, if you could take a run at that, that'd be great. Uh, I think it's just, um, yeah, being the users, we have to do that.
+2:24 I just realized there's a mistake on this, too, um, or something we're missing. Uh, I set this up. I don't know where this rolled over, but it's not rolled over from anything, so I am presuming there's nothing from this building, uh, prior.
+2:40 Oh, that's not true. It's not inheriting the details of this. Oh, there's nothing in there. So, yes, it is inheriting it.
+2:50 So that's fine. Um, so the issue, the big issue, though, is I can't change the building. I'm in missing. I want to, uh, change the building.
+2:59 How do I do that? Yeah, go here. And there's nothing on the building. So, uh, maybe if you could add in the field for the building here so that we can actually make the change here as well.
+3:11 That'd be great.

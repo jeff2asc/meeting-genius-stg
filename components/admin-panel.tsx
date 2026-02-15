@@ -38,6 +38,7 @@ interface UserRow {
   assigned_pm_id: number | null
   company_id: number | null
   buildings?: string[]
+  roles?: string[] | null
 }
 
 interface PropertyManager {
@@ -266,7 +267,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
 
       let usersQuery = supabase
         .from("users")
-        .select("id, name, email, user_type, assigned_pm_id, company_id, created_at")
+        .select("id, name, email, user_type, roles, assigned_pm_id, company_id, created_at")
         .order("created_at", { ascending: false })
 
       if (isCorporateAdmin && currentUser?.company_id) {

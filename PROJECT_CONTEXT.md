@@ -923,6 +923,7 @@ All permission checks are centralized in `lib/permissions.ts`:
   - Assign users to buildings via `user_buildings` junction table
   - Filter users by type, company, building
   - Inline user creation from BuildingDetailsModal and CompanyDetailsModal
+  - **Bulk Import Users**: Import users from CSV per building (ImportUsersModal + `csvParser`)
 - **Building Management**:
   - Create buildings with property manager assignment
   - Edit building details (name, address, type, manager)
@@ -958,7 +959,8 @@ All permission checks are centralized in `lib/permissions.ts`:
     - Supports PNG, JPG, SVG (max 2MB)
     - Managed in CompanyDetailsModal → Logo tab
 - **Document Management**: Upload/view building documents
-- **Minutes Templates Management**: Customize PDF templates per building
+- **Minutes Templates Management**: Customize PDF minutes templates per building (MinutesTemplatesTab)
+- **Agenda Templates Management**: Customize PDF agenda templates per building (AgendaTemplatesTab)
 
 ### 7. **Multi-Tenancy**
 - Company-level isolation
@@ -1241,7 +1243,18 @@ app/page.tsx (Root)
 - `UsersTab.tsx`: User management interface with filtering
 - `BuildingsTab.tsx`: Building management interface with user assignment
 - `CompaniesTab.tsx`: Company management interface with statistics
-- `MinutesTemplatesTab.tsx`: Template management for PDF minutes
+- `MinutesTemplatesTab.tsx`: **Advanced minutes template designer** (root component imported into Admin Panel)
+  - Per-building minutes templates with configurable cover page, info card, section header colors, motion/action/vote colors
+  - Drag-and-drop ordering and toggling of fields (date, times, attendees, sections, actions, votes, etc.)
+  - Uses real meeting data preview (latest meeting per building) to visualize minutes layout
+- `AgendaTemplatesTab.tsx`: **Agenda template designer** (per-building)
+  - Configurable cover page elements (logo, title, building name, meeting type, etc.) with free-positioning
+  - Info card fields and colors for date/time/location/address/strata plan
+  - Uses real meeting data preview for agendas
+- `ImportUsersModal.tsx`: Bulk user import from CSV for a building
+  - Uses `csvParser` to validate CSV rows (name, email, user_type, password, building info)
+  - Shows parse errors by row; preview of users before import
+  - Calls `/api/users/bulk-import` to create users, reporting created/skipped counts
 - `DocumentManagementModal.tsx`: Upload/view documents
 - `ViewDocumentModal.tsx`: View document content
 - `AssignUsersToCompanyModal.tsx`: Assign users to companies
@@ -1805,6 +1818,7 @@ meeting-genius/
 │
 ├── components/
 │   ├── admin/                   # Admin panel components
+│   │   ├── AgendaTemplatesTab.tsx      # Agenda PDF templates per building (cover page + info card designer)
 │   │   ├── AssignUsersToCompanyModal.tsx
 │   │   ├── BuildingCard.tsx
 │   │   ├── BuildingDetailsModal.tsx    # Main building modal (tabs: Details, Users, Documents, Notifications)
@@ -1817,8 +1831,9 @@ meeting-genius/
 │   │   ├── DocumentManagementModal.tsx
 │   │   ├── EditBuildingModal.tsx
 │   │   ├── EditCompanyModal.tsx
+│   │   ├── ImportUsersModal.tsx        # Bulk user import from CSV for a building
 │   │   ├── LogoTab.tsx                 # Company logo management
-│   │   ├── MinutesTemplatesTab.tsx
+│   │   ├── MinutesTemplatesTabold.tsx  # Legacy minutes template editor (kept for reference)
 │   │   ├── UserCard.tsx
 │   │   ├── UsersTab.tsx
 │   │   ├── ViewDocumentModal.tsx
@@ -1846,7 +1861,7 @@ meeting-genius/
 │   ├── Header.tsx                 # App header (logo, UserNav / Login)
 │   ├── meeting-view.tsx         # Meeting interface
 │   ├── meeting-card.tsx          # Meeting display
-│   ├── MinutesTemplatesTab.tsx   # Minutes templates (root; also in admin/)
+│   ├── MinutesTemplatesTab.tsx   # Minutes templates designer (root; used by admin-panel)
 │   ├── note-modal.tsx            # Note creation/editing
 │   ├── page.tsx                   # Optional page wrapper component
 │   ├── ProfileSettingsModal.tsx   # User profile (name, email, password)
@@ -1872,6 +1887,9 @@ meeting-genius/
 │   ├── permissions.ts            # Permission system
 │   ├── documentExtractor.ts      # Document text extraction utility (PDF, DOCX, TXT)
 │   ├── gemini.ts                 # Google Gemini AI integration for transcript task extraction
+│   ├── pdfGenerator.ts           # jsPDF-based minutes PDF generator (template-driven)
+│   ├── canvasPDFGenerator.ts     # Canvas-style agenda/minutes PDF renderer (CanvasElement layout)
+│   ├── csvParser.ts              # CSV parser/validator for bulk user import
 │   └── utils.ts                  # Utility functions
 │
 ├── hooks/
@@ -2334,6 +2352,7 @@ useEffect(() => {
 - ✅ **Delete Confirmations**: Modals for meeting, task, and decision deletion
 - ✅ **Company Logos**: Upload and display company logos in dashboard
 - ✅ **User Type 'Owner'**: Property owner user type with appropriate permissions
+- ✅ **Bulk User Import**: CSV-based user import per building (ImportUsersModal + `csvParser`)
 
 ### Remaining Considerations 🔄
 1. **Authentication**: Implement proper password hashing and verification (bcryptjs functions exist but not fully used)
@@ -2367,7 +2386,7 @@ useEffect(() => {
 14. **Advanced Search**: Full-text search across all meeting content
 15. **Version History**: Track and display version history for all entities
 16. **Bulk Operations**: Bulk edit/delete for tasks, meetings, users
-17. **Export/Import**: CSV/Excel export for reports, data import functionality
+17. **Export/Import**: Additional CSV/Excel export for reports and other data types (user CSV import implemented)
 18. **Customization**: Theme customization per company (colors, fonts)
 19. **Audit Logs**: Comprehensive audit trail for all changes
 

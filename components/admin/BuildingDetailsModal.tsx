@@ -25,6 +25,7 @@ interface User {
   email: string
   user_type: string
   company_id: number | null
+  roles?: string[] | null
 }
 
 interface Building {
@@ -81,6 +82,13 @@ export default function BuildingDetailsModal({
 
   const [showImportModal, setShowImportModal] = useState(false)
 
+  // ⭐ NEW: Assign Existing User State
+  const [showAssignExisting, setShowAssignExisting] = useState(false)
+  const [availableUsersForAssignment, setAvailableUsersForAssignment] = useState<User[]>([])
+  const [loadingAvailableUsers, setLoadingAvailableUsers] = useState(false)
+  const [selectedExistingUserId, setSelectedExistingUserId] = useState<number | "">("")
+  const [currentUser, setCurrentUser] = useState<User | null>(null)
+
   useEffect(() => {
     if (isOpen && building) {
       setBuildingName(building.name)
@@ -97,6 +105,20 @@ export default function BuildingDetailsModal({
       fetchPropertyManagers()
     }
   }, [isOpen, building])
+
+  // ⭐ NEW: Get current user on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const userJson = localStorage.getItem('current_user')
+      if (userJson) {
+        try {
+          setCurrentUser(JSON.parse(userJson))
+        } catch (err) {
+          console.error('Error parsing current user:', err)
+        }
+      }
+    }
+  }, [])
 
   const getDefaultRecipientType = (buildingType: string): string => {
     if (buildingType === "Housing Co-op") return "resident"
@@ -145,6 +167,118 @@ export default function BuildingDetailsModal({
       setPropertyManagers((data || []) as User[])
     } catch (err) {
       console.error("Unexpected error:", err)
+    }
+  }
+
+  // ⭐ NEW: Fetch available users for assignment based on permissions
+  const fetchAvailableUsersForAssignment = async () => {
+    if (!building || !currentUser) return
+
+    try {
+      setLoadingAvailableUsers(true)
+      setError(null)
+
+      let query = supabase
+        .from("users")
+        .select("id, name, email, user_type, company_id")
+        .order("name")
+
+      // Permission-based filtering
+      if (currentUser.user_type === "master" || currentUser.roles?.includes("master")) {
+        // Master can see ALL users from ALL companies
+        // No filter needed
+      } else if (
+        currentUser.user_type === "corporate_administrator" ||
+        currentUser.user_type === "property_manager" ||
+        currentUser.roles?.includes("corporate_administrator") ||
+        currentUser.roles?.includes("property_manager")
+      ) {
+        // Corp Admin and PM can only see users from SAME company
+        if (building.company_id) {
+          query = query.eq("company_id", building.company_id)
+        } else {
+          // If building has no company, show no users
+          setAvailableUsersForAssignment([])
+          setLoadingAvailableUsers(false)
+          return
+        }
+      } else {
+        // Other user types cannot assign users
+        setAvailableUsersForAssignment([])
+        setLoadingAvailableUsers(false)
+        return
+      }
+
+      const { data, error: fetchError } = await query
+
+      if (fetchError) {
+        console.error("Error fetching available users:", fetchError)
+        setError("Failed to load users.")
+        setAvailableUsersForAssignment([])
+        return
+      }
+
+      // Filter out users already assigned to this building
+      const alreadyAssignedIds = selectedUsers
+      const availableUsers = (data || []).filter(
+        (user) => !alreadyAssignedIds.includes(user.id)
+      )
+
+      setAvailableUsersForAssignment(availableUsers as User[])
+    } catch (err) {
+      console.error("Unexpected error fetching users:", err)
+      setError("Unexpected error while loading users.")
+      setAvailableUsersForAssignment([])
+    } finally {
+      setLoadingAvailableUsers(false)
+    }
+  }
+
+  // ⭐ NEW: Assign existing user to building
+  const handleAssignExistingUser = async () => {
+    if (!building || !selectedExistingUserId) {
+      setError("Please select a user to assign")
+      return
+    }
+
+    try {
+      setError(null)
+
+      // Check if user is already assigned
+      if (selectedUsers.includes(selectedExistingUserId as number)) {
+        setError("This user is already assigned to this building")
+        return
+      }
+
+      // Insert into user_buildings junction table
+      const { error: insertError } = await supabase
+        .from("user_buildings")
+        .insert({
+          user_id: selectedExistingUserId,
+          building_id: building.id,
+        })
+
+      if (insertError) {
+        console.error("Error assigning user:", insertError)
+        setError("Failed to assign user to building")
+        return
+      }
+
+      // Add to selectedUsers state
+      setSelectedUsers((prev) => [...prev, selectedExistingUserId as number])
+
+      // Reset and close form
+      setSelectedExistingUserId("")
+      setShowAssignExisting(false)
+      
+      toast.success("User assigned successfully!")
+      
+      // Refresh available users list
+      await fetchAvailableUsersForAssignment()
+      await onSuccess()
+    } catch (err) {
+      console.error("Unexpected error assigning user:", err)
+      setError("An unexpected error occurred while assigning user")
     }
   }
 
@@ -460,6 +594,33 @@ export default function BuildingDetailsModal({
               <div className="flex items-center justify-between">
                 <h3 className="font-semibold text-foreground">Manage Building Users</h3>
                 <div className="flex gap-2">
+                  {/* ⭐ NEW: Assign Existing User button */}
+                  {currentUser && (
+                    currentUser.user_type === "master" ||
+                    currentUser.user_type === "corporate_administrator" ||
+                    currentUser.user_type === "property_manager" ||
+                    currentUser.roles?.includes("master") ||
+                    currentUser.roles?.includes("corporate_administrator") ||
+                    currentUser.roles?.includes("property_manager")
+                  ) && (
+                    <Button
+                      onClick={() => {
+                        setShowAssignExisting(!showAssignExisting)
+                        if (!showAssignExisting && availableUsersForAssignment.length === 0) {
+                          fetchAvailableUsersForAssignment()
+                        }
+                        if (showAssignExisting) {
+                          setSelectedExistingUserId("")
+                        }
+                      }}
+                      size="sm"
+                      variant="outline"
+                      className="border-blue-500 text-blue-700 hover:bg-blue-50"
+                    >
+                      <Users className="h-4 w-4 mr-2" />
+                      Assign Existing User
+                    </Button>
+                  )}
                   <Button
                     onClick={() => setShowImportModal(true)}
                     size="sm"
@@ -484,6 +645,72 @@ export default function BuildingDetailsModal({
                 <p className="text-sm text-red-500">
                   {error}
                 </p>
+              )}
+
+              {/* ⭐ NEW: Assign Existing User Form */}
+              {showAssignExisting && (
+                <Card className="p-4 bg-blue-50 border-2 border-blue-300">
+                  <h4 className="font-medium text-sm mb-3 text-blue-900">
+                    Assign Existing User to Building
+                  </h4>
+                  {loadingAvailableUsers ? (
+                    <p className="text-sm text-muted-foreground">Loading users...</p>
+                  ) : availableUsersForAssignment.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      No available users to assign. All users from this company are already assigned to this building.
+                    </p>
+                  ) : (
+                    <div className="space-y-3">
+                      <div>
+                        <Label htmlFor="existingUser">Select User *</Label>
+                        <Select
+                          value={selectedExistingUserId.toString()}
+                          onValueChange={(value) => setSelectedExistingUserId(value ? Number(value) : "")}
+                        >
+                          <SelectTrigger id="existingUser" className="bg-white">
+                            <SelectValue placeholder="Select a user to assign" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {availableUsersForAssignment.map((user) => (
+                              <SelectItem key={user.id} value={user.id.toString()}>
+                                {user.name} ({user.email}) - {user.user_type}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {currentUser?.user_type === "master" 
+                            ? "Master can assign users from any company"
+                            : `Showing users from company ID: ${building.company_id || "None"}`
+                          }
+                        </p>
+                      </div>
+
+                      <div className="flex gap-2">
+                        <Button
+                          onClick={handleAssignExistingUser}
+                          size="sm"
+                          className="bg-blue-600 hover:bg-blue-700 text-white flex-1"
+                          disabled={!selectedExistingUserId || loadingAvailableUsers}
+                        >
+                          Assign User
+                        </Button>
+                        <Button
+                          onClick={() => {
+                            setShowAssignExisting(false)
+                            setSelectedExistingUserId("")
+                            setError(null)
+                          }}
+                          variant="outline"
+                          size="sm"
+                          className="flex-1"
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </Card>
               )}
 
               {showAddUserForm && (
@@ -527,18 +754,17 @@ export default function BuildingDetailsModal({
                           <SelectValue placeholder="Select user type" />
                         </SelectTrigger>
                         <SelectContent>
-  {buildingType === "Housing Co-op" && (
-    <SelectItem value="resident">Resident</SelectItem>
-  )}
-  {(buildingType === "Strata/Condo" || buildingType === "Rental") && (
-    <SelectItem value="owner">Owner</SelectItem>
-  )}
-  <SelectItem value="user">User</SelectItem>
-  <SelectItem value="propertymanager">Property Manager</SelectItem>
-  <SelectItem value="vendor">Vendor</SelectItem>
-  <SelectItem value="attendee">Attendee</SelectItem>
-</SelectContent>
-
+                          {buildingType === "Housing Co-op" && (
+                            <SelectItem value="resident">Resident</SelectItem>
+                          )}
+                          {(buildingType === "Strata/Condo" || buildingType === "Rental") && (
+                            <SelectItem value="owner">Owner</SelectItem>
+                          )}
+                          <SelectItem value="user">User</SelectItem>
+                          <SelectItem value="property_manager">Property Manager</SelectItem>
+                          <SelectItem value="vendor">Vendor</SelectItem>
+                          <SelectItem value="attendee">Attendee</SelectItem>
+                        </SelectContent>
                       </Select>
                       <p className="text-xs text-muted-foreground mt-1">
                         {buildingType === "Housing Co-op" && "Housing Co-ops use Resident type"}
@@ -1115,36 +1341,18 @@ function DocumentsTab({ building, onSuccess }: DocumentsTabProps) {
   }
 
   const formatFileSize = (bytes: number) => {
-    if (bytes < 1024) return bytes + ' B'
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB'
-    return (bytes / (1024 * 1024)).toFixed(2) + ' MB'
-  }
-
-  const getDocumentTypeColor = (type: string) => {
-    switch (type) {
-      case 'statute':
-      case 'legislation':
-        return 'bg-blue-100 text-blue-800 border-blue-200'
-      case 'rules':
-        return 'bg-green-100 text-green-800 border-green-200'
-      case 'bylaws':
-        return 'bg-purple-100 text-purple-800 border-purple-200'
-      case 'policy':
-        return 'bg-orange-100 text-orange-800 border-orange-200'
-      default:
-        return 'bg-gray-100 text-gray-800 border-gray-200'
-    }
+    if (bytes === 0) return '0 Bytes'
+    const k = 1024
+    const sizes = ['Bytes', 'KB', 'MB', 'GB']
+    const i = Math.floor(Math.log(bytes) / Math.log(k))
+    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i]
   }
 
   return (
     <div className="space-y-6">
-      <Card className="p-6 bg-gradient-to-br from-primary/5 to-decision-purple/5 border-primary/20">
-        <h3 className="font-semibold text-lg mb-4 flex items-center gap-2">
-          <Upload className="h-5 w-5 text-primary" />
-          Upload Building Documents
-        </h3>
-
-        <div className="space-y-4">
+      <Card className="p-4 bg-gradient-to-br from-green-50 to-blue-50 border-green-200">
+        <h3 className="font-semibold text-lg mb-3">Upload Document</h3>
+        <div className="space-y-3">
           <div>
             <Label htmlFor="docType">Document Type</Label>
             <Select value={selectedDocType} onValueChange={setSelectedDocType}>
@@ -1155,20 +1363,19 @@ function DocumentsTab({ building, onSuccess }: DocumentsTabProps) {
                 <SelectItem value="rules">Rules</SelectItem>
                 <SelectItem value="bylaws">Bylaws</SelectItem>
                 <SelectItem value="policies">Policies</SelectItem>
-                <SelectItem value="statute">Statute/Legislation</SelectItem>
                 <SelectItem value="other">Other</SelectItem>
               </SelectContent>
             </Select>
           </div>
 
           <div>
-            <Label htmlFor="docFile">Select File (PDF, DOC, DOCX - Max 10MB)</Label>
+            <Label htmlFor="fileUpload">Select File (PDF, DOC, DOCX - Max 10MB)</Label>
             <Input
-              id="docFile"
+              id="fileUpload"
               type="file"
               accept=".pdf,.doc,.docx"
               onChange={handleFileSelect}
-              className="mt-1"
+              className="cursor-pointer"
             />
             {selectedFile && (
               <p className="text-xs text-muted-foreground mt-1">
@@ -1180,7 +1387,7 @@ function DocumentsTab({ building, onSuccess }: DocumentsTabProps) {
           <Button
             onClick={handleUpload}
             disabled={!selectedFile || uploading}
-            className="w-full bg-gradient-to-r from-primary to-decision-purple"
+            className="w-full bg-gradient-to-r from-green-500 to-blue-500 hover:from-green-600 hover:to-blue-600"
           >
             {uploading ? (
               <>
@@ -1197,25 +1404,80 @@ function DocumentsTab({ building, onSuccess }: DocumentsTabProps) {
         </div>
       </Card>
 
-      {/* Reference URLs Section */}
-      <Card className="p-6 border-primary/20">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="font-semibold text-lg flex items-center gap-2">
-            <LinkIcon className="h-5 w-5 text-primary" />
-            Reference URLs
-          </h3>
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-semibold text-lg">Uploaded Documents</h3>
+        </div>
+        
+        {loading ? (
+          <div className="text-center py-8">
+            <Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" />
+            <p className="text-sm text-muted-foreground mt-2">Loading documents...</p>
+          </div>
+        ) : documents.length === 0 ? (
+          <Card className="p-8 text-center border-dashed">
+            <FileText className="h-12 w-12 mx-auto text-muted-foreground mb-2" />
+            <p className="text-sm text-muted-foreground">No documents uploaded yet</p>
+          </Card>
+        ) : (
+          <div className="space-y-2">
+            {documents.map((doc) => (
+              <Card key={doc.id} className="p-4 hover:shadow-md transition-shadow">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3 flex-1">
+                    <FileText className="h-5 w-5 text-primary flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-sm truncate">{doc.filename}</p>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <Badge variant="outline" className="text-xs">
+                          {doc.document_type}
+                        </Badge>
+                        <span>{formatFileSize(doc.file_size)}</span>
+                        <span>·</span>
+                        <span>{new Date(doc.created_at).toLocaleDateString()}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => window.open(doc.file_url, '_blank')}
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => handleDelete(doc.id, doc.file_url)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-semibold text-lg">Reference URLs</h3>
           <Button
-            onClick={() => setShowUrlForm(!showUrlForm)}
             size="sm"
             variant="outline"
+            onClick={() => setShowUrlForm(!showUrlForm)}
+            className="border-blue-500 text-blue-700 hover:bg-blue-50"
           >
-            <Plus className="h-4 w-4 mr-2" />
-            Add URL
+            <LinkIcon className="h-4 w-4 mr-2" />
+            {showUrlForm ? 'Cancel' : 'Add URL'}
           </Button>
         </div>
 
         {showUrlForm && (
-          <Card className="p-4 bg-muted/50 mb-4">
+          <Card className="p-4 bg-blue-50 border-blue-200 mb-4">
+            <h4 className="font-medium text-sm mb-3">Add Reference URL</h4>
             <div className="space-y-3">
               <div>
                 <Label htmlFor="urlTitle">Title *</Label>
@@ -1223,7 +1485,7 @@ function DocumentsTab({ building, onSuccess }: DocumentsTabProps) {
                   id="urlTitle"
                   value={urlTitle}
                   onChange={(e) => setUrlTitle(e.target.value)}
-                  placeholder="e.g., BC Strata Property Act"
+                  placeholder="e.g., Provincial Strata Property Act"
                 />
               </div>
               <div>
@@ -1233,7 +1495,7 @@ function DocumentsTab({ building, onSuccess }: DocumentsTabProps) {
                   type="url"
                   value={urlLink}
                   onChange={(e) => setUrlLink(e.target.value)}
-                  placeholder="https://example.com"
+                  placeholder="https://example.com/document"
                 />
               </div>
               <div>
@@ -1256,137 +1518,61 @@ function DocumentsTab({ building, onSuccess }: DocumentsTabProps) {
                   id="urlDescription"
                   value={urlDescription}
                   onChange={(e) => setUrlDescription(e.target.value)}
-                  placeholder="Additional notes..."
+                  placeholder="Brief description of this reference"
                   rows={2}
                 />
               </div>
-              <div className="flex gap-2">
-                <Button
-                  onClick={handleSaveUrl}
-                  disabled={savingUrl}
-                  size="sm"
-                  className="bg-gradient-to-r from-primary to-decision-purple"
-                >
-                  {savingUrl ? 'Saving...' : 'Save URL'}
-                </Button>
-                <Button
-                  onClick={() => {
-                    setShowUrlForm(false)
-                    setUrlTitle("")
-                    setUrlLink("")
-                    setUrlType("legislation")
-                    setUrlDescription("")
-                  }}
-                  variant="outline"
-                  size="sm"
-                >
-                  Cancel
-                </Button>
-              </div>
+              <Button
+                onClick={handleSaveUrl}
+                disabled={savingUrl || !urlTitle.trim() || !urlLink.trim()}
+                className="w-full bg-blue-600 hover:bg-blue-700"
+              >
+                {savingUrl ? 'Saving...' : 'Save URL'}
+              </Button>
             </div>
           </Card>
         )}
 
         {documentUrls.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-center py-4">
-            No reference URLs added yet
-          </p>
+          <Card className="p-8 text-center border-dashed">
+            <LinkIcon className="h-12 w-12 mx-auto text-muted-foreground mb-2" />
+            <p className="text-sm text-muted-foreground">No reference URLs added yet</p>
+          </Card>
         ) : (
           <div className="space-y-2">
             {documentUrls.map((urlDoc) => (
-              <Card key={urlDoc.id} className="p-3 hover:bg-muted/50 transition-colors">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <LinkIcon className="h-4 w-4 text-primary flex-shrink-0" />
-                      <h4 className="font-medium text-sm truncate">{urlDoc.title}</h4>
-                      <span className={`text-xs px-2 py-0.5 rounded border ${getDocumentTypeColor(urlDoc.document_type)}`}>
-                        {urlDoc.document_type}
-                      </span>
+              <Card key={urlDoc.id} className="p-4 hover:shadow-md transition-shadow">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3 flex-1">
+                    <LinkIcon className="h-5 w-5 text-blue-600 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-sm">{urlDoc.title}</p>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <Badge variant="outline" className="text-xs">
+                          {urlDoc.document_type}
+                        </Badge>
+                        <span>·</span>
+                        <span className="truncate max-w-xs">{urlDoc.url}</span>
+                      </div>
+                      {urlDoc.description && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {urlDoc.description}
+                        </p>
+                      )}
                     </div>
-                    <a
-                      href={urlDoc.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs text-blue-600 hover:underline truncate block"
-                    >
-                      {urlDoc.url}
-                    </a>
-                    {urlDoc.description && (
-                      <p className="text-xs text-muted-foreground mt-1">{urlDoc.description}</p>
-                    )}
                   </div>
-                  <div className="flex gap-1 flex-shrink-0">
+                  <div className="flex gap-2">
                     <Button
                       size="sm"
-                      variant="ghost"
+                      variant="outline"
                       onClick={() => window.open(urlDoc.url, '_blank')}
-                      className="h-8 w-8 p-0"
                     >
                       <ExternalLink className="h-4 w-4" />
                     </Button>
                     <Button
                       size="sm"
-                      variant="ghost"
+                      variant="destructive"
                       onClick={() => handleDeleteUrl(urlDoc.id)}
-                      className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              </Card>
-            ))}
-          </div>
-        )}
-      </Card>
-
-      {/* Existing Documents */}
-      <div>
-        <h3 className="font-semibold text-lg mb-3 flex items-center gap-2">
-          <FileText className="h-5 w-5" />
-          Uploaded Documents ({documents.length})
-        </h3>
-
-        {loading ? (
-          <div className="flex items-center justify-center py-8">
-            <Loader2 className="h-6 w-6 animate-spin text-primary" />
-          </div>
-        ) : documents.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-center py-8">
-            No documents uploaded yet
-          </p>
-        ) : (
-          <div className="space-y-2">
-            {documents.map((doc) => (
-              <Card key={doc.id} className="p-3 hover:bg-muted/50 transition-colors">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <FileText className="h-4 w-4 text-primary flex-shrink-0" />
-                      <h4 className="font-medium text-sm truncate">{doc.filename}</h4>
-                      <span className={`text-xs px-2 py-0.5 rounded border ${getDocumentTypeColor(doc.document_type)}`}>
-                        {doc.document_type}
-                      </span>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      {formatFileSize(doc.file_size)} · {new Date(doc.created_at).toLocaleDateString()}
-                    </p>
-                  </div>
-                  <div className="flex gap-1 flex-shrink-0">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => window.open(doc.file_url, '_blank')}
-                      className="h-8 w-8 p-0"
-                    >
-                      <ExternalLink className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => handleDelete(doc.id, doc.file_url)}
-                      className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>

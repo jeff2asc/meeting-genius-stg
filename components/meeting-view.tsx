@@ -23,6 +23,7 @@ import {
   Unlock,
   Mail,
   FileUp,
+  Download,
 } from "lucide-react"
 
 import { UploadTranscriptModal } from "@/components/transcript/upload-transcript-modal"
@@ -42,6 +43,8 @@ import { supabase, getCurrentUser } from "@/lib/supabase"
 import { canEditMeeting, isReadOnly } from "@/lib/permissions"
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd"
 import UnifiedItemModal from "./UnifiedItemModal"
+import { formatUtcToLocalLong, formatUtcToLocalShort } from "@/lib/timezone"
+import { toast } from "sonner"
 
 interface MeetingViewProps {
   meetingId: string
@@ -103,6 +106,10 @@ export default function MeetingView({
   const [showCreateTopicModal, setShowCreateTopicModal] = useState(false)
   const [showEditMeetingModal, setShowEditMeetingModal] = useState(false)
 
+  // ⭐ NEW: Recording upload state
+  const [uploadingRecording, setUploadingRecording] = useState(false)
+  const [downloadingAudio, setDownloadingAudio] = useState(false)
+
   const [attendeesExpanded, setAttendeesExpanded] = useState(false)
   const [showRecorderModal, setShowRecorderModal] = useState(false)
   const [selectedSection, setSelectedSection] = useState<{
@@ -121,6 +128,7 @@ export default function MeetingView({
   const [transcriptId, setTranscriptId] = useState<number | null>(null)
   const [extractedTasks, setExtractedTasks] = useState<any[]>([])
   const [showViewTranscripts, setShowViewTranscripts] = useState(false)
+  const [hasTranscript, setHasTranscript] = useState(false)
   const [showUnifiedModal, setShowUnifiedModal] = useState(false)
   const [selectedTopicForModal, setSelectedTopicForModal] = useState<number | null>(null)
   const [defaultTab, setDefaultTab] = useState<"task" | "note" | "decision">("task")
@@ -172,6 +180,7 @@ export default function MeetingView({
       })
 
       await fetchSectionsAndTopics()
+    await checkForTranscripts()
     } catch (err) {
       console.error("Unexpected error:", err)
     } finally {
@@ -331,6 +340,25 @@ export default function MeetingView({
     }
   }
 
+  const checkForTranscripts = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("meeting_transcripts")
+        .select("id")
+        .eq("meeting_id", meetingId)
+        .limit(1)
+
+      if (!error && data && data.length > 0) {
+        setHasTranscript(true)
+      } else {
+        setHasTranscript(false)
+      }
+    } catch (err) {
+      console.error("Error checking transcripts:", err)
+      setHasTranscript(false)
+    }
+  }
+
   const handleAddTopic = (sectionId: number, sectionTitle: string) => {
     if (!userCanEdit) {
       alert("You do not have permission to add topics.")
@@ -351,6 +379,7 @@ export default function MeetingView({
     setEditingSection(null)
     setSectionRenameValue("")
     await fetchSectionsAndTopics()
+    await checkForTranscripts()
   }
 
   const askDeleteSection = (section: Section) => setSectionToDelete(section)
@@ -360,6 +389,7 @@ export default function MeetingView({
     await supabase.from("sections").delete().eq("id", sectionToDelete.id)
     setSectionToDelete(null)
     await fetchSectionsAndTopics()
+    await checkForTranscripts()
   }
 
   const cancelDeleteSection = () => setSectionToDelete(null)
@@ -395,6 +425,7 @@ export default function MeetingView({
         }, {} as Record<number, boolean>)
 
         await fetchSectionsAndTopics()
+    await checkForTranscripts()
 
         setSections((prevSections) =>
           prevSections.map((section) => ({
@@ -420,6 +451,7 @@ export default function MeetingView({
         return
       }
       await fetchSectionsAndTopics()
+    await checkForTranscripts()
     } catch (err) {
       console.error("Unexpected error:", err)
     }
@@ -607,8 +639,42 @@ export default function MeetingView({
       setLoading(false)
     }
   }
+// ⚠️ Warn before leaving if recording is active
+useEffect(() => {
+  const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+    if (isRecording) {
+      e.preventDefault()
+      e.returnValue = "Recording in progress. Leaving will stop the recording."
+      return e.returnValue
+    }
+  }
 
-  const handleCreateSection = () => {
+  window.addEventListener("beforeunload", handleBeforeUnload)
+  return () => window.removeEventListener("beforeunload", handleBeforeUnload)
+}, [isRecording])
+
+// ⚠️ Warn before going back if recording
+const handleBackClick = () => {
+  if (isRecording) {
+    const confirmed = confirm(
+      "⚠️ Recording in Progress!\n\n" +
+      "Going back will STOP the current recording.\n" +
+      "The recording will be lost and cannot be recovered.\n\n" +
+      "Are you sure you want to leave?"
+    )
+
+    if (!confirmed) {
+      return // Stay on page
+    }
+
+    // Stop recording before leaving
+    handleStopRecording()
+  }
+
+  onBack()
+}
+
+const handleCreateSection = () => {
     if (!userCanEdit) {
       alert("You do not have permission to create sections.")
       return
@@ -633,7 +699,84 @@ export default function MeetingView({
       clearInterval(timerInterval)
       setTimerInterval(null)
     }
+    // Recording completion is handled by Timer component's onRecordingComplete callback
   }
+
+  // ⭐ NEW: Handle recording completion and upload
+  // ⭐ Handle recording completion and upload (NO auto transcript)
+const handleRecordingComplete = async (audioBlob: Blob, duration: number) => {
+  try {
+    setUploadingRecording(true)
+    console.log("📤 Uploading recording...")
+
+    // Generate filename
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-")
+    const filename = `${meetingId}_${timestamp}.webm`
+    const filePath = `meeting-recordings/${filename}`
+
+    // Upload to Supabase Storage
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from("meeting-recordings")
+      .upload(filePath, audioBlob, {
+        contentType: "audio/webm",
+        upsert: false,
+      })
+
+    if (uploadError) {
+      console.error("❌ Upload error:", uploadError)
+      alert("Failed to upload recording. Please try again.")
+      return
+    }
+
+    console.log("✅ Recording uploaded to storage")
+
+    // Get public URL
+    const { data: urlData } = supabase.storage
+      .from("meeting-recordings")
+      .getPublicUrl(filePath)
+
+    const publicUrl = urlData.publicUrl
+
+    // Update meeting record with audio details
+    const { data: updateData, error: updateError } = await supabase
+      .from("meetings")
+      .update({
+        audio_filename: filename,
+        audio_file: { url: publicUrl, path: filePath },
+        audio_duration: duration,
+        recording_ended_at: new Date().toISOString(),
+      })
+      .eq("id", meetingId)
+
+    console.log("🔍 UPDATE RESULT:", { updateData, updateError, meetingId })
+    console.log("🔍 Data sent:", {
+      audio_filename: filename,
+      audio_file: { url: publicUrl, path: filePath },
+      audio_duration: duration,
+    })
+
+    if (updateError) {
+      console.error("❌ Database update error:", updateError)
+      alert("Recording saved but failed to update meeting. Please contact support.")
+      return
+    }
+
+    console.log("✅ Meeting record updated")
+    alert(
+      `✅ Recording saved successfully! (${Math.floor(duration / 60)}:${String(
+        duration % 60,
+      ).padStart(2, "0")})`,
+    )
+
+    // 🔁 Refresh meeting data
+    await fetchMeetingData()
+  } catch (error) {
+    console.error("❌ Unexpected error:", error)
+    alert("Failed to save recording. Please try again.")
+  } finally {
+    setUploadingRecording(false)
+  }
+} 
 
   const handleUploadSuccess = (transcriptId: number, tasks: any[]) => {
     setTranscriptId(transcriptId)
@@ -647,30 +790,37 @@ export default function MeetingView({
     setShowPreviewTasks(false)
   }
 
+  // Format date only for display (long format)
   const formatDate = (dateString: string) => {
     if (!dateString) return "No date"
 
-    const [year, month, day] = dateString.split("-").map(Number)
-    const date = new Date(Date.UTC(year, month - 1, day))
+    // Combine with midnight UTC time
+    const combinedIso = `${dateString}T00:00:00Z`
+    const date = new Date(combinedIso)
 
-    return date.toLocaleDateString("en-US", {
+    return date.toLocaleDateString(undefined, {
       weekday: "long",
       year: "numeric",
       month: "long",
       day: "numeric",
-      timeZone: "UTC",
     })
   }
 
+  // Format time only for display (converts from UTC to local browser time)
   const formatTime = (timeString: string) => {
     if (!timeString) return null
-    const [hours, minutes] = timeString.split(":")
-    const hour = parseInt(hours)
-    const ampm = hour >= 12 ? "PM" : "AM"
-    const displayHour = hour % 12 || 12
-    return `${displayHour}:${minutes} ${ampm}`
-  }
 
+    // Create a date object with today's date + the time (assuming UTC)
+    const today = new Date().toISOString().split('T')[0]
+    const combinedIso = `${today}T${timeString}Z`
+
+    const date = new Date(combinedIso)
+    return date.toLocaleTimeString(undefined, {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    })
+  }
   const handleSendNotice = async () => {
     if (!meeting) return
 
@@ -1104,6 +1254,249 @@ export default function MeetingView({
     }
   }
 
+  const handleDownloadAudioRecording = async () => {
+    // Prevent multiple simultaneous downloads
+    if (downloadingAudio) {
+      console.log("⏳ Download already in progress, please wait...")
+      return
+    }
+
+    setDownloadingAudio(true)
+    try {
+      // Extract audio path and URL from JSONB audio_file field
+      let audioPath: string | null = null
+      let audioUrl: string | null = null
+      
+      if (meeting?.audio_file) {
+        if (typeof meeting.audio_file === 'string') {
+          try {
+            // Handle hex-encoded strings (sometimes Supabase returns hex-encoded JSON)
+            let jsonString = meeting.audio_file.trim()
+            
+            // Check if it's hex-encoded (starts with \x or contains \x)
+            if (jsonString.startsWith('\\x') || jsonString.includes('\\x')) {
+              // Decode hex string
+              const hexPattern = /\\x([0-9a-fA-F]{2})/g
+              jsonString = jsonString.replace(hexPattern, (match: string, hex: string): string => {
+                return String.fromCharCode(parseInt(hex, 16))
+              })
+            }
+            
+            // Try to parse as JSON
+            if (jsonString.startsWith('{') || jsonString.startsWith('[')) {
+              const parsed = JSON.parse(jsonString)
+              audioPath = parsed?.path || null
+              audioUrl = parsed?.url || null
+            } else {
+              // If it doesn't look like JSON, treat as URL
+              audioUrl = jsonString
+            }
+          } catch (parseError) {
+            console.warn("⚠️ Failed to parse audio_file JSON:", parseError)
+            // If parsing fails completely, use audio_filename to construct path
+            if (meeting?.audio_filename) {
+              audioPath = `meeting-recordings/${meeting.audio_filename}`
+            }
+          }
+        } else if (typeof meeting.audio_file === 'object' && meeting.audio_file !== null) {
+          audioPath = meeting.audio_file.path || null
+          audioUrl = meeting.audio_file.url || null
+        }
+      }
+
+      // If we have audio_filename but no path, try to construct path
+      if (!audioPath && meeting?.audio_filename) {
+        // Try with and without prefix
+        audioPath = meeting.audio_filename.includes('meeting-recordings/')
+          ? meeting.audio_filename
+          : `meeting-recordings/${meeting.audio_filename}`
+      }
+
+      // Final fallback: if we still don't have a path but have filename, use it
+      if (!audioPath && meeting?.audio_filename) {
+        audioPath = meeting.audio_filename
+      }
+
+      console.log("🔍 Audio download - Path:", audioPath, "URL:", audioUrl, "Filename:", meeting?.audio_filename)
+      console.log("🔍 Raw audio_file type:", typeof meeting?.audio_file, "Value:", meeting?.audio_file)
+
+      // Try to get signed URL first (most reliable)
+      if (audioPath) {
+        try {
+          // Supabase createSignedUrl expects path relative to bucket root
+          // If path is 'meeting-recordings/filename.webm', use it as-is
+          // If path is just 'filename.webm', use it as-is
+          // Try both variations if needed
+          let pathsToTry = [audioPath]
+          
+          // If path includes 'meeting-recordings/', also try without it
+          if (audioPath.includes('meeting-recordings/')) {
+            pathsToTry.push(audioPath.replace('meeting-recordings/', ''))
+          } else {
+            // If path doesn't include it, also try with it
+            pathsToTry.push(`meeting-recordings/${audioPath}`)
+          }
+
+          console.log("🔍 Trying paths for signed URL:", pathsToTry)
+          
+          let signedUrlData = null
+          let signedUrlError = null
+          
+          // Try each path variation
+          for (const tryPath of pathsToTry) {
+            const result = await supabase.storage
+              .from('meeting-recordings')
+              .createSignedUrl(tryPath, 3600) // 1 hour expiry
+            
+            if (result.data?.signedUrl && !result.error) {
+              signedUrlData = result.data
+              console.log("✅ Signed URL created for path:", tryPath)
+              break
+            } else {
+              signedUrlError = result.error
+              console.log("⚠️ Failed for path:", tryPath, result.error)
+            }
+          }
+          
+          if (!signedUrlData?.signedUrl) {
+            throw signedUrlError || new Error("Failed to create signed URL")
+          }
+
+          if (signedUrlData?.signedUrl) {
+            console.log("✅ Using signed URL for download")
+            
+            // Create a fresh download each time - don't reuse URLs
+            const downloadUrl = signedUrlData.signedUrl
+            const response = await fetch(downloadUrl, {
+              cache: 'no-cache', // Prevent caching
+            })
+            
+            if (!response.ok) {
+              throw new Error(`Failed to fetch signed URL: ${response.statusText}`)
+            }
+            
+            const blob = await response.blob()
+            const objectUrl = window.URL.createObjectURL(blob)
+            
+            // Create unique download element each time
+            const timestamp = Date.now()
+            const downloadFilename = meeting.audio_filename || `meeting-${meetingId}-recording.webm`
+            
+            const a = document.createElement("a")
+            a.href = objectUrl
+            a.download = downloadFilename
+            a.style.display = 'none'
+            a.setAttribute('download', downloadFilename) // Ensure download attribute is set
+            
+            // Remove any existing download elements first
+            const existingDownloads = document.querySelectorAll('a[download="' + downloadFilename + '"]')
+            existingDownloads.forEach(el => {
+              try {
+                document.body.removeChild(el)
+              } catch (e) {
+                // Ignore if already removed
+              }
+            })
+            
+            document.body.appendChild(a)
+            
+            // Use requestAnimationFrame to ensure DOM is ready
+            requestAnimationFrame(() => {
+              // Trigger download with a small delay to ensure browser processes it
+              setTimeout(() => {
+                a.click()
+                
+                // Clean up after download starts
+                setTimeout(() => {
+                  try {
+                    if (document.body.contains(a)) {
+                      document.body.removeChild(a)
+                    }
+                    window.URL.revokeObjectURL(objectUrl)
+                  } catch (e) {
+                    console.warn("Cleanup error (safe to ignore):", e)
+                  }
+                }, 200)
+              }, 10)
+            })
+            
+            console.log("✅ Audio download triggered successfully")
+            toast.success("Audio recording downloaded successfully!")
+            return
+          }
+        } catch (signedUrlError) {
+          console.warn("⚠️ Signed URL failed, trying public URL:", signedUrlError)
+        }
+      }
+
+      // Fallback to public URL
+      if (audioUrl) {
+        console.log("🔍 Trying public URL:", audioUrl)
+        const response = await fetch(audioUrl)
+        if (!response.ok) {
+          throw new Error(`Failed to fetch public URL: ${response.statusText}`)
+        }
+        
+        const blob = await response.blob()
+        const objectUrl = window.URL.createObjectURL(blob)
+        const downloadFilename = meeting.audio_filename || `meeting-${meetingId}-recording.webm`
+        
+        const a = document.createElement("a")
+        a.href = objectUrl
+        a.download = downloadFilename
+        a.style.display = 'none'
+        a.setAttribute('download', downloadFilename)
+        
+        // Remove any existing download elements first
+        const existingDownloads = document.querySelectorAll('a[download="' + downloadFilename + '"]')
+        existingDownloads.forEach(el => {
+          try {
+            document.body.removeChild(el)
+          } catch (e) {
+            // Ignore if already removed
+          }
+        })
+        
+        document.body.appendChild(a)
+        
+        // Use requestAnimationFrame to ensure DOM is ready
+        requestAnimationFrame(() => {
+          setTimeout(() => {
+            a.click()
+            
+            // Clean up after download starts
+            setTimeout(() => {
+              try {
+                if (document.body.contains(a)) {
+                  document.body.removeChild(a)
+                }
+                window.URL.revokeObjectURL(objectUrl)
+              } catch (e) {
+                console.warn("Cleanup error (safe to ignore):", e)
+              }
+            }, 200)
+          }, 10)
+        })
+        
+        console.log("✅ Audio download triggered successfully via public URL")
+        toast.success("Audio recording downloaded successfully!")
+        return
+      }
+
+      // If we get here, we have no path or URL
+      throw new Error("No audio file path or URL available")
+      
+    } catch (error: any) {
+      console.error("❌ Download error:", error)
+      const errorMessage = error.message || "Unknown error"
+      toast.error(`Failed to download audio recording: ${errorMessage}`)
+      alert(`Failed to download audio recording: ${errorMessage}\n\nPlease check:\n1. File exists in storage\n2. Storage bucket permissions\n3. Browser console for details`)
+    } finally {
+      setDownloadingAudio(false)
+    }
+  }
+
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted flex items-center justify-center">
@@ -1133,7 +1526,7 @@ export default function MeetingView({
             <Button
               variant="ghost"
               size="icon"
-              onClick={onBack}
+              onClick={handleBackClick}
               className="hover:bg-muted flex-shrink-0 h-8 w-8"
             >
               <ArrowLeft className="h-4 w-4" />
@@ -1321,23 +1714,56 @@ export default function MeetingView({
             )}
 
             {meeting.status === "minutes" && (
+              <>
               <div className="flex-shrink-0">
                 <GenerateMinutesButton
                   meetingId={meetingId}
                   buildingId={meeting.building_id}
                 />
               </div>
+                {((typeof meeting.audio_file === 'object' && meeting.audio_file?.url) || 
+                  (typeof meeting.audio_file === 'string' && meeting.audio_file) ||
+                  meeting.audio_filename) && (
+                  <Button
+                    size="sm"
+                    onClick={handleDownloadAudioRecording}
+                    variant="outline"
+                    disabled={downloadingAudio}
+                    className="h-8 px-3 text-xs whitespace-nowrap flex-shrink-0 border-blue-500 text-blue-600 hover:bg-blue-50 disabled:opacity-50"
+                  >
+                    <Download className="h-3 w-3 mr-1" />
+                    {downloadingAudio ? "Downloading..." : "Download Audio"}
+                  </Button>
+                )}
+                
+              </>
             )}
 
+            {/* ⭐ UPDATED: Timer with recording callback */}
             {isMounted && isRecording && (
               <div className="flex-shrink-0">
-                <Timer elapsedTime={elapsedTime} />
+                <Timer 
+                  elapsedTime={elapsedTime}
+                  isRecording={isRecording}
+                  meetingId={meetingId}
+                  onRecordingComplete={handleRecordingComplete}
+                />
               </div>
             )}
 
-            {isMounted && userCanEdit && (
+            {/* ⭐ UPDATED: Record/Stop/Uploading buttons */}
+            {isMounted && userCanEdit && meeting.status === "working_minutes" && (
               <>
-                {!isRecording ? (
+                {uploadingRecording ? (
+                  <Button
+                    size="sm"
+                    disabled
+                    className="h-8 px-3 text-xs whitespace-nowrap flex-shrink-0 bg-blue-500 text-white"
+                  >
+                    <span className="h-2 w-2 rounded-full bg-white mr-1.5 animate-pulse"></span>
+                    Uploading...
+                  </Button>
+                ) : !isRecording ? (
                   <Button
                     size="sm"
                     onClick={handleStartRecording}

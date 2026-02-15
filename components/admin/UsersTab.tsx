@@ -15,6 +15,7 @@ interface UserRow {
   created_at: string
   assigned_pm_id: number | null
   buildings?: string[]
+  roles?: string[] | null
 }
 
 interface Building {
@@ -49,7 +50,6 @@ export default function UsersTab({
   onEditUser,
   onDeleteUser,
 }: UsersTabProps) {
-  // Add search state
   const [searchQuery, setSearchQuery] = useState("")
 
   const canManageUser = (user: UserRow) => {
@@ -62,12 +62,20 @@ export default function UsersTab({
     if (!searchQuery.trim()) return filteredUsers
 
     const query = searchQuery.toLowerCase()
-    return filteredUsers.filter(
-      (user) =>
+    return filteredUsers.filter((user) => {
+      const matchesBasic =
         user.name.toLowerCase().includes(query) ||
         user.email.toLowerCase().includes(query) ||
         user.user_type.toLowerCase().replace(/_/g, " ").includes(query)
-    )
+
+      // Also search in roles array
+      const roles = user.roles || []
+      const matchesRoles = roles.some((r) =>
+        r.toLowerCase().replace(/_/g, " ").includes(query)
+      )
+
+      return matchesBasic || matchesRoles
+    })
   }, [filteredUsers, searchQuery])
 
   return (
@@ -90,7 +98,7 @@ export default function UsersTab({
         <div className="relative">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Search by name, email, or user type..."
+            placeholder="Search by name, email, user type, or role..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-9 pr-9"
@@ -137,6 +145,8 @@ export default function UsersTab({
                 <option value="vendor">Vendors Only</option>
                 <option value="attendee">Attendees Only</option>
                 <option value="corporate_administrator">Corporate Admins Only</option>
+                <option value="owner">Owners Only</option>
+                <option value="resident">Residents Only</option>
               </select>
             </div>
           )}

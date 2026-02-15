@@ -1,10 +1,11 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { X } from "lucide-react"
+import { X, Building2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { supabase } from "@/lib/supabase"
+import { supabase, getCurrentUser } from "@/lib/supabase"
+import { utcToLocalDateTime, localDateTimeToUtcIso } from "@/lib/timezone"
 
 interface Meeting {
   id: number
@@ -24,6 +25,13 @@ interface EditMeetingModalProps {
   meeting: Meeting | null
 }
 
+interface Building {
+  id: number
+  name: string
+  address: string | null
+  company_id: number | null
+}
+
 export default function EditMeetingModal({
   isOpen,
   onClose,
@@ -37,10 +45,62 @@ export default function EditMeetingModal({
     startTime: "",
     meetingType: "",
     strataPlanNumber: "",
+    buildingId: 0,
   })
   const [meetingTypes, setMeetingTypes] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const [availableBuildings, setAvailableBuildings] = useState<Building[]>([])
+  const [loadingBuildings, setLoadingBuildings] = useState(false)
+  const [currentUser, setCurrentUser] = useState<any>(null)
+
+  useEffect(() => {
+    const user = getCurrentUser()
+    setCurrentUser(user)
+  }, [])
+
+  const fetchAvailableBuildings = async () => {
+    if (!currentUser) return
+
+    try {
+      setLoadingBuildings(true)
+
+      let query = supabase
+        .from("buildings")
+        .select("id, name, address, company_id")
+        .order("name")
+
+      if (currentUser.user_type === "master" || currentUser.roles?.includes("master")) {
+        // Master can see ALL buildings
+      } else {
+        if (currentUser.company_id) {
+          query = query.eq("company_id", currentUser.company_id)
+        } else {
+          setAvailableBuildings([])
+          setLoadingBuildings(false)
+          return
+        }
+      }
+
+      const { data, error: fetchError } = await query
+
+      if (fetchError) {
+        console.error("Error fetching buildings:", fetchError)
+        setError("Failed to load buildings.")
+        setAvailableBuildings([])
+        return
+      }
+
+      setAvailableBuildings(data || [])
+    } catch (err) {
+      console.error("Unexpected error fetching buildings:", err)
+      setError("Unexpected error while loading buildings.")
+      setAvailableBuildings([])
+    } finally {
+      setLoadingBuildings(false)
+    }
+  }
 
   useEffect(() => {
     async function fetchCompanyMeetingTypes() {
@@ -56,7 +116,6 @@ export default function EditMeetingModal({
         return
       }
 
-      // Fetch building to get company_id
       const { data: building, error: buildingError } = await supabase
         .from('buildings')
         .select('company_id')
@@ -78,7 +137,6 @@ export default function EditMeetingModal({
         return
       }
 
-      // Fetch company meeting types
       const { data: company, error: companyError } = await supabase
         .from('companies')
         .select('default_meeting_types')
@@ -101,21 +159,83 @@ export default function EditMeetingModal({
     }
 
     if (meeting) {
+      // Convert UTC date/time to local for display in the form
+      let localDate = meeting.meeting_date
+      let localTime = meeting.start_time || ""
+
+      if (meeting.meeting_date && meeting.start_time) {
+        // If both date and time exist, convert from UTC to local
+        const { date, time } = utcToLocalDateTime(
+          meeting.meeting_date,
+          meeting.start_time
+        )
+        localDate = date
+        localTime = time
+      }
+
       setFormData({
         title: meeting.title,
-        meetingDate: meeting.meeting_date,
+        meetingDate: localDate,
         location: meeting.location || "",
-        startTime: meeting.start_time || "",
+        startTime: localTime,
         meetingType: meeting.meeting_type || "",
         strataPlanNumber: meeting.strata_plan_number || "",
+        buildingId: meeting.building_id,
       })
+
       fetchCompanyMeetingTypes()
+
+      if (currentUser) {
+        fetchAvailableBuildings()
+      }
     }
-  }, [meeting])
+  }, [meeting, currentUser])
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target
     setFormData(prev => ({ ...prev, [name]: value }))
+  }
+
+  const handleBuildingChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newBuildingId = parseInt(e.target.value)
+    setFormData(prev => ({ ...prev, buildingId: newBuildingId }))
+
+    const { data: building, error: buildingError } = await supabase
+      .from('buildings')
+      .select('company_id')
+      .eq('id', newBuildingId)
+      .single()
+
+    if (buildingError || !building?.company_id) {
+      setMeetingTypes([
+        "Council Meeting",
+        "AGM",
+        "SGM",
+        "Special Meeting",
+        "Emergency Meeting"
+      ])
+      return
+    }
+
+    const { data: company, error: companyError } = await supabase
+      .from('companies')
+      .select('default_meeting_types')
+      .eq('id', building.company_id)
+      .single()
+
+    const types = company?.default_meeting_types || [
+      "Council Meeting",
+      "AGM",
+      "SGM",
+      "Special Meeting",
+      "Emergency Meeting"
+    ]
+
+    setMeetingTypes(types)
+    setFormData(prev => ({
+      ...prev,
+      meetingType: types[0] || "Council Meeting"
+    }))
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -126,13 +246,28 @@ export default function EditMeetingModal({
     setSaving(true)
 
     try {
+      // Convert local date/time back to UTC for storage
+      let utcDate = formData.meetingDate
+      let utcTime = formData.startTime || null
+
+      if (formData.meetingDate && formData.startTime) {
+        // Convert from local to UTC before saving
+        const { date, time } = localDateTimeToUtcIso(
+          formData.meetingDate,
+          formData.startTime
+        )
+        utcDate = date
+        utcTime = time
+      }
+
       const { error: updateError } = await supabase
         .from('meetings')
         .update({
+          building_id: formData.buildingId,
           title: formData.title.trim(),
-          meeting_date: formData.meetingDate,
+          meeting_date: utcDate,
           location: formData.location.trim() || null,
-          start_time: formData.startTime || null,
+          start_time: utcTime,
           meeting_type: formData.meetingType,
           strata_plan_number: formData.strataPlanNumber.trim() || null,
         })
@@ -159,6 +294,8 @@ export default function EditMeetingModal({
 
   if (!isOpen || !meeting) return null
 
+  const currentBuilding = availableBuildings.find(b => b.id === formData.buildingId)
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 animate-in fade-in overflow-y-auto p-4">
       <Card className="w-full max-w-2xl border-0 rounded-2xl shadow-2xl my-8 max-h-[90vh] overflow-y-auto">
@@ -166,7 +303,7 @@ export default function EditMeetingModal({
           <div>
             <h2 className="text-xl font-bold text-foreground">Edit Meeting</h2>
             <p className="text-sm text-muted-foreground">
-              Update meeting details
+              Update meeting details (times shown in your local timezone)
             </p>
           </div>
           <button
@@ -184,6 +321,48 @@ export default function EditMeetingModal({
               {error}
             </div>
           )}
+
+          <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-4">
+            <label className="flex items-center gap-2 text-sm font-medium text-blue-900 mb-2">
+              <Building2 className="h-4 w-4" />
+              Building *
+            </label>
+            {loadingBuildings ? (
+              <p className="text-sm text-muted-foreground">Loading buildings...</p>
+            ) : availableBuildings.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No buildings available.</p>
+            ) : (
+              <>
+                <select
+                  name="buildingId"
+                  value={formData.buildingId}
+                  onChange={handleBuildingChange}
+                  required
+                  disabled={saving}
+                  className="w-full px-3 py-2 bg-white text-foreground rounded border border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                >
+                  {availableBuildings.map((building) => (
+                    <option key={building.id} value={building.id}>
+                      {building.name}
+                      {building.address ? ` - ${building.address}` : ""}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-blue-700 mt-2">
+                  {currentUser?.user_type === "master"
+                    ? "Master can select any building from any company"
+                    : `Showing buildings from your company${currentUser?.company_id ? ` (ID: ${currentUser.company_id})` : ""}`}
+                </p>
+                {formData.buildingId !== meeting.building_id && (
+                  <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded">
+                    <p className="text-xs text-yellow-800">
+                      ⚠️ Building will be changed from original. Meeting types have been updated to match the new building's company.
+                    </p>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
 
           <div>
             <label className="block text-sm font-medium text-foreground mb-2">
@@ -247,7 +426,7 @@ export default function EditMeetingModal({
               className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
             />
             <p className="text-xs text-muted-foreground mt-1">
-              e.g., 7:00 PM
+              Enter time in your local timezone (e.g., 7:00 PM) - will be converted to UTC for storage
             </p>
           </div>
 
