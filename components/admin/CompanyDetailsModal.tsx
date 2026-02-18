@@ -93,6 +93,9 @@ export default function CompanyDetailsModal({
   const [newAdminEmail, setNewAdminEmail] = useState("")
   const [newAdminPassword, setNewAdminPassword] = useState("")
   const [savingAdmin, setSavingAdmin] = useState(false)
+  // ⭐ NEW: promote existing user to admin
+  const [selectedAdminUserId, setSelectedAdminUserId] = useState<number | "">("")
+  const [promotingAdmin, setPromotingAdmin] = useState(false)
 
   // Add User State (for Users tab) – MULTI ROLE
   const [showAddUser, setShowAddUser] = useState(false)
@@ -287,13 +290,8 @@ export default function CompanyDetailsModal({
         return
       }
 
-      // Filter out users already in this company
-      const currentUserIds = users.map(u => u.id)
-      const availableUsers = (data || []).filter(
-        (user) => !currentUserIds.includes(user.id)
-      )
-
-      setAvailableUsersForAttachment(availableUsers as User[])
+      // For admin promotion, we want ALL users, so don't filter out current company users
+      setAvailableUsersForAttachment((data || []) as User[])
     } catch (err) {
       console.error("Unexpected error fetching users:", err)
       setError("Unexpected error while loading users.")
@@ -494,6 +492,49 @@ export default function CompanyDetailsModal({
     }
   }
 
+  // ⭐ NEW: promote existing user to corporate admin
+  const handlePromoteToAdmin = async () => {
+    if (!company) return
+
+    if (!selectedAdminUserId) {
+      setError("Please select a user to make administrator")
+      return
+    }
+
+    setPromotingAdmin(true)
+    setError(null)
+
+    try {
+      const user = availableUsersForAttachment.find((u) => u.id === selectedAdminUserId)
+      const existingRoles = user?.roles || [user?.user_type || "user"]
+      const newRoles = Array.from(new Set([...existingRoles, "corporate_administrator"]))
+
+      const { error: updateError } = await supabase
+        .from("users")
+        .update({
+          user_type: "corporate_administrator",
+          roles: newRoles,
+          company_id: company.id,
+        })
+        .eq("id", selectedAdminUserId)
+
+      if (updateError) {
+        console.error("Error promoting user to admin:", updateError)
+        setError("Failed to make user administrator")
+        return
+      }
+
+      setSelectedAdminUserId("")
+      await fetchCompanyData()
+      alert("✅ User promoted to Corporate Administrator!")
+    } catch (err) {
+      console.error("Unexpected error promoting admin:", err)
+      setError("An unexpected error occurred while making user administrator")
+    } finally {
+      setPromotingAdmin(false)
+    }
+  }
+
   const handleAddUser = async () => {
     if (!newUserName.trim() || !newUserEmail.trim() || !newUserPassword.trim()) {
       setError("All fields are required")
@@ -689,7 +730,6 @@ export default function CompanyDetailsModal({
     (u) => u.user_type === "corporate_administrator",
   )
   const filteredUsers = getFilteredUsers()
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 animate-in fade-in overflow-y-auto p-4">
       <Card className="w-full max-w-5xl border-0 rounded-2xl shadow-2xl my-8 max-h-[90vh] overflow-hidden flex flex-col">
@@ -1097,10 +1137,6 @@ export default function CompanyDetailsModal({
                               onClick={handleAttachExistingBuilding}
                               size="sm"
                               className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
-                              disabled={
-                                !selectedExistingBuildingId ||
-                                loadingAvailableBuildings
-                              }
                             >
                               Attach Building
                             </Button>
@@ -1121,102 +1157,82 @@ export default function CompanyDetailsModal({
                           value={newBuildingName}
                           onChange={(e) => setNewBuildingName(e.target.value)}
                           placeholder="Building Name *"
-                          className="w-full px-3 py-2 bg-white border border-border rounded focus:outline-none focus:ring-2 focus:ring-green-500"
+                          className="w-full px-3 py-2 bg-white border border-border rounded"
                         />
                         <input
                           type="text"
                           value={newBuildingAddress}
-                          onChange={(e) =>
-                            setNewBuildingAddress(e.target.value)
-                          }
+                          onChange={(e) => setNewBuildingAddress(e.target.value)}
                           placeholder="Address (optional)"
-                          className="w-full px-3 py-2 bg-white border border-border rounded focus:outline-none focus:ring-2 focus:ring-green-500"
+                          className="w-full px-3 py-2 bg-white border border-border rounded"
                         />
-                        <div>
-                          {!showCreatePM ? (
-                            <>
-                              <select
-                                value={selectedManagerId || ""}
-                                onChange={(e) =>
-                                  setSelectedManagerId(Number(e.target.value))
-                                }
-                                className="w-full px-3 py-2 bg-white border border-border rounded focus:outline-none focus:ring-2 focus:ring-green-500"
-                              >
-                                <option value="">
-                                  Select Property Manager *
-                                </option>
-                                {propertyManagers.map((pm) => (
-                                  <option key={pm.id} value={pm.id}>
-                                    {pm.name} ({pm.email})
-                                  </option>
-                                ))}
-                              </select>
-                              <Button
-                                type="button"
-                                onClick={() => setShowCreatePM(true)}
-                                size="sm"
-                                variant="outline"
-                                className="w-full mt-2 text-blue-600 border-blue-300 hover:bg-blue-50"
-                              >
-                                <Plus className="h-4 w-4 mr-2" />
-                                Create New Property Manager
-                              </Button>
-                            </>
-                          ) : (
-                            <Card className="p-3 bg-blue-50 border-blue-200">
-                              <h5 className="text-sm font-semibold mb-2">
-                                New Property Manager
-                              </h5>
-                              <div className="space-y-2">
-                                <input
-                                  type="text"
-                                  value={newPMName}
-                                  onChange={(e) =>
-                                    setNewPMName(e.target.value)
-                                  }
-                                  placeholder="Name *"
-                                  className="w-full px-2 py-1 text-sm rounded border border-border bg-white"
-                                />
-                                <input
-                                  type="email"
-                                  value={newPMEmail}
-                                  onChange={(e) =>
-                                    setNewPMEmail(e.target.value)
-                                  }
-                                  placeholder="Email *"
-                                  className="w-full px-2 py-1 text-sm rounded border border-border bg-white"
-                                />
-                                <input
-                                  type="password"
-                                  value={newPMPassword}
-                                  onChange={(e) =>
-                                    setNewPMPassword(e.target.value)
-                                  }
-                                  placeholder="Password *"
-                                  className="w-full px-2 py-1 text-sm rounded border border-border bg-white"
-                                />
-                                <div className="flex gap-2">
-                                  <Button
-                                    onClick={handleCreatePM}
-                                    disabled={savingPM}
-                                    size="sm"
-                                    className="flex-1"
-                                  >
-                                    {savingPM ? "Creating..." : "Create PM"}
-                                  </Button>
-                                  <Button
-                                    onClick={() => setShowCreatePM(false)}
-                                    variant="outline"
-                                    size="sm"
-                                    className="flex-1"
-                                  >
-                                    Cancel
-                                  </Button>
-                                </div>
-                              </div>
-                            </Card>
-                          )}
+
+                        <div className="space-y-2">
+                          <select
+                            value={selectedManagerId || ""}
+                            onChange={(e) =>
+                              setSelectedManagerId(Number(e.target.value))
+                            }
+                            className="w-full px-3 py-2 bg-white border border-border rounded focus:outline-none focus:ring-2 focus:ring-green-500"
+                          >
+                            <option value="">Select Property Manager *</option>
+                            {propertyManagers.map((pm) => (
+                              <option key={pm.id} value={pm.id}>
+                                {pm.name} ({pm.email})
+                              </option>
+                            ))}
+                          </select>
+
+                          <Button
+                            onClick={() => setShowCreatePM(!showCreatePM)}
+                            size="sm"
+                            variant="outline"
+                            className="w-full"
+                          >
+                            <Plus className="h-4 w-4 mr-2" />
+                            {showCreatePM ? "Cancel" : "Create New Property Manager"}
+                          </Button>
                         </div>
+
+                        {showCreatePM && (
+                          <Card className="p-3 bg-blue-50 border-blue-200">
+                            <h5 className="text-sm font-semibold mb-2 text-foreground">
+                              Create Property Manager
+                            </h5>
+                            <div className="space-y-2">
+                              <input
+                                type="text"
+                                value={newPMName}
+                                onChange={(e) => setNewPMName(e.target.value)}
+                                placeholder="Name *"
+                                className="w-full px-2 py-1.5 bg-white border border-border rounded text-sm"
+                              />
+                              <input
+                                type="email"
+                                value={newPMEmail}
+                                onChange={(e) => setNewPMEmail(e.target.value)}
+                                placeholder="Email *"
+                                className="w-full px-2 py-1.5 bg-white border border-border rounded text-sm"
+                              />
+                              <input
+                                type="password"
+                                value={newPMPassword}
+                                onChange={(e) => setNewPMPassword(e.target.value)}
+                                placeholder="Password *"
+                                className="w-full px-2 py-1.5 bg-white border border-border rounded text-sm"
+                              />
+                              <Button
+                                onClick={handleCreatePM}
+                                disabled={savingPM}
+                                size="sm"
+                                className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+                              >
+                                {savingPM ? "Creating..." : "Create PM"}
+                              </Button>
+                            </div>
+                          </Card>
+                        )}
+
                         <div className="flex gap-2">
                           <Button
                             onClick={() => {
@@ -1270,9 +1286,7 @@ export default function CompanyDetailsModal({
                             </div>
                             {userCanManageCompanies && (
                               <Button
-                                onClick={() =>
-                                  handleDeleteBuilding(building.id)
-                                }
+                                onClick={() => handleDeleteBuilding(building.id)}
                                 size="sm"
                                 variant="destructive"
                               >
@@ -1301,29 +1315,26 @@ export default function CompanyDetailsModal({
                     </h3>
                     {userCanManageCompanies && (
                       <div className="flex gap-2">
-                        {/* ⭐ NEW: Attach Existing User button */}
-                        {(currentUser?.user_type === "master" ||
-                          currentUser?.user_type === "corporate_administrator" ||
-                          currentUser?.user_type === "property_manager" ||
-                          currentUser?.roles?.includes("master") ||
-                          currentUser?.roles?.includes("corporate_administrator") ||
-                          currentUser?.roles?.includes("property_manager")) && (
+                        {isMaster && (
                           <Button
                             onClick={() => {
-                              setShowAttachExistingUser(!showAttachExistingUser)
-                              if (!showAttachExistingUser && availableUsersForAttachment.length === 0) {
-                                fetchAvailableUsersForAttachment()
-                              }
-                              if (showAttachExistingUser) {
-                                setSelectedExistingUserId("")
-                              }
+                              setShowAttachExistingUser((prev) => {
+                                const next = !prev
+                                if (next && availableUsersForAttachment.length === 0) {
+                                  fetchAvailableUsersForAttachment()
+                                }
+                                if (!next) {
+                                  setSelectedExistingUserId("")
+                                }
+                                return next
+                              })
                             }}
                             size="sm"
                             variant="outline"
                             className="text-blue-700 border-blue-300 hover:bg-blue-50"
                           >
                             <UserCog className="h-4 w-4 mr-2" />
-                            Attach Existing User
+                            Attach Existing
                           </Button>
                         )}
                         <Button
@@ -1341,57 +1352,46 @@ export default function CompanyDetailsModal({
                     )}
                   </div>
 
-                  {/* ⭐ NEW: Attach Existing User Form */}
-                  {showAttachExistingUser && (
-                    <Card className="p-4 bg-blue-50 border-2 border-blue-300">
-                      <h4 className="font-medium text-sm mb-3 text-blue-900">
-                        Attach Existing User to Company
+                  {isMaster && showAttachExistingUser && (
+                    <Card className="p-4 bg-blue-50 border-blue-200">
+                      <h4 className="font-semibold text-foreground mb-3">
+                        Attach Existing User
                       </h4>
                       {loadingAvailableUsers ? (
-                        <p className="text-sm text-muted-foreground">Loading users...</p>
+                        <p className="text-sm text-muted-foreground">
+                          Loading users...
+                        </p>
                       ) : availableUsersForAttachment.length === 0 ? (
                         <p className="text-sm text-muted-foreground">
-                          No available users to attach. All users are already in this company.
+                          No available users found.
                         </p>
                       ) : (
                         <div className="space-y-3">
-                          <div>
-                            <label className="block text-xs font-medium text-foreground mb-1">
-                              Select User *
-                            </label>
-                            <select
-                              value={selectedExistingUserId || ""}
-                              onChange={(e) =>
-                                setSelectedExistingUserId(
-                                  e.target.value ? Number(e.target.value) : ""
-                                )
-                              }
-                              className="w-full px-3 py-2 bg-white border border-border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            >
-                              <option value="">Select a user to attach</option>
-                              {availableUsersForAttachment.map((user) => (
-                                <option key={user.id} value={user.id}>
-                                  {user.name} ({user.email}) - {user.user_type} 
-                                  {user.company_id ? ` - Company ID: ${user.company_id}` : " - No Company"}
-                                </option>
-                              ))}
-                            </select>
-                            <p className="text-xs text-muted-foreground mt-1">
-                              {currentUser?.user_type === "master"
-                                ? "Master can attach users from any company"
-                                : `Showing users from company ID: ${company.id}`}
-                            </p>
-                          </div>
-
+                          <select
+                            value={selectedExistingUserId || ""}
+                            onChange={(e) =>
+                              setSelectedExistingUserId(
+                                e.target.value ? Number(e.target.value) : "",
+                              )
+                            }
+                            className="w-full px-3 py-2 bg-white border border-border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          >
+                            <option value="">Select a user to attach</option>
+                            {availableUsersForAttachment.map((u) => (
+                              <option key={u.id} value={u.id}>
+                                {u.name} ({u.email}) - {u.user_type}
+                                {u.company_id
+                                  ? " (currently assigned)"
+                                  : " (unassigned)"}
+                              </option>
+                            ))}
+                          </select>
+                          <p className="text-xs text-muted-foreground">
+                            Attaching will set this user&apos;s company to{" "}
+                            {company.name}. If they already belong to another
+                            company, they will be moved.
+                          </p>
                           <div className="flex gap-2">
-                            <Button
-                              onClick={handleAttachExistingUser}
-                              size="sm"
-                              className="bg-blue-600 hover:bg-blue-700 text-white flex-1"
-                              disabled={!selectedExistingUserId || loadingAvailableUsers}
-                            >
-                              Attach User
-                            </Button>
                             <Button
                               onClick={() => {
                                 setShowAttachExistingUser(false)
@@ -1404,6 +1404,13 @@ export default function CompanyDetailsModal({
                             >
                               Cancel
                             </Button>
+                            <Button
+                              onClick={handleAttachExistingUser}
+                              size="sm"
+                              className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
+                            >
+                              Attach User
+                            </Button>
                           </div>
                         </div>
                       )}
@@ -1413,7 +1420,7 @@ export default function CompanyDetailsModal({
                   {userCanManageCompanies && showAddUser && (
                     <Card className="p-4 bg-green-50 border-green-200">
                       <h4 className="font-semibold text-foreground mb-3">
-                        New User (Multi-Role)
+                        New User
                       </h4>
                       <div className="space-y-3">
                         <input
@@ -1439,37 +1446,25 @@ export default function CompanyDetailsModal({
                         />
 
                         <div>
-                          <p className="text-xs font-semibold text-foreground mb-2">
-                            Select Roles (first selected = primary):
+                          <p className="text-sm font-medium text-foreground mb-2">
+                            Select Roles *
                           </p>
                           <div className="grid grid-cols-2 gap-2">
-                            {ALL_ROLES.map((roleOption) => (
+                            {ALL_ROLES.map((role) => (
                               <label
-                                key={roleOption.value}
+                                key={role.value}
                                 className="flex items-center gap-2 text-sm"
                               >
                                 <input
                                   type="checkbox"
-                                  checked={selectedRoles.includes(
-                                    roleOption.value,
-                                  )}
-                                  onChange={() => toggleRole(roleOption.value)}
+                                  checked={selectedRoles.includes(role.value)}
+                                  onChange={() => toggleRole(role.value)}
                                   className="h-4 w-4"
                                 />
-                                <span>{roleOption.label}</span>
+                                {role.label}
                               </label>
                             ))}
                           </div>
-                          <p className="text-xs text-muted-foreground mt-2">
-                            Primary role (user_type):{" "}
-                            <strong>
-                              {selectedRoles[0]
-                                ? ALL_ROLES.find(
-                                    (r) => r.value === selectedRoles[0],
-                                  )?.label
-                                : "None"}
-                            </strong>
-                          </p>
                         </div>
 
                         <div className="flex gap-2">
@@ -1497,28 +1492,30 @@ export default function CompanyDetailsModal({
                     </Card>
                   )}
 
-                  <div className="flex items-center gap-2 mb-3">
-                    <label className="text-sm text-muted-foreground">
-                      Filter:
+                  <div className="flex items-center gap-2 mb-2">
+                    <label className="text-sm font-medium text-foreground">
+                      Filter by Type:
                     </label>
                     <select
                       value={userTypeFilter}
                       onChange={(e) => setUserTypeFilter(e.target.value)}
-                      className="px-2 py-1 text-sm border border-border rounded bg-background"
+                      className="px-3 py-1.5 bg-white border border-border rounded text-sm"
                     >
                       <option value="all">All Users</option>
-                      <option value="property_manager">Property Managers</option>
                       <option value="user">Users</option>
+                      <option value="owner">Owners</option>
+                      <option value="property_manager">Property Managers</option>
                       <option value="vendor">Vendors</option>
                       <option value="attendee">Attendees</option>
-                      <option value="owner">Owners</option>
                     </select>
                   </div>
 
                   {filteredUsers.length === 0 ? (
                     <div className="text-center py-12 border-2 border-dashed border-border rounded-lg">
                       <Users className="h-12 w-12 mx-auto text-muted-foreground mb-2" />
-                      <p className="text-muted-foreground">No users found</p>
+                      <p className="text-muted-foreground">
+                        No users match this filter
+                      </p>
                     </div>
                   ) : (
                     <div className="space-y-2">
@@ -1542,9 +1539,7 @@ export default function CompanyDetailsModal({
                                   ? user.roles
                                   : [user.user_type]
                                 ).map((role) => (
-                                  <span key={role}>
-                                    {getUserTypeBadge(role)}
-                                  </span>
+                                  <span key={role}>{getUserTypeBadge(role)}</span>
                                 ))}
                               </div>
                               {userCanManageCompanies && (
@@ -1577,7 +1572,7 @@ export default function CompanyDetailsModal({
                     <h3 className="text-lg font-semibold text-foreground">
                       Corporate Administrators
                     </h3>
-                    {userCanManageCompanies && (
+                    {isMaster && (
                       <Button
                         onClick={() => {
                           setShowAddAdmin(!showAddAdmin)
@@ -1592,7 +1587,75 @@ export default function CompanyDetailsModal({
                     )}
                   </div>
 
-                  {userCanManageCompanies && showAddAdmin && (
+                  {/* ⭐ NEW: Promote Existing User to Admin - MASTER ONLY */}
+                  {isMaster && (
+                    <Card className="p-4 bg-purple-50 border-purple-200">
+                      <h4 className="font-semibold text-foreground mb-3">
+                        Make Existing User an Administrator
+                      </h4>
+
+                      <div className="space-y-3">
+                        <Button
+                          onClick={() => {
+                            if (availableUsersForAttachment.length === 0) {
+                              fetchAvailableUsersForAttachment()
+                            }
+                          }}
+                          size="sm"
+                          variant="outline"
+                          className="w-full"
+                        >
+                          Load All Users
+                        </Button>
+
+                        <select
+                          value={selectedAdminUserId || ""}
+                          onChange={(e) =>
+                            setSelectedAdminUserId(
+                              e.target.value ? Number(e.target.value) : ""
+                            )
+                          }
+                          className="w-full px-3 py-2 bg-white border border-border rounded"
+                        >
+                          <option value="">Select user from all users *</option>
+                          {availableUsersForAttachment.map((u) => (
+                            <option key={u.id} value={u.id}>
+                              {u.name} ({u.email}) - {u.user_type}
+                            </option>
+                          ))}
+                        </select>
+                        <p className="text-xs text-muted-foreground">
+                          This will update the selected user to a{" "}
+                          <strong>Corporate Administrator</strong> for this company.
+                        </p>
+
+                        <div className="flex gap-2">
+                          <Button
+                            onClick={handlePromoteToAdmin}
+                            size="sm"
+                            className="flex-1 bg-purple-600 hover:bg-purple-700 text-white"
+                            disabled={!selectedAdminUserId || promotingAdmin}
+                          >
+                            {promotingAdmin ? "Updating..." : "Make Administrator"}
+                          </Button>
+                          <Button
+                            onClick={() => {
+                              setSelectedAdminUserId("")
+                              setError(null)
+                            }}
+                            variant="outline"
+                            size="sm"
+                            className="flex-1"
+                          >
+                            Clear Selection
+                          </Button>
+                        </div>
+                      </div>
+                    </Card>
+                  )}
+
+                  {/* Existing: Create brand-new admin - MASTER ONLY */}
+                  {isMaster && showAddAdmin && (
                     <Card className="p-4 bg-purple-50 border-purple-200">
                       <h4 className="font-semibold text-foreground mb-3">
                         New Administrator
@@ -1660,9 +1723,7 @@ export default function CompanyDetailsModal({
                         >
                           <div className="flex items-center justify-between">
                             <div>
-                              <p className="font-medium text-foreground">
-                                {admin.name}
-                              </p>
+                              <p className="font-medium text-foreground">{admin.name}</p>
                               <p className="text-sm text-muted-foreground">
                                 {admin.email}
                               </p>
@@ -1673,9 +1734,7 @@ export default function CompanyDetailsModal({
                                   ? admin.roles
                                   : [admin.user_type]
                                 ).map((role) => (
-                                  <span key={role}>
-                                    {getUserTypeBadge(role)}
-                                  </span>
+                                  <span key={role}>{getUserTypeBadge(role)}</span>
                                 ))}
                               </div>
                               {userCanManageCompanies && (
@@ -1698,10 +1757,10 @@ export default function CompanyDetailsModal({
 
               {activeTab === "logo" && company && (
                 <LogoTab 
-                companyId={company.id} 
-                currentLogoUrl={company.logo_url || null}
-                onLogoUpdate={fetchCompanyDetails}
-              />              
+                  companyId={company.id} 
+                  currentLogoUrl={company.logo_url || null}
+                  onLogoUpdate={fetchCompanyDetails}
+                />              
               )}
             </>
           )}

@@ -90,7 +90,7 @@ export default function BuildingDetailsModal({
   const [currentUser, setCurrentUser] = useState<User | null>(null)
 
   useEffect(() => {
-    if (isOpen && building) {
+    if (isOpen && building && currentUser) {
       setBuildingName(building.name)
       setBuildingAddress(building.address || "")
       setBuildingType(building.building_type || "Strata/Condo")
@@ -99,12 +99,15 @@ export default function BuildingDetailsModal({
       
       setBoardMeetingNoticeDays(building.board_meeting_notice_days || 7)
       setGeneralMeetingNoticeDays(building.general_meeting_notice_days || 7)
-      setNotificationRecipientType(building.notification_recipient_type || getDefaultRecipientType(building.building_type || "Strata/Condo"))
-      
+      setNotificationRecipientType(
+        building.notification_recipient_type ||
+        getDefaultRecipientType(building.building_type || "Strata/Condo")
+      )
+  
       setActiveTab("details")
       fetchPropertyManagers()
     }
-  }, [isOpen, building])
+  }, [isOpen, building, currentUser])  
 
   // ⭐ NEW: Get current user on mount
   useEffect(() => {
@@ -145,30 +148,41 @@ export default function BuildingDetailsModal({
 
   const fetchPropertyManagers = async () => {
     if (!building) return
-
+  
     try {
       let query = supabase
         .from("users")
         .select("id, name, email, user_type, company_id")
-        .eq("user_type", "property_manager")
         .order("name")
-
-      if (building.company_id) {
-        query = query.eq("company_id", building.company_id)
+  
+      // Master (or master role): can see all users as potential managers
+      if (!(currentUser?.user_type === "master" || currentUser?.roles?.includes("master"))) {
+        // Non-master: restrict to same company if building has one
+        if (building.company_id) {
+          query = query.eq("company_id", building.company_id)
+        } else {
+          setPropertyManagers([])
+          return
+        }
       }
-
+  
       const { data, error } = await query
-
+  
       if (error) {
         console.error("Error fetching property managers:", error)
         return
       }
-
+  
+      // Optional: if you only want manager-like types in the dropdown, uncomment:
+      // const allowedTypes = ["property_manager", "corporate_administrator", "master"]
+      // const managers = (data || []).filter((user) => allowedTypes.includes(user.user_type))
+      // setPropertyManagers(managers as User[])
+  
       setPropertyManagers((data || []) as User[])
     } catch (err) {
       console.error("Unexpected error:", err)
     }
-  }
+  }  
 
   // ⭐ NEW: Fetch available users for assignment based on permissions
   const fetchAvailableUsersForAssignment = async () => {

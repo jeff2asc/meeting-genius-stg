@@ -834,31 +834,6 @@ export default function MinutesTemplatesTab({
 
                 <Card className="p-4">
                   <h3 className="text-sm font-semibold mb-3">
-                    Action Items
-                  </h3>
-                  <input
-                    type="color"
-                    value={actionItemsColor}
-                    onChange={(e) => {
-                      saveToHistory()
-                      setActionItemsColor(e.target.value)
-                      setHasChanges(true)
-                    }}
-                    className="w-full h-16 rounded border cursor-pointer mb-2"
-                  />
-                  <input
-                    type="text"
-                    value={actionItemsColor}
-                    onChange={(e) => {
-                      setActionItemsColor(e.target.value)
-                      setHasChanges(true)
-                    }}
-                    className="w-full px-2 py-1 border rounded text-sm"
-                  />
-                </Card>
-
-                <Card className="p-4">
-                  <h3 className="text-sm font-semibold mb-3">
                     Vote Results
                   </h3>
                   <input
@@ -1046,7 +1021,6 @@ export default function MinutesTemplatesTab({
                                         </button>
                                       )}
                                     </div>
-
                                     <div className="text-xs text-gray-900 font-medium">
                                       {field.id === "date" &&
                                         formatMeetingDate(meeting.meeting_date)}
@@ -1143,7 +1117,7 @@ export default function MinutesTemplatesTab({
                       </div>
                     </div>
 
-                    {/* Attendees table (match PDF) */}
+                    {/* Attendees table (matches minutes PDF) */}
                     <div className="px-6 pb-6">
                       {attendees.length > 0 && (
                         <div className="rounded-lg overflow-hidden border shadow-sm">
@@ -1220,11 +1194,11 @@ export default function MinutesTemplatesTab({
                       )}
                     </div>
 
-                    {/* Sections / topics / decisions / tasks */}
+                    {/* Sections / topics / decisions (no actions, no summary) */}
                     <div className="p-6 bg-white space-y-6">
                       {sectionsData.length === 0 ? (
                         <div className="text-center py-8 text-muted-foreground border-2 border-dashed border-border rounded-lg">
-                          No sections/topics/decisions/tasks recorded for this
+                          No sections/topics/decisions recorded for this
                           meeting.
                         </div>
                       ) : (
@@ -1249,9 +1223,6 @@ export default function MinutesTemplatesTab({
                                   (topic: any, tIdx: number) => {
                                     const topicDecisions = decisionsData.filter(
                                       (d: any) => d.topic_id === topic.id
-                                    )
-                                    const topicTasks = tasksData.filter(
-                                      (t: any) => t.topic_id === topic.id
                                     )
                                     const isInCamera =
                                       topic.isincamera === true
@@ -1278,9 +1249,9 @@ export default function MinutesTemplatesTab({
                                               </p>
                                             )}
 
-                                            {/* Decisions / Motions */}
+                                            {/* Decisions / Motions inline with topic */}
                                             {topicDecisions.map(
-                                              (decision: any) => (
+                                              (decision: any, dIdx: number) => (
                                                 <div
                                                   key={decision.id}
                                                   className="border-2 rounded-lg p-4"
@@ -1302,15 +1273,27 @@ export default function MinutesTemplatesTab({
                                                           motionBoxesColor,
                                                       }}
                                                     >
-                                                      {(
-                                                        decision.result ||
-                                                        "MOTION"
-                                                      ).toUpperCase()}
+                                                      {`MOTION ${sIdx + 1}.${
+                                                        dIdx + 1
+                                                      }`}
                                                     </div>
                                                   </div>
                                                   <div className="text-sm font-semibold text-gray-800 mb-3">
                                                     {decision.motion_text}
                                                   </div>
+                                                  {decision.result && (
+                                                    <div
+                                                      className="text-xs px-3 py-2 rounded mb-2 inline-block"
+                                                      style={{
+                                                        backgroundColor:
+                                                          voteResultsColor,
+                                                        color: "white",
+                                                      }}
+                                                    >
+                                                      <strong>Decision:</strong>{" "}
+                                                      {decision.result}
+                                                    </div>
+                                                  )}
                                                   {decision.votes_for !==
                                                     null && (
                                                     <div
@@ -1325,7 +1308,8 @@ export default function MinutesTemplatesTab({
                                                         <span className="font-bold">
                                                           FOR:
                                                         </span>{" "}
-                                                        {decision.votes_for || 0}
+                                                        {decision.votes_for ||
+                                                          0}
                                                       </div>
                                                       <div>
                                                         <span className="font-bold">
@@ -1341,77 +1325,11 @@ export default function MinutesTemplatesTab({
                                                         {decision.votes_abstain ||
                                                           0}
                                                       </div>
-                                                      <div className="ml-auto font-bold">
-                                                        {decision.result ||
-                                                          "PASSED"}
-                                                      </div>
                                                     </div>
                                                   )}
                                                 </div>
                                               )
                                             )}
-
-                                            {/* Action items / Tasks */}
-                                            {topicTasks.map((task: any) => (
-                                              <div
-                                                key={task.id}
-                                                className="border-l-4 p-4 rounded"
-                                                style={{
-                                                  borderLeftColor:
-                                                    actionItemsColor,
-                                                  backgroundColor:
-                                                    getLighterColor(
-                                                      actionItemsColor,
-                                                      230
-                                                    ),
-                                                }}
-                                              >
-                                                <div className="flex items-center gap-2 mb-2">
-                                                  <div
-                                                    className="px-3 py-1 rounded text-white font-bold text-xs"
-                                                    style={{
-                                                      backgroundColor:
-                                                        actionItemsColor,
-                                                    }}
-                                                  >
-                                                    ACTION ITEM
-                                                  </div>
-                                                </div>
-                                                <div className="text-sm font-semibold text-gray-800 mb-1">
-                                                  {task.description}
-                                                </div>
-                                                <div className="text-xs text-gray-600">
-                                                  {task.assigned_name && (
-                                                    <>
-                                                      <span className="font-semibold">
-                                                        Assigned to:
-                                                      </span>{" "}
-                                                      {task.assigned_name}
-                                                    </>
-                                                  )}
-                                                  {task.due_date && (
-                                                    <>
-                                                      {" | "}
-                                                      <span className="font-semibold">
-                                                        Due:
-                                                      </span>{" "}
-                                                      {new Date(
-                                                        task.due_date
-                                                      ).toLocaleDateString()}
-                                                    </>
-                                                  )}
-                                                  {task.status && (
-                                                    <>
-                                                      {" | "}
-                                                      <span className="font-semibold">
-                                                        Status:
-                                                      </span>{" "}
-                                                      {task.status}
-                                                    </>
-                                                  )}
-                                                </div>
-                                              </div>
-                                            ))}
                                           </>
                                         )}
                                       </div>
@@ -1421,78 +1339,6 @@ export default function MinutesTemplatesTab({
                               </div>
                             )
                           })}
-
-                          {/* Decisions & votes summary (like PDF) */}
-                          {decisionsData.length > 0 && (
-                            <>
-                              <div
-                                className="px-4 py-3 text-white font-bold text-lg rounded mt-6"
-                                style={{
-                                  backgroundColor: sectionHeadersColor,
-                                }}
-                              >
-                                ⚖️ Decisions & Votes
-                              </div>
-                              <p className="text-xs text-gray-600 mt-1 mb-2 ml-4">
-                                Summary of all motions and vote results recorded
-                                during this meeting.
-                              </p>
-                              {decisionsData.map((decision: any) => {
-                                const topic = topicsData.find(
-                                  (t: any) => t.id === decision.topic_id
-                                )
-                                const section = sectionsData.find(
-                                  (s: any) =>
-                                    s.id === (topic ? topic.section_id : null)
-                                )
-
-                                const votes =
-                                  decision.votes_for != null
-                                    ? ` (For: ${decision.votes_for || 0}, Against: ${
-                                        decision.votes_against || 0
-                                      }, Abstain: ${
-                                        decision.votes_abstain || 0
-                                      })`
-                                    : ""
-
-                                return (
-                                  <div
-                                    key={decision.id}
-                                    className="mx-5 mb-3 p-3 rounded-lg border bg-purple-50 border-purple-200 text-xs"
-                                  >
-                                    <div className="text-[11px] text-gray-600 mb-1">
-                                      From{" "}
-                                      <strong>
-                                        {section
-                                          ? section.title
-                                          : "Unknown section"}
-                                      </strong>{" "}
-                                      →{" "}
-                                      {topic
-                                        ? topic.title
-                                        : "Unknown topic"}
-                                    </div>
-                                    <div className="font-semibold text-gray-800 mb-1">
-                                      {decision.motion_text}
-                                    </div>
-                                    {decision.result && (
-                                      <div
-                                        className="px-3 py-2 rounded text-[11px] font-medium"
-                                        style={{
-                                          backgroundColor: voteResultsColor,
-                                          color: "white",
-                                        }}
-                                      >
-                                        <strong>Result:</strong>{" "}
-                                        {decision.result}
-                                        {votes}
-                                      </div>
-                                    )}
-                                  </div>
-                                )
-                              })}
-                            </>
-                          )}
                         </>
                       )}
                     </div>
@@ -1501,10 +1347,9 @@ export default function MinutesTemplatesTab({
                     <div className="mt-6 p-4 bg-gradient-to-r from-purple-50 to-blue-50 border-2 border-purple-300 rounded-lg">
                       <p className="text-sm font-semibold text-purple-900">
                         This preview uses the latest meeting for this building
-                        and applies your template. What you see here (sections,
-                        topics, motions, decisions, tasks, attendees) matches
-                        the minutes PDF; only the layout/colors change when you
-                        edit the template.
+                        and applies your template. Motions are shown inline
+                        under each topic (Motion X.Y, Decision, Votes) just like
+                        the minutes PDF; only the layout/colors change here.
                       </p>
                     </div>
                   </div>

@@ -180,7 +180,7 @@ export default function MeetingView({
       })
 
       await fetchSectionsAndTopics()
-    await checkForTranscripts()
+      await checkForTranscripts()
     } catch (err) {
       console.error("Unexpected error:", err)
     } finally {
@@ -425,7 +425,7 @@ export default function MeetingView({
         }, {} as Record<number, boolean>)
 
         await fetchSectionsAndTopics()
-    await checkForTranscripts()
+        await checkForTranscripts()
 
         setSections((prevSections) =>
           prevSections.map((section) => ({
@@ -451,7 +451,7 @@ export default function MeetingView({
         return
       }
       await fetchSectionsAndTopics()
-    await checkForTranscripts()
+      await checkForTranscripts()
     } catch (err) {
       console.error("Unexpected error:", err)
     }
@@ -639,42 +639,41 @@ export default function MeetingView({
       setLoading(false)
     }
   }
-// ⚠️ Warn before leaving if recording is active
-useEffect(() => {
-  const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+
+  // ⚠️ Warn before leaving if recording is active
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isRecording) {
+        e.preventDefault()
+        e.returnValue = "Recording in progress. Leaving will stop the recording."
+        return e.returnValue
+      }
+    }
+    window.addEventListener("beforeunload", handleBeforeUnload)
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload)
+  }, [isRecording])
+
+  // ⚠️ Warn before going back if recording
+  const handleBackClick = () => {
     if (isRecording) {
-      e.preventDefault()
-      e.returnValue = "Recording in progress. Leaving will stop the recording."
-      return e.returnValue
-    }
-  }
+      const confirmed = confirm(
+        "⚠️ Recording in Progress!\n\n" +
+        "Going back will STOP the current recording.\n" +
+        "The recording will be lost and cannot be recovered.\n\n" +
+        "Are you sure you want to leave?"
+      )
 
-  window.addEventListener("beforeunload", handleBeforeUnload)
-  return () => window.removeEventListener("beforeunload", handleBeforeUnload)
-}, [isRecording])
+      if (!confirmed) {
+        return
+      }
 
-// ⚠️ Warn before going back if recording
-const handleBackClick = () => {
-  if (isRecording) {
-    const confirmed = confirm(
-      "⚠️ Recording in Progress!\n\n" +
-      "Going back will STOP the current recording.\n" +
-      "The recording will be lost and cannot be recovered.\n\n" +
-      "Are you sure you want to leave?"
-    )
-
-    if (!confirmed) {
-      return // Stay on page
+      handleStopRecording()
     }
 
-    // Stop recording before leaving
-    handleStopRecording()
+    onBack()
   }
 
-  onBack()
-}
-
-const handleCreateSection = () => {
+  const handleCreateSection = () => {
     if (!userCanEdit) {
       alert("You do not have permission to create sections.")
       return
@@ -699,84 +698,77 @@ const handleCreateSection = () => {
       clearInterval(timerInterval)
       setTimerInterval(null)
     }
-    // Recording completion is handled by Timer component's onRecordingComplete callback
   }
 
-  // ⭐ NEW: Handle recording completion and upload
   // ⭐ Handle recording completion and upload (NO auto transcript)
-const handleRecordingComplete = async (audioBlob: Blob, duration: number) => {
-  try {
-    setUploadingRecording(true)
-    console.log("📤 Uploading recording...")
+  const handleRecordingComplete = async (audioBlob: Blob, duration: number) => {
+    try {
+      setUploadingRecording(true)
+      console.log("📤 Uploading recording...")
 
-    // Generate filename
-    const timestamp = new Date().toISOString().replace(/[:.]/g, "-")
-    const filename = `${meetingId}_${timestamp}.webm`
-    const filePath = `meeting-recordings/${filename}`
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-")
+      const filename = `${meetingId}_${timestamp}.webm`
+      const filePath = `meeting-recordings/${filename}`
 
-    // Upload to Supabase Storage
-    const { data: uploadData, error: uploadError } = await supabase.storage
-      .from("meeting-recordings")
-      .upload(filePath, audioBlob, {
-        contentType: "audio/webm",
-        upsert: false,
-      })
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from("meeting-recordings")
+        .upload(filePath, audioBlob, {
+          contentType: "audio/webm",
+          upsert: false,
+        })
 
-    if (uploadError) {
-      console.error("❌ Upload error:", uploadError)
-      alert("Failed to upload recording. Please try again.")
-      return
-    }
+      if (uploadError) {
+        console.error("❌ Upload error:", uploadError)
+        alert("Failed to upload recording. Please try again.")
+        return
+      }
 
-    console.log("✅ Recording uploaded to storage")
+      console.log("✅ Recording uploaded to storage")
 
-    // Get public URL
-    const { data: urlData } = supabase.storage
-      .from("meeting-recordings")
-      .getPublicUrl(filePath)
+      const { data: urlData } = supabase.storage
+        .from("meeting-recordings")
+        .getPublicUrl(filePath)
 
-    const publicUrl = urlData.publicUrl
+      const publicUrl = urlData.publicUrl
 
-    // Update meeting record with audio details
-    const { data: updateData, error: updateError } = await supabase
-      .from("meetings")
-      .update({
+      const { data: updateData, error: updateError } = await supabase
+        .from("meetings")
+        .update({
+          audio_filename: filename,
+          audio_file: { url: publicUrl, path: filePath },
+          audio_duration: duration,
+          recording_ended_at: new Date().toISOString(),
+        })
+        .eq("id", meetingId)
+
+      console.log("🔍 UPDATE RESULT:", { updateData, updateError, meetingId })
+      console.log("🔍 Data sent:", {
         audio_filename: filename,
         audio_file: { url: publicUrl, path: filePath },
         audio_duration: duration,
-        recording_ended_at: new Date().toISOString(),
       })
-      .eq("id", meetingId)
 
-    console.log("🔍 UPDATE RESULT:", { updateData, updateError, meetingId })
-    console.log("🔍 Data sent:", {
-      audio_filename: filename,
-      audio_file: { url: publicUrl, path: filePath },
-      audio_duration: duration,
-    })
+      if (updateError) {
+        console.error("❌ Database update error:", updateError)
+        alert("Recording saved but failed to update meeting. Please contact support.")
+        return
+      }
 
-    if (updateError) {
-      console.error("❌ Database update error:", updateError)
-      alert("Recording saved but failed to update meeting. Please contact support.")
-      return
+      console.log("✅ Meeting record updated")
+      alert(
+        `✅ Recording saved successfully! (${Math.floor(duration / 60)}:${String(
+          duration % 60,
+        ).padStart(2, "0")})`,
+      )
+
+      await fetchMeetingData()
+    } catch (error) {
+      console.error("❌ Unexpected error:", error)
+      alert("Failed to save recording. Please try again.")
+    } finally {
+      setUploadingRecording(false)
     }
-
-    console.log("✅ Meeting record updated")
-    alert(
-      `✅ Recording saved successfully! (${Math.floor(duration / 60)}:${String(
-        duration % 60,
-      ).padStart(2, "0")})`,
-    )
-
-    // 🔁 Refresh meeting data
-    await fetchMeetingData()
-  } catch (error) {
-    console.error("❌ Unexpected error:", error)
-    alert("Failed to save recording. Please try again.")
-  } finally {
-    setUploadingRecording(false)
   }
-} 
 
   const handleUploadSuccess = (transcriptId: number, tasks: any[]) => {
     setTranscriptId(transcriptId)
@@ -790,11 +782,8 @@ const handleRecordingComplete = async (audioBlob: Blob, duration: number) => {
     setShowPreviewTasks(false)
   }
 
-  // Format date only for display (long format)
   const formatDate = (dateString: string) => {
     if (!dateString) return "No date"
-
-    // Combine with midnight UTC time
     const combinedIso = `${dateString}T00:00:00Z`
     const date = new Date(combinedIso)
 
@@ -806,11 +795,9 @@ const handleRecordingComplete = async (audioBlob: Blob, duration: number) => {
     })
   }
 
-  // Format time only for display (converts from UTC to local browser time)
   const formatTime = (timeString: string) => {
     if (!timeString) return null
 
-    // Create a date object with today's date + the time (assuming UTC)
     const today = new Date().toISOString().split('T')[0]
     const combinedIso = `${today}T${timeString}Z`
 
@@ -821,6 +808,7 @@ const handleRecordingComplete = async (audioBlob: Blob, duration: number) => {
       hour12: true,
     })
   }
+
   const handleSendNotice = async () => {
     if (!meeting) return
 
@@ -1255,7 +1243,6 @@ const handleRecordingComplete = async (audioBlob: Blob, duration: number) => {
   }
 
   const handleDownloadAudioRecording = async () => {
-    // Prevent multiple simultaneous downloads
     if (downloadingAudio) {
       console.log("⏳ Download already in progress, please wait...")
       return
@@ -1263,37 +1250,30 @@ const handleRecordingComplete = async (audioBlob: Blob, duration: number) => {
 
     setDownloadingAudio(true)
     try {
-      // Extract audio path and URL from JSONB audio_file field
       let audioPath: string | null = null
       let audioUrl: string | null = null
-      
+
       if (meeting?.audio_file) {
         if (typeof meeting.audio_file === 'string') {
           try {
-            // Handle hex-encoded strings (sometimes Supabase returns hex-encoded JSON)
             let jsonString = meeting.audio_file.trim()
-            
-            // Check if it's hex-encoded (starts with \x or contains \x)
+
             if (jsonString.startsWith('\\x') || jsonString.includes('\\x')) {
-              // Decode hex string
               const hexPattern = /\\x([0-9a-fA-F]{2})/g
               jsonString = jsonString.replace(hexPattern, (match: string, hex: string): string => {
                 return String.fromCharCode(parseInt(hex, 16))
               })
             }
-            
-            // Try to parse as JSON
+
             if (jsonString.startsWith('{') || jsonString.startsWith('[')) {
               const parsed = JSON.parse(jsonString)
               audioPath = parsed?.path || null
               audioUrl = parsed?.url || null
             } else {
-              // If it doesn't look like JSON, treat as URL
               audioUrl = jsonString
             }
           } catch (parseError) {
             console.warn("⚠️ Failed to parse audio_file JSON:", parseError)
-            // If parsing fails completely, use audio_filename to construct path
             if (meeting?.audio_filename) {
               audioPath = `meeting-recordings/${meeting.audio_filename}`
             }
@@ -1304,15 +1284,12 @@ const handleRecordingComplete = async (audioBlob: Blob, duration: number) => {
         }
       }
 
-      // If we have audio_filename but no path, try to construct path
       if (!audioPath && meeting?.audio_filename) {
-        // Try with and without prefix
         audioPath = meeting.audio_filename.includes('meeting-recordings/')
           ? meeting.audio_filename
           : `meeting-recordings/${meeting.audio_filename}`
       }
 
-      // Final fallback: if we still don't have a path but have filename, use it
       if (!audioPath && meeting?.audio_filename) {
         audioPath = meeting.audio_filename
       }
@@ -1320,34 +1297,26 @@ const handleRecordingComplete = async (audioBlob: Blob, duration: number) => {
       console.log("🔍 Audio download - Path:", audioPath, "URL:", audioUrl, "Filename:", meeting?.audio_filename)
       console.log("🔍 Raw audio_file type:", typeof meeting?.audio_file, "Value:", meeting?.audio_file)
 
-      // Try to get signed URL first (most reliable)
       if (audioPath) {
         try {
-          // Supabase createSignedUrl expects path relative to bucket root
-          // If path is 'meeting-recordings/filename.webm', use it as-is
-          // If path is just 'filename.webm', use it as-is
-          // Try both variations if needed
           let pathsToTry = [audioPath]
-          
-          // If path includes 'meeting-recordings/', also try without it
+
           if (audioPath.includes('meeting-recordings/')) {
             pathsToTry.push(audioPath.replace('meeting-recordings/', ''))
           } else {
-            // If path doesn't include it, also try with it
             pathsToTry.push(`meeting-recordings/${audioPath}`)
           }
 
           console.log("🔍 Trying paths for signed URL:", pathsToTry)
-          
+
           let signedUrlData = null
           let signedUrlError = null
-          
-          // Try each path variation
+
           for (const tryPath of pathsToTry) {
             const result = await supabase.storage
               .from('meeting-recordings')
-              .createSignedUrl(tryPath, 3600) // 1 hour expiry
-            
+              .createSignedUrl(tryPath, 3600)
+
             if (result.data?.signedUrl && !result.error) {
               signedUrlData = result.data
               console.log("✅ Signed URL created for path:", tryPath)
@@ -1357,56 +1326,47 @@ const handleRecordingComplete = async (audioBlob: Blob, duration: number) => {
               console.log("⚠️ Failed for path:", tryPath, result.error)
             }
           }
-          
+
           if (!signedUrlData?.signedUrl) {
             throw signedUrlError || new Error("Failed to create signed URL")
           }
 
           if (signedUrlData?.signedUrl) {
             console.log("✅ Using signed URL for download")
-            
-            // Create a fresh download each time - don't reuse URLs
+
             const downloadUrl = signedUrlData.signedUrl
             const response = await fetch(downloadUrl, {
-              cache: 'no-cache', // Prevent caching
+              cache: 'no-cache',
             })
-            
+
             if (!response.ok) {
               throw new Error(`Failed to fetch signed URL: ${response.statusText}`)
             }
-            
+
             const blob = await response.blob()
             const objectUrl = window.URL.createObjectURL(blob)
-            
-            // Create unique download element each time
-            const timestamp = Date.now()
+
             const downloadFilename = meeting.audio_filename || `meeting-${meetingId}-recording.webm`
-            
+
             const a = document.createElement("a")
             a.href = objectUrl
             a.download = downloadFilename
             a.style.display = 'none'
-            a.setAttribute('download', downloadFilename) // Ensure download attribute is set
-            
-            // Remove any existing download elements first
+            a.setAttribute('download', downloadFilename)
+
             const existingDownloads = document.querySelectorAll('a[download="' + downloadFilename + '"]')
             existingDownloads.forEach(el => {
               try {
                 document.body.removeChild(el)
-              } catch (e) {
-                // Ignore if already removed
-              }
+              } catch (e) {}
             })
-            
+
             document.body.appendChild(a)
-            
-            // Use requestAnimationFrame to ensure DOM is ready
+
             requestAnimationFrame(() => {
-              // Trigger download with a small delay to ensure browser processes it
               setTimeout(() => {
                 a.click()
-                
-                // Clean up after download starts
+
                 setTimeout(() => {
                   try {
                     if (document.body.contains(a)) {
@@ -1419,7 +1379,7 @@ const handleRecordingComplete = async (audioBlob: Blob, duration: number) => {
                 }, 200)
               }, 10)
             })
-            
+
             console.log("✅ Audio download triggered successfully")
             toast.success("Audio recording downloaded successfully!")
             return
@@ -1429,42 +1389,36 @@ const handleRecordingComplete = async (audioBlob: Blob, duration: number) => {
         }
       }
 
-      // Fallback to public URL
       if (audioUrl) {
         console.log("🔍 Trying public URL:", audioUrl)
         const response = await fetch(audioUrl)
         if (!response.ok) {
           throw new Error(`Failed to fetch public URL: ${response.statusText}`)
         }
-        
+
         const blob = await response.blob()
         const objectUrl = window.URL.createObjectURL(blob)
         const downloadFilename = meeting.audio_filename || `meeting-${meetingId}-recording.webm`
-        
+
         const a = document.createElement("a")
         a.href = objectUrl
         a.download = downloadFilename
         a.style.display = 'none'
         a.setAttribute('download', downloadFilename)
-        
-        // Remove any existing download elements first
+
         const existingDownloads = document.querySelectorAll('a[download="' + downloadFilename + '"]')
         existingDownloads.forEach(el => {
           try {
             document.body.removeChild(el)
-          } catch (e) {
-            // Ignore if already removed
-          }
+          } catch (e) {}
         })
-        
+
         document.body.appendChild(a)
-        
-        // Use requestAnimationFrame to ensure DOM is ready
+
         requestAnimationFrame(() => {
           setTimeout(() => {
             a.click()
-            
-            // Clean up after download starts
+
             setTimeout(() => {
               try {
                 if (document.body.contains(a)) {
@@ -1477,15 +1431,14 @@ const handleRecordingComplete = async (audioBlob: Blob, duration: number) => {
             }, 200)
           }, 10)
         })
-        
+
         console.log("✅ Audio download triggered successfully via public URL")
         toast.success("Audio recording downloaded successfully!")
         return
       }
 
-      // If we get here, we have no path or URL
       throw new Error("No audio file path or URL available")
-      
+
     } catch (error: any) {
       console.error("❌ Download error:", error)
       const errorMessage = error.message || "Unknown error"
@@ -1495,7 +1448,6 @@ const handleRecordingComplete = async (audioBlob: Blob, duration: number) => {
       setDownloadingAudio(false)
     }
   }
-
 
   if (loading) {
     return (
@@ -1538,7 +1490,7 @@ const handleRecordingComplete = async (audioBlob: Blob, duration: number) => {
                   {meeting.title}
                 </h1>
 
-                {meeting.is_incamera && (
+                {meeting.is_incamera && meeting.status === "working_minutes" && (
                   <Badge
                     variant="outline"
                     className="bg-red-100 text-red-700 border-red-300 flex-shrink-0 text-xs h-6"
@@ -1576,7 +1528,7 @@ const handleRecordingComplete = async (audioBlob: Blob, duration: number) => {
             </div>
           </div>
 
-          {meeting.is_incamera && (
+          {meeting.is_incamera && meeting.status === "working_minutes" && (
             <div className="mb-2 p-2 bg-red-50 border border-red-200 rounded text-xs">
               <div className="flex items-center gap-1.5 text-red-800">
                 <Lock className="h-3 w-3 flex-shrink-0" />
@@ -1586,7 +1538,9 @@ const handleRecordingComplete = async (audioBlob: Blob, duration: number) => {
           )}
 
           <div className="flex items-center gap-1.5 overflow-x-auto">
-            {userCanEdit && meeting.status !== "minutes" && (
+
+            {/* ✅ CHANGE 1: In-Camera only during working_minutes */}
+            {userCanEdit && meeting.status === "working_minutes" && (
               <Button
                 size="sm"
                 variant="outline"
@@ -1611,43 +1565,40 @@ const handleRecordingComplete = async (audioBlob: Blob, duration: number) => {
               </Button>
             )}
 
-            {userCanEdit && canTransition(meeting.status, "backward") && (
+            {/* ✅ CHANGE 2: Back only during working_minutes */}
+            {/* Back button: working_minutes and minutes */}
+{userCanEdit && (meeting.status === "working_minutes" || meeting.status === "minutes") && (
+  <Button
+    size="sm"
+    variant="outline"
+    onClick={() => updateMeetingStatus(prevStatus(meeting.status))}
+    className="h-8 px-3 text-xs whitespace-nowrap flex-shrink-0 bg-gray-100 border-gray-400"
+  >
+    <ChevronLeft className="h-3 w-3 mr-1" />
+    Back
+  </Button>
+)}
+
+            {/* ✅ CHANGE 3: Start only during working_agenda, End only during working_minutes */}
+            {userCanEdit && meeting.status === "working_agenda" && (
               <Button
                 size="sm"
-                variant="outline"
-                onClick={() => updateMeetingStatus(prevStatus(meeting.status))}
-                className="h-8 px-3 text-xs whitespace-nowrap flex-shrink-0 bg-gray-100 border-gray-400"
+                onClick={() => setShowRecorderModal(true)}
+                className="h-8 px-3 text-xs whitespace-nowrap flex-shrink-0 bg-green-600 text-white hover:bg-green-700"
               >
-                <ChevronLeft className="h-3 w-3 mr-1" />
-                Back
+                <Play className="h-3 w-3 mr-1" />
+                Start
               </Button>
             )}
 
-            {userCanEdit && canTransition(meeting.status, "forward") && (
+            {userCanEdit && meeting.status === "working_minutes" && (
               <Button
                 size="sm"
-                onClick={() => {
-                  const target = nextStatus(meeting.status)
-                  if (target === "working_minutes") {
-                    setShowRecorderModal(true)
-                  } else {
-                    updateMeetingStatus(target)
-                  }
-                }}
+                onClick={() => updateMeetingStatus("minutes")}
                 className="h-8 px-3 text-xs whitespace-nowrap flex-shrink-0 bg-green-600 text-white hover:bg-green-700"
               >
-                {meeting.status === "working_agenda" && (
-                  <>
-                    <Play className="h-3 w-3 mr-1" />
-                    Start
-                  </>
-                )}
-                {meeting.status === "working_minutes" && (
-                  <>
-                    <CheckCircle className="h-3 w-3 mr-1" />
-                    End
-                  </>
-                )}
+                <CheckCircle className="h-3 w-3 mr-1" />
+                End
               </Button>
             )}
 
@@ -1715,13 +1666,13 @@ const handleRecordingComplete = async (audioBlob: Blob, duration: number) => {
 
             {meeting.status === "minutes" && (
               <>
-              <div className="flex-shrink-0">
-                <GenerateMinutesButton
-                  meetingId={meetingId}
-                  buildingId={meeting.building_id}
-                />
-              </div>
-                {((typeof meeting.audio_file === 'object' && meeting.audio_file?.url) || 
+                <div className="flex-shrink-0">
+                  <GenerateMinutesButton
+                    meetingId={meetingId}
+                    buildingId={meeting.building_id}
+                  />
+                </div>
+                {((typeof meeting.audio_file === 'object' && meeting.audio_file?.url) ||
                   (typeof meeting.audio_file === 'string' && meeting.audio_file) ||
                   meeting.audio_filename) && (
                   <Button
@@ -1735,14 +1686,12 @@ const handleRecordingComplete = async (audioBlob: Blob, duration: number) => {
                     {downloadingAudio ? "Downloading..." : "Download Audio"}
                   </Button>
                 )}
-                
               </>
             )}
 
-            {/* ⭐ UPDATED: Timer with recording callback */}
             {isMounted && isRecording && (
               <div className="flex-shrink-0">
-                <Timer 
+                <Timer
                   elapsedTime={elapsedTime}
                   isRecording={isRecording}
                   meetingId={meetingId}
@@ -1751,7 +1700,6 @@ const handleRecordingComplete = async (audioBlob: Blob, duration: number) => {
               </div>
             )}
 
-            {/* ⭐ UPDATED: Record/Stop/Uploading buttons */}
             {isMounted && userCanEdit && meeting.status === "working_minutes" && (
               <>
                 {uploadingRecording ? (

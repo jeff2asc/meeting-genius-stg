@@ -1,19 +1,48 @@
-0:02 Uh, hey Jeffrey. Uh, one thing I have noticed, um, I am going into details for this particular building. There are no buildings attached to it.
-0:12 Um, I'd like to add a building, but I don't want to add a new one. I also want to have the building to add- an existing building.
-0:19 Um, so if you can make modification to have a listing of the buildings here, so that I can pick them off, that would be great.
-0:25 Thank you. Same thing with users. We should have the ability to pick people off who are, uh, already- defined in the system as well.
-0:34 So, I am a- I am a common thread about how to assign people. I would like to add myself as a property manager to this building.
-0:48 And- and Davis is already there. Umm, so I guess I have to go back to here. Uh, I already am the corporate administrator.
-1:04 straighter. So I cannot it. See, this is the problem we had before. We can't, I can't assign myself as a corporate administrator and the property manager.
-1:12 As soon as I change myself to property manager, I lose all those permissions I had, right? So, umm, that is- It's not a cool plus.
-1:22 I should not be a corporate administrator. I should be a system administrator, but that's a whole different thing. So, we need the ability to have multiple user types for the same person.
-1:31 It's not gonna happen often, but, umm, for instance, it will happen with a one. one. Person property management company where they are both a corporate administrator and the property manager.
-1:42 And so we need to have a way. Oh, it's got the wrong email address. Okay. Anyway, uh, if we can just work up the flow where we can have, uhh, a.
-1:52 Okay. Yeah. I'm, well, what's going on here? Right. So I actually had the wrong account, which is my, my fault, but, um, but the same issue, um, still exists.
-2:02 I need to be given myself some property management rights because without those property management rights, I can't. I cannot assign myself to a building, um, as the property manager, which I should be able to do.
-2:14 So, um, if you could take a run at that, that'd be great. Uh, I think it's just, um, yeah, being the users, we have to do that.
-2:24 I just realized there's a mistake on this, too, um, or something we're missing. Uh, I set this up. I don't know where this rolled over, but it's not rolled over from anything, so I am presuming there's nothing from this building, uh, prior.
-2:40 Oh, that's not true. It's not inheriting the details of this. Oh, there's nothing in there. So, yes, it is inheriting it.
-2:50 So that's fine. Um, so the issue, the big issue, though, is I can't change the building. I'm in missing. I want to, uh, change the building.
-2:59 How do I do that? Yeah, go here. And there's nothing on the building. So, uh, maybe if you could add in the field for the building here so that we can actually make the change here as well.
-3:11 That'd be great.
+0:01 Hey, um. Okay, uh, hey Jeffrey. Um, I have, um, the playing with, uh, changes. Uh, if I assign myself, um, uh, property management and corporate administrator roles, which is good, I can do that.
+0:16 Um, so that's fantastic. Now I'm going into the buildings, and I'm trying to assign myself to say this one here.
+0:23 Uh, which I've got apparently three of those uses already in here, but, uh, as you can see, so if I go back here, It hails me.
+0:32 I can't assign myself to the property manager role. I'm trying to figure out why I'm not in there because it actually tells me after this building that I am in there.
+0:41 If you can look at the blind here, um, it's at the, I am at Betty Roberts too. I'm a user, but I'm not a, uhm, I can't assign myself as a property manager.
+0:50 I can't even find myself, uh, just making sure that, uh, yeah, I'm not in here. At least I don't see myself.
+1:00 So, um, there's a still problem where it's not showing up in the list. I should be able to see it, and particularly because I'm a master user.
+1:08 I should be able to see my own name in there. Uh, uh, I'm just going through right now to make sure that I'm under something else, but I don't think I am.
+1:17 So there's an issue there. Okay, thanks. Uh, similarly, I've gone into the building here, uh, no, into the company. I'm sorry, I'm, uh, company here.
+1:27 And, uh, I am, I can see there's, um, user, one of the users here, I'm gonna root. Oh, I have no way to remove.
+1:36 Oh, I guess I go in there. Um, so I'm gonna remove that person as, um, a minister, as a administrator, as a user rather.
+1:45 Yeah, I do want to assign myself as a administrator at the same time, and I have no way so I need that, um, and from the same function right here, at existing user.
+1:56 Now we should talk about this a little bit, but I believe as a super admittedly. So I need to be able to do this because I want to be able to assign corporate administrators to a, uh, uh, a company here, right?
+2:10 So, uh, there's no one else can at this point. It's only cut. So, I don't know how a corporate administrator gets added here.
+2:16 And let's say, sign up as a first time. So anyway, we need that functionality too. Thanks. Okay, this is, uh, admittedly, a small thing, but, uh, I'm in the Genius Words, um, Private Library, and, uh, for the person.
+2:29 And I want, I want, went to the bottom and I say I want to change this one. It doesn't look like it's opening up, I know it's opening up at the top, but it doesn't look like it's opening up on the screen.
+2:39 So if If someone clicks. And that actually opens it if you could, um, put the focus on, uh, the edit box, that would be great.
+2:47 Now, a couple of small things that I've been noticing. We're putting a lot of stuff up here, uhm, right now and, uh, uh, my view of it is that we should be only populating some of these, um, these buttons, depending on the state.
+3:03 So here we have a working agenda. Um, we should not be showing in camera or upload transcript. transcript or even view transcript or in fact even download gender.
+3:17 No, we'll keep that one. But in-camera upload transcripts. View transcript, uh, and even a show notice should not be displayed for the working agenda.
+3:27 It should only displayed, uh, when the meeting, uh, has been, uh, let me think now. The-in camera and the, um, and upload transcript and view transcript should only be available when the, uh, status, uh, change into working minutes, right, which is just before the meeting, right?
+3:57 So, and then and once is fine. Then, um, then the start button should be disappear and, you know, so let's work through the workflows and win these buttons.
+4:08 Um, add sections should, should be there at all times by the looks of it. And download agenda gain after the meeting has concluded, right?
+4:17 So basically we have, oh no, that turns into download, um, minutes by mistake. So that one stays until it turns into a meeting, which probably should.
+4:27 Let's just check this right now. Oh, okay. So, I've opened up a finalized, like a meaning that's already happened in essence, right?
+4:37 And this is correct. Correct. That's correct. That's correct. that. you know, download minutes. And so, yeah. So that's cool. It's those other ones.
+4:45 We need to take a look at the states. So I'm looking at the generated minutes and this looks really good.
+4:52 The only thing that's missing in here is the, um, oh, no, we've got a appointment of minute taker. We've got the topics.
+5:03 Okay, so I think we described this before, but actions and tasks, or tasks, uh, and not the do not need to be in the minutes only issues that have a motion need to be there so we need to have a topic and if I can ask you to, um, put a, uh, numbering hierarchy in there.
+5:26 So this would be called the order should be in bold. So this is the actual topic, um, subject, or title header.
+5:35 Um, and it should be in bold here, right. So, so we know what we're talking about. Um, this is a note, um, or this is the description so it should be in there, um, but it can be a subordinate to the, uh, header up here and I actually think it would be better to put all them in together so we know what
+5:59 we're talking about. So, like financial, uh, financials and management report. I'm not sure why we have this financials and then financials and, uh, obviously came through the thing but, uh, this needs to be I think we can put them in the green so everybody knows what they're connected to.
+6:16 Um, just from my, um, uh, official perspective. I'm going to check this, but I think what this is saying is this.
+6:24 There is no action, no directive, no nothing that came out of it. Which is kind of interesting. So but anyway, it's a separate item and then this is a separate item so if there is an action or anything underneath that we should we should include that.
+6:41 Also, again, back to the numbering. Um, this should be 5, this should be 5.1, 5.2, 5.3, 5.4, etc. You get it.
+6:51 We should have a numbering scheme in there because they do references stuff, um, in other minutes and all the rest of it.
+6:57 So we will have, uh, later on in a lot of situations we'll talk about the date and, um, uh, and then the subject number like 5.2 reference to 5, uh, you know, as example, 5.2, um, management fees update as of whatever the date this thing was whatever the date of this set of minutes and I'll talk about
+7:19 it and say March of the following year or whatever it may be. So we need to have a way to have them to, to reference that.
+7:26 We need a number scheme in there. And just to be clear, if there is a call to order, which, you know, we talked about having, um, a hierarchical scheme within the topics, then, um, that would be 5.11, 5.2, 5.5, uh, 5.13, sorry, 5.11, 5.5, uh, 1, 2, 5, 1, 3, etc.
+7:54 Again, actions don't get up put in here. They go in the task list, etc, but they don't get put into the minutes.
+8:02 Uh, I just noticed that there's a whole new section of any of our decisions and votes. Uh, that should not be the case.
+8:08 There should be, they, that the whole point is that they're up in here. Um, so, uh, yeah, they're in here with motions.
+8:16 And the decisions are also, um, along with the motions that, that we're in there, right? So, you need to commingle these groups.
+8:27 Um, I know this wasn't part of the original, um, spec, but, uh, uh, I'd like you to think about the idea of generating the minutes only, not the agendas, but the minutes in a JSON file as well.
+8:40 Uh, that would be for later for future, but I can see that as being useful for integrating into other applications and not having to send them a PDF.
+8:49 I think we're doing that anyway, but, uh, or you're, that's there, but I just want to ensure that. Thanks. Okay, uh, I'm on the meeting summary here.
+8:58 You're gonna be making some changes anyway for, uh, JNS integration. Um, it would be nice to, and, and we've never talked about this, but, uh, I'm, if we could actually change this in context as status field.
+9:10 Um, um, So that, and the due dates as well, so that people don't have to open it in order to make those changes themselves, they can actually do that from the front page.

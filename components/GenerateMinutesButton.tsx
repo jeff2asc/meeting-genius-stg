@@ -501,11 +501,6 @@ export default function GenerateMinutesButton({
               background: #f9fafb;
             }
 
-            .item-action {
-              border-left: 3px solid;
-              background: #fffbeb;
-            }
-
             .item-label {
               font-weight: 700;
               margin-right: 4px;
@@ -519,34 +514,6 @@ export default function GenerateMinutesButton({
               border: 1px solid #fecaca;
               font-size: 10px;
               color: #b91c1c;
-            }
-
-            .decisions-section-note {
-              font-size: 9px;
-              color: #6b7280;
-              margin: 4px 20px 10px 20px;
-            }
-
-            .decision-box {
-              margin: 0 20px 12px 20px;
-              padding: 10px 12px;
-              border-radius: 8px;
-              border: 1px solid #e5e7eb;
-              background: #faf5ff;
-              font-size: 10px;
-            }
-
-            .decision-motion {
-              font-weight: 700;
-              margin-bottom: 4px;
-              color: #4b5563;
-            }
-
-            .decision-result {
-              margin-top: 4px;
-              padding: 6px 8px;
-              border-radius: 6px;
-              font-size: 9px;
             }
           </style>
         </head>
@@ -920,7 +887,7 @@ function renderSectionsAndTopics(
     </div>
   `
 
-  sections.forEach((section, sIdx) => {
+  sections.forEach((section, sectionIndex) => {
     const rawTitle = typeof section.title === "string" ? section.title : ""
     const cleanedTitle = rawTitle.replace(
       /^\s*\d+(\.\d+)*\s*[\).\-\:]*\s*/,
@@ -930,7 +897,7 @@ function renderSectionsAndTopics(
     html += `
       <div class="topic-box">
         <div class="topic-title">${escapeHtml(
-          `${sIdx + 1}. ${cleanedTitle || rawTitle}`
+          `${sectionIndex + 1}. ${cleanedTitle || rawTitle}`
         )}</div>
     `
 
@@ -960,65 +927,35 @@ function renderSectionsAndTopics(
           `
         }
 
+        // Motions (with section.motion numbering)
         if (topic.decisions && topic.decisions.length > 0) {
-          topic.decisions.forEach((decision: any) => {
-            const votes =
-              decision.votes_for !== null &&
-              decision.votes_for !== undefined
-                ? ` (For: ${decision.votes_for || 0}, Against: ${
-                    decision.votes_against || 0
-                  }, Abstain: ${decision.votes_abstain || 0})`
-                : ""
+          topic.decisions.forEach((decision: any, decisionIdx: number) => {
+            const motionNumber = `${sectionIndex + 1}.${decisionIdx + 1}`
+            const votesFor = decision.votes_for || 0
+            const votesAgainst = decision.votes_against || 0
+            const votesAbstain = decision.votes_abstain || 0
 
             html += `
               <div class="item item-motion" style="border-color:${template.motionBoxesColor};">
-                <span class="item-label">⚖️ Motion:</span>${escapeHtml(
-                  decision.motion_text
-                )}
+                <div style="font-weight:700;margin-bottom:4px;">
+                  Motion ${motionNumber}: ${escapeHtml(decision.motion_text)}
+                </div>
                 ${
                   decision.result
                     ? `<div style="margin-top:4px;font-size:9px;">
-                        <strong>Result:</strong> ${escapeHtml(
-                          decision.result
-                        )}${votes}
+                        <strong>Decision:</strong> ${escapeHtml(decision.result)}
                       </div>`
                     : ""
                 }
-              </div>
-            `
-          })
-        }
-
-        if (topic.tasks && topic.tasks.length > 0) {
-          topic.tasks.forEach((task: any) => {
-            html += `
-              <div class="item item-action" style="border-color:${template.actionItemsColor};">
-                <span class="item-label">✅ Action:</span>${escapeHtml(
-                  task.description || ""
-                )}
-                <div style="margin-top:4px;font-size:9px;color:#6b7280;">
-                  ${
-                    task.assigned_name
-                      ? `<strong>Assigned to:</strong> ${escapeHtml(
-                          task.assigned_name
-                        )}`
-                      : ""
-                  }
-                  ${
-                    task.due_date
-                      ? ` | <strong>Due:</strong> ${escapeHtml(task.due_date)}`
-                      : ""
-                  }
-                  ${
-                    task.status
-                      ? ` | <strong>Status:</strong> ${escapeHtml(task.status)}`
-                      : ""
-                  }
+                <div style="margin-top:4px;font-size:9px;">
+                  <strong>Votes:</strong> For: ${votesFor} | Against: ${votesAgainst} | Abstain: ${votesAbstain}
                 </div>
               </div>
             `
           })
         }
+
+        // Actions removed from minutes body
       })
     } else {
       html += `
@@ -1031,65 +968,7 @@ function renderSectionsAndTopics(
     html += `</div>`
   })
 
-  const allDecisions: any[] = []
-  sections.forEach((section) => {
-    if (section.topics && section.topics.length > 0) {
-      section.topics.forEach((topic: any) => {
-        if (topic.decisions && topic.decisions.length > 0) {
-          topic.decisions.forEach((d: any) => {
-            allDecisions.push({
-              ...d,
-              topicTitle: topic.title,
-              sectionTitle: section.title,
-            })
-          })
-        }
-      })
-    }
-  })
-
-  if (allDecisions.length > 0) {
-    html += `
-      <div class="section-header" style="background:${template.sectionHeadersColor};margin-top:24px;">
-        ⚖️ Decisions & Votes
-      </div>
-      <div class="decisions-section-note">
-        Summary of all motions and vote results recorded during this meeting.
-      </div>
-    `
-
-    allDecisions.forEach((decision) => {
-      const votes =
-        decision.votes_for !== null && decision.votes_for !== undefined
-          ? ` (For: ${decision.votes_for || 0}, Against: ${
-              decision.votes_against || 0
-            }, Abstain: ${decision.votes_abstain || 0})`
-          : ""
-
-      html += `
-        <div class="decision-box">
-          <div style="font-size:9px;color:#6b7280;margin-bottom:4px;">
-            From <strong>${escapeHtml(
-              decision.sectionTitle
-            )}</strong> → ${escapeHtml(decision.topicTitle)}
-          </div>
-          <div class="decision-motion">
-            ${escapeHtml(decision.motion_text)}
-          </div>
-          ${
-            decision.result
-              ? `<div class="decision-result" style="background:${template.voteResultsColor};color:white;">
-                    <strong>Result:</strong> ${escapeHtml(
-                      decision.result
-                    )}${votes}
-                  </div>`
-              : ""
-          }
-        </div>
-      `
-    })
-  }
-
+  // No separate Decisions & Votes summary anymore
   return html
 }
 

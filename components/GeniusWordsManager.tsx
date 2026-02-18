@@ -22,15 +22,18 @@ export default function GeniusWordsManager({ onBack }: GeniusWordsManagerProps) 
   const [geniusWords, setGeniusWords] = useState<GeniusWord[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState("")
+
+  // Modal state
+  const [showModal, setShowModal] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [isAdding, setIsAdding] = useState(false)
-  
+
   // Form state
   const [formData, setFormData] = useState({
     shortcode: "",
     description: ""
   })
-  
+
   const [saving, setSaving] = useState(false)
 
   const currentUser = getCurrentUser()
@@ -72,27 +75,23 @@ export default function GeniusWordsManager({ onBack }: GeniusWordsManagerProps) 
 
   const handleAdd = () => {
     setIsAdding(true)
-    setFormData({
-      shortcode: "",
-      description: ""
-    })
+    setEditingId(null)
+    setFormData({ shortcode: "", description: "" })
+    setShowModal(true)
   }
 
   const handleEdit = (word: GeniusWord) => {
     setEditingId(word.id)
-    setFormData({
-      shortcode: word.shortcode,
-      description: word.description
-    })
+    setIsAdding(false)
+    setFormData({ shortcode: word.shortcode, description: word.description })
+    setShowModal(true)
   }
 
   const handleCancel = () => {
+    setShowModal(false)
     setIsAdding(false)
     setEditingId(null)
-    setFormData({
-      shortcode: "",
-      description: ""
-    })
+    setFormData({ shortcode: "", description: "" })
   }
 
   const handleSave = async () => {
@@ -101,7 +100,6 @@ export default function GeniusWordsManager({ onBack }: GeniusWordsManagerProps) 
       return
     }
 
-    // Validate shortcode format (no spaces, starts with #)
     const shortcode = formData.shortcode.trim()
     if (!shortcode.startsWith('#')) {
       alert('Shortcode must start with #')
@@ -122,7 +120,6 @@ export default function GeniusWordsManager({ onBack }: GeniusWordsManagerProps) 
           return
         }
 
-        // Create new
         const { error } = await supabase
           .from('genius_words')
           .insert({
@@ -145,7 +142,6 @@ export default function GeniusWordsManager({ onBack }: GeniusWordsManagerProps) 
 
         alert('GeniusWord created successfully')
       } else if (editingId) {
-        // Update existing
         const { error } = await supabase
           .from('genius_words')
           .update({
@@ -179,9 +175,7 @@ export default function GeniusWordsManager({ onBack }: GeniusWordsManagerProps) 
   }
 
   const handleDelete = async (id: number, shortcode: string) => {
-    if (!confirm(`Delete "${shortcode}"? This action cannot be undone.`)) {
-      return
-    }
+    if (!confirm(`Delete "${shortcode}"? This action cannot be undone.`)) return
 
     try {
       const { error } = await supabase
@@ -203,14 +197,10 @@ export default function GeniusWordsManager({ onBack }: GeniusWordsManagerProps) 
     }
   }
 
-  // Filter genius words based on search
-  const filteredWords = geniusWords.filter(word => {
-    const matchesSearch = 
-      word.shortcode.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      word.description.toLowerCase().includes(searchQuery.toLowerCase())
-    
-    return matchesSearch
-  })
+  const filteredWords = geniusWords.filter(word =>
+    word.shortcode.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    word.description.toLowerCase().includes(searchQuery.toLowerCase())
+  )
 
   return (
     <div className="container mx-auto px-4 py-8 max-w-6xl">
@@ -229,19 +219,20 @@ export default function GeniusWordsManager({ onBack }: GeniusWordsManagerProps) 
               Create shortcuts that work everywhere - topics, tasks, notes, and decisions
             </p>
           </div>
-          <Button onClick={handleAdd} disabled={isAdding} className="bg-gradient-to-r from-purple-600 to-blue-600 text-white hover:opacity-90">
+          <Button
+            onClick={handleAdd}
+            className="bg-gradient-to-r from-purple-600 to-blue-600 text-white hover:opacity-90"
+          >
             <Plus className="h-4 w-4 mr-2" />
             Add New
           </Button>
         </div>
       </div>
 
-      {/* Search Only */}
+      {/* Search */}
       <Card className="p-4 mb-6">
         <div>
-          <label className="block text-sm font-medium text-foreground mb-2">
-            Search
-          </label>
+          <label className="block text-sm font-medium text-foreground mb-2">Search</label>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <input
@@ -254,49 +245,6 @@ export default function GeniusWordsManager({ onBack }: GeniusWordsManagerProps) 
           </div>
         </div>
       </Card>
-
-      {/* Add/Edit Form */}
-      {(isAdding || editingId) && (
-        <Card className="p-6 mb-6 border-2 border-primary">
-          <h3 className="text-lg font-semibold text-foreground mb-4">
-            {isAdding ? 'Add New GeniusWord' : 'Edit GeniusWord'}
-          </h3>
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-foreground mb-2">
-              Shortcode * <span className="text-xs text-muted-foreground">(must start with #)</span>
-            </label>
-            <input
-              type="text"
-              value={formData.shortcode}
-              onChange={(e) => setFormData({ ...formData, shortcode: e.target.value })}
-              placeholder="#QuoteReq"
-              className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50"
-            />
-          </div>
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-foreground mb-2">
-              Description *
-            </label>
-            <textarea
-              value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              placeholder="The board requested that three quotes be obtained"
-              rows={3}
-              className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none"
-            />
-          </div>
-          <div className="flex gap-2">
-            <Button onClick={handleCancel} variant="outline" className="flex-1" disabled={saving}>
-              <X className="h-4 w-4 mr-2" />
-              Cancel
-            </Button>
-            <Button onClick={handleSave} className="flex-1 bg-primary hover:bg-primary/90" disabled={saving}>
-              <Save className="h-4 w-4 mr-2" />
-              {saving ? 'Saving...' : 'Save'}
-            </Button>
-          </div>
-        </Card>
-      )}
 
       {/* List */}
       <Card className="overflow-hidden">
@@ -319,8 +267,8 @@ export default function GeniusWordsManager({ onBack }: GeniusWordsManagerProps) 
               ) : filteredWords.length === 0 ? (
                 <tr>
                   <td colSpan={3} className="text-center p-8 text-muted-foreground">
-                    {searchQuery 
-                      ? "No GeniusWords match your search" 
+                    {searchQuery
+                      ? "No GeniusWords match your search"
                       : "No GeniusWords yet. Click 'Add New' to create one."}
                   </td>
                 </tr>
@@ -339,7 +287,6 @@ export default function GeniusWordsManager({ onBack }: GeniusWordsManagerProps) 
                           onClick={() => handleEdit(word)}
                           variant="ghost"
                           size="sm"
-                          disabled={isAdding || editingId !== null}
                         >
                           <Edit2 className="h-4 w-4" />
                         </Button>
@@ -348,7 +295,6 @@ export default function GeniusWordsManager({ onBack }: GeniusWordsManagerProps) 
                           variant="ghost"
                           size="sm"
                           className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                          disabled={isAdding || editingId !== null}
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -366,6 +312,85 @@ export default function GeniusWordsManager({ onBack }: GeniusWordsManagerProps) 
       <div className="mt-6 text-sm text-muted-foreground text-center">
         Showing {filteredWords.length} of {geniusWords.length} GeniusWords
       </div>
+
+      {/* ── Modal ── */}
+      {showModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/50"
+            onClick={handleCancel}
+          />
+
+          {/* Dialog */}
+          <div className="relative z-10 w-full max-w-md mx-4 bg-background rounded-xl shadow-2xl border border-border">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-6 border-b border-border">
+              <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
+                <Sparkles className="h-5 w-5 text-purple-600" />
+                {isAdding ? 'Add New GeniusWord' : 'Edit GeniusWord'}
+              </h3>
+              <button
+                onClick={handleCancel}
+                className="text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-2">
+                  Shortcode <span className="text-red-500">*</span>{" "}
+                  <span className="text-xs text-muted-foreground">(must start with #, no spaces)</span>
+                </label>
+                <input
+                  type="text"
+                  value={formData.shortcode}
+                  onChange={(e) => setFormData({ ...formData, shortcode: e.target.value })}
+                  placeholder="#QuoteReq"
+                  autoFocus
+                  className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-2">
+                  Description <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  placeholder="The board requested that three quotes be obtained"
+                  rows={3}
+                  className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none"
+                />
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex gap-3 px-6 pb-6">
+              <Button
+                onClick={handleCancel}
+                variant="outline"
+                className="flex-1"
+                disabled={saving}
+              >
+                <X className="h-4 w-4 mr-2" />
+                Cancel
+              </Button>
+              <Button
+                onClick={handleSave}
+                className="flex-1 bg-gradient-to-r from-purple-600 to-blue-600 text-white hover:opacity-90"
+                disabled={saving}
+              >
+                <Save className="h-4 w-4 mr-2" />
+                {saving ? 'Saving...' : 'Save'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

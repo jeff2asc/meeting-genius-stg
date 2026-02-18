@@ -20,7 +20,7 @@ interface MinutesTemplatesTabProps {
   loading: boolean
 }
 
-type BlockType = "header" | "attendees" | "topics" | "decisions" | "footer"
+type BlockType = "header" | "attendees" | "topics" | "footer"
 
 interface TemplateField {
   id: string
@@ -56,8 +56,8 @@ const DEFAULT_TEMPLATE: TemplateConfig = {
         { id: "meeting_date", label: "Meeting Date", visible: true, order: 3 },
         { id: "start_time", label: "Start Time", visible: true, order: 4 },
         { id: "location", label: "Location", visible: true, order: 5 },
-        { id: "strata_plan", label: "Strata Plan Number", visible: true, order: 6 }
-      ]
+        { id: "strata_plan", label: "Strata Plan Number", visible: true, order: 6 },
+      ],
     },
     {
       id: "attendees",
@@ -68,24 +68,16 @@ const DEFAULT_TEMPLATE: TemplateConfig = {
       fields: [
         { id: "present", label: "Present", visible: true, order: 1 },
         { id: "absent", label: "Absent", visible: true, order: 2 },
-        { id: "regrets", label: "Regrets", visible: true, order: 3 }
-      ]
+        { id: "regrets", label: "Regrets", visible: true, order: 3 },
+      ],
     },
     {
       id: "topics",
-      label: "Topics & Notes",
+      label: "Topics, Motions & Notes",
       icon: "📝",
-      description: "Discussion topics with descriptions and notes",
+      description: "Topics with descriptions, notes, and inline motions (Motion X.Y, Decision, Votes)",
       backgroundColor: "#ffffff",
-      fields: []
-    },
-    {
-      id: "decisions",
-      label: "Decisions & Votes",
-      icon: "⚖️",
-      description: "Motions, results, vote counts",
-      backgroundColor: "#ffffff",
-      fields: []
+      fields: [],
     },
     {
       id: "footer",
@@ -97,10 +89,10 @@ const DEFAULT_TEMPLATE: TemplateConfig = {
         { id: "adjournment", label: "Meeting Adjourned", visible: true, order: 1 },
         { id: "next_meeting", label: "Next Meeting Date", visible: true, order: 2 },
         { id: "prepared_by", label: "Minutes Prepared By", visible: true, order: 3 },
-        { id: "signatures", label: "Signatures", visible: true, order: 4 }
-      ]
-    }
-  ]
+        { id: "signatures", label: "Signatures", visible: true, order: 4 },
+      ],
+    },
+  ],
 }
 
 export default function MinutesTemplatesTab({ buildings, loading }: MinutesTemplatesTabProps) {
@@ -133,38 +125,51 @@ export default function MinutesTemplatesTab({ buildings, loading }: MinutesTempl
     setLoadingTemplate(true)
     try {
       const { data, error } = await supabase
-        .from('minutes_templates')
-        .select('blocks')
-        .eq('building_id', selectedBuildingId)
+        .from("minutes_templates")
+        .select("blocks")
+        .eq("building_id", selectedBuildingId)
         .single()
 
       if (error) {
-        if (error.code === 'PGRST116') {
-          // No template exists yet, use defaults
+        if (error.code === "PGRST116") {
           setTemplate(DEFAULT_TEMPLATE)
         } else {
-          console.error('Error loading template:', error)
+          console.error("Error loading template:", error)
         }
       } else if (data && data.blocks) {
-        // Check if it's old format (array of strings) or new format (full config)
-        if (Array.isArray(data.blocks) && typeof data.blocks[0] === 'string') {
-          // Old format - migrate to new format
+        // Old format: array of section ids
+        if (Array.isArray(data.blocks) && typeof data.blocks[0] === "string") {
           const oldBlockIds = data.blocks as BlockType[]
           const migratedSections = oldBlockIds
-            .map(id => DEFAULT_TEMPLATE.sections.find(s => s.id === id))
+            .map((id) => DEFAULT_TEMPLATE.sections.find((s) => s.id === id))
             .filter(Boolean) as TemplateSection[]
-          
+
           setTemplate({ sections: migratedSections })
         } else {
-          // New format - use as is
-          setTemplate(data.blocks as TemplateConfig)
+          // New format - but strip any legacy "decisions" section if present
+          const incoming = data.blocks as TemplateConfig
+          const cleanedSections = (incoming.sections || []).filter(
+            (s) => s.id !== ("decisions" as any)
+          )
+          // Ensure topics description matches new inline motion layout
+          const adjustedSections = cleanedSections.map((s) =>
+            s.id === "topics"
+              ? {
+                  ...s,
+                  label: "Topics, Motions & Notes",
+                  description:
+                    "Topics with descriptions, notes, and inline motions (Motion X.Y, Decision, Votes)",
+                }
+              : s
+          )
+          setTemplate({ sections: adjustedSections.length ? adjustedSections : DEFAULT_TEMPLATE.sections })
         }
       }
-      
+
       setHasChanges(false)
       setExpandedSectionId(null)
     } catch (err) {
-      console.error('Unexpected error:', err)
+      console.error("Unexpected error:", err)
     } finally {
       setLoadingTemplate(false)
     }
@@ -177,15 +182,15 @@ export default function MinutesTemplatesTab({ buildings, loading }: MinutesTempl
 
   const handleSectionDragOver = (e: React.DragEvent, index: number) => {
     e.preventDefault()
-    
+
     if (draggedSectionIndex === null || draggedSectionIndex === index) return
 
     const newSections = [...template.sections]
     const draggedSection = newSections[draggedSectionIndex]
-    
+
     newSections.splice(draggedSectionIndex, 1)
     newSections.splice(index, 0, draggedSection)
-    
+
     setTemplate({ sections: newSections })
     setDraggedSectionIndex(index)
     setHasChanges(true)
@@ -203,20 +208,19 @@ export default function MinutesTemplatesTab({ buildings, loading }: MinutesTempl
   const handleFieldDragOver = (e: React.DragEvent, sectionId: BlockType, index: number) => {
     e.preventDefault()
     e.stopPropagation()
-    
+
     if (draggedFieldIndex === null || draggedFieldIndex === index) return
 
-    const sectionIndex = template.sections.findIndex(s => s.id === sectionId)
+    const sectionIndex = template.sections.findIndex((s) => s.id === sectionId)
     if (sectionIndex === -1) return
 
     const newSections = [...template.sections]
     const fields = [...newSections[sectionIndex].fields]
     const draggedField = fields[draggedFieldIndex]
-    
+
     fields.splice(draggedFieldIndex, 1)
     fields.splice(index, 0, draggedField)
-    
-    // Update order
+
     fields.forEach((field, idx) => {
       field.order = idx + 1
     })
@@ -233,14 +237,15 @@ export default function MinutesTemplatesTab({ buildings, loading }: MinutesTempl
 
   // Toggle field visibility
   const toggleFieldVisibility = (sectionId: BlockType, fieldId: string) => {
-    const sectionIndex = template.sections.findIndex(s => s.id === sectionId)
+    const sectionIndex = template.sections.findIndex((s) => s.id === sectionId)
     if (sectionIndex === -1) return
 
     const newSections = [...template.sections]
-    const fieldIndex = newSections[sectionIndex].fields.findIndex(f => f.id === fieldId)
+    const fieldIndex = newSections[sectionIndex].fields.findIndex((f) => f.id === fieldId)
     if (fieldIndex === -1) return
 
-    newSections[sectionIndex].fields[fieldIndex].visible = !newSections[sectionIndex].fields[fieldIndex].visible
+    newSections[sectionIndex].fields[fieldIndex].visible =
+      !newSections[sectionIndex].fields[fieldIndex].visible
     setTemplate({ sections: newSections })
     setHasChanges(true)
   }
@@ -252,11 +257,11 @@ export default function MinutesTemplatesTab({ buildings, loading }: MinutesTempl
   }
 
   const saveFieldLabel = (sectionId: BlockType, fieldId: string) => {
-    const sectionIndex = template.sections.findIndex(s => s.id === sectionId)
+    const sectionIndex = template.sections.findIndex((s) => s.id === sectionId)
     if (sectionIndex === -1) return
 
     const newSections = [...template.sections]
-    const fieldIndex = newSections[sectionIndex].fields.findIndex(f => f.id === fieldId)
+    const fieldIndex = newSections[sectionIndex].fields.findIndex((f) => f.id === fieldId)
     if (fieldIndex === -1) return
 
     newSections[sectionIndex].fields[fieldIndex].label = editingFieldLabel
@@ -273,7 +278,7 @@ export default function MinutesTemplatesTab({ buildings, loading }: MinutesTempl
 
   // Change background color
   const changeBackgroundColor = (sectionId: BlockType, color: string) => {
-    const sectionIndex = template.sections.findIndex(s => s.id === sectionId)
+    const sectionIndex = template.sections.findIndex((s) => s.id === sectionId)
     if (sectionIndex === -1) return
 
     const newSections = [...template.sections]
@@ -284,58 +289,55 @@ export default function MinutesTemplatesTab({ buildings, loading }: MinutesTempl
 
   const handleSave = async () => {
     if (!selectedBuildingId) {
-      alert('Please select a building')
+      alert("Please select a building")
       return
     }
 
     setSaving(true)
     try {
-      // Check if template exists
       const { data: existing } = await supabase
-        .from('minutes_templates')
-        .select('id')
-        .eq('building_id', selectedBuildingId)
+        .from("minutes_templates")
+        .select("id")
+        .eq("building_id", selectedBuildingId)
         .single()
 
       if (existing) {
-        // Update existing
         const { error } = await supabase
-          .from('minutes_templates')
+          .from("minutes_templates")
           .update({ blocks: template, updated_at: new Date().toISOString() })
-          .eq('building_id', selectedBuildingId)
+          .eq("building_id", selectedBuildingId)
 
         if (error) {
-          console.error('Error updating template:', error)
-          alert('Failed to save template')
+          console.error("Error updating template:", error)
+          alert("Failed to save template")
           return
         }
       } else {
-        // Insert new
         const { error } = await supabase
-          .from('minutes_templates')
+          .from("minutes_templates")
           .insert({
             building_id: selectedBuildingId,
-            blocks: template
+            blocks: template,
           })
 
         if (error) {
-          console.error('Error creating template:', error)
-          alert('Failed to save template')
+          console.error("Error creating template:", error)
+          alert("Failed to save template")
           return
         }
       }
 
       setHasChanges(false)
-      alert('✅ Template saved successfully!')
+      alert("✅ Template saved successfully!")
     } catch (err) {
-      console.error('Unexpected error:', err)
-      alert('Failed to save template')
+      console.error("Unexpected error:", err)
+      alert("Failed to save template")
     } finally {
       setSaving(false)
     }
   }
 
-  const selectedBuilding = buildings.find(b => b.id === selectedBuildingId)
+  const selectedBuilding = buildings.find((b) => b.id === selectedBuildingId)
 
   return (
     <>
@@ -354,7 +356,9 @@ export default function MinutesTemplatesTab({ buildings, loading }: MinutesTempl
         <div className="text-center py-12 border-2 border-dashed border-border rounded-lg">
           <FileText className="h-12 w-12 mx-auto text-muted-foreground mb-2" />
           <p className="text-muted-foreground mb-2">No buildings available</p>
-          <p className="text-sm text-muted-foreground">Create a building first to manage its minutes template</p>
+          <p className="text-sm text-muted-foreground">
+            Create a building first to manage its minutes template
+          </p>
         </div>
       ) : (
         <>
@@ -367,7 +371,7 @@ export default function MinutesTemplatesTab({ buildings, loading }: MinutesTempl
                 onChange={(e) => setSelectedBuildingId(Number(e.target.value))}
                 className="flex-1 px-3 py-2 bg-background border border-border rounded focus:outline-none focus:ring-2 focus:ring-primary/50"
               >
-                {buildings.map(building => (
+                {buildings.map((building) => (
                   <option key={building.id} value={building.id}>
                     {building.name}
                   </option>
@@ -387,7 +391,9 @@ export default function MinutesTemplatesTab({ buildings, loading }: MinutesTempl
                 <div className="flex items-center justify-between mb-4">
                   <div>
                     <h3 className="text-lg font-semibold text-foreground">Minutes Layout</h3>
-                    <p className="text-sm text-muted-foreground">Drag sections to reorder, click to customize fields</p>
+                    <p className="text-sm text-muted-foreground">
+                      Drag sections to reorder, click to customize fields
+                    </p>
                   </div>
                   <Button
                     onClick={handleSave}
@@ -404,8 +410,8 @@ export default function MinutesTemplatesTab({ buildings, loading }: MinutesTempl
                     <div
                       key={section.id}
                       className={`border-2 rounded-lg transition-all ${
-                        draggedSectionIndex === sectionIndex 
-                          ? "border-primary bg-primary/5 opacity-50" 
+                        draggedSectionIndex === sectionIndex
+                          ? "border-primary bg-primary/5 opacity-50"
                           : "border-border hover:border-primary/50 hover:shadow-md"
                       }`}
                     >
@@ -419,7 +425,11 @@ export default function MinutesTemplatesTab({ buildings, loading }: MinutesTempl
                       >
                         <GripVertical className="h-5 w-5 text-muted-foreground flex-shrink-0" />
                         <button
-                          onClick={() => setExpandedSectionId(expandedSectionId === section.id ? null : section.id)}
+                          onClick={() =>
+                            setExpandedSectionId(
+                              expandedSectionId === section.id ? null : section.id
+                            )
+                          }
                           className="flex items-center gap-3 flex-1 text-left"
                         >
                           {expandedSectionId === section.id ? (
@@ -430,7 +440,9 @@ export default function MinutesTemplatesTab({ buildings, loading }: MinutesTempl
                           <span className="text-2xl">{section.icon}</span>
                           <div>
                             <p className="font-semibold text-foreground">{section.label}</p>
-                            <p className="text-xs text-muted-foreground">{section.description}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {section.description}
+                            </p>
                           </div>
                         </button>
                         <div className="flex items-center gap-2">
@@ -438,7 +450,11 @@ export default function MinutesTemplatesTab({ buildings, loading }: MinutesTempl
                             <Button
                               size="sm"
                               variant="ghost"
-                              onClick={() => setExpandedSectionId(expandedSectionId === section.id ? null : section.id)}
+                              onClick={() =>
+                                setExpandedSectionId(
+                                  expandedSectionId === section.id ? null : section.id
+                                )
+                              }
                               className="text-primary"
                             >
                               <Edit2 className="h-4 w-4 mr-1" />
@@ -455,49 +471,64 @@ export default function MinutesTemplatesTab({ buildings, loading }: MinutesTempl
                       {expandedSectionId === section.id && section.fields.length > 0 && (
                         <div className="border-t border-border p-4 bg-muted/20">
                           <div className="mb-4 flex items-center gap-4">
-                            <label className="text-sm font-medium text-foreground">Background Color:</label>
+                            <label className="text-sm font-medium text-foreground">
+                              Background Color:
+                            </label>
                             <input
                               type="color"
                               value={section.backgroundColor}
-                              onChange={(e) => changeBackgroundColor(section.id, e.target.value)}
+                              onChange={(e) =>
+                                changeBackgroundColor(section.id, e.target.value)
+                              }
                               className="h-10 w-20 rounded border border-border cursor-pointer"
                             />
-                            <span className="text-xs text-muted-foreground font-mono">{section.backgroundColor}</span>
+                            <span className="text-xs text-muted-foreground font-mono">
+                              {section.backgroundColor}
+                            </span>
                           </div>
 
-                          <h4 className="text-sm font-semibold text-foreground mb-3">Fields (drag to reorder):</h4>
+                          <h4 className="text-sm font-semibold text-foreground mb-3">
+                            Fields (drag to reorder):
+                          </h4>
                           <div className="space-y-2">
                             {section.fields.map((field, fieldIndex) => (
                               <div
                                 key={field.id}
                                 draggable
                                 onDragStart={() => handleFieldDragStart(fieldIndex)}
-                                onDragOver={(e) => handleFieldDragOver(e, section.id, fieldIndex)}
+                                onDragOver={(e) =>
+                                  handleFieldDragOver(e, section.id, fieldIndex)
+                                }
                                 onDragEnd={handleFieldDragEnd}
                                 className={`flex items-center gap-3 p-3 bg-background border rounded-lg cursor-move transition-all ${
-                                  draggedFieldIndex === fieldIndex 
-                                    ? "border-primary opacity-50" 
+                                  draggedFieldIndex === fieldIndex
+                                    ? "border-primary opacity-50"
                                     : "border-border hover:border-primary/50"
                                 }`}
                               >
                                 <GripVertical className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                                
+
                                 {editingFieldId === field.id ? (
                                   <div className="flex-1 flex items-center gap-2">
                                     <input
                                       type="text"
                                       value={editingFieldLabel}
-                                      onChange={(e) => setEditingFieldLabel(e.target.value)}
+                                      onChange={(e) =>
+                                        setEditingFieldLabel(e.target.value)
+                                      }
                                       className="flex-1 px-2 py-1 border border-primary rounded text-sm"
                                       autoFocus
                                       onKeyDown={(e) => {
-                                        if (e.key === 'Enter') saveFieldLabel(section.id, field.id)
-                                        if (e.key === 'Escape') cancelEditingField()
+                                        if (e.key === "Enter")
+                                          saveFieldLabel(section.id, field.id)
+                                        if (e.key === "Escape") cancelEditingField()
                                       }}
                                     />
                                     <Button
                                       size="sm"
-                                      onClick={() => saveFieldLabel(section.id, field.id)}
+                                      onClick={() =>
+                                        saveFieldLabel(section.id, field.id)
+                                      }
                                       className="bg-primary"
                                     >
                                       Save
@@ -512,12 +543,16 @@ export default function MinutesTemplatesTab({ buildings, loading }: MinutesTempl
                                   </div>
                                 ) : (
                                   <>
-                                    <span className="flex-1 text-sm font-medium text-foreground">{field.label}</span>
+                                    <span className="flex-1 text-sm font-medium text-foreground">
+                                      {field.label}
+                                    </span>
                                     <div className="flex items-center gap-2">
                                       <Button
                                         size="sm"
                                         variant="ghost"
-                                        onClick={() => startEditingField(field.id, field.label)}
+                                        onClick={() =>
+                                          startEditingField(field.id, field.label)
+                                        }
                                         title="Edit label"
                                       >
                                         <Edit2 className="h-3 w-3" />
@@ -525,11 +560,23 @@ export default function MinutesTemplatesTab({ buildings, loading }: MinutesTempl
                                       <Button
                                         size="sm"
                                         variant="ghost"
-                                        onClick={() => toggleFieldVisibility(section.id, field.id)}
-                                        title={field.visible ? "Hide field" : "Show field"}
-                                        className={field.visible ? "text-green-600" : "text-gray-400"}
+                                        onClick={() =>
+                                          toggleFieldVisibility(section.id, field.id)
+                                        }
+                                        title={
+                                          field.visible ? "Hide field" : "Show field"
+                                        }
+                                        className={
+                                          field.visible
+                                            ? "text-green-600"
+                                            : "text-gray-400"
+                                        }
                                       >
-                                        {field.visible ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+                                        {field.visible ? (
+                                          <Eye className="h-4 w-4" />
+                                        ) : (
+                                          <EyeOff className="h-4 w-4" />
+                                        )}
                                       </Button>
                                       <span className="text-xs text-muted-foreground font-mono w-8 text-center">
                                         #{field.order}
@@ -552,9 +599,13 @@ export default function MinutesTemplatesTab({ buildings, loading }: MinutesTempl
                 <div className="flex items-start gap-3">
                   <FileText className="h-5 w-5 text-blue-600 mt-0.5" />
                   <div>
-                    <h4 className="font-semibold text-blue-900 mb-1">Template Preview</h4>
+                    <h4 className="font-semibold text-blue-900 mb-1">
+                      Template Preview
+                    </h4>
                     <p className="text-sm text-blue-800 mb-2">
-                      When generating minutes for <strong>{selectedBuilding?.name}</strong>, sections will appear in this order:
+                      When generating minutes for{" "}
+                      <strong>{selectedBuilding?.name}</strong>, sections will appear
+                      in this order:
                     </p>
                     <ol className="text-sm text-blue-800 space-y-1 ml-4">
                       {template.sections.map((section, index) => (
@@ -562,14 +613,17 @@ export default function MinutesTemplatesTab({ buildings, loading }: MinutesTempl
                           {index + 1}. {section.icon} {section.label}
                           {section.fields.length > 0 && (
                             <span className="text-blue-600 ml-2">
-                              ({section.fields.filter(f => f.visible).length} visible fields)
+                              ({section.fields.filter((f) => f.visible).length} visible
+                              fields)
                             </span>
                           )}
                         </li>
                       ))}
                     </ol>
                     <p className="text-xs text-blue-700 mt-3">
-                      💡 <strong>Coming soon:</strong> Generate Minutes button in meeting view
+                      Motions are rendered inline under each topic as{" "}
+                      <strong>Motion X.Y / Decision / Votes</strong> in the minutes
+                      PDF.
                     </p>
                   </div>
                 </div>

@@ -1812,6 +1812,9 @@ meeting-genius/
 │   ├── api/                     # API routes
 │   │   ├── send-email/
 │   │   │   └── route.ts         # Email sending (company SMTP)
+│   │   ├── pricing/
+│   │   │   └── company-data/
+│   │   │       └── route.ts     # API-key protected company/PM/building data (pricing)
 │   │   ├── signup/
 │   │   │   └── route.ts         # Signup (company, admin, PM, building)
 │   │   ├── users/
@@ -1915,6 +1918,9 @@ meeting-genius/
 ├── public/                       # Static assets
 │   ├── MG2 logo.png
 │   └── ...
+│
+├── MeetingGenius_API_Documentation.md       # API key + endpoints (current)
+├── Meeting_Genius_Signup_API_Documentation.md # Legacy signup API doc
 │
 ├── package.json                 # Dependencies
 ├── tsconfig.json                 # TypeScript config
@@ -2173,7 +2179,7 @@ The system includes a programmatic signup API for creating new companies and use
   - Transaction rollback on errors (company deleted if admin creation fails)
 - **Response**: Returns created company, corporate admin, building, and property manager IDs
 - **Health Check**: GET endpoint available for API status checking
-- **Documentation**: See `Meeting_Genius_Signup_API_Documentation.md` for complete API documentation
+- **Documentation**: See `MeetingGenius_API_Documentation.md` (current) and `Meeting_Genius_Signup_API_Documentation.md` (legacy) for complete API documentation
 
 ---
 
@@ -2532,6 +2538,8 @@ useEffect(() => {
 
 ### Internal API Endpoints
 
+**Authentication note**: Some endpoints are **API-key protected** (e.g. `/api/signup`, `/api/pricing/company-data` use `x-api-key`). Other app-internal endpoints currently have **no auth** and should be protected before production.
+
 #### 1. `/api/send-email` (POST)
 - **Purpose**: Send emails using company-specific SMTP configuration
 - **Authentication**: None (should be added for production)
@@ -2556,7 +2564,7 @@ useEffect(() => {
 - **Implementation**: Uses Nodemailer with company SMTP settings from database
 
 #### 2. `/api/signup` (POST)
-- **Purpose**: User signup endpoint (see Meeting_Genius_Signup_API_Documentation.md)
+- **Purpose**: User signup endpoint (see `MeetingGenius_API_Documentation.md`; legacy: `Meeting_Genius_Signup_API_Documentation.md`)
 - **Features**: User registration with validation
 - **Implementation**: Located in `app/api/signup/route.ts`
 
@@ -2655,7 +2663,7 @@ useEffect(() => {
 
 #### 6. `/api/users/bulk-import` (POST)
 - **Purpose**: Bulk create users from CSV data (used by ImportUsersModal)
-- **Authentication**: Requires user to be logged in (admin/PM)
+- **Authentication**: None (internal UI endpoint; should be protected in production)
 - **Request Body**:
   ```json
   {
@@ -2669,6 +2677,13 @@ useEffect(() => {
 - **Process**: Creates users, assigns to building via `user_buildings`, sets user_type from building type; skips duplicates by email
 - **Response**: `{ "created": number, "skipped": number, "errors": string[] }`
 - **Implementation**: Located in `app/api/users/bulk-import/route.ts`
+
+#### 7. `/api/pricing/company-data` (GET/POST)
+- **Purpose**: API-key protected endpoint to fetch company + property manager + building counts/data (used for dynamic pricing / reporting)
+- **Authentication**: Requires `x-api-key` header (see `MeetingGenius_API_Documentation.md`)
+- **GET**: Requires `company_id` query param; returns PM list, assigned/unassigned buildings, totals
+- **POST**: Returns a list of companies (for discovering company IDs)
+- **Implementation**: Located in `app/api/pricing/company-data/route.ts`
 
 ### External API Integrations
 
@@ -2897,7 +2912,7 @@ The system is designed for property management companies to manage their meeting
   - Automatic password hashing with bcrypt (10 salt rounds)
   - Transaction rollback on errors
   - Health check endpoint (GET `/api/signup`)
-  - Complete API documentation in `Meeting_Genius_Signup_API_Documentation.md`
+  - Complete API documentation in `MeetingGenius_API_Documentation.md` (legacy: `Meeting_Genius_Signup_API_Documentation.md`)
 - **Decision Threading System**: Complete decision edit/thread/delete functionality
   - Added `parent_decision_id`, `edited_at` fields to decisions table
   - Edit existing decisions with history tracking
