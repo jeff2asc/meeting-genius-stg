@@ -1,8 +1,7 @@
-// app/api/users/bulk-import/route.ts
-
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import bcrypt from 'bcryptjs'
+
 
 interface ImportUser {
   name: string
@@ -12,6 +11,7 @@ interface ImportUser {
   row_number: number
 }
 
+
 interface ImportRequest {
   users: ImportUser[]
   buildingId: number
@@ -20,10 +20,12 @@ interface ImportRequest {
   managerId: number
 }
 
+
 export async function POST(request: NextRequest) {
   try {
     const body: ImportRequest = await request.json()
     const { users, buildingId, buildingType, companyId, managerId } = body
+
 
     // Validate input
     if (!users || !Array.isArray(users) || users.length === 0) {
@@ -33,6 +35,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
+
     if (!buildingId || !buildingType) {
       return NextResponse.json(
         { error: 'Building information is required' },
@@ -40,17 +43,20 @@ export async function POST(request: NextRequest) {
       )
     }
 
+
     const results = {
       created: 0,
       skipped: 0,
       errors: [] as string[],
     }
 
+
     // Default password if none provided
-    const DEFAULT_PASSWORD = '123456'
-    
-    // Pre-computed hash for default password "123456" (to save time)
-    const defaultPasswordHash = '$2a$10$rXqvFZnPzAMcLzCP2L4dxu7L6Y3Y5KjGNQQF6xZ4Y5Y5Y5Y5Y5Y5Y5'
+    const DEFAULT_PASSWORD = 'MeetingGenius2026!'
+
+    // ✅ FIXED: Properly hash the default password at runtime
+    const defaultPasswordHash = await bcrypt.hash(DEFAULT_PASSWORD, 10)
+
 
     // Determine default user type based on building type
     const getDefaultUserType = (buildingType: string): string => {
@@ -59,19 +65,23 @@ export async function POST(request: NextRequest) {
       return 'user'
     }
 
+
     // Hash password helper
     const hashPassword = async (password: string): Promise<string> => {
       const salt = await bcrypt.genSalt(10)
       return bcrypt.hash(password, salt)
     }
 
+
     // Process each user
     for (const user of users) {
       try {
         const { name, email, user_type, password, row_number } = user
 
+
         // Determine final user type
         const finalUserType = user_type || getDefaultUserType(buildingType)
+
 
         // Determine password hash
         let passwordHash: string
@@ -83,12 +93,14 @@ export async function POST(request: NextRequest) {
           passwordHash = defaultPasswordHash
         }
 
+
         // Check if user already exists
         const { data: existingUser, error: checkError } = await supabase
           .from('users')
           .select('id, email')
           .eq('email', email.toLowerCase())
           .single()
+
 
         if (existingUser) {
           // User exists - check if already assigned to this building
@@ -98,6 +110,7 @@ export async function POST(request: NextRequest) {
             .eq('user_id', existingUser.id)
             .eq('building_id', buildingId)
             .single()
+
 
           if (existingAssignment) {
             // Already assigned to this building
@@ -113,16 +126,19 @@ export async function POST(request: NextRequest) {
                 building_id: buildingId,
               })
 
+
             if (assignError) {
               results.skipped++
               results.errors.push(`Row ${row_number}: Failed to assign existing user ${email} to building`)
               continue
             }
 
+
             results.created++
             continue
           }
         }
+
 
         // Create new user
         const { data: newUser, error: createError } = await supabase
@@ -130,7 +146,7 @@ export async function POST(request: NextRequest) {
           .insert({
             name: name.trim(),
             email: email.toLowerCase().trim(),
-            password_hash: passwordHash, // ⭐ Use hashed password (custom or default)
+            password_hash: passwordHash,
             user_type: finalUserType,
             company_id: companyId,
             assigned_pm_id: managerId,
@@ -138,12 +154,14 @@ export async function POST(request: NextRequest) {
           .select('id')
           .single()
 
+
         if (createError || !newUser) {
           console.error('Create user error:', createError)
           results.skipped++
           results.errors.push(`Row ${row_number}: Failed to create user ${email}`)
           continue
         }
+
 
         // Assign user to building
         const { error: assignError } = await supabase
@@ -153,6 +171,7 @@ export async function POST(request: NextRequest) {
             building_id: buildingId,
           })
 
+
         if (assignError) {
           console.error('Assign error:', assignError)
           results.skipped++
@@ -160,7 +179,9 @@ export async function POST(request: NextRequest) {
           continue
         }
 
+
         results.created++
+
 
       } catch (err) {
         console.error('Error processing user:', err)
@@ -169,7 +190,9 @@ export async function POST(request: NextRequest) {
       }
     }
 
+
     return NextResponse.json(results, { status: 200 })
+
 
   } catch (error: any) {
     console.error('Bulk import error:', error)

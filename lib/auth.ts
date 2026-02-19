@@ -4,7 +4,7 @@ import { supabase, setCurrentUser, User } from './supabase'
 // Login function
 export async function login(email: string, password: string): Promise<{ success: boolean; user?: User; error?: string }> {
   try {
-    // Fetch user from database - INCLUDING company_id
+    // Fetch user from database
     const { data: user, error } = await supabase
       .from('users')
       .select('id, name, email, password_hash, user_type, company_id')
@@ -15,24 +15,23 @@ export async function login(email: string, password: string): Promise<{ success:
       return { success: false, error: 'Invalid email or password' }
     }
 
-    // For now, simple password check (we'll implement bcrypt later)
-    // Temporary: just check if password matches "123456"
-    const isPasswordValid = password === '123456'
+    // ✅ FIXED: Use bcrypt.compare instead of hardcoded password check
+    const isPasswordValid = await bcrypt.compare(password, user.password_hash)
 
     if (!isPasswordValid) {
       return { success: false, error: 'Invalid email or password' }
     }
 
-    // Create user object - INCLUDING company_id
+    // Create user object
     const loggedInUser: User = {
       id: user.id,
       name: user.name,
       email: user.email,
       user_type: user.user_type as 'master' | 'property_manager' | 'user' | 'vendor' | 'attendee' | 'corporate_administrator',
-      company_id: user.company_id  // ← ADDED THIS!
+      company_id: user.company_id
     }
 
-    console.log('✅ Login successful with company_id:', loggedInUser)
+    console.log('✅ Login successful:', loggedInUser)
 
     // Store in localStorage
     setCurrentUser(loggedInUser)
@@ -45,13 +44,13 @@ export async function login(email: string, password: string): Promise<{ success:
   }
 }
 
-// Hash password (for future use when we properly implement password hashing)
+// Hash password
 export async function hashPassword(password: string): Promise<string> {
   const salt = await bcrypt.genSalt(10)
   return bcrypt.hash(password, salt)
 }
 
-// Verify password (for future use)
+// Verify password
 export async function verifyPassword(password: string, hash: string): Promise<boolean> {
   return bcrypt.compare(password, hash)
 }
