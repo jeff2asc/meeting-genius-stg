@@ -94,7 +94,7 @@ export default function CompanyDetailsModal({
   const [newAdminPassword, setNewAdminPassword] = useState("")
   const [savingAdmin, setSavingAdmin] = useState(false)
   // ⭐ NEW: promote existing user to admin
-  const [selectedAdminUserId, setSelectedAdminUserId] = useState<number | "">("")
+  const [selectedAdminUserId, setSelectedAdminUserId] = useState<number | ("")>("")
   const [promotingAdmin, setPromotingAdmin] = useState(false)
 
   // Add User State (for Users tab) – MULTI ROLE
@@ -110,7 +110,7 @@ export default function CompanyDetailsModal({
   const [showAttachExistingUser, setShowAttachExistingUser] = useState(false)
   const [availableUsersForAttachment, setAvailableUsersForAttachment] = useState<User[]>([])
   const [loadingAvailableUsers, setLoadingAvailableUsers] = useState(false)
-  const [selectedExistingUserId, setSelectedExistingUserId] = useState<number | "">("")
+  const [selectedExistingUserId, setSelectedExistingUserId] = useState<number | ("")>("")
 
   // SMTP form state
   const [smtpHost, setSmtpHost] = useState("")
@@ -126,10 +126,11 @@ export default function CompanyDetailsModal({
 
   const currentUser = getCurrentUser()
   const userCanManageCompanies = canManageCompanies(currentUser?.user_type || "")
-  const isMaster = 
-    currentUser?.user_type === "master" || 
+  const isMaster =
+    currentUser?.user_type === "master" ||
     currentUser?.roles?.includes("master")
 
+  // Existing: runs on modal open
   useEffect(() => {
     if (company && isOpen) {
       setActiveTab("overview")
@@ -153,6 +154,13 @@ export default function CompanyDetailsModal({
       setError(null)
     }
   }, [company, isOpen])
+
+  // ⭐ FIX: Auto-fetch all users when admins tab is opened
+  useEffect(() => {
+    if (activeTab === "admins" && isOpen && company) {
+      fetchAvailableUsersForAttachment()
+    }
+  }, [activeTab, isOpen])
 
   const fetchCompanyData = async () => {
     if (!company) return
@@ -264,18 +272,14 @@ export default function CompanyDetailsModal({
       // Permission-based filtering
       if (currentUser.user_type === "master" || currentUser.roles?.includes("master")) {
         // Master can see ALL users from ALL companies
-        // No filter needed - can attach users from any company
       } else if (
         currentUser.user_type === "corporate_administrator" ||
         currentUser.user_type === "property_manager" ||
         currentUser.roles?.includes("corporate_administrator") ||
         currentUser.roles?.includes("property_manager")
       ) {
-        // Corp Admin and PM can only see users from SAME company
-        // This allows reassigning users within their company
         query = query.eq("company_id", company.id)
       } else {
-        // Other user types cannot attach users
         setAvailableUsersForAttachment([])
         setLoadingAvailableUsers(false)
         return
@@ -290,7 +294,6 @@ export default function CompanyDetailsModal({
         return
       }
 
-      // For admin promotion, we want ALL users, so don't filter out current company users
       setAvailableUsersForAttachment((data || []) as User[])
     } catch (err) {
       console.error("Unexpected error fetching users:", err)
@@ -311,7 +314,6 @@ export default function CompanyDetailsModal({
     try {
       setError(null)
 
-      // Update user's company_id to attach them to this company
       const { error: updateError } = await supabase
         .from("users")
         .update({ company_id: company.id })
@@ -323,13 +325,12 @@ export default function CompanyDetailsModal({
         return
       }
 
-      // Refresh data
       await fetchCompanyData()
       await fetchAvailableUsersForAttachment()
-      
+
       setSelectedExistingUserId("")
       setShowAttachExistingUser(false)
-      
+
       alert("✅ User attached to company successfully!")
     } catch (err) {
       console.error("Unexpected error attaching user:", err)
@@ -730,6 +731,7 @@ export default function CompanyDetailsModal({
     (u) => u.user_type === "corporate_administrator",
   )
   const filteredUsers = getFilteredUsers()
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 animate-in fade-in overflow-y-auto p-4">
       <Card className="w-full max-w-5xl border-0 rounded-2xl shadow-2xl my-8 max-h-[90vh] overflow-hidden flex flex-col">
@@ -1587,7 +1589,7 @@ export default function CompanyDetailsModal({
                     )}
                   </div>
 
-                  {/* ⭐ NEW: Promote Existing User to Admin - MASTER ONLY */}
+                  {/* ⭐ UPDATED: Load All Users button removed — users auto-load on tab open */}
                   {isMaster && (
                     <Card className="p-4 bg-purple-50 border-purple-200">
                       <h4 className="font-semibold text-foreground mb-3">
@@ -1595,35 +1597,27 @@ export default function CompanyDetailsModal({
                       </h4>
 
                       <div className="space-y-3">
-                        <Button
-                          onClick={() => {
-                            if (availableUsersForAttachment.length === 0) {
-                              fetchAvailableUsersForAttachment()
+                        {loadingAvailableUsers ? (
+                          <p className="text-sm text-muted-foreground">Loading users...</p>
+                        ) : (
+                          <select
+                            value={selectedAdminUserId || ""}
+                            onChange={(e) =>
+                              setSelectedAdminUserId(
+                                e.target.value ? Number(e.target.value) : ""
+                              )
                             }
-                          }}
-                          size="sm"
-                          variant="outline"
-                          className="w-full"
-                        >
-                          Load All Users
-                        </Button>
+                            className="w-full px-3 py-2 bg-white border border-border rounded"
+                          >
+                            <option value="">Select user from all users *</option>
+                            {availableUsersForAttachment.map((u) => (
+                              <option key={u.id} value={u.id}>
+                                {u.name} ({u.email}) - {u.user_type}
+                              </option>
+                            ))}
+                          </select>
+                        )}
 
-                        <select
-                          value={selectedAdminUserId || ""}
-                          onChange={(e) =>
-                            setSelectedAdminUserId(
-                              e.target.value ? Number(e.target.value) : ""
-                            )
-                          }
-                          className="w-full px-3 py-2 bg-white border border-border rounded"
-                        >
-                          <option value="">Select user from all users *</option>
-                          {availableUsersForAttachment.map((u) => (
-                            <option key={u.id} value={u.id}>
-                              {u.name} ({u.email}) - {u.user_type}
-                            </option>
-                          ))}
-                        </select>
                         <p className="text-xs text-muted-foreground">
                           This will update the selected user to a{" "}
                           <strong>Corporate Administrator</strong> for this company.
@@ -1756,11 +1750,11 @@ export default function CompanyDetailsModal({
               )}
 
               {activeTab === "logo" && company && (
-                <LogoTab 
-                  companyId={company.id} 
+                <LogoTab
+                  companyId={company.id}
                   currentLogoUrl={company.logo_url || null}
                   onLogoUpdate={fetchCompanyDetails}
-                />              
+                />
               )}
             </>
           )}

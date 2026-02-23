@@ -52,7 +52,7 @@ export default function GenerateMinutesButton({
   const handleGenerateMinutes = async () => {
     setGenerating(true)
     try {
-      // 1) Load per-building minutes template from DB (colors + layout)
+      // 1) Load per-building minutes template from DB
       const { data: templateRow, error: templateError } = await supabase
         .from("minutes_templates")
         .select(
@@ -168,7 +168,7 @@ export default function GenerateMinutesButton({
         }
       }
 
-      // 2) Load meeting (with building + company logos)
+      // 2) Load meeting
       const { data: meeting, error: meetingError } = await supabase
         .from("meetings")
         .select(
@@ -265,10 +265,10 @@ export default function GenerateMinutesButton({
           })),
       }))
 
-      // 4) Use attendees from meeting.attendees JSONB
+      // 4) Attendees from meeting.attendees JSONB
       const attendees = (meeting.attendees as any[]) || []
 
-      // 5) Build HTML using the template
+      // 5) Build HTML
       const minutesHtml = buildMinutesHtml({
         template,
         meeting,
@@ -412,6 +412,7 @@ export default function GenerateMinutesButton({
               border: 1px solid #e5e7eb;
               box-shadow: 0 2px 6px rgba(0,0,0,0.04);
             }
+
             .attendees-header {
               color: white;
               padding: 10px 14px;
@@ -419,11 +420,13 @@ export default function GenerateMinutesButton({
               font-weight: 700;
               letter-spacing: 1px;
             }
+
             .attendees-table {
               width: 100%;
               border-collapse: collapse;
               background: #f9fafb;
             }
+
             .attendees-table th {
               padding: 8px 12px;
               text-align: left;
@@ -433,14 +436,17 @@ export default function GenerateMinutesButton({
               color: #6b7280;
               border-bottom: 2px solid #e5e7eb;
             }
+
             .attendees-table td {
               padding: 8px 12px;
               font-size: 10px;
               border-bottom: 1px solid #e5e7eb;
             }
+
             .attendees-table tr:last-child td {
               border-bottom: none;
             }
+
             .status-badge {
               display: inline-block;
               padding: 3px 8px;
@@ -448,72 +454,124 @@ export default function GenerateMinutesButton({
               font-size: 9px;
               font-weight: 600;
             }
+
             .status-present {
               background: #d1fae5;
               color: #065f46;
             }
+
             .status-absent {
               background: #fee2e2;
               color: #991b1b;
             }
 
-            .section-header {
-              margin: 20px 20px 12px 20px;
-              padding: 8px 12px;
+            /* ⭐ FIX 1: Full-width section header bar */
+            .section-header-bar {
+              width: 100%;
+              padding: 10px 20px;
               color: white;
-              border-radius: 8px;
-              font-size: 12px;
+              font-size: 13px;
               font-weight: 700;
-              display: inline-block;
+              display: block;
+              margin: 20px 0 0 0;
+              border-radius: 0;
+              letter-spacing: 0.5px;
             }
 
-            .topic-box {
-              margin: 0 20px 14px 20px;
-              padding: 12px 14px;
-              border-radius: 8px;
-              background: #ffffff;
+            /* ⭐ FIX 3: Section wrapper card contains all topics */
+            .section-card {
+              margin: 0 0 16px 0;
               border: 1px solid #e5e7eb;
+              border-radius: 0 0 8px 8px;
+              background: #ffffff;
+              overflow: hidden;
             }
 
-            .topic-title {
+            .topic-block {
+              padding: 10px 16px;
+              border-bottom: 1px solid #f3f4f6;
+            }
+
+            .topic-block:last-child {
+              border-bottom: none;
+            }
+
+            /* ⭐ FIX 2: Topic sub-number title */
+            .topic-subtitle {
               font-size: 11px;
               font-weight: 700;
-              margin-bottom: 6px;
-              border-bottom: 2px solid #e5e7eb;
-              padding-bottom: 4px;
+              color: #1f2937;
+              margin-bottom: 4px;
             }
 
             .topic-description {
               font-size: 10px;
               color: #4b5563;
+              margin-bottom: 6px;
+            }
+
+            .motion-box {
+              margin-top: 8px;
+              padding: 12px;
+              border-radius: 8px;
+              border-width: 2px;
+              border-style: solid;
+            }
+
+            .motion-badge {
+              display: inline-block;
+              color: white;
+              font-weight: 700;
+              font-size: 9px;
+              padding: 3px 8px;
+              border-radius: 4px;
               margin-bottom: 8px;
             }
 
-            .item {
-              margin-top: 6px;
-              padding: 8px 10px;
-              border-radius: 6px;
-              font-size: 9.5px;
+            .motion-text {
+              font-size: 10px;
+              font-weight: 600;
+              color: #1f2937;
+              margin-bottom: 8px;
             }
 
-            .item-motion {
-              border-left: 3px solid;
-              background: #f9fafb;
+            .decision-badge {
+              display: inline-block;
+              color: white;
+              font-size: 9px;
+              padding: 4px 10px;
+              border-radius: 4px;
+              margin-bottom: 6px;
             }
 
-            .item-label {
-              font-weight: 700;
-              margin-right: 4px;
+            .votes-bar {
+              color: white;
+              font-size: 9px;
+              padding: 6px 10px;
+              border-radius: 4px;
+              display: flex;
+              gap: 16px;
             }
 
             .incamera-strip {
-              margin: 16px 20px;
+              margin: 8px 16px;
               padding: 8px 10px;
               border-radius: 6px;
               background: #fef2f2;
               border: 1px solid #fecaca;
               font-size: 10px;
               color: #b91c1c;
+            }
+
+            /* Topics & Discussion badge */
+            .topics-badge {
+              display: inline-block;
+              margin: 20px 20px 8px 20px;
+              padding: 8px 14px;
+              color: white;
+              border-radius: 8px;
+              font-size: 12px;
+              font-weight: 700;
             }
           </style>
         </head>
@@ -630,7 +688,7 @@ export default function GenerateMinutesButton({
   )
 }
 
-// -------- Helpers to build HTML from template --------
+// -------- Helpers --------
 
 function buildMinutesHtml({
   template,
@@ -647,7 +705,6 @@ function buildMinutesHtml({
 }): string {
   const isMinutes =
     meeting.status === "minutes" || meeting.status === "workingminutes"
-  const documentType = isMinutes ? "MEETING MINUTES" : "MEETING AGENDA"
 
   const building = meeting.buildings
 
@@ -666,7 +723,7 @@ function buildMinutesHtml({
           logoUrl,
           meeting,
           building,
-          documentType,
+          documentType: "MEETING MINUTES",
         })}
       </div>
     </div>
@@ -675,10 +732,17 @@ function buildMinutesHtml({
   // INFO CARD
   html += renderInfoCard(template, meeting, attendees)
 
-  // ATTENDEES SECTION
+  // ATTENDEES
   html += renderAttendeesSection(template, attendees)
 
-  // SECTIONS / TOPICS / DECISIONS
+  // TOPICS & DISCUSSION badge
+  html += `
+    <div class="topics-badge" style="background:${template.sectionHeadersColor};">
+      📝 Topics &amp; Discussion
+    </div>
+  `
+
+  // SECTIONS
   html += renderSectionsAndTopics(template, sections, isMinutes)
 
   return html
@@ -720,12 +784,8 @@ function renderCoverElements(
       } else if (el.id === "title") {
         inner = `
           <div style="text-align:center;">
-            <div class="cover-title-line" style="font-size:26px;">${escapeHtml(
-              "MEETING"
-            )}</div>
-            <div class="cover-title-line" style="font-size:26px;">${escapeHtml(
-              "MINUTES"
-            )}</div>
+            <div class="cover-title-line" style="font-size:26px;">MEETING</div>
+            <div class="cover-title-line" style="font-size:26px;">MINUTES</div>
           </div>
         `
       } else if (el.id === "building_name") {
@@ -772,7 +832,6 @@ function renderInfoCard(
 
   fields.forEach((field) => {
     let value = ""
-
     switch (field.id) {
       case "date":
         value = meeting.meeting_date
@@ -808,10 +867,7 @@ function renderInfoCard(
 
   return `
     <div class="info-card">
-      <div 
-        class="info-card-header"
-        style="background:${template.infoCardAccentColor};"
-      >
+      <div class="info-card-header" style="background:${template.infoCardAccentColor};">
         MEETING INFORMATION
       </div>
       <div class="info-card-body">
@@ -850,10 +906,7 @@ function renderAttendeesSection(
 
   return `
     <div class="attendees-section">
-      <div 
-        class="attendees-header"
-        style="background:${template.infoCardAccentColor};"
-      >
+      <div class="attendees-header" style="background:${template.infoCardAccentColor};">
         👥 ATTENDEES
       </div>
       <table class="attendees-table">
@@ -866,26 +919,19 @@ function renderAttendeesSection(
             <th style="width:80px;">Status</th>
           </tr>
         </thead>
-        <tbody>
-          ${rows}
-        </tbody>
+        <tbody>${rows}</tbody>
       </table>
     </div>
   `
 }
 
+// ⭐ FULLY UPDATED: Matches template editor preview exactly
 function renderSectionsAndTopics(
   template: MinutesTemplate,
   sections: any[],
   isMinutes: boolean
 ): string {
   let html = ""
-
-  html += `
-    <div class="section-header" style="background:${template.sectionHeadersColor};">
-      📝 Topics & Discussion
-    </div>
-  `
 
   sections.forEach((section, sectionIndex) => {
     const rawTitle = typeof section.title === "string" ? section.title : ""
@@ -894,16 +940,23 @@ function renderSectionsAndTopics(
       ""
     )
 
+    // ⭐ FIX 1: Full-width colored section header bar
     html += `
-      <div class="topic-box">
-        <div class="topic-title">${escapeHtml(
-          `${sectionIndex + 1}. ${cleanedTitle || rawTitle}`
-        )}</div>
+      <div 
+        class="section-header-bar"
+        style="background:${template.sectionHeadersColor};"
+      >
+        ${escapeHtml(`${sectionIndex + 1}. ${cleanedTitle || rawTitle}`)}
+      </div>
     `
 
+    // ⭐ FIX 3: One section card wrapping all topics
+    html += `<div class="section-card">`
+
     if (section.topics && section.topics.length > 0) {
-      section.topics.forEach((topic: any) => {
+      section.topics.forEach((topic: any, topicIndex: number) => {
         const isIncamera = topic.isincamera === true
+
         if (isIncamera) {
           html += `
             <div class="incamera-strip">
@@ -913,21 +966,22 @@ function renderSectionsAndTopics(
           return
         }
 
+        html += `<div class="topic-block">`
+
+        // ⭐ FIX 2: Sub-numbered topic title (1.1, 1.2, etc.)
         html += `
-          <div class="topic-description">${escapeHtml(
-            topic.title
-          )}</div>
+          <div class="topic-subtitle">
+            ${escapeHtml(`${sectionIndex + 1}.${topicIndex + 1} ${topic.title}`)}
+          </div>
         `
 
         if (topic.description) {
           html += `
-            <div class="topic-description">${escapeHtml(
-              topic.description
-            )}</div>
+            <div class="topic-description">${escapeHtml(topic.description)}</div>
           `
         }
 
-        // Motions (with section.motion numbering)
+        // Motion boxes matching the editor preview
         if (topic.decisions && topic.decisions.length > 0) {
           topic.decisions.forEach((decision: any, decisionIdx: number) => {
             const motionNumber = `${sectionIndex + 1}.${decisionIdx + 1}`
@@ -935,44 +989,69 @@ function renderSectionsAndTopics(
             const votesAgainst = decision.votes_against || 0
             const votesAbstain = decision.votes_abstain || 0
 
+            // Light background from motionBoxesColor
+            const hex = template.motionBoxesColor.replace("#", "")
+            const r = Math.min(255, parseInt(hex.substring(0, 2), 16) + 220)
+            const g = Math.min(255, parseInt(hex.substring(2, 4), 16) + 220)
+            const b = Math.min(255, parseInt(hex.substring(4, 6), 16) + 220)
+            const lightBg = `rgb(${r},${g},${b})`
+
             html += `
-              <div class="item item-motion" style="border-color:${template.motionBoxesColor};">
-                <div style="font-weight:700;margin-bottom:4px;">
-                  Motion ${motionNumber}: ${escapeHtml(decision.motion_text)}
+              <div 
+                class="motion-box"
+                style="border-color:${template.motionBoxesColor};background:${lightBg};"
+              >
+                <div>
+                  <span 
+                    class="motion-badge"
+                    style="background:${template.motionBoxesColor};"
+                  >MOTION ${escapeHtml(motionNumber)}</span>
+                </div>
+                <div class="motion-text">
+                  ${escapeHtml(decision.motion_text)}
                 </div>
                 ${
                   decision.result
-                    ? `<div style="margin-top:4px;font-size:9px;">
-                        <strong>Decision:</strong> ${escapeHtml(decision.result)}
+                    ? `<div>
+                        <span 
+                          class="decision-badge"
+                          style="background:${template.voteResultsColor};"
+                        >
+                          <strong>Decision:</strong> ${escapeHtml(decision.result)}
+                        </span>
                       </div>`
                     : ""
                 }
-                <div style="margin-top:4px;font-size:9px;">
-                  <strong>Votes:</strong> For: ${votesFor} | Against: ${votesAgainst} | Abstain: ${votesAbstain}
+                <div 
+                  class="votes-bar"
+                  style="background:${template.voteResultsColor};"
+                >
+                  <span><strong>FOR:</strong> ${votesFor}</span>
+                  <span><strong>AGAINST:</strong> ${votesAgainst}</span>
+                  <span><strong>ABSTAIN:</strong> ${votesAbstain}</span>
                 </div>
               </div>
             `
           })
         }
 
-        // Actions removed from minutes body
+        html += `</div>` // close topic-block
       })
     } else {
       html += `
-        <div class="topic-description" style="font-style:italic;color:#9ca3af;">
+        <div class="topic-block" style="font-style:italic;color:#9ca3af;font-size:10px;">
           No topics recorded for this section.
         </div>
       `
     }
 
-    html += `</div>`
+    html += `</div>` // close section-card
   })
 
-  // No separate Decisions & Votes summary anymore
   return html
 }
 
-// ------------ small helpers ------------
+// ------------ Small helpers ------------
 
 function escapeHtml(text: any): string {
   if (!text) return ""
