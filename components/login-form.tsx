@@ -97,9 +97,7 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
             {loading ? "Signing in..." : "Sign In"}
           </Button>
 
-          <p className="text-xs text-center text-muted-foreground mt-4">
-            Demo accounts - Password: <span className="bg-muted px-2 py-1 rounded font-mono">123456</span>
-          </p>
+         
         </form>
       </Card>
     </div>

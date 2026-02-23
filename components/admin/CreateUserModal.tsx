@@ -5,6 +5,7 @@ import { X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { supabase, Company } from "@/lib/supabase"
+import { hashPassword } from "@/lib/auth"
 
 interface CreateUserModalProps {
   isOpen: boolean
@@ -228,6 +229,11 @@ export default function CreateUserModal({
     setSaving(true)
 
     try {
+      // ✅ Hash the password properly using bcrypt
+      const hashedPassword = userFormData.password.trim()
+        ? await hashPassword(userFormData.password.trim())
+        : null
+
       if (isEditMode) {
         const updateData: any = {
           name: userFormData.name.trim(),
@@ -238,9 +244,9 @@ export default function CreateUserModal({
           assigned_pm_id: userFormData.assignedPmId || null,
         }
 
-        if (userFormData.password.trim()) {
-          updateData.password_hash =
-            "$2a$10$rXqvFZnPzAMcLzCP2L4dxu7L6Y3Y5KjGNQQF6xZ4Y5Y5Y5Y5Y5Y5Y5"
+        // ✅ Only update password_hash if a new password was provided
+        if (hashedPassword) {
+          updateData.password_hash = hashedPassword
         }
 
         const { error: updateError } = await supabase
@@ -315,8 +321,7 @@ export default function CreateUserModal({
           .insert({
             name: userFormData.name.trim(),
             email: userFormData.email.toLowerCase().trim(),
-            password_hash:
-              "$2a$10$rXqvFZnPzAMcLzCP2L4dxu7L6Y3Y5KjGNQQF6xZ4Y5Y5Y5Y5Y5Y5Y5",
+            password_hash: hashedPassword, // ✅ Real bcrypt hash
             user_type: finalUserType,
             roles: effectiveRoles,
             company_id: companyIdToAssign,
@@ -575,8 +580,8 @@ export default function CreateUserModal({
                   ))}
                 </select>
                 <p className="text-xs text-muted-foreground mt-1">
-                  This Property Manager will manage this user (company will be inherited
-                  from PM)
+                  This Property Manager will manage this user (company will be
+                  inherited from PM)
                 </p>
               </div>
             )}

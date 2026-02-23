@@ -49,6 +49,7 @@ export interface User {
   user_type: UserRole
   roles?: UserRole[] // NEW: multiple roles
   company_id?: number | null
+  assigned_pm_id?: number | null  // ✅ add this line
 }
 
 // ⭐ TaskAttachment interface
