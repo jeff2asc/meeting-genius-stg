@@ -7,6 +7,13 @@
       "static/chunks/main-app-835472d9061c6ae4.js",
       "static/chunks/app/_not-found/page-5d566baff299fb91.js"
     ],
+    "/api/transcripts/list/route": [
+      "static/chunks/webpack-bc16c749d1b947da.js",
+      "static/chunks/4bd1b696-b4a59bf3e6102f39.js",
+      "static/chunks/684-90b5f29cd8c8264e.js",
+      "static/chunks/main-app-835472d9061c6ae4.js",
+      "static/chunks/app/api/transcripts/list/route-39d23dfe20228600.js"
+    ],
     "/layout": [
       "static/chunks/webpack-bc16c749d1b947da.js",
       "static/chunks/4bd1b696-b4a59bf3e6102f39.js",
@@ -54,28 +61,12 @@
       "static/chunks/main-app-835472d9061c6ae4.js",
       "static/chunks/app/api/signup/route-8f2ad6c60730e7ed.js"
     ],
-    "/api/transcripts/list/route": [
-      "static/chunks/webpack-bc16c749d1b947da.js",
-      "static/chunks/4bd1b696-b4a59bf3e6102f39.js",
-      "static/chunks/684-90b5f29cd8c8264e.js",
-      "static/chunks/main-app-835472d9061c6ae4.js",
-      "static/chunks/app/api/transcripts/list/route-39d23dfe20228600.js"
-    ],
     "/api/users/bulk-import/route": [
       "static/chunks/webpack-bc16c749d1b947da.js",
       "static/chunks/4bd1b696-b4a59bf3e6102f39.js",
       "static/chunks/684-90b5f29cd8c8264e.js",
       "static/chunks/main-app-835472d9061c6ae4.js",
       "static/chunks/app/api/users/bulk-import/route-b2e1a1af5276d876.js"
-    ],
-    "/task-update/[token]/page": [
-      "static/chunks/webpack-bc16c749d1b947da.js",
-      "static/chunks/4bd1b696-b4a59bf3e6102f39.js",
-      "static/chunks/684-90b5f29cd8c8264e.js",
-      "static/chunks/main-app-835472d9061c6ae4.js",
-      "static/chunks/134-614044f8fc570055.js",
-      "static/chunks/990-3dee264c8dc98e4e.js",
-      "static/chunks/app/task-update/[token]/page-0fbfa137d61d12d9.js"
     ],
     "/page": [
       "static/chunks/webpack-bc16c749d1b947da.js",
@@ -92,6 +83,15 @@
       "static/chunks/589-9573ac3160eba877.js",
       "static/chunks/488-87b865e450c96a96.js",
       "static/chunks/app/page-827a1e5d43c56caf.js"
+    ],
+    "/task-update/[token]/page": [
+      "static/chunks/webpack-bc16c749d1b947da.js",
+      "static/chunks/4bd1b696-b4a59bf3e6102f39.js",
+      "static/chunks/684-90b5f29cd8c8264e.js",
+      "static/chunks/main-app-835472d9061c6ae4.js",
+      "static/chunks/134-614044f8fc570055.js",
+      "static/chunks/990-3dee264c8dc98e4e.js",
+      "static/chunks/app/task-update/[token]/page-0fbfa137d61d12d9.js"
     ]
   }
 }
