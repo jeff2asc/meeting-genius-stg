@@ -1,9 +1,9 @@
 {
-  "/api/transcripts/list/route": "/api/transcripts/list",
   "/_not-found/page": "/_not-found",
-  "/api/send-email/route": "/api/send-email",
   "/api/transcripts/create-tasks/route": "/api/transcripts/create-tasks",
+  "/api/send-email/route": "/api/send-email",
   "/api/pricing/company-data/route": "/api/pricing/company-data",
+  "/api/transcripts/list/route": "/api/transcripts/list",
   "/api/transcripts/upload/route": "/api/transcripts/upload",
   "/api/signup/route": "/api/signup",
   "/api/users/bulk-import/route": "/api/users/bulk-import",
