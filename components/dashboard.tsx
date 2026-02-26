@@ -579,7 +579,7 @@ export default function Dashboard({
           {/* CENTER: Building Name + Count */}
           <div className="flex-1 text-center">
             <h2 className="text-2xl font-bold text-foreground">
-              {selectedBuilding === "All" ? "All Buildingszz" : selectedBuilding}
+              {selectedBuilding === "All" ? "All Buildings" : selectedBuilding}
             </h2>
             <p className="text-sm text-muted-foreground mt-1">
               {activeTab === "meetings" && `${filteredMeetings.length} meeting${filteredMeetings.length !== 1 ? 's' : ''}`}
