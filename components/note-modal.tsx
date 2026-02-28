@@ -7,6 +7,13 @@ import { Card } from "@/components/ui/card"
 import { supabase, getCurrentUser } from "@/lib/supabase"
 import GeniusWordsInput from "./GeniusWordsInput"
 import { toast } from "sonner"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 
 interface NoteModalProps {
   topicId: number
@@ -19,17 +26,20 @@ interface NoteModalProps {
   meetingId?: string
 }
 
-export default function NoteModal({ 
-  topicId, 
-  onClose, 
+type NoteVisibility = "public" | "private"
+
+export default function NoteModal({
+  topicId,
+  onClose,
   onSave,
   editMode = false,
   existingNoteId = null,
   embedded = false,
   isOpen = true,
-  meetingId
+  meetingId,
 }: NoteModalProps) {
   const [content, setContent] = useState("")
+  const [visibility, setVisibility] = useState<NoteVisibility>("public")
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -47,21 +57,24 @@ export default function NoteModal({
     setLoading(true)
     try {
       const { data: noteData, error: noteError } = await supabase
-        .from('notes')
-        .select('*')
-        .eq('id', existingNoteId)
+        .from("notes")
+        .select("*")
+        .eq("id", existingNoteId)
         .single()
 
       if (noteError || !noteData) {
-        console.error('Error loading note:', noteError)
-        setError('Failed to load note')
+        console.error("Error loading note:", noteError)
+        setError("Failed to load note")
         return
       }
 
       setContent(noteData.content || "")
+      setVisibility(
+        (noteData.visibility as NoteVisibility) || "public"
+      )
     } catch (err) {
-      console.error('Error loading note:', err)
-      setError('Failed to load note')
+      console.error("Error loading note:", err)
+      setError("Failed to load note")
     } finally {
       setLoading(false)
     }
@@ -69,51 +82,52 @@ export default function NoteModal({
 
   const handleDelete = async () => {
     if (!existingNoteId || !editMode) return
-    
-    if (!confirm('Are you sure you want to delete this note? This action cannot be undone.')) {
+
+    if (
+      !confirm(
+        "Are you sure you want to delete this note? This action cannot be undone."
+      )
+    ) {
       return
     }
 
     setDeleting(true)
     try {
       const { error: deleteError } = await supabase
-        .from('notes')
+        .from("notes")
         .delete()
-        .eq('id', existingNoteId)
+        .eq("id", existingNoteId)
 
       if (deleteError) {
-        console.error('Error deleting note:', deleteError)
-        toast.error('Failed to delete note')
+        console.error("Error deleting note:", deleteError)
+        toast.error("Failed to delete note")
         setDeleting(false)
         return
       }
 
-      toast.success('Note deleted successfully')
-      
-      // ✅ Clear state
+      toast.success("Note deleted successfully")
+
       setDeleting(false)
-      
-      // ✅ If embedded, just notify parent (doesn't close modal)
+
       if (embedded) {
-        onClose() // This just marks that data changed
+        onClose()
         return
       }
-      
-      // ✅ If standalone modal, close it
+
       onClose()
       if (onSave) {
         setTimeout(() => onSave(), 100)
       }
     } catch (err) {
-      console.error('Unexpected error:', err)
-      toast.error('An unexpected error occurred')
+      console.error("Unexpected error:", err)
+      toast.error("An unexpected error occurred")
       setDeleting(false)
     }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
+
     if (!content.trim()) {
       setError("Note content is required")
       return
@@ -128,84 +142,81 @@ export default function NoteModal({
       if (editMode && existingNoteId) {
         // UPDATE EXISTING NOTE
         const { error: updateError } = await supabase
-          .from('notes')
+          .from("notes")
           .update({
             content: content.trim(),
+            visibility,
           })
-          .eq('id', existingNoteId)
+          .eq("id", existingNoteId)
 
         if (updateError) {
-          console.error('Error updating note:', updateError)
+          console.error("Error updating note:", updateError)
           setError(`Failed to update note: ${updateError.message}`)
           setSaving(false)
           return
         }
 
-        console.log('✅ Note updated successfully')
-        toast.success('Note updated successfully')
-        
-        // ✅ Reset state
+        toast.success("Note updated successfully")
         setSaving(false)
-        
-        // ✅ If embedded, just notify and stay open
+
         if (embedded) {
-          onClose() // Just marks data changed, doesn't close
+          onClose()
           return
         }
-        
-        // ✅ If standalone, close modal
+
         onClose()
         if (onSave) {
           setTimeout(() => onSave(), 100)
         }
       } else {
         // CREATE NEW NOTE
-        const { error: insertError } = await supabase
-          .from('notes')
-          .insert({
-            topic_id: topicId,
-            content: content.trim(),
-            created_by: currentUser?.id
-          })
+        const { error: insertError } = await supabase.from("notes").insert({
+          topic_id: topicId,
+          content: content.trim(),
+          created_by: currentUser?.id,
+          visibility,
+        })
 
         if (insertError) {
-          console.error('Error inserting note:', insertError)
+          console.error("Error inserting note:", insertError)
           setError(`Failed to save note: ${insertError.message}`)
           setSaving(false)
           return
         }
 
-        console.log('✅ Note saved successfully')
-        toast.success('Note created successfully')
-        
-        // ✅ CRITICAL: Reset state and clear form BEFORE notifying parent
+        toast.success("Note created successfully")
+
         setSaving(false)
-        setContent('') // Clear the form
+        setContent("")
         setError(null)
-        
-        // ✅ If embedded mode, DON'T close - just notify parent
+        setVisibility("public")
+
         if (embedded) {
-          onClose() // This just marks that data needs refresh when modal closes
-          // Modal stays open, form is cleared, ready for next note
+          onClose()
           return
         }
-        
-        // ✅ If standalone modal, close it
+
         onClose()
         if (onSave) {
           setTimeout(() => onSave(), 100)
         }
       }
     } catch (err) {
-      console.error('Unexpected error:', err)
-      setError('An unexpected error occurred')
+      console.error("Unexpected error:", err)
+      setError("An unexpected error occurred")
       setSaving(false)
     }
   }
 
   if (loading) {
     return (
-      <div className={embedded ? "p-6" : "fixed inset-0 z-50 flex items-center justify-center bg-black/50"}>
+      <div
+        className={
+          embedded
+            ? "p-6"
+            : "fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+        }
+      >
         <Card className="p-6">
           <div className="flex items-center gap-3">
             <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
@@ -237,6 +248,39 @@ export default function NoteModal({
         />
       </div>
 
+      <div className="space-y-1 pt-2">
+        <label className="block text-sm font-medium text-foreground">
+          Visibility
+        </label>
+        <p className="text-xs text-muted-foreground mb-2">
+          Private notes are only visible to you, property managers, corporate
+          admins, and master users.
+        </p>
+        <Select
+          value={visibility}
+          onValueChange={(value: NoteVisibility) => setVisibility(value)}
+          disabled={saving || deleting}
+        >
+          <SelectTrigger className="w-full">
+            <SelectValue placeholder="Select visibility" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="public">
+              <span className="flex items-center gap-2">
+                <span>Public Note</span>
+                <span className="text-[10px] text-muted-foreground font-normal">(Visible to everyone)</span>
+              </span>
+            </SelectItem>
+            <SelectItem value="private">
+              <span className="flex items-center gap-2">
+                <span>Private Note</span>
+                <span className="text-[10px] text-muted-foreground font-normal">(Restricted access)</span>
+              </span>
+            </SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
       <div className="flex gap-3 pt-4">
         {editMode && existingNoteId && (
           <Button
@@ -250,28 +294,33 @@ export default function NoteModal({
             {deleting ? "Deleting..." : "Delete"}
           </Button>
         )}
-        
-        <div className="flex-1"></div>
-        
-        {/* Only show Cancel in standalone mode */}
+
+        <div className="flex-1" />
+
         {!embedded && (
-          <Button 
-            type="button" 
-            variant="outline" 
-            onClick={onClose} 
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onClose}
             className="flex-1"
             disabled={saving || deleting}
           >
             Cancel
           </Button>
         )}
-        
+
         <Button
           type="submit"
           className="flex-1 bg-note-blue text-white hover:bg-note-blue/90"
           disabled={saving || deleting || !content.trim()}
         >
-          {saving ? (editMode ? "Updating..." : "Saving...") : (editMode ? "Update Note" : "Save Note")}
+          {saving
+            ? editMode
+              ? "Updating..."
+              : "Saving..."
+            : editMode
+              ? "Update Note"
+              : "Save Note"}
         </Button>
       </div>
     </form>

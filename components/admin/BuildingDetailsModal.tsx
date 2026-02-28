@@ -155,9 +155,7 @@ export default function BuildingDetailsModal({
         .select("id, name, email, user_type, company_id")
         .order("name")
   
-      // Master (or master role): can see all users as potential managers
       if (!(currentUser?.user_type === "master" || currentUser?.roles?.includes("master"))) {
-        // Non-master: restrict to same company if building has one
         if (building.company_id) {
           query = query.eq("company_id", building.company_id)
         } else {
@@ -172,11 +170,6 @@ export default function BuildingDetailsModal({
         console.error("Error fetching property managers:", error)
         return
       }
-  
-      // Optional: if you only want manager-like types in the dropdown, uncomment:
-      // const allowedTypes = ["property_manager", "corporate_administrator", "master"]
-      // const managers = (data || []).filter((user) => allowedTypes.includes(user.user_type))
-      // setPropertyManagers(managers as User[])
   
       setPropertyManagers((data || []) as User[])
     } catch (err) {
@@ -197,27 +190,22 @@ export default function BuildingDetailsModal({
         .select("id, name, email, user_type, company_id")
         .order("name")
 
-      // Permission-based filtering
       if (currentUser.user_type === "master" || currentUser.roles?.includes("master")) {
-        // Master can see ALL users from ALL companies
-        // No filter needed
+        // Master can see ALL users
       } else if (
         currentUser.user_type === "corporate_administrator" ||
         currentUser.user_type === "property_manager" ||
         currentUser.roles?.includes("corporate_administrator") ||
         currentUser.roles?.includes("property_manager")
       ) {
-        // Corp Admin and PM can only see users from SAME company
         if (building.company_id) {
           query = query.eq("company_id", building.company_id)
         } else {
-          // If building has no company, show no users
           setAvailableUsersForAssignment([])
           setLoadingAvailableUsers(false)
           return
         }
       } else {
-        // Other user types cannot assign users
         setAvailableUsersForAssignment([])
         setLoadingAvailableUsers(false)
         return
@@ -232,7 +220,6 @@ export default function BuildingDetailsModal({
         return
       }
 
-      // Filter out users already assigned to this building
       const alreadyAssignedIds = selectedUsers
       const availableUsers = (data || []).filter(
         (user) => !alreadyAssignedIds.includes(user.id)
@@ -258,13 +245,11 @@ export default function BuildingDetailsModal({
     try {
       setError(null)
 
-      // Check if user is already assigned
       if (selectedUsers.includes(selectedExistingUserId as number)) {
         setError("This user is already assigned to this building")
         return
       }
 
-      // Insert into user_buildings junction table
       const { error: insertError } = await supabase
         .from("user_buildings")
         .insert({
@@ -278,16 +263,12 @@ export default function BuildingDetailsModal({
         return
       }
 
-      // Add to selectedUsers state
       setSelectedUsers((prev) => [...prev, selectedExistingUserId as number])
-
-      // Reset and close form
       setSelectedExistingUserId("")
       setShowAssignExisting(false)
       
       toast.success("User assigned successfully!")
       
-      // Refresh available users list
       await fetchAvailableUsersForAssignment()
       await onSuccess()
     } catch (err) {
@@ -344,7 +325,6 @@ export default function BuildingDetailsModal({
       }
 
       setSelectedUsers((prev) => [...prev, newUser.id])
-
       setNewUserName("")
       setNewUserEmail("")
       setNewUserPassword("")
@@ -608,7 +588,6 @@ export default function BuildingDetailsModal({
               <div className="flex items-center justify-between">
                 <h3 className="font-semibold text-foreground">Manage Building Users</h3>
                 <div className="flex gap-2">
-                  {/* ⭐ NEW: Assign Existing User button */}
                   {currentUser && (
                     currentUser.user_type === "master" ||
                     currentUser.user_type === "corporate_administrator" ||
@@ -661,7 +640,6 @@ export default function BuildingDetailsModal({
                 </p>
               )}
 
-              {/* ⭐ NEW: Assign Existing User Form */}
               {showAssignExisting && (
                 <Card className="p-4 bg-blue-50 border-2 border-blue-300">
                   <h4 className="font-medium text-sm mb-3 text-blue-900">
@@ -848,7 +826,6 @@ export default function BuildingDetailsModal({
                             <p className="font-medium text-sm">{user.name}</p>
                             <p className="text-xs text-muted-foreground">{user.email}</p>
                           </div>
-                          {/* ⭐ ENHANCED: Color-coded badges with icons */}
                           <span className={`text-xs px-2 py-1 rounded font-medium ${userTypeDisplay.className}`}>
                             {userTypeDisplay.label}
                           </span>
@@ -906,7 +883,6 @@ export default function BuildingDetailsModal({
     </div>
   )
 }
-
 // ============================================
 // Notifications Tab Component
 // ============================================
@@ -1005,7 +981,7 @@ function NotificationsTab({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {(buildingType === "Housing Co-op") ? (
+                {buildingType === "Housing Co-op" ? (
                   <SelectItem value="resident">Residents</SelectItem>
                 ) : (
                   <SelectItem value="owner">Owners</SelectItem>
@@ -1017,12 +993,9 @@ function NotificationsTab({
                 <strong>Building Type: {buildingType}</strong>
               </p>
               <p className="text-xs text-muted-foreground mt-1">
-                {buildingType === "Housing Co-op" && (
-                  <>Housing Co-ops send notifications to <strong>Residents</strong>.</>
-                )}
-                {(buildingType === "Strata/Condo" || buildingType === "Rental") && (
-                  <>Strata/Condo buildings send notifications to <strong>Owners</strong>.</>
-                )}
+                {buildingType === "Housing Co-op" && "Housing Co-ops send notifications to "}
+                {(buildingType === "Strata/Condo" || buildingType === "Rental") && "Strata/Condo buildings send notifications to "}
+                {buildingType === "Housing Co-op" ? <strong>Residents</strong> : <strong>Owners</strong>}.
               </p>
             </div>
           </div>
@@ -1035,10 +1008,10 @@ function NotificationsTab({
           <div>
             <h4 className="font-semibold text-sm text-blue-900 mb-1">How Notifications Work</h4>
             <ul className="text-xs text-blue-800 space-y-1">
-              <li>· Notices/agendas will be automatically sent to {notificationRecipientType}s based on the configured days</li>
-              <li>· Board meetings typically require shorter notice periods</li>
-              <li>· General meetings may require longer notice periods per local regulations</li>
-              <li>· The system will send reminders via email to all assigned {notificationRecipientType}s</li>
+              <li>Notices/agendas will be automatically sent to {notificationRecipientType}s based on the configured days</li>
+              <li>Board meetings typically require shorter notice periods</li>
+              <li>General meetings may require longer notice periods per local regulations</li>
+              <li>The system will send reminders via email to all assigned {notificationRecipientType}s</li>
             </ul>
           </div>
         </div>
@@ -1050,10 +1023,7 @@ function NotificationsTab({
           <Button
             variant="outline"
             size="sm"
-            onClick={() => {
-              setBoardMeetingNoticeDays(3)
-              setGeneralMeetingNoticeDays(7)
-            }}
+            onClick={() => { setBoardMeetingNoticeDays(3); setGeneralMeetingNoticeDays(7) }}
             className="text-xs"
           >
             Minimal (3/7 days)
@@ -1061,10 +1031,7 @@ function NotificationsTab({
           <Button
             variant="outline"
             size="sm"
-            onClick={() => {
-              setBoardMeetingNoticeDays(7)
-              setGeneralMeetingNoticeDays(14)
-            }}
+            onClick={() => { setBoardMeetingNoticeDays(7); setGeneralMeetingNoticeDays(14) }}
             className="text-xs"
           >
             Standard (7/14 days)
@@ -1072,10 +1039,7 @@ function NotificationsTab({
           <Button
             variant="outline"
             size="sm"
-            onClick={() => {
-              setBoardMeetingNoticeDays(14)
-              setGeneralMeetingNoticeDays(21)
-            }}
+            onClick={() => { setBoardMeetingNoticeDays(14); setGeneralMeetingNoticeDays(21) }}
             className="text-xs"
           >
             Extended (14/21 days)
@@ -1083,10 +1047,7 @@ function NotificationsTab({
           <Button
             variant="outline"
             size="sm"
-            onClick={() => {
-              setBoardMeetingNoticeDays(7)
-              setGeneralMeetingNoticeDays(7)
-            }}
+            onClick={() => { setBoardMeetingNoticeDays(7); setGeneralMeetingNoticeDays(7) }}
             className="text-xs"
           >
             Reset to Default (7/7)
@@ -1123,7 +1084,6 @@ function DocumentsTab({ building, onSuccess }: DocumentsTabProps) {
   const [selectedDocType, setSelectedDocType] = useState("rules")
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [loading, setLoading] = useState(true)
-
   const [showUrlForm, setShowUrlForm] = useState(false)
   const [urlTitle, setUrlTitle] = useState("")
   const [urlLink, setUrlLink] = useState("")
@@ -1140,19 +1100,19 @@ function DocumentsTab({ building, onSuccess }: DocumentsTabProps) {
     setLoading(true)
     try {
       const { data, error } = await supabase
-        .from('building_documents')
-        .select('*')
-        .eq('building_id', building.id)
-        .order('created_at', { ascending: false })
+        .from("building_documents")
+        .select("*")
+        .eq("building_id", building.id)
+        .order("created_at", { ascending: false })
 
       if (error) {
-        console.error('Error fetching documents:', error)
+        console.error("Error fetching documents:", error)
         return
       }
 
       setDocuments(data || [])
     } catch (err) {
-      console.error('Unexpected error fetching documents:', err)
+      console.error("Unexpected error fetching documents:", err)
     } finally {
       setLoading(false)
     }
@@ -1161,40 +1121,39 @@ function DocumentsTab({ building, onSuccess }: DocumentsTabProps) {
   const fetchDocumentUrls = async () => {
     try {
       const { data, error } = await supabase
-        .from('building_document_urls')
-        .select('*')
-        .eq('building_id', building.id)
-        .order('created_at', { ascending: false })
+        .from("building_document_urls")
+        .select("*")
+        .eq("building_id", building.id)
+        .order("created_at", { ascending: false })
 
       if (error) {
-        console.error('Error fetching document URLs:', error)
+        console.error("Error fetching document URLs:", error)
         return
       }
 
       setDocumentUrls(data || [])
     } catch (err) {
-      console.error('Unexpected error fetching URLs:', err)
+      console.error("Unexpected error fetching URLs:", err)
     }
   }
 
   const handleSaveUrl = async () => {
     if (!urlTitle.trim() || !urlLink.trim()) {
-      toast.error('Title and URL are required')
+      toast.error("Title and URL are required")
       return
     }
 
     try {
       new URL(urlLink)
     } catch {
-      toast.error('Please enter a valid URL')
+      toast.error("Please enter a valid URL")
       return
     }
 
     setSavingUrl(true)
-
     try {
       const { error } = await supabase
-        .from('building_document_urls')
+        .from("building_document_urls")
         .insert({
           building_id: building.id,
           document_type: urlType,
@@ -1204,99 +1163,102 @@ function DocumentsTab({ building, onSuccess }: DocumentsTabProps) {
         })
 
       if (error) {
-        console.error('Error saving URL:', error)
-        toast.error('Failed to save URL')
+        console.error("Error saving URL:", error)
+        toast.error("Failed to save URL")
         return
       }
 
-      toast.success('Reference URL added successfully!')
-      
+      toast.success("Reference URL added successfully!")
       setUrlTitle("")
       setUrlLink("")
       setUrlType("legislation")
       setUrlDescription("")
       setShowUrlForm(false)
-
       await fetchDocumentUrls()
       await onSuccess()
     } catch (err) {
-      console.error('Unexpected error:', err)
-      toast.error('Failed to save URL')
+      console.error("Unexpected error:", err)
+      toast.error("Failed to save URL")
     } finally {
       setSavingUrl(false)
     }
   }
 
   const handleDeleteUrl = async (urlId: number) => {
-    if (!confirm('Are you sure you want to delete this reference URL?')) return
+    if (!confirm("Are you sure you want to delete this reference URL?")) return
 
     try {
       const { error } = await supabase
-        .from('building_document_urls')
+        .from("building_document_urls")
         .delete()
-        .eq('id', urlId)
+        .eq("id", urlId)
 
       if (error) {
-        toast.error('Failed to delete URL')
+        toast.error("Failed to delete URL")
         return
       }
 
-      toast.success('Reference URL deleted')
+      toast.success("Reference URL deleted")
       await fetchDocumentUrls()
       await onSuccess()
     } catch (err) {
-      console.error('Delete error:', err)
-      toast.error('Failed to delete URL')
+      console.error("Delete error:", err)
+      toast.error("Failed to delete URL")
     }
   }
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (file) {
-      const validTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']
-      if (!validTypes.includes(file.type)) {
-        alert('Please select a PDF, DOC, or DOCX file')
-        return
-      }
+    if (!file) return
 
-      if (file.size > 10 * 1024 * 1024) {
-        alert('File size must be less than 10MB')
-        return
-      }
+    const validTypes = [
+      "application/pdf",
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ]
 
-      setSelectedFile(file)
+    if (!validTypes.includes(file.type)) {
+      alert("Please select a PDF, DOC, or DOCX file")
+      return
     }
+
+    // ✅ UPDATED: Increased limit to 50MB
+    if (file.size > 50 * 1024 * 1024) {
+      alert("File size must be less than 50MB")
+      return
+    }
+
+    setSelectedFile(file)
   }
 
   const handleUpload = async () => {
     if (!selectedFile) {
-      alert('Please select a file')
+      alert("Please select a file")
       return
     }
 
     setUploading(true)
-
     try {
-      const fileName = `${building.id}/${Date.now()}_${selectedFile.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`
+      const fileName = `${building.id}/${Date.now()}_${selectedFile.name.replace(/[^a-zA-Z0-9.-]/g, "_")}`
 
       const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('building-documents')
+        .from("building-documents")
         .upload(fileName, selectedFile, {
-          cacheControl: '3600',
-          upsert: false
+          cacheControl: "3600",
+          upsert: false,
         })
 
       if (uploadError) {
-        console.error('Upload error:', uploadError)
-        throw new Error('Failed to upload file to storage')
+        console.error("Upload error:", uploadError)
+        throw new Error("Failed to upload file to storage")
       }
 
       const { data: { publicUrl } } = supabase.storage
-        .from('building-documents')
+        .from("building-documents")
         .getPublicUrl(fileName)
 
       const { error: dbError } = await supabase
-        .from('building_documents')
+        .from("building_documents")
         .insert({
           building_id: building.id,
           document_type: selectedDocType,
@@ -1307,59 +1269,55 @@ function DocumentsTab({ building, onSuccess }: DocumentsTabProps) {
         })
 
       if (dbError) {
-        console.error('Database error:', dbError)
-        throw new Error('Failed to save document metadata')
+        console.error("Database error:", dbError)
+        throw new Error("Failed to save document metadata")
       }
 
-      alert('Document uploaded successfully!')
+      alert("Document uploaded successfully!")
       setSelectedFile(null)
       await fetchDocuments()
       await onSuccess()
-
     } catch (error: any) {
-      console.error('Upload error:', error)
-      alert(error.message || 'Upload failed')
+      console.error("Upload error:", error)
+      alert(error.message || "Upload failed")
     } finally {
       setUploading(false)
     }
   }
 
   const handleDelete = async (docId: number, fileUrl: string) => {
-    if (!confirm('Are you sure you want to delete this document?')) return
+    if (!confirm("Are you sure you want to delete this document?")) return
 
     try {
-      const filePath = fileUrl.split('/building-documents/')[1]
+      const filePath = fileUrl.split("building-documents/")[1]
       if (filePath) {
         await supabase.storage
-          .from('building-documents')
+          .from("building-documents")
           .remove([filePath])
       }
 
       const { error: dbError } = await supabase
-        .from('building_documents')
+        .from("building_documents")
         .delete()
-        .eq('id', docId)
+        .eq("id", docId)
 
-      if (dbError) {
-        throw new Error('Failed to delete document')
-      }
+      if (dbError) throw new Error("Failed to delete document")
 
-      alert('Document deleted successfully')
+      alert("Document deleted successfully")
       await fetchDocuments()
       await onSuccess()
-
     } catch (error: any) {
-      console.error('Delete error:', error)
-      alert(error.message || 'Delete failed')
+      console.error("Delete error:", error)
+      alert(error.message || "Delete failed")
     }
   }
 
   const formatFileSize = (bytes: number) => {
-    if (bytes === 0) return '0 Bytes'
+    if (bytes === 0) return "0 Bytes"
     const k = 1024
-    const sizes = ['Bytes', 'KB', 'MB', 'GB']
+    const sizes = ["Bytes", "KB", "MB", "GB"]
     const i = Math.floor(Math.log(bytes) / Math.log(k))
-    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i]
+    return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + " " + sizes[i]
   }
 
   return (
@@ -1383,7 +1341,8 @@ function DocumentsTab({ building, onSuccess }: DocumentsTabProps) {
           </div>
 
           <div>
-            <Label htmlFor="fileUpload">Select File (PDF, DOC, DOCX - Max 10MB)</Label>
+            {/* ✅ UPDATED: Label now shows Max 50MB */}
+            <Label htmlFor="fileUpload">Select File (PDF, DOC, DOCX - Max 50MB)</Label>
             <Input
               id="fileUpload"
               type="file"
@@ -1404,15 +1363,9 @@ function DocumentsTab({ building, onSuccess }: DocumentsTabProps) {
             className="w-full bg-gradient-to-r from-green-500 to-blue-500 hover:from-green-600 hover:to-blue-600"
           >
             {uploading ? (
-              <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Uploading...
-              </>
+              <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Uploading...</>
             ) : (
-              <>
-                <Upload className="h-4 w-4 mr-2" />
-                Upload Document
-              </>
+              <><Upload className="h-4 w-4 mr-2" />Upload Document</>
             )}
           </Button>
         </div>
@@ -1422,7 +1375,7 @@ function DocumentsTab({ building, onSuccess }: DocumentsTabProps) {
         <div className="flex items-center justify-between mb-3">
           <h3 className="font-semibold text-lg">Uploaded Documents</h3>
         </div>
-        
+
         {loading ? (
           <div className="text-center py-8">
             <Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" />
@@ -1443,9 +1396,7 @@ function DocumentsTab({ building, onSuccess }: DocumentsTabProps) {
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-sm truncate">{doc.filename}</p>
                       <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <Badge variant="outline" className="text-xs">
-                          {doc.document_type}
-                        </Badge>
+                        <Badge variant="outline" className="text-xs">{doc.document_type}</Badge>
                         <span>{formatFileSize(doc.file_size)}</span>
                         <span>·</span>
                         <span>{new Date(doc.created_at).toLocaleDateString()}</span>
@@ -1456,7 +1407,7 @@ function DocumentsTab({ building, onSuccess }: DocumentsTabProps) {
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => window.open(doc.file_url, '_blank')}
+                      onClick={() => window.open(doc.file_url, "_blank")}
                     >
                       <ExternalLink className="h-4 w-4" />
                     </Button>
@@ -1485,7 +1436,7 @@ function DocumentsTab({ building, onSuccess }: DocumentsTabProps) {
             className="border-blue-500 text-blue-700 hover:bg-blue-50"
           >
             <LinkIcon className="h-4 w-4 mr-2" />
-            {showUrlForm ? 'Cancel' : 'Add URL'}
+            {showUrlForm ? "Cancel" : "Add URL"}
           </Button>
         </div>
 
@@ -1541,7 +1492,7 @@ function DocumentsTab({ building, onSuccess }: DocumentsTabProps) {
                 disabled={savingUrl || !urlTitle.trim() || !urlLink.trim()}
                 className="w-full bg-blue-600 hover:bg-blue-700"
               >
-                {savingUrl ? 'Saving...' : 'Save URL'}
+                {savingUrl ? "Saving..." : "Save URL"}
               </Button>
             </div>
           </Card>
@@ -1562,16 +1513,12 @@ function DocumentsTab({ building, onSuccess }: DocumentsTabProps) {
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-sm">{urlDoc.title}</p>
                       <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <Badge variant="outline" className="text-xs">
-                          {urlDoc.document_type}
-                        </Badge>
+                        <Badge variant="outline" className="text-xs">{urlDoc.document_type}</Badge>
                         <span>·</span>
                         <span className="truncate max-w-xs">{urlDoc.url}</span>
                       </div>
                       {urlDoc.description && (
-                        <p className="text-xs text-muted-foreground mt-1">
-                          {urlDoc.description}
-                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">{urlDoc.description}</p>
                       )}
                     </div>
                   </div>
@@ -1579,7 +1526,7 @@ function DocumentsTab({ building, onSuccess }: DocumentsTabProps) {
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => window.open(urlDoc.url, '_blank')}
+                      onClick={() => window.open(urlDoc.url, "_blank")}
                     >
                       <ExternalLink className="h-4 w-4" />
                     </Button>

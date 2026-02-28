@@ -45,6 +45,9 @@ export default function Dashboard({
   const [taskToDelete, setTaskToDelete] = useState<any>(null)
   const [deleting, setDeleting] = useState(false)
 
+  // NEW: assignee filter state
+  const [assigneeFilter, setAssigneeFilter] = useState<string>("All")
+
   useEffect(() => {
     console.log('🚀 Dashboard mounted - starting fetchBuildings...')
     fetchBuildings()
@@ -311,9 +314,9 @@ export default function Dashboard({
       }
 
       const { data: topicsData, error: topicsError } = await supabase
-        .from('topics')
-        .select('id, title, meeting_id, meetings(id, title, building_id, buildings(name))')
-        .in('meeting_id', meetingIds)
+      .from('topics')
+      .select('id, title, meeting_id, meetings(id, title, building_id, buildings(name))')
+      .in('meeting_id', meetingIds)
 
       if (topicsError) {
         console.error('Error fetching topics:', topicsError)
@@ -433,18 +436,48 @@ export default function Dashboard({
   }
 
   const filteredMeetings = meetings.filter((meeting) => {
-    const matchesSearch = meeting.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         meeting.date.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         meeting.building.toLowerCase().includes(searchQuery.toLowerCase())
+    const matchesSearch =
+      meeting.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      meeting.date.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      meeting.building.toLowerCase().includes(searchQuery.toLowerCase())
     const matchesMeetingType = selectedMeetingType === "All" || meeting.meeting_type === selectedMeetingType
     return matchesSearch && matchesMeetingType
   })
 
+  // Build list of unique assignee names for filter
+  const allAssigneeNames = tasks.flatMap((task) => {
+    if (task.assignees && task.assignees.length > 0) {
+      return task.assignees
+        .map((a: any) => a?.name)
+        .filter((name: string | undefined) => !!name)
+    }
+    return task.assigned_name ? [task.assigned_name] : []
+  })
+  const uniqueAssigneeNames = Array.from(new Set(allAssigneeNames)).sort()
+
+  // Filter tasks by search and assignee
   const filteredTasks = tasks.filter((task) => {
-    const matchesSearch = task.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         task.building.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         task.assigned_name?.toLowerCase().includes(searchQuery.toLowerCase())
-    return matchesSearch
+    const q = searchQuery.toLowerCase()
+
+    const matchesSearch =
+      task.description.toLowerCase().includes(q) ||
+      task.building.toLowerCase().includes(q) ||
+      task.assigned_name?.toLowerCase().includes(q)
+
+    const assigneeNames =
+      task.assignees && task.assignees.length > 0
+        ? task.assignees
+            .map((a: any) => a?.name?.toLowerCase())
+            .filter(Boolean)
+        : task.assigned_name
+        ? [task.assigned_name.toLowerCase()]
+        : []
+
+    const matchesAssignee =
+      assigneeFilter === "All" ||
+      assigneeNames.includes(assigneeFilter.toLowerCase())
+
+    return matchesSearch && matchesAssignee
   })
 
   type MeetingStatus = "Draft" | "In Progress" | "Finalized"
@@ -687,8 +720,9 @@ export default function Dashboard({
           </div>
         </div>
 
-        <div className="mb-6 flex gap-3">
-          <div className="relative flex-1">
+        {/* Search + filters */}
+        <div className="mb-6 flex gap-3 flex-wrap">
+          <div className="relative flex-1 min-w-[220px]">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <input
               type="text"
@@ -741,6 +775,26 @@ export default function Dashboard({
                   </div>
                 </>
               )}
+            </div>
+          )}
+
+          {(activeTab === "tasks" || activeTab === "all") && (
+            <div className="flex flex-col min-w-[220px]">
+              <span className="block text-xs text-muted-foreground mb-1">
+                Filter by assignee
+              </span>
+              <select
+                className="px-3 py-2 bg-card border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                value={assigneeFilter}
+                onChange={(e) => setAssigneeFilter(e.target.value)}
+              >
+                <option value="All">All assignees</option>
+                {uniqueAssigneeNames.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
             </div>
           )}
         </div>
@@ -906,6 +960,8 @@ export default function Dashboard({
                         <p className="text-muted-foreground">
                           {searchQuery 
                             ? `No tasks found matching "${searchQuery}"`
+                            : assigneeFilter !== "All"
+                            ? `No tasks found for ${assigneeFilter}`
                             : `No tasks found`
                           }
                         </p>

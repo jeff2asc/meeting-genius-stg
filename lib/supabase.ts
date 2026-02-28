@@ -49,7 +49,6 @@ export interface User {
   user_type: UserRole
   roles?: UserRole[] // NEW: multiple roles
   company_id?: number | null
-  assigned_pm_id?: number | null  // ✅ add this line
 }
 
 // ⭐ TaskAttachment interface
@@ -298,11 +297,13 @@ export type Database = {
           content: string
           created_by: number | null
           created_at: string
+          visibility: 'public' | 'private'
         }
         Insert: {
           topic_id: number
           content: string
           created_by?: number | null
+          visibility?: 'public' | 'private'
         }
       }
       tasks: {

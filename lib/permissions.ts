@@ -181,6 +181,15 @@ export const canManageVendors = (user: UserRolesInput): boolean => {
 }
 
 /**
+ * Can this user see private notes?
+ * Private notes are visible to creator, PMs, Corporate Admins, and Masters.
+ * Note: Creator check must be done at the component level.
+ */
+export const canSeePrivateNotes = (user: UserRolesInput): boolean => {
+  return hasAnyRole(user, ["master", "property_manager", "corporate_administrator"])
+}
+
+/**
  * Get user-friendly display name for user type
  */
 export const getUserTypeDisplayName = (userType: UserType | string): string => {

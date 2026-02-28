@@ -9,6 +9,16 @@ import { fetchAndExtractBuildingDocuments, fetchAndExtractTopicAttachments } fro
 import TaskDetailsModal from "./TaskDetailsModal"
 import GeniusWordsInput from "./GeniusWordsInput"
 import { toast } from "sonner"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 // ⭐ NEW: Debounce hook for auto-save
 function useDebounce<T>(value: T, delay: number): T {
@@ -90,10 +100,11 @@ interface TopicCardProps {
   onAddThreadedDecision?: (parentDecisionId: number, topicId: number) => void
   onEditTask?: (taskId: number, topicId: number) => void
   onEditNote?: (noteId: number, topicId: number) => void
+  buildingInfo?: { id: number; manager_id: number; company_id: number | null }
 }
 
-export default function TopicCard({ 
-  topic, 
+export default function TopicCard({
+  topic,
   topicNumber,
   meetingId,
   meetingStatus,
@@ -121,6 +132,7 @@ export default function TopicCard({
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null)
   const [showAiResult, setShowAiResult] = useState(false)
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null)
+  const [buildingData, setBuildingData] = useState<{ id: number; manager_id: number; company_id: number | null } | null>(null)
 
   const [attachments, setAttachments] = useState<TopicAttachment[]>([])
   const [uploadingFile, setUploadingFile] = useState(false)
@@ -185,9 +197,9 @@ export default function TopicCard({
     if (newValue) {
       const now = new Date().toISOString()
       setIncameraStartTime(now)
-      await onUpdate({ 
-        is_incamera: newValue, 
-        incamera_start_time: now 
+      await onUpdate({
+        is_incamera: newValue,
+        incamera_start_time: now
       })
     } else {
       await onUpdate({ is_incamera: newValue })
@@ -464,34 +476,87 @@ export default function TopicCard({
     setLoadingHistory(true)
     try {
       const historyItems: HistoryItem[] = []
+      const currentUser = getCurrentUser()
 
+      // Fetch the topic with building info to check permissions
+      const { data: topicWithBuilding, error: topicError } = await supabase
+        .from('topics')
+        .select(`
+          title, 
+          meeting_id, 
+          meetings!inner(
+            building_id, 
+            meeting_type,
+            buildings!inner(
+              id,
+              manager_id,
+              company_id
+            )
+          )
+        `)
+        .eq('id', topic.id)
+        .single()
+
+      if (topicError || !topicWithBuilding) {
+        console.error('Error fetching topic building info:', topicError)
+        setLoadingHistory(false)
+        return
+      }
+
+      const meetingData = topicWithBuilding.meetings as any
+      const building = meetingData?.buildings
+      setBuildingData(building)
+
+      // Fetch ALL notes for this topic
       const { data: notes } = await supabase
         .from('notes')
-        .select('id, content, created_at')
+        .select('id, content, created_at, created_by, visibility')
         .eq('topic_id', topic.id)
         .order('created_at', { ascending: false })
 
       if (notes) {
+        // Filter notes based on the visibility rules:
+        // Creator, Property Manager of that building, Corporate Admin (of same company), and Master account can see private notes
         notes.forEach(note => {
-          historyItems.push({
-            id: note.id,
-            type: 'note',
-            content: note.content.substring(0, 100) + (note.content.length > 100 ? '...' : ''),
-            timestamp: new Date(note.created_at).toLocaleString(),
-          })
+          let canSee = false
+
+          if (note.visibility === 'public' || !note.visibility) {
+            canSee = true
+          } else if (currentUser) {
+            // Creator can see
+            if (note.created_by === currentUser.id) {
+              canSee = true
+            }
+            // Master account can see everything
+            else if (currentUser.user_type === 'master') {
+              canSee = true
+            }
+            // Corporate Admin of that company can see
+            else if (currentUser.user_type === 'corporate_administrator' && currentUser.company_id === building.company_id) {
+              canSee = true
+            }
+            // Property Manager of that building can see
+            else if (currentUser.user_type === 'property_manager' && currentUser.id === building.manager_id) {
+              canSee = true
+            }
+          }
+
+          if (canSee) {
+            historyItems.push({
+              id: note.id,
+              type: 'note',
+              content: note.content.substring(0, 100) + (note.content.length > 100 ? '...' : ''),
+              timestamp: new Date(note.created_at).toLocaleString(),
+              details: note.visibility === 'private' ? '🔒 Private Note' : undefined
+            })
+          }
         })
       }
 
-      const { data: currentTopic } = await supabase
-        .from('topics')
-        .select('title, meeting_id, meetings!inner(building_id, meeting_type)')
-        .eq('id', topic.id)
-        .single()
-
-      if (currentTopic) {
-        const meetingInfo = currentTopic.meetings as any
-        const buildingId = meetingInfo?.building_id
-        const meetingType = meetingInfo?.meeting_type
+      // Fetch tasks (existing logic)
+      if (meetingData) {
+        const buildingId = meetingData.building_id
+        const meetingType = meetingData.meeting_type
 
         const { data: allMeetings } = await supabase
           .from('meetings')
@@ -506,7 +571,7 @@ export default function TopicCard({
             .from('topics')
             .select('id')
             .in('meeting_id', meetingIds)
-            .eq('title', currentTopic.title)
+            .eq('title', topicWithBuilding.title)
 
           if (allTopicsWithSameTitle) {
             const topicIds = allTopicsWithSameTitle.map(t => t.id)
@@ -769,7 +834,6 @@ export default function TopicCard({
                 <Plus className="h-3 w-3 mr-1" />
                 Thread
               </Button>
-              {/* ⭐ NEW: Delete Button */}
               <Button
                 size="sm"
                 variant="outline"
@@ -835,11 +899,10 @@ export default function TopicCard({
               {!isReadOnly && isMeetingStarted && (
                 <button
                   onClick={handleIncameraToggle}
-                  className={`flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded transition-all border-2 ${
-                    isIncamera 
-                      ? 'bg-red-50 border-red-300 text-red-700 hover:bg-red-100' 
+                  className={`flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded transition-all border-2 ${isIncamera
+                      ? 'bg-red-50 border-red-300 text-red-700 hover:bg-red-100'
                       : 'bg-muted hover:bg-muted/80 border-border hover:border-red-300'
-                  }`}
+                    }`}
                   title={isIncamera ? "Remove In-Camera status" : "Mark as In-Camera (Confidential)"}
                 >
                   {isIncamera ? <Lock className="h-4 w-4" /> : <Unlock className="h-4 w-4" />}
@@ -1076,20 +1139,6 @@ export default function TopicCard({
               )}
             </div>
 
-            {showDeleteConfirm && !isReadOnly && (
-              <div className="px-2 py-1.5 bg-red-50 border-b border-red-200">
-                <p className="text-sm text-red-800 mb-1.5">
-                  Are you sure you want to delete this topic? This action cannot be undone.
-                </p>
-                <div className="flex gap-2">
-                  <Button onClick={() => setShowDeleteConfirm(false)} variant="outline" size="sm" className="flex-1">Cancel</Button>
-                  <Button onClick={handleDelete} size="sm" className="flex-1 bg-red-600 hover:bg-red-700 text-white">
-                    <Trash2 className="h-4 w-4 mr-2" />Delete Topic
-                  </Button>
-                </div>
-              </div>
-            )}
-
             {!isReadOnly && (
               <div className="flex gap-2 border-b border-border bg-muted/30 p-2">
                 <Button size="sm" className="flex-1 bg-note-blue text-white hover:bg-note-blue/90" onClick={onNoteClick}>
@@ -1120,7 +1169,6 @@ export default function TopicCard({
                     </div>
                   )}
 
-                  {/* ⭐ UPDATED: Show other history items with DELETE buttons */}
                   {history.map(item => (
                     <div
                       key={`${item.type}-${item.id}`}
@@ -1141,7 +1189,6 @@ export default function TopicCard({
                       {item.details && (
                         <p className="text-xs text-muted-foreground">{item.details}</p>
                       )}
-                      {/* ⭐ UPDATED: Action buttons with DELETE for tasks */}
                       {item.type === 'task' && !isReadOnly && (
                         <div className="grid grid-cols-2 gap-2 mt-1">
                           <Button
@@ -1158,7 +1205,6 @@ export default function TopicCard({
                             <Edit2 className="h-3 w-3 mr-1" />
                             Edit
                           </Button>
-                          {/* ⭐ NEW: Delete Task Button */}
                           <Button
                             size="sm"
                             variant="outline"
@@ -1173,7 +1219,6 @@ export default function TopicCard({
                           </Button>
                         </div>
                       )}
-                      {/* ⭐ UPDATED: Action buttons with DELETE for notes */}
                       {item.type === 'note' && !isReadOnly && (
                         <div className="grid grid-cols-2 gap-2 mt-1">
                           <Button
@@ -1190,7 +1235,6 @@ export default function TopicCard({
                             <Edit2 className="h-3 w-3 mr-1" />
                             Edit
                           </Button>
-                          {/* ⭐ NEW: Delete Note Button */}
                           <Button
                             size="sm"
                             variant="outline"
@@ -1224,6 +1268,28 @@ export default function TopicCard({
           onClose={() => setSelectedTaskId(null)}
         />
       )}
+
+      {/* ✅ NEW: AlertDialog for topic delete confirmation */}
+      <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Topic</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this topic? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              Delete Topic
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   )
 }
