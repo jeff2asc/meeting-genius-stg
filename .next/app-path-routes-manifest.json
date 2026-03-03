@@ -1,12 +1,12 @@
 {
-  "/api/signup/route": "/api/signup",
-  "/api/pricing/company-data/route": "/api/pricing/company-data",
+  "/_not-found/page": "/_not-found",
   "/api/send-email/route": "/api/send-email",
+  "/api/pricing/company-data/route": "/api/pricing/company-data",
+  "/api/signup/route": "/api/signup",
+  "/api/transcripts/create-tasks/route": "/api/transcripts/create-tasks",
   "/api/transcripts/upload/route": "/api/transcripts/upload",
   "/api/transcripts/list/route": "/api/transcripts/list",
-  "/api/transcripts/create-tasks/route": "/api/transcripts/create-tasks",
-  "/_not-found/page": "/_not-found",
   "/api/users/bulk-import/route": "/api/users/bulk-import",
-  "/page": "/",
-  "/task-update/[token]/page": "/task-update/[token]"
+  "/task-update/[token]/page": "/task-update/[token]",
+  "/page": "/"
 }

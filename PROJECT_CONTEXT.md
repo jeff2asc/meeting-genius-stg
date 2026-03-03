@@ -47,7 +47,7 @@
 - **Database**: Supabase (PostgreSQL)
 - **Client**: @supabase/supabase-js 2.76.1
 - **Authentication**: Custom (localStorage-based, password hashing with bcryptjs)
-- **Storage**: Supabase Storage for files (documents, attachments, logos, transcripts)
+- **Storage**: Supabase Storage for files (documents, attachments, logos, transcripts, audio recordings)
 - **AI Integration**: Google Gemini AI (@google/generative-ai 0.24.1) for transcript analysis
 
 ### Other Dependencies
@@ -58,6 +58,7 @@
 - **PDF Generation**: jspdf (^3.0.4)
 - **HTML to Canvas**: html2canvas (^1.4.1)
 - **Email**: nodemailer (^7.0.11) - For sending emails via SMTP
+- **Excel/CSV**: xlsx (^0.18.5) - For spreadsheet export/import
 - **Document Processing**: 
   - react-pdftotext (^1.3.4) - Extract text from PDF files
   - mammoth (^1.11.0) - Extract text from DOCX files
@@ -127,6 +128,7 @@ User accounts with role-based access.
   email: string (unique)
   password_hash: string
   user_type: 'master' | 'property_manager' | 'user' | 'vendor' | 'attendee' | 'corporate_administrator' | 'owner' | 'resident'
+  roles: UserRole[] | null  // NEW: array of additional roles for multi-role support
   company_id: number | null (foreign key → companies.id)
   assigned_pm_id: number | null (foreign key → users.id, references property_manager)
   smtp_config: any | null
@@ -134,6 +136,12 @@ User accounts with role-based access.
   updated_at: timestamp
 }
 ```
+
+**Multi-Role Support**:
+- `roles`: Optional array column allowing a user to have additional roles beyond `user_type`
+- Enables future role-based features without changing primary `user_type`
+- Managed via `toggleRole()` in CompanyDetailsModal
+- Users can be promoted to `corporate_administrator` via inline promotion in CompanyDetailsModal
 
 **Purpose**: Stores all user accounts with their roles and company associations.
 
@@ -221,11 +229,13 @@ Meeting records (agendas and minutes).
   meeting_type: string | null (e.g., "Council Meeting", "AGM", "SGM")
   strata_plan_number: string | null
   status: 'working_agenda' | 'agenda' | 'working_minutes' | 'minutes'
-  audio_file: any | null (binary/JSONB)
+  audio_file: any | null (JSONB: { url: string, path: string } or legacy binary)
   audio_filename: string | null
   audio_duration: number | null (seconds)
   recording_started_at: timestamp | null
   recording_ended_at: timestamp | null
+  recorder_name: string | null   // Name of recorder selected at meeting start
+  timekeeper_name: string | null // Name of timekeeper selected at meeting start
   attendees: any | null (JSONB array of attendee objects)
   is_incamera: boolean | null
   created_at: timestamp
@@ -233,6 +243,19 @@ Meeting records (agendas and minutes).
   finalized_at: timestamp | null
 }
 ```
+
+**Audio Recording**:
+- `audio_file`: JSONB object `{ url: string, path: string }` pointing to Supabase Storage
+- `audio_filename`: Filename of the uploaded recording (format: `{meeting_id}_{timestamp}.webm`)
+- `audio_duration`: Duration in seconds
+- Recording is uploaded to Supabase Storage bucket: `meeting-recordings`
+- File path format: `meeting-recordings/{meeting_id}_{timestamp}.webm`
+- "Download Audio" button appears in meeting view when status is `minutes` and recording exists
+
+**Recorder & Timekeeper**:
+- `recorder_name`: Set when transitioning to `working_minutes` via SelectRecorderModal
+- `timekeeper_name`: Set at same time as recorder_name
+- Displayed in meeting header during `working_minutes` status
 
 **Purpose**: Core meeting entity. Status flow: `working_agenda` → `agenda` → `working_minutes` → `minutes` (finalized).
 
@@ -325,10 +348,16 @@ Notes attached to topics.
   content: string
   created_by: number | null (foreign key → users.id)
   created_at: timestamp
+  visibility: 'public' | 'private'  // NEW: controls note visibility
 }
 ```
 
 **Purpose**: Stores notes/discussion points for each topic.
+
+**Note Visibility**:
+- `visibility`: Controls whether a note is `public` (visible to all) or `private` (visible only to creator)
+- Default is `public`
+- Used to control which notes appear in published PDFs and shared views
 
 ---
 
@@ -850,7 +879,7 @@ All permission checks are centralized in `lib/permissions.ts`:
 
 ### 1. **Meeting Management**
 - Create meetings with customizable types and sections
-- Four status states: working_agenda → agenda → working_minutes → minutes
+- **Status flow**: `working_agenda` → `working_minutes` → `minutes` (3-step; the separate `agenda` status still exists in DB but the active UI flow skips directly from working_agenda to working_minutes)
 - Drag-and-drop reordering of sections and topics
 - Meeting rollover: copy topics and tasks from previous meetings
 - **Attendee management** with presence tracking and role assignment
@@ -858,21 +887,14 @@ All permission checks are centralized in `lib/permissions.ts`:
   - Assign roles to attendees (e.g., "Chair", "Secretary", "Member")
   - Track presence during meeting minutes phase
   - Roles displayed in PDF minutes generation
-- **In-Camera (Confidential) Meetings**: 
-  - Mark entire meetings or individual topics as confidential/in-camera
-  - Visual indicators with lock icons for confidential content
-  - Toggle in-camera status during working_agenda and working_minutes phases
-  - Warning banners displayed for confidential meetings
-- **Send Meeting Notices**:
-  - One-click email distribution of meeting agendas to all building owners/residents
-  - Beautiful HTML-formatted email templates with responsive design
-  - Includes meeting details, date, time, location, and full agenda with sections/topics
-  - Automatically filters recipients by user type (owner or resident) based on building settings
-  - Available during working_agenda and agenda phases
-- **In-Camera (Confidential) Meetings**
-  - Mark entire meetings as in-camera/confidential
-  - Toggle available in meeting view header
-  - Displayed with red badge and warning banner
+- **Recorder & Timekeeper Selection**: When clicking "Start" (transition to working_minutes), SelectRecorderModal prompts for recorder and timekeeper names from attendee list; stored in `meetings.recorder_name` / `meetings.timekeeper_name`
+- **Audio Recording**: During `working_minutes`, Record/Stop buttons to capture browser audio via MediaRecorder API
+  - Recordings uploaded to Supabase Storage (`meeting-recordings` bucket) as `.webm`
+  - "Download Audio" button available in finalized `minutes` status
+- **In-Camera (Confidential) Meetings**:
+  - Mark entire meeting as in-camera during `working_minutes` phase only
+  - Toggle in-camera button available in header (working_minutes status only)
+  - Displays red "IN-CAMERA" badge and warning banner
   - All content treated as confidential
 - **In-Camera Topics**
   - Mark individual topics as in-camera during meeting
@@ -880,6 +902,12 @@ All permission checks are centralized in `lib/permissions.ts`:
   - Content hidden in published agendas and minutes PDFs
   - Only "This topic is in-camera" notice shown in PDFs
   - Toggle available in TopicCard during meeting (working_minutes/minutes status)
+- **Send Meeting Notices**:
+  - One-click email distribution of meeting agendas to all building owners/residents
+  - Beautiful HTML-formatted email templates with responsive design
+  - Includes meeting details, date, time, location, and full agenda with sections/topics
+  - Automatically filters recipients by user type (owner or resident) based on building settings
+  - Available during working_agenda and agenda phases
 
 ### 2. **Topic & Section Management**
 - Organize topics into sections
@@ -959,8 +987,11 @@ All permission checks are centralized in `lib/permissions.ts`:
     - Supports PNG, JPG, SVG (max 2MB)
     - Managed in CompanyDetailsModal → Logo tab
 - **Document Management**: Upload/view building documents
-- **Minutes Templates Management**: Customize PDF minutes templates per building (MinutesTemplatesTab)
-- **Agenda Templates Management**: Customize PDF agenda templates per building (AgendaTemplatesTab)
+- **Minutes Templates Management**: Customize PDF minutes templates per building (MinutesTemplatesTab - canvas-based designer)
+- **Agenda Templates Management**: Customize PDF agenda templates per building (AgendaTemplatesTab - free-position canvas designer with cover page, info card, colors)
+- **Assign Existing Users**: In BuildingDetailsModal → Users tab, can now assign existing company users to buildings (not just create new ones)
+- **Promote to Admin**: In CompanyDetailsModal, can promote existing users to corporate_administrator role
+- **Attach Existing Users/Buildings to Company**: CompanyDetailsModal supports attaching pre-existing users and buildings to a company
 
 ### 7. **Multi-Tenancy**
 - Company-level isolation
@@ -1142,20 +1173,20 @@ app/page.tsx (Root)
    - Main meeting interface
    - Displays sections and topics
    - Drag-and-drop reordering
-  - Timer functionality
-  - Status progression controls
-  - Attendee management
-  - Section/topic creation modals
-  - In-camera toggle button (marks meeting as confidential)
-  - Send Notice button (emails agenda to owners/residents)
-  - **UnifiedItemModal**: Single modal with tabs for Tasks, Notes, and Decisions (per topic)
-  - SelectRecorderModal (select recorder/device for meeting audio)
-  - Upload Transcript button (upload meeting transcripts for AI task extraction)
-  - View Transcripts button (view all uploaded transcripts)
-  - Generate Agenda PDF button (during working_agenda/agenda phases)
-  - Generate Minutes PDF button (when status is "minutes")
+   - Status progression controls (`working_agenda` → `working_minutes` → `minutes`)
+   - Attendee management (collapsible panel)
+   - Section/topic creation modals
+   - **In-camera toggle** (working_minutes only): mark entire meeting as confidential
+   - **Send Notice button** (working_agenda/agenda): emails agenda to owners/residents
+   - **UnifiedItemModal**: Single modal with tabs for Tasks, Notes, and Decisions (per topic)
+   - **SelectRecorderModal**: Select recorder & timekeeper when starting meeting
+   - **Audio Recording**: Record/Stop buttons in working_minutes; uploads `.webm` to `meeting-recordings` bucket; Download Audio in minutes status
+   - Upload Transcript button (upload meeting transcripts for AI task extraction)
+   - View Transcripts button (view all uploaded transcripts)
+   - Generate Agenda PDF button (during working_agenda/agenda phases)
+   - Generate Minutes PDF button (when status is "minutes")
+   - **Recorder/Timekeeper display**: Shows recorder and timekeeper names in header during working_minutes
    - **Improved button layout**: All action buttons in single row with consistent sizing (h-8, px-3, text-xs)
-   - **In-camera meeting toggle**: Mark entire meeting as confidential
    - **Header layout**: Back button, title, badges, and edit button properly aligned without overlap
 
 4. **`components/admin-panel.tsx`**
@@ -1241,7 +1272,11 @@ app/page.tsx (Root)
     - Company statistics (users, buildings, admins count)
     - **SMTP Email Configuration**: Configure company email settings (host, port, credentials, TLS)
   - **Buildings Tab**: View all buildings, create buildings inline, create property managers inline, delete buildings
+    - **Attach Existing Building**: Attach a pre-existing building to the company
   - **Users Tab**: View all company users with filtering by type, create users inline, delete users
+    - **Attach Existing User**: Attach a pre-existing user to the company
+    - **Promote to Admin**: Promote any existing user to `corporate_administrator` role
+    - **Multi-role management**: Toggle additional `roles[]` per user
   - **Administrators Tab**: View corporate administrators, create administrators inline, delete administrators
   - **Logo Tab**: Upload, view, and delete company logo
     - Logo appears in dashboard header for company users
@@ -1250,14 +1285,17 @@ app/page.tsx (Root)
 - `UsersTab.tsx`: User management interface with filtering
 - `BuildingsTab.tsx`: Building management interface with user assignment
 - `CompaniesTab.tsx`: Company management interface with statistics
-- `MinutesTemplatesTab.tsx`: **Advanced minutes template designer** (root component imported into Admin Panel)
+- `MinutesTemplatesTab.tsx`: **Advanced canvas-based minutes template designer** (root component imported into Admin Panel)
   - Per-building minutes templates with configurable cover page, info card, section header colors, motion/action/vote colors
-  - Drag-and-drop ordering and toggling of fields (date, times, attendees, sections, actions, votes, etc.)
+  - Canvas-element drag-and-drop ordering and toggling of fields
   - Uses real meeting data preview (latest meeting per building) to visualize minutes layout
+  - Powered by `lib/minutesCanvasPDFGenerator.ts` for PDF rendering
+- `MinutesTemplatesTabold.tsx`: **Legacy minutes template editor** (kept for reference, not imported)
 - `AgendaTemplatesTab.tsx`: **Agenda template designer** (per-building)
   - Configurable cover page elements (logo, title, building name, meeting type, etc.) with free-positioning
   - Info card fields and colors for date/time/location/address/strata plan
   - Uses real meeting data preview for agendas
+  - Powered by `lib/canvasPDFGenerator.ts` for PDF rendering
 - `ImportUsersModal.tsx`: Bulk user import from CSV for a building
   - Uses `csvParser` to validate CSV rows (name, email, user_type, password, building info)
   - Shows parse errors by row; preview of users before import
@@ -1298,6 +1336,7 @@ All shadcn/ui style components:
 - `components/transcript/upload-transcript-modal.tsx`: Upload meeting transcript files
 - `components/transcript/preview-tasks-modal.tsx`: Review and edit AI-extracted tasks
 - `components/transcript/view-transcripts-modal.tsx`: View all uploaded transcripts for a meeting
+- `components/forms/`: Form components directory
 
 #### **Utility Components**
 
@@ -1834,13 +1873,14 @@ meeting-genius/
 │
 ├── components/
 │   ├── admin/                   # Admin panel components
-│   │   ├── AgendaTemplatesTab.tsx      # Agenda PDF templates per building (cover page + info card designer)
+│   │   ├── AgendaTemplatesTab.tsx      # Agenda PDF templates per building (free-position canvas designer)
 │   │   ├── AssignUsersToCompanyModal.tsx
 │   │   ├── BuildingCard.tsx
-│   │   ├── BuildingDetailsModal.tsx    # Main building modal (tabs: Details, Users, Documents, Notifications)
+│   │   ├── BuildingDetailsModal.tsx    # Main building modal (tabs: Details, Users, Documents, Notifications); supports assign-existing-user
 │   │   ├── BuildingsTab.tsx
+│   │   ├── CompaniesTab.tsx
 │   │   ├── CompanyCard.tsx
-│   │   ├── CompanyDetailsModal.tsx
+│   │   ├── CompanyDetailsModal.tsx     # Supports attach-existing-user, attach-existing-building, promote-to-admin, multi-role
 │   │   ├── CreateBuildingModal.tsx
 │   │   ├── CreateCompanyModal.tsx
 │   │   ├── CreateUserModal.tsx
@@ -1849,7 +1889,7 @@ meeting-genius/
 │   │   ├── EditCompanyModal.tsx
 │   │   ├── ImportUsersModal.tsx        # Bulk user import from CSV for a building
 │   │   ├── LogoTab.tsx                 # Company logo management
-│   │   ├── MinutesTemplatesTabold.tsx  # Legacy minutes template editor (kept for reference)
+│   │   ├── MinutesTemplatesTabold.tsx  # Legacy minutes template editor (kept for reference, NOT imported)
 │   │   ├── UserCard.tsx
 │   │   ├── UsersTab.tsx
 │   │   ├── ViewDocumentModal.tsx
@@ -1900,13 +1940,14 @@ meeting-genius/
 │   └── theme-provider.tsx        # Theme management
 │
 ├── lib/
-│   ├── supabase.ts              # Supabase client & types
+│   ├── supabase.ts              # Supabase client & types (includes multi-role User interface)
 │   ├── auth.ts                   # Authentication functions
 │   ├── permissions.ts            # Permission system
 │   ├── documentExtractor.ts      # Document text extraction utility (PDF, DOCX, TXT)
 │   ├── gemini.ts                 # Google Gemini AI integration for transcript task extraction
-│   ├── pdfGenerator.ts           # jsPDF-based minutes PDF generator (template-driven)
-│   ├── canvasPDFGenerator.ts     # Canvas-style agenda/minutes PDF renderer (CanvasElement layout)
+│   ├── pdfGenerator.ts           # jsPDF-based minutes PDF generator (template-driven, iframe+html2canvas)
+│   ├── canvasPDFGenerator.ts     # Canvas-style agenda PDF renderer (CanvasElement layout, used by AgendaTemplatesTab)
+│   ├── minutesCanvasPDFGenerator.ts  # Canvas-style minutes PDF renderer (CanvasElement layout, used by MinutesTemplatesTab)
 │   ├── csvParser.ts              # CSV parser/validator for bulk user import
 │   ├── timezone.ts               # Timezone utilities (UTC ↔ local for dates/times display)
 │   └── utils.ts                  # Utility functions
@@ -2097,10 +2138,13 @@ All database types defined in `lib/supabase.ts` as `Database` type:
 - Includes default_decision_results in companies table
 - Includes logo_url in companies table
 - Includes parent_decision_id, edited_at, votes_abstain in decisions table
-- Includes all 7 user types (master, corporate_administrator, property_manager, user, owner, vendor, attendee)
-- Interfaces for TaskAttachment, TopicAttachment, TaskAnalysis, Company, User
-- Generic extractTextFromFile function for document processing
 - Includes 8 user types: master, corporate_administrator, property_manager, user, owner, resident, vendor, attendee
+- Includes `roles: UserRole[] | null` column on users table (multi-role support)
+- Includes `recorder_name` and `timekeeper_name` on meetings table
+- Includes `visibility: 'public' | 'private'` on notes table
+- Interfaces for TaskAttachment, TopicAttachment, TaskAnalysis, Company, User
+- `User` interface includes optional `roles?: UserRole[]` array
+- Generic extractTextFromFile function for document processing
 - In-camera fields for meetings and topics (is_incamera, incamera_start_time, incamera_end_time)
 
 ### 12. **PDF Minutes Generation**
@@ -2232,7 +2276,7 @@ npm run lint
 - **Query Pattern**: All queries use Supabase client with async/await
 - **No Pooling**: No connection pooling or special configuration
 - **Storage**: Supabase Storage used for file uploads
-  - Buckets: `company-logos`, `building-documents`, `task-attachments`, `topic-attachments`
+  - Buckets: `company-logos`, `building-documents`, `task-attachments`, `topic-attachments`, `meeting-transcripts`, `meeting-recordings`
   - Public access URLs generated for uploaded files
 
 ### Deployment
@@ -2785,6 +2829,14 @@ useEffect(() => {
    - AI Processing: Text extracted and analyzed by Google Gemini AI
    - Usage: Upload via meeting view, AI extracts tasks automatically
 
+6. **meeting-recordings**
+   - Purpose: Store audio recordings captured during meetings
+   - File Path Format: `meeting-recordings/{meeting_id}_{timestamp}.webm`
+   - Format: WebM audio (captured via browser MediaRecorder API)
+   - Access: Authenticated users
+   - Usage: Recorded during working_minutes phase; uploaded automatically after Stop; downloadable from minutes view
+   - Referenced in `meetings.audio_file` as `{ url, path }` JSON object
+
 ---
 
 ## Summary
@@ -2792,6 +2844,7 @@ useEffect(() => {
 This is a comprehensive meeting management system with:
 - **20 main database tables** (companies, users, buildings, meetings, sections, topics, notes, tasks, decisions, task_notes, minutes_templates, user_buildings, building_documents, ai_analyses, task_attachments, task_analyses, topic_attachments, building_document_urls, genius_words, meeting_transcripts)
 - **8 user types** with granular permissions (master, corporate_administrator, property_manager, user, owner, resident, vendor, attendee)
+- **Multi-role support** via `users.roles[]` column for assigning additional roles beyond primary `user_type`
 - **Multi-tenant architecture** (company → building → meeting hierarchy)
 - **Full CRUD operations** for all entities
 - **Meeting rollover** functionality
@@ -2824,11 +2877,51 @@ The system is designed for property management companies to manage their meeting
 
 ---
 
-**Last Updated**: January 27, 2026
+**Last Updated**: March 3, 2026
 **Version**: Current production codebase
 
 **Recent Updates**:
-- **Meeting Transcript Upload & AI Task Extraction** (NEW - Major Feature)
+- **Audio Recording & Download** (NEW)
+  - Added Record/Stop buttons in meeting view during `working_minutes` status
+  - Recordings captured via browser MediaRecorder API as `.webm` audio
+  - Uploaded to new Supabase Storage bucket: `meeting-recordings`
+  - Recording stored in `meetings.audio_file` as `{ url, path }` JSON
+  - "Download Audio" button appears in finalized `minutes` view when recording exists
+  - Upload progress shown with "Uploading..." button state
+  - Warning prompt when going back with active recording
+- **Recorder & Timekeeper Fields** (NEW)
+  - Added `recorder_name` and `timekeeper_name` columns to `meetings` table
+  - Set when clicking "Start" (transitioning to working_minutes) via SelectRecorderModal
+  - Displayed in meeting header during working_minutes status
+- **Notes Visibility** (NEW)
+  - Added `visibility: 'public' | 'private'` column to `notes` table
+  - Controls whether notes are visible to all or only the creator
+  - Default is `public`
+- **Multi-Role User Support** (NEW)
+  - Added `roles: UserRole[] | null` column to `users` table
+  - `User` interface updated with optional `roles?: UserRole[]` array
+  - CompanyDetailsModal supports toggling additional roles per user
+  - "Promote to Admin" button to set user as corporate_administrator
+- **Company & Building Management Enhancements** (NEW)
+  - CompanyDetailsModal: attach existing users to company (not just create new)
+  - CompanyDetailsModal: attach existing buildings to company
+  - CompanyDetailsModal: promote existing users to corporate_administrator
+  - BuildingDetailsModal: assign existing company users to building (not just create new)
+  - `fetchAvailableUsersForAssignment()` and `handleAssignExistingUser()` in BuildingDetailsModal
+  - `fetchAvailableUsersForAttachment()` and `handleAttachExistingUser()` in CompanyDetailsModal
+- **minutesCanvasPDFGenerator.ts** (NEW Library)
+  - New `lib/minutesCanvasPDFGenerator.ts` file for canvas-based minutes PDF generation
+  - Companion to existing `canvasPDFGenerator.ts` (which handles agendas)
+  - Renders attendees block (present/absent groups), topics block (notes, tasks, decisions), signature lines, page numbers
+  - Used by the new MinutesTemplatesTab canvas designer
+- **xlsx Dependency Added**
+  - Added `xlsx` (^0.18.5) package for Excel/spreadsheet support
+- **Meeting Status Flow Clarification**
+  - Active UI flow is now 3-step: `working_agenda` → `working_minutes` → `minutes`
+  - The `agenda` status still exists in DB/types but is skipped in the UI STATUS_FLOW array
+  - Send Notice available during both `working_agenda` and `agenda` statuses
+  - In-Camera toggle restricted to `working_minutes` status only (was previously any non-finalized status)
+- **Meeting Transcript Upload & AI Task Extraction** (previously documented)
   - Added `meeting_transcripts` database table for storing transcript files
   - Integrated Google Gemini AI (models/gemini-2.5-flash) for intelligent task extraction
   - New dependency: @google/generative-ai (^0.24.1)
