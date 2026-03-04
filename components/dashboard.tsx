@@ -612,7 +612,7 @@ export default function Dashboard({
           {/* CENTER: Building Name + Count */}
           <div className="flex-1 text-center">
             <h2 className="text-2xl font-bold text-foreground">
-              {selectedBuilding === "All" ? "All Buildings" : selectedBuilding}
+              {selectedBuilding === "All" ? "All Buildingszzzz" : selectedBuilding}
             </h2>
             <p className="text-sm text-muted-foreground mt-1">
               {activeTab === "meetings" && `${filteredMeetings.length} meeting${filteredMeetings.length !== 1 ? 's' : ''}`}
@@ -720,8 +720,8 @@ export default function Dashboard({
           </div>
         </div>
 
-        {/* Search + filters */}
-        <div className="mb-6 flex gap-3 flex-wrap">
+        {/* ✅ FIX: Added items-center to align search bar and assignee dropdown */}
+        <div className="mb-6 flex gap-3 flex-wrap items-center">
           <div className="relative flex-1 min-w-[220px]">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <input
@@ -778,13 +778,11 @@ export default function Dashboard({
             </div>
           )}
 
+          {/* ✅ FIX: Removed label and flex-col, now just a plain div with the select */}
           {(activeTab === "tasks" || activeTab === "all") && (
-            <div className="flex flex-col min-w-[220px]">
-              <span className="block text-xs text-muted-foreground mb-1">
-                Filter by assignee
-              </span>
+            <div className="min-w-[220px]">
               <select
-                className="px-3 py-2 bg-card border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                className="w-full px-3 py-2 bg-card border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
                 value={assigneeFilter}
                 onChange={(e) => setAssigneeFilter(e.target.value)}
               >

@@ -8,7 +8,7 @@ import jsPDF from "jspdf"
 import html2canvas from "html2canvas"
 
 interface GenerateMinutesButtonProps {
-  meetingId: string
+  meetingId: number
   buildingId: number
 }
 
@@ -42,6 +42,9 @@ interface MinutesTemplate {
   voteResultsColor: string
   coverPageHeight: number
 }
+
+const COVER_PAGE_HEIGHT = 175
+const COVER_PAGE_WIDTH = 794
 
 export default function GenerateMinutesButton({
   meetingId,
@@ -157,12 +160,12 @@ export default function GenerateMinutesButton({
             templateRow.coverpage_height || defaultTemplate.coverPageHeight,
           coverPageElements:
             Array.isArray(templateRow.coverpage_elements) &&
-            templateRow.coverpage_elements.length > 0
+              templateRow.coverpage_elements.length > 0
               ? (templateRow.coverpage_elements as CoverPageElement[])
               : defaultTemplate.coverPageElements,
           infoCardFields:
             Array.isArray(templateRow.infocard_fields) &&
-            templateRow.infocard_fields.length > 0
+              templateRow.infocard_fields.length > 0
               ? (templateRow.infocard_fields as TemplateField[])
               : defaultTemplate.infoCardFields,
         }
@@ -228,6 +231,7 @@ export default function GenerateMinutesButton({
 
       let decisions: any[] = []
       let tasks: any[] = []
+      let notes: any[] = []
 
       if (topicIds.length > 0) {
         const { data: decisionsData, error: decisionsError } = await supabase
@@ -250,8 +254,20 @@ export default function GenerateMinutesButton({
           console.error("Error loading tasks:", tasksError)
         }
 
+        const { data: notesData, error: notesError } = await supabase
+          .from("notes")
+          .select("*")
+          .in("topic_id", topicIds)
+          .eq("visibility", "public")
+          .order("created_at")
+
+        if (notesError) {
+          console.error("Error loading notes:", notesError)
+        }
+
         decisions = decisionsData || []
         tasks = tasksData || []
+        notes = notesData || []
       }
 
       const sectionsWithTopics = (sections || []).map((section: any) => ({
@@ -262,6 +278,7 @@ export default function GenerateMinutesButton({
             ...topic,
             decisions: decisions.filter((d: any) => d.topic_id === topic.id),
             tasks: tasks.filter((t: any) => t.topic_id === topic.id),
+            notes: notes.filter((n: any) => n.topic_id === topic.id),
           })),
       }))
 
@@ -330,7 +347,7 @@ export default function GenerateMinutesButton({
             .cover-element {
               position: absolute;
               transform: translate(-50%, -50%);
-              white-space: nowrap;
+              max-width: 80%;
             }
 
             .cover-element-left {
@@ -364,7 +381,7 @@ export default function GenerateMinutesButton({
             }
 
             .info-card {
-              margin: 24px 20px 20px 20px;
+              margin: 16px 20px 20px 20px;
               border-radius: 10px;
               overflow: hidden;
               border: 1px solid #e5e7eb;
@@ -403,6 +420,7 @@ export default function GenerateMinutesButton({
             .info-value {
               font-size: 11px;
               color: #111827;
+              white-space: pre-wrap;
             }
 
             .attendees-section {
@@ -468,32 +486,52 @@ export default function GenerateMinutesButton({
             /* ⭐ FIX 1: Full-width section header bar */
             .section-header-bar {
               width: 100%;
-              padding: 10px 20px;
+              padding: 8px 20px;
               color: white;
               font-size: 13px;
               font-weight: 700;
               display: block;
-              margin: 20px 0 0 0;
+              margin: 12px 0 0 0;
               border-radius: 0;
               letter-spacing: 0.5px;
             }
 
             /* ⭐ FIX 3: Section wrapper card contains all topics */
             .section-card {
-              margin: 0 0 16px 0;
-              border: 1px solid #e5e7eb;
-              border-radius: 0 0 8px 8px;
+              margin: 0 0 8px 0;
+              border: none;
               background: #ffffff;
-              overflow: hidden;
+            }
+
+            .task-box {
+              margin: 6px 16px;
+              padding: 8px 12px;
+              background: #fff9f0;
+              border-left: 3px solid #f59e0b;
+              border-radius: 6px;
+              font-size: 10px;
+              color: #92400e;
+            }
+
+            .note-box {
+              margin: 4px 16px 8px 16px;
+              padding: 8px 12px;
+              background: #f0f7ff;
+              border-left: 3px solid #3b82f6;
+              border-radius: 6px;
+              font-size: 10px;
+              color: #1e40af;
+            }
+
+            .note-icon {
+              margin-right: 4px;
+              vertical-align: middle;
+              display: inline-block;
             }
 
             .topic-block {
-              padding: 10px 16px;
-              border-bottom: 1px solid #f3f4f6;
-            }
-
-            .topic-block:last-child {
-              border-bottom: none;
+              padding: 6px 16px 12px 16px;
+              margin-bottom: 8px;
             }
 
             /* ⭐ FIX 2: Topic sub-number title */
@@ -508,11 +546,12 @@ export default function GenerateMinutesButton({
               font-size: 10px;
               color: #4b5563;
               margin-bottom: 6px;
+              white-space: pre-wrap;
             }
 
             .motion-box {
-              margin-top: 8px;
-              padding: 12px;
+              margin-top: 10px;
+              padding: 12px 14px 14px 14px;
               border-radius: 8px;
               border-width: 2px;
               border-style: solid;
@@ -522,26 +561,32 @@ export default function GenerateMinutesButton({
               display: inline-block;
               color: white;
               font-weight: 700;
-              font-size: 9px;
-              padding: 3px 8px;
+              font-size: 8.5px;
+              padding: 4px 10px 5px 10px;
               border-radius: 4px;
               margin-bottom: 8px;
+              line-height: normal;
+              text-transform: uppercase;
             }
 
             .motion-text {
               font-size: 10px;
               font-weight: 600;
               color: #1f2937;
-              margin-bottom: 8px;
+              margin-bottom: 10px;
+              white-space: pre-wrap;
+              display: block;
             }
 
             .decision-badge {
               display: inline-block;
               color: white;
-              font-size: 9px;
-              padding: 4px 10px;
+              font-size: 8.5px;
+              padding: 4px 10px 5px 10px;
               border-radius: 4px;
-              margin-bottom: 6px;
+              margin-bottom: 10px;
+              line-height: normal;
+              text-transform: uppercase;
             }
 
             .votes-bar {
@@ -566,7 +611,7 @@ export default function GenerateMinutesButton({
             /* Topics & Discussion badge */
             .topics-badge {
               display: inline-block;
-              margin: 20px 20px 8px 20px;
+              margin: 12px 20px 8px 20px;
               padding: 8px 14px;
               color: white;
               border-radius: 8px;
@@ -601,6 +646,56 @@ export default function GenerateMinutesButton({
         windowWidth: 210 * 3.7795275591,
       })
 
+      // ── Collect element boundaries BEFORE removing iframe ──────────────
+      // We query all "avoid-break" elements and store their top/bottom in
+      // canvas pixels (DOM px × scale factor) so we can snap page cuts to gaps.
+      const CANVAS_SCALE = 2 // must match html2canvas scale above
+      const BOUNDARY_PADDING = 4 * CANVAS_SCALE // use small 4px buffer so gaps remain unprotected for cutting
+
+      const getDocumentOffset = (el: HTMLElement): number => {
+        let top = 0
+        let current: HTMLElement | null = el
+        while (current) {
+          top += current.offsetTop
+          current = current.offsetParent as HTMLElement | null
+        }
+        return top
+      }
+
+      const avoidBreakSelectors = [
+        ".motion-box",
+        ".section-header-bar",
+        ".attendees-section",
+        ".info-card",
+        ".note-box",
+        ".task-box",
+        ".topic-meta",
+        ".incamera-strip",
+        ".topics-badge",
+      ]
+      const breakBoundaries: Array<{ top: number; bottom: number }> = []
+
+      const bodyRect = iframeDoc.documentElement.getBoundingClientRect()
+
+      avoidBreakSelectors.forEach((sel) => {
+        iframeDoc.querySelectorAll(sel).forEach((el) => {
+          const htmlEl = el as HTMLElement
+          const rect = htmlEl.getBoundingClientRect()
+
+          // Absolute Y relative to the top of the iframe document
+          const domTop = rect.top - bodyRect.top
+          const domBottom = rect.bottom - bodyRect.top
+
+          breakBoundaries.push({
+            // Floor/Ceil to ensure we don't slice due to sub-pixels
+            top: Math.floor(domTop * CANVAS_SCALE - BOUNDARY_PADDING),
+            bottom: Math.ceil(domBottom * CANVAS_SCALE + BOUNDARY_PADDING),
+          })
+        })
+      })
+      // Sort boundaries by position
+      breakBoundaries.sort((a, b) => a.top - b.top)
+
       document.body.removeChild(iframe)
 
       const fullWidth = canvas.width
@@ -608,16 +703,72 @@ export default function GenerateMinutesButton({
       const pageCanvasHeight =
         (usablePageHeight * canvas.width) / (pageWidth - margin * 2)
 
+      /**
+       * Given a naturalCut Y, return the best safe Y to cut at.
+       * If naturalCut is inside a protected boundary, move it back to boundary.top.
+       */
+      const findSafeBreak = (naturalCut: number): number => {
+        if (naturalCut >= fullHeight) return naturalCut
+
+        let bestBreak = naturalCut
+
+        for (const boundary of breakBoundaries) {
+          // If the natural cut falls inside this protected element
+          if (naturalCut > boundary.top && naturalCut < boundary.bottom) {
+            // Push the cut back to the top of this element
+            // We take the minimum to handle overlapping/nested protections
+            if (boundary.top < bestBreak) {
+              bestBreak = boundary.top
+            }
+          }
+        }
+
+        // Safety: If pushing back would result in a zero-height page 
+        // (meaning the element is taller than a page), we MUST cut it.
+        // Or if we pushed back more than 90% of a page (rare).
+        if (bestBreak <= renderedHeight + 50) {
+          return naturalCut
+        }
+
+        return bestBreak
+      }
+
       let renderedHeight = 0
       let pageIndex = 0
 
       while (renderedHeight < fullHeight) {
+        let naturalCut = Math.floor(Math.min(renderedHeight + pageCanvasHeight, fullHeight))
+
+        let cutAt = naturalCut
+        if (naturalCut < fullHeight) {
+          cutAt = Math.floor(findSafeBreak(naturalCut))
+        }
+
+        const sliceHeight = Math.floor(Math.min(cutAt - renderedHeight, fullHeight - renderedHeight))
+
+        // Safety guard: if no progress is made, force advance
+        if (sliceHeight <= 10) {
+          const forceHeight = Math.floor(Math.min(200, fullHeight - renderedHeight))
+          const pageCanvas = document.createElement("canvas")
+          pageCanvas.width = fullWidth
+          pageCanvas.height = forceHeight
+          const pageCtx = pageCanvas.getContext("2d")
+          if (pageCtx) {
+            pageCtx.drawImage(canvas, 0, renderedHeight, fullWidth, forceHeight, 0, 0, fullWidth, forceHeight)
+            const imgData = pageCanvas.toDataURL("image/jpeg", 0.95)
+            if (pageIndex > 0) pdf.addPage()
+            pdf.addImage(imgData, "JPEG", margin, margin, pageWidth - margin * 2, (forceHeight * (pageWidth - margin * 2)) / fullWidth)
+            renderedHeight += forceHeight
+            pageIndex++
+          } else {
+            renderedHeight += 10
+          }
+          continue
+        }
+
         const pageCanvas = document.createElement("canvas")
         pageCanvas.width = fullWidth
-        pageCanvas.height = Math.min(
-          pageCanvasHeight,
-          fullHeight - renderedHeight
-        )
+        pageCanvas.height = sliceHeight
 
         const pageCtx = pageCanvas.getContext("2d")
         if (!pageCtx) break
@@ -627,11 +778,11 @@ export default function GenerateMinutesButton({
           0,
           renderedHeight,
           fullWidth,
-          pageCanvas.height,
+          sliceHeight,
           0,
           0,
           fullWidth,
-          pageCanvas.height
+          sliceHeight
         )
 
         const imgData = pageCanvas.toDataURL("image/jpeg", 0.95)
@@ -641,11 +792,11 @@ export default function GenerateMinutesButton({
         }
 
         const imgWidth = pageWidth - margin * 2
-        const imgHeight = (pageCanvas.height * imgWidth) / fullWidth
+        const imgHeight = (sliceHeight * imgWidth) / fullWidth
 
         pdf.addImage(imgData, "JPEG", margin, margin, imgWidth, imgHeight)
 
-        renderedHeight += pageCanvasHeight
+        renderedHeight += sliceHeight
         pageIndex++
       }
 
@@ -653,9 +804,8 @@ export default function GenerateMinutesButton({
         .replace(/[^a-z0-9]/gi, "_")
         .substring(0, 80)
 
-      const fileName = `${safeTitle}_Minutes_${
-        new Date().toISOString().split("T")[0]
-      }.pdf`
+      const fileName = `${safeTitle}_Minutes_${new Date().toISOString().split("T")[0]
+        }.pdf`
       pdf.save(fileName)
 
       alert("✅ Minutes PDF downloaded successfully!")
@@ -704,7 +854,7 @@ function buildMinutesHtml({
   logoUrl: string | null
 }): string {
   const isMinutes =
-    meeting.status === "minutes" || meeting.status === "workingminutes"
+    meeting.status === "minutes" || meeting.status === "working_minutes"
 
   const building = meeting.buildings
 
@@ -717,14 +867,14 @@ function buildMinutesHtml({
 
   // COVER
   html += `
-    <div class="cover" style="height:${template.coverPageHeight}px;background:${safeCoverColor};">
+    <div class="cover" style="height:${COVER_PAGE_HEIGHT}px;background:${safeCoverColor};">
       <div class="cover-inner">
         ${renderCoverElements(template.coverPageElements, {
-          logoUrl,
-          meeting,
-          building,
-          documentType: "MEETING MINUTES",
-        })}
+    logoUrl,
+    meeting,
+    building,
+    documentType: "MEETING MINUTES",
+  })}
       </div>
     </div>
   `
@@ -766,19 +916,18 @@ function renderCoverElements(
         el.align === "center"
           ? ""
           : el.align === "left"
-          ? "cover-element-left"
-          : "cover-element-right"
+            ? "cover-element-left"
+            : "cover-element-right"
 
       let inner = ""
 
       if (el.id === "logo") {
         inner = `
           <div class="cover-logo" style="width:90px;height:90px;">
-            ${
-              ctx.logoUrl
-                ? `<img src="${escapeHtml(ctx.logoUrl)}" />`
-                : `<span style="font-size:42px;">🏢</span>`
-            }
+            ${ctx.logoUrl
+            ? `<img src="${escapeHtml(ctx.logoUrl)}" />`
+            : `<span style="font-size:42px;">🏢</span>`
+          }
           </div>
         `
       } else if (el.id === "title") {
@@ -807,7 +956,7 @@ function renderCoverElements(
       return `
         <div 
           class="cover-element ${alignClass}"
-          style="left:${el.x}%;top:${el.y}%;"
+          style="left:${el.x}%;top:${el.y}%;text-align:${el.align};"
         >
           ${inner}
         </div>
@@ -939,23 +1088,14 @@ function renderSectionsAndTopics(
       /^\s*\d+(\.\d+)*\s*[\).\-\:]*\s*/,
       ""
     )
-
-    // ⭐ FIX 1: Full-width colored section header bar
-    html += `
-      <div 
-        class="section-header-bar"
-        style="background:${template.sectionHeadersColor};"
-      >
-        ${escapeHtml(`${sectionIndex + 1}. ${cleanedTitle || rawTitle}`)}
-      </div>
-    `
+    html += `<div class="section-header-bar" style="background:${template.sectionHeadersColor};">${escapeHtml(`${sectionIndex + 1}. ${(cleanedTitle || rawTitle).trim()}`)}</div>`
 
     // ⭐ FIX 3: One section card wrapping all topics
     html += `<div class="section-card">`
 
     if (section.topics && section.topics.length > 0) {
       section.topics.forEach((topic: any, topicIndex: number) => {
-        const isIncamera = topic.isincamera === true
+        const isIncamera = topic.is_incamera === true
 
         if (isIncamera) {
           html += `
@@ -968,17 +1108,31 @@ function renderSectionsAndTopics(
 
         html += `<div class="topic-block">`
 
-        // ⭐ FIX 2: Sub-numbered topic title (1.1, 1.2, etc.)
-        html += `
-          <div class="topic-subtitle">
-            ${escapeHtml(`${sectionIndex + 1}.${topicIndex + 1} ${topic.title}`)}
-          </div>
-        `
+        // NEW: Group the topic header info so it stays together
+        html += `<div class="topic-meta">`
+        html += `<div class="topic-subtitle">${escapeHtml(`${sectionIndex + 1}.${topicIndex + 1} ${(topic.title || "").trim()}`)}</div>`
 
-        if (topic.description) {
-          html += `
-            <div class="topic-description">${escapeHtml(topic.description)}</div>
-          `
+        if (topic.description && topic.description.trim()) {
+          html += `<div class="topic-description">${escapeHtml(topic.description.trim())}</div>`
+        }
+        html += `</div>` // close topic-meta
+
+        if (topic.notes && topic.notes.length > 0) {
+          topic.notes.forEach((note: any) => {
+            const content = (note.content || "").trim()
+            if (!content) return
+            html += `<div class="note-box"><span class="note-icon">🌐</span><strong>NOTE:</strong> ${escapeHtml(content)}</div>`
+          })
+        }
+
+        if (topic.tasks && topic.tasks.length > 0) {
+          topic.tasks.forEach((task: any) => {
+            const description = (task.description || "").trim()
+            if (!description) return
+            const assignee = task.assigned_name || task.assigned_email || ""
+            const due = task.due_date ? ` (Due: ${task.due_date})` : ""
+            html += `<div class="task-box"><strong>TASK:</strong> ${escapeHtml(description)}${assignee ? ` - ${escapeHtml(assignee)}` : ""}${due}</div>`
+          })
         }
 
         // Motion boxes matching the editor preview
@@ -1001,31 +1155,13 @@ function renderSectionsAndTopics(
                 class="motion-box"
                 style="border-color:${template.motionBoxesColor};background:${lightBg};"
               >
-                <div>
-                  <span 
-                    class="motion-badge"
-                    style="background:${template.motionBoxesColor};"
-                  >MOTION ${escapeHtml(motionNumber)}</span>
-                </div>
-                <div class="motion-text">
-                  ${escapeHtml(decision.motion_text)}
-                </div>
-                ${
-                  decision.result
-                    ? `<div>
-                        <span 
-                          class="decision-badge"
-                          style="background:${template.voteResultsColor};"
-                        >
-                          <strong>Decision:</strong> ${escapeHtml(decision.result)}
-                        </span>
-                      </div>`
-                    : ""
-                }
-                <div 
-                  class="votes-bar"
-                  style="background:${template.voteResultsColor};"
-                >
+                <div><span class="motion-badge" style="background:${template.motionBoxesColor};">MOTION ${escapeHtml(motionNumber)}</span></div>
+                <div class="motion-text">${escapeHtml((decision.motion_text || "").trim())}</div>
+                ${decision.result && decision.result.trim()
+                ? `<div><span class="decision-badge" style="background:${template.voteResultsColor};"><strong>Decision:</strong> ${escapeHtml(decision.result.trim())}</span></div>`
+                : ""
+              }
+                <div class="votes-bar" style="background:${template.voteResultsColor};">
                   <span><strong>FOR:</strong> ${votesFor}</span>
                   <span><strong>AGAINST:</strong> ${votesAgainst}</span>
                   <span><strong>ABSTAIN:</strong> ${votesAbstain}</span>

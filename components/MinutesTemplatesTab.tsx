@@ -165,7 +165,7 @@ export default function MinutesTemplatesTab({
   const [motionBoxesColor, setMotionBoxesColor] = useState("#10b981")
   const [actionItemsColor, setActionItemsColor] = useState("#f59e0b")
   const [voteResultsColor, setVoteResultsColor] = useState("#8b5cf6")
-  const [coverPageHeight, setCoverPageHeight] = useState(500)
+  const [coverPageHeight, setCoverPageHeight] = useState(175)
 
   const [saving, setSaving] = useState(false)
   const [hasChanges, setHasChanges] = useState(false)
@@ -191,6 +191,7 @@ export default function MinutesTemplatesTab({
   const [topicsData, setTopicsData] = useState<any[]>([])
   const [decisionsData, setDecisionsData] = useState<any[]>([])
   const [tasksData, setTasksData] = useState<any[]>([])
+  const [notesData, setNotesData] = useState<any[]>([])
 
   useEffect(() => {
     if (buildings.length > 0 && !selectedBuildingId) {
@@ -286,7 +287,7 @@ export default function MinutesTemplatesTab({
         `
         )
         .eq("building_id", buildingId)
-        .in("status", ["minutes", "workingminutes"])
+        .in("status", ["minutes", "working_minutes"])
         .order("meeting_date", { ascending: false })
         .limit(1)
         .maybeSingle()
@@ -379,7 +380,7 @@ export default function MinutesTemplatesTab({
 
         if (decisionsError) throw decisionsError
 
-        const { data: tasksData, error: tasksError } = await supabase
+        const { data: tasksDataFromDb, error: tasksError } = await supabase
           .from("tasks")
           .select("*")
           .in("topic_id", topicIds)
@@ -387,8 +388,21 @@ export default function MinutesTemplatesTab({
 
         if (tasksError) throw tasksError
 
+        const { data: notesDataFromDb, error: notesError } = await supabase
+          .from("notes")
+          .select("*")
+          .in("topic_id", topicIds)
+          .eq("visibility", "public")
+          .order("created_at")
+
+        if (notesError) throw notesError
+
         decisions = decisionsData || []
-        tasks = tasksData || []
+        tasks = tasksDataFromDb || []
+        const notes = notesDataFromDb || []
+        setNotesData(notes)
+      } else {
+        setNotesData([])
       }
 
       setSectionsData(sections || [])
@@ -426,7 +440,7 @@ export default function MinutesTemplatesTab({
         setMotionBoxesColor("#10b981")
         setActionItemsColor("#f59e0b")
         setVoteResultsColor("#8b5cf6")
-        setCoverPageHeight(500)
+        setCoverPageHeight(175)
         setTemplateId(null)
         setHasChanges(false)
         saveToHistory()
@@ -440,7 +454,7 @@ export default function MinutesTemplatesTab({
       setMotionBoxesColor(data.motion_boxes_color || "#10b981")
       setActionItemsColor(data.action_items_color || "#f59e0b")
       setVoteResultsColor(data.vote_results_color || "#8b5cf6")
-      setCoverPageHeight(data.coverpage_height || 500)
+      setCoverPageHeight(175)
       setCoverPageElements(
         data.coverpage_elements || DEFAULT_COVERPAGE_ELEMENTS
       )
@@ -608,10 +622,10 @@ export default function MinutesTemplatesTab({
       /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)
     return result
       ? [
-          parseInt(result[1], 16),
-          parseInt(result[2], 16),
-          parseInt(result[3], 16),
-        ]
+        parseInt(result[1], 16),
+        parseInt(result[2], 16),
+        parseInt(result[3], 16),
+      ]
       : [30, 58, 138]
   }
 
@@ -711,26 +725,7 @@ export default function MinutesTemplatesTab({
             <div className="grid grid-cols-12 gap-6 mb-6">
               {/* Left controls */}
               <div className="col-span-12 lg:col-span-3 space-y-4">
-                <Card className="p-4">
-                  <h3 className="text-sm font-semibold mb-3">
-                    Header Height
-                  </h3>
-                  <input
-                    type="range"
-                    min={300}
-                    max={800}
-                    value={coverPageHeight}
-                    onChange={(e) => {
-                      saveToHistory()
-                      setCoverPageHeight(Number(e.target.value))
-                      setHasChanges(true)
-                    }}
-                    className="w-full mb-2"
-                  />
-                  <div className="text-center text-sm font-semibold text-primary">
-                    {coverPageHeight}px
-                  </div>
-                </Card>
+
 
                 <Card className="p-4">
                   <h3 className="text-sm font-semibold mb-3">
@@ -889,11 +884,10 @@ export default function MinutesTemplatesTab({
                         .map((element) => (
                           <div
                             key={element.id}
-                            className={`absolute cursor-move transition-opacity ${
-                              draggingElementId === element.id
-                                ? "opacity-70 scale-105"
-                                : "hover:opacity-90"
-                            }`}
+                            className={`absolute cursor-move transition-opacity ${draggingElementId === element.id
+                              ? "opacity-70 scale-105"
+                              : "hover:opacity-90"
+                              }`}
                             style={{
                               left: `${element.x}%`,
                               top: `${element.y}%`,
@@ -901,8 +895,8 @@ export default function MinutesTemplatesTab({
                                 element.align === "center"
                                   ? "translate(-50%, -50%)"
                                   : element.align === "right"
-                                  ? "translate(-100%, -50%)"
-                                  : "translate(0, -50%)",
+                                    ? "translate(-100%, -50%)"
+                                    : "translate(0, -50%)",
                               zIndex:
                                 draggingElementId === element.id ? 50 : 10,
                             }}
@@ -918,7 +912,7 @@ export default function MinutesTemplatesTab({
                                   style={{ width: 80, height: 80 }}
                                 >
                                   {meeting.buildings.logo_url ||
-                                  meeting.buildings.companies?.logo_url ? (
+                                    meeting.buildings.companies?.logo_url ? (
                                     <img
                                       src={
                                         meeting.buildings.logo_url ||
@@ -947,7 +941,7 @@ export default function MinutesTemplatesTab({
 
                               {element.id === "building_name" && (
                                 <div
-                                  className="text-2xl font-light tracking-wide whitespace-nowrap"
+                                  className="text-2xl font-light tracking-wide text-center max-w-[80%]"
                                   style={{
                                     color: "rgba(200, 220, 255, 0.95)",
                                   }}
@@ -958,7 +952,7 @@ export default function MinutesTemplatesTab({
 
                               {element.id === "meeting_type" && (
                                 <div
-                                  className="text-lg font-normal tracking-wide whitespace-nowrap"
+                                  className="text-lg font-normal tracking-wide text-center max-w-[80%]"
                                   style={{
                                     color: "rgba(200, 220, 255, 0.9)",
                                   }}
@@ -993,13 +987,11 @@ export default function MinutesTemplatesTab({
                                   handleInfoDragOver(e, index)
                                 }
                                 onDragEnd={handleInfoDragEnd}
-                                className={`group cursor-move transition-all ${
-                                  draggedIndex === index
-                                    ? "scale-105 bg-blue-50 p-2 rounded"
-                                    : "hover:bg-gray-50 p-2 rounded"
-                                } ${
-                                  field.id === "attendees" ? "col-span-2" : ""
-                                }`}
+                                className={`group cursor-move transition-all ${draggedIndex === index
+                                  ? "scale-105 bg-blue-50 p-2 rounded"
+                                  : "hover:bg-gray-50 p-2 rounded"
+                                  } ${field.id === "attendees" ? "col-span-2" : ""
+                                  }`}
                               >
                                 <div className="flex items-start gap-2">
                                   <GripVertical className="h-4 w-4 text-gray-300 mt-0.5 opacity-0 group-hover:opacity-100" />
@@ -1044,64 +1036,64 @@ export default function MinutesTemplatesTab({
                                                 {attendees.filter(
                                                   (a) =>
                                                     a.attendance_status ===
-                                                      "present" ||
+                                                    "present" ||
                                                     a.present === true
                                                 ).length > 0 && (
-                                                  <div>
-                                                    <span className="font-bold text-green-700">
-                                                      Present:
-                                                    </span>{" "}
-                                                    {attendees
-                                                      .filter(
-                                                        (a) =>
-                                                          a.attendance_status ===
+                                                    <div>
+                                                      <span className="font-bold text-green-700">
+                                                        Present:
+                                                      </span>{" "}
+                                                      {attendees
+                                                        .filter(
+                                                          (a) =>
+                                                            a.attendance_status ===
                                                             "present" ||
-                                                          a.present === true
-                                                      )
-                                                      .map((a) => a.name)
-                                                      .join(", ")}
-                                                  </div>
-                                                )}
+                                                            a.present === true
+                                                        )
+                                                        .map((a) => a.name)
+                                                        .join(", ")}
+                                                    </div>
+                                                  )}
                                                 {attendees.filter(
                                                   (a) =>
                                                     a.attendance_status ===
-                                                      "absent" ||
+                                                    "absent" ||
                                                     a.present === false
                                                 ).length > 0 && (
-                                                  <div>
-                                                    <span className="font-bold text-red-700">
-                                                      Absent:
-                                                    </span>{" "}
-                                                    {attendees
-                                                      .filter(
-                                                        (a) =>
-                                                          a.attendance_status ===
+                                                    <div>
+                                                      <span className="font-bold text-red-700">
+                                                        Absent:
+                                                      </span>{" "}
+                                                      {attendees
+                                                        .filter(
+                                                          (a) =>
+                                                            a.attendance_status ===
                                                             "absent" ||
-                                                          a.present === false
-                                                      )
-                                                      .map((a) => a.name)
-                                                      .join(", ")}
-                                                  </div>
-                                                )}
+                                                            a.present === false
+                                                        )
+                                                        .map((a) => a.name)
+                                                        .join(", ")}
+                                                    </div>
+                                                  )}
                                                 {attendees.filter(
                                                   (a) =>
                                                     a.attendance_status ===
                                                     "proxy"
                                                 ).length > 0 && (
-                                                  <div>
-                                                    <span className="font-bold text-blue-700">
-                                                      Proxy:
-                                                    </span>{" "}
-                                                    {attendees
-                                                      .filter(
-                                                        (a) =>
-                                                          a.attendance_status ===
-                                                          "proxy"
-                                                      )
-                                                      .map((a) => a.name)
-                                                      .join(", ")}
-                                                  </div>
-                                                )}
+                                                    <div>
+                                                      <span className="font-bold text-blue-700">
+                                                        Proxy:
+                                                      </span>{" "}
+                                                      {attendees
+                                                        .filter(
+                                                          (a) =>
+                                                            a.attendance_status ===
+                                                            "proxy"
+                                                        )
+                                                        .map((a) => a.name)
+                                                        .join(", ")}
+                                                    </div>
+                                                  )}
                                               </>
                                             )}
                                           </div>
@@ -1249,6 +1241,58 @@ export default function MinutesTemplatesTab({
                                               </p>
                                             )}
 
+                                            {/* Public Notes Inline */}
+                                            {notesData
+                                              .filter(
+                                                (n: any) =>
+                                                  n.topic_id === topic.id
+                                              )
+                                              .map((note: any) => (
+                                                <div
+                                                  key={note.id}
+                                                  className="text-xs text-blue-800 bg-blue-50/50 border-l-2 border-blue-400 px-3 py-2 rounded flex items-start gap-2"
+                                                >
+                                                  <span className="mt-0.5">🌐</span>
+                                                  <div>
+                                                    <span className="font-bold">NOTE:</span> {note.content}
+                                                  </div>
+                                                </div>
+                                              ))}
+
+                                            {/* Action Items (Tasks) Inline */}
+                                            {tasksData
+                                              .filter(
+                                                (t: any) =>
+                                                  t.topic_id === topic.id
+                                              )
+                                              .map((task: any) => (
+                                                <div
+                                                  key={task.id}
+                                                  className="text-xs text-amber-800 bg-amber-50/50 border-l-2 border-amber-400 px-3 py-2 rounded flex items-start gap-2"
+                                                >
+                                                  <span className="mt-0.5">✅</span>
+                                                  <div>
+                                                    <span className="font-bold">
+                                                      TASK:
+                                                    </span>{" "}
+                                                    {task.description}
+                                                    {(task.assigned_name ||
+                                                      task.assigned_email) && (
+                                                        <span className="ml-1 text-amber-600 italic">
+                                                          -{" "}
+                                                          {task.assigned_name ||
+                                                            task.assigned_email}
+                                                        </span>
+                                                      )}
+                                                    {task.due_date && (
+                                                      <span className="ml-1 text-amber-600">
+                                                        (Due: {task.due_date})
+                                                      </span>
+                                                    )}
+                                                  </div>
+                                                </div>
+                                              ))}
+
                                             {/* Decisions / Motions inline with topic */}
                                             {topicDecisions.map(
                                               (decision: any, dIdx: number) => (
@@ -1273,9 +1317,8 @@ export default function MinutesTemplatesTab({
                                                           motionBoxesColor,
                                                       }}
                                                     >
-                                                      {`MOTION ${sIdx + 1}.${
-                                                        dIdx + 1
-                                                      }`}
+                                                      {`MOTION ${sIdx + 1}.${dIdx + 1
+                                                        }`}
                                                     </div>
                                                   </div>
                                                   <div className="text-sm font-semibold text-gray-800 mb-3">
@@ -1296,37 +1339,37 @@ export default function MinutesTemplatesTab({
                                                   )}
                                                   {decision.votes_for !==
                                                     null && (
-                                                    <div
-                                                      className="flex items-center gap-4 text-xs p-3 rounded"
-                                                      style={{
-                                                        backgroundColor:
-                                                          voteResultsColor,
-                                                        color: "white",
-                                                      }}
-                                                    >
-                                                      <div>
-                                                        <span className="font-bold">
-                                                          FOR:
-                                                        </span>{" "}
-                                                        {decision.votes_for ||
-                                                          0}
+                                                      <div
+                                                        className="flex items-center gap-4 text-xs p-3 rounded"
+                                                        style={{
+                                                          backgroundColor:
+                                                            voteResultsColor,
+                                                          color: "white",
+                                                        }}
+                                                      >
+                                                        <div>
+                                                          <span className="font-bold">
+                                                            FOR:
+                                                          </span>{" "}
+                                                          {decision.votes_for ||
+                                                            0}
+                                                        </div>
+                                                        <div>
+                                                          <span className="font-bold">
+                                                            AGAINST:
+                                                          </span>{" "}
+                                                          {decision.votes_against ||
+                                                            0}
+                                                        </div>
+                                                        <div>
+                                                          <span className="font-bold">
+                                                            ABSTAIN:
+                                                          </span>{" "}
+                                                          {decision.votes_abstain ||
+                                                            0}
+                                                        </div>
                                                       </div>
-                                                      <div>
-                                                        <span className="font-bold">
-                                                          AGAINST:
-                                                        </span>{" "}
-                                                        {decision.votes_against ||
-                                                          0}
-                                                      </div>
-                                                      <div>
-                                                        <span className="font-bold">
-                                                          ABSTAIN:
-                                                        </span>{" "}
-                                                        {decision.votes_abstain ||
-                                                          0}
-                                                      </div>
-                                                    </div>
-                                                  )}
+                                                    )}
                                                 </div>
                                               )
                                             )}
@@ -1365,8 +1408,8 @@ export default function MinutesTemplatesTab({
                       {saving
                         ? "Saving..."
                         : hasChanges
-                        ? "Save Template"
-                        : "No Changes"}
+                          ? "Save Template"
+                          : "No Changes"}
                     </Button>
                   </div>
                 </Card>

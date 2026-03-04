@@ -462,9 +462,9 @@ export default function MeetingView({
       sections.map((s) =>
         s.id === sectionId
           ? {
-              ...s,
-              isExpanded: !s.isExpanded,
-            }
+            ...s,
+            isExpanded: !s.isExpanded,
+          }
           : s
       )
     )
@@ -814,7 +814,7 @@ export default function MeetingView({
 
     const confirmed = confirm(
       `Send meeting notice to all owners/residents of ${meeting.building}?\n\n` +
-        `This will email the agenda to all assigned owners and residents.`
+      `This will email the agenda to all assigned owners and residents.`
     )
 
     if (!confirmed) return
@@ -1098,9 +1098,8 @@ export default function MeetingView({
                     <div class="info-value">${meeting.title}</div>
                   </div>
                 </div>
-                ${
-                  meeting.meeting_type
-                    ? `
+                ${meeting.meeting_type
+          ? `
                   <div class="info-card">
                     <div class="info-icon">🏢</div>
                     <div class="info-content">
@@ -1109,8 +1108,8 @@ export default function MeetingView({
                     </div>
                   </div>
                 `
-                    : ""
-                }
+          : ""
+        }
                 <div class="info-card">
                   <div class="info-icon">📅</div>
                   <div class="info-content">
@@ -1118,9 +1117,8 @@ export default function MeetingView({
                     <div class="info-value">${formatDate(meeting.meeting_date)}</div>
                   </div>
                 </div>
-                ${
-                  meeting.start_time
-                    ? `
+                ${meeting.start_time
+          ? `
                   <div class="info-card">
                     <div class="info-icon">🕐</div>
                     <div class="info-content">
@@ -1129,11 +1127,10 @@ export default function MeetingView({
                     </div>
                   </div>
                 `
-                    : ""
-                }
-                ${
-                  meeting.location
-                    ? `
+          : ""
+        }
+                ${meeting.location
+          ? `
                   <div class="info-card">
                     <div class="info-icon">📍</div>
                     <div class="info-content">
@@ -1142,11 +1139,10 @@ export default function MeetingView({
                     </div>
                   </div>
                 `
-                    : ""
-                }
-                ${
-                  meeting.strata_plan_number
-                    ? `
+          : ""
+        }
+                ${meeting.strata_plan_number
+          ? `
                   <div class="info-card">
                     <div class="info-icon">📄</div>
                     <div class="info-content">
@@ -1155,8 +1151,8 @@ export default function MeetingView({
                     </div>
                   </div>
                 `
-                    : ""
-                }
+          : ""
+        }
               </div>
               <div class="divider"></div>
               <div class="agenda-header">
@@ -1164,42 +1160,40 @@ export default function MeetingView({
                 <p class="agenda-subtitle">Topics to be discussed during this meeting</p>
               </div>
               ${sections
-                .map(
-                  (section, idx) => `
+          .map(
+            (section, idx) => `
                 <div class="section-card">
                   <div class="section-header">
                     <div class="section-number">${idx + 1}</div>
                     <div class="section-title">${section.title}</div>
                   </div>
                   <div class="section-body">
-                    ${
-                      section.topics.length > 0
-                        ? `
+                    ${section.topics.length > 0
+                ? `
                       <ul class="topics-list">
                         ${section.topics
-                          .map(
-                            (topic, topicIdx) => `
+                  .map(
+                    (topic, topicIdx) => `
                           <li class="topic-item">
                             <span class="topic-number">${idx + 1}.${topicIdx + 1}</span>
                             <span class="topic-title">${topic.title}</span>
-                            ${
-                              topic.description
-                                ? `<div class="topic-description">${topic.description}</div>`
-                                : ""
-                            }
+                            ${topic.description
+                        ? `<div class="topic-description">${topic.description}</div>`
+                        : ""
+                      }
                           </li>
                         `
-                          )
-                          .join("")}
+                  )
+                  .join("")}
                       </ul>
                     `
-                        : '<div class="no-topics">No topics scheduled for this section</div>'
-                    }
+                : '<div class="no-topics">No topics scheduled for this section</div>'
+              }
                   </div>
                 </div>
               `
-                )
-                .join("")}
+          )
+          .join("")}
             </div>
             <div class="footer">
               <p class="footer-text">
@@ -1358,7 +1352,7 @@ export default function MeetingView({
             existingDownloads.forEach(el => {
               try {
                 document.body.removeChild(el)
-              } catch (e) {}
+              } catch (e) { }
             })
 
             document.body.appendChild(a)
@@ -1410,7 +1404,7 @@ export default function MeetingView({
         existingDownloads.forEach(el => {
           try {
             document.body.removeChild(el)
-          } catch (e) {}
+          } catch (e) { }
         })
 
         document.body.appendChild(a)
@@ -1545,11 +1539,10 @@ export default function MeetingView({
                 size="sm"
                 variant="outline"
                 onClick={handleMeetingIncameraToggle}
-                className={`h-8 px-3 text-xs whitespace-nowrap flex-shrink-0 ${
-                  meeting.is_incamera
-                    ? "bg-red-50 border-red-300 text-red-700"
-                    : "border-gray-300"
-                }`}
+                className={`h-8 px-3 text-xs whitespace-nowrap flex-shrink-0 ${meeting.is_incamera
+                  ? "bg-red-50 border-red-300 text-red-700"
+                  : "border-gray-300"
+                  }`}
               >
                 {meeting.is_incamera ? (
                   <>
@@ -1567,17 +1560,17 @@ export default function MeetingView({
 
             {/* ✅ CHANGE 2: Back only during working_minutes */}
             {/* Back button: working_minutes and minutes */}
-{userCanEdit && (meeting.status === "working_minutes" || meeting.status === "minutes") && (
-  <Button
-    size="sm"
-    variant="outline"
-    onClick={() => updateMeetingStatus(prevStatus(meeting.status))}
-    className="h-8 px-3 text-xs whitespace-nowrap flex-shrink-0 bg-gray-100 border-gray-400"
-  >
-    <ChevronLeft className="h-3 w-3 mr-1" />
-    Back
-  </Button>
-)}
+            {userCanEdit && (meeting.status === "working_minutes" || meeting.status === "minutes") && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => updateMeetingStatus(prevStatus(meeting.status))}
+                className="h-8 px-3 text-xs whitespace-nowrap flex-shrink-0 bg-gray-100 border-gray-400"
+              >
+                <ChevronLeft className="h-3 w-3 mr-1" />
+                Back
+              </Button>
+            )}
 
             {/* ✅ CHANGE 3: Start only during working_agenda, End only during working_minutes */}
             {userCanEdit && meeting.status === "working_agenda" && (
@@ -1656,36 +1649,36 @@ export default function MeetingView({
 
             {(meeting.status === "working_agenda" ||
               meeting.status === "agenda") && (
-              <div className="flex-shrink-0">
-                <GenerateAgendaButton
-                  meetingId={parseInt(meetingId)}
-                  meetingStatus={meeting.status}
-                />
-              </div>
-            )}
+                <div className="flex-shrink-0">
+                  <GenerateAgendaButton
+                    meetingId={parseInt(meetingId)}
+                    meetingStatus={meeting.status}
+                  />
+                </div>
+              )}
 
             {meeting.status === "minutes" && (
               <>
                 <div className="flex-shrink-0">
                   <GenerateMinutesButton
-                    meetingId={meetingId}
+                    meetingId={parseInt(meetingId)}
                     buildingId={meeting.building_id}
                   />
                 </div>
                 {((typeof meeting.audio_file === 'object' && meeting.audio_file?.url) ||
                   (typeof meeting.audio_file === 'string' && meeting.audio_file) ||
                   meeting.audio_filename) && (
-                  <Button
-                    size="sm"
-                    onClick={handleDownloadAudioRecording}
-                    variant="outline"
-                    disabled={downloadingAudio}
-                    className="h-8 px-3 text-xs whitespace-nowrap flex-shrink-0 border-blue-500 text-blue-600 hover:bg-blue-50 disabled:opacity-50"
-                  >
-                    <Download className="h-3 w-3 mr-1" />
-                    {downloadingAudio ? "Downloading..." : "Download Audio"}
-                  </Button>
-                )}
+                    <Button
+                      size="sm"
+                      onClick={handleDownloadAudioRecording}
+                      variant="outline"
+                      disabled={downloadingAudio}
+                      className="h-8 px-3 text-xs whitespace-nowrap flex-shrink-0 border-blue-500 text-blue-600 hover:bg-blue-50 disabled:opacity-50"
+                    >
+                      <Download className="h-3 w-3 mr-1" />
+                      {downloadingAudio ? "Downloading..." : "Download Audio"}
+                    </Button>
+                  )}
               </>
             )}
 
@@ -1799,15 +1792,14 @@ export default function MeetingView({
             <Badge variant="outline" className="bg-blue-50 text-blue-700 text-xs">
               {attendeeCount}
               {meeting.status === "working_minutes" ||
-              meeting.status === "minutes"
+                meeting.status === "minutes"
                 ? ` · ${presentCount} present`
                 : ""}
             </Badge>
           </div>
           <ChevronDown
-            className={`h-4 w-4 text-muted-foreground transition-transform ${
-              attendeesExpanded ? "rotate-180" : ""
-            }`}
+            className={`h-4 w-4 text-muted-foreground transition-transform ${attendeesExpanded ? "rotate-180" : ""
+              }`}
           />
         </button>
 
@@ -2164,7 +2156,7 @@ export default function MeetingView({
           }}
           topicId={selectedTopicForModal}
           meetingId={meetingId}
-          onSave={() => {}}
+          onSave={() => { }}
           defaultTab={defaultTab}
         />
       )}

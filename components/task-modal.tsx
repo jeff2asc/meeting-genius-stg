@@ -37,9 +37,9 @@ interface TaskAttachment {
   file?: File
 }
 
-export default function TaskModal({ 
-  topicId, 
-  onClose, 
+export default function TaskModal({
+  topicId,
+  onClose,
   onSave,
   editMode = false,
   existingTaskId = null,
@@ -59,7 +59,7 @@ export default function TaskModal({
   const [newAssigneeEmail, setNewAssigneeEmail] = useState("")
   const [meetingAttendees, setMeetingAttendees] = useState<Assignee[]>([])
   const [meetingId, setMeetingId] = useState<number | null>(null)
-  
+
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -135,7 +135,7 @@ export default function TaskModal({
   const fetchMeetingIdAndAttendees = async () => {
     try {
       console.log('🔍 Fetching meeting_id for topic:', topicId)
-      
+
       const { data: topicData, error: topicError } = await supabase
         .from('topics')
         .select('meeting_id')
@@ -197,13 +197,13 @@ export default function TaskModal({
 
     setAttachments([...attachments, newAttachment])
     alert(`${file.name} added`)
-    
+
     event.target.value = ''
   }
 
   const handleRemoveAttachment = async (index: number) => {
     const attachment = attachments[index]
-    
+
     if (attachment.id && editMode) {
       try {
         const urlParts = attachment.file_url.split('/task-attachments/')
@@ -277,9 +277,9 @@ export default function TaskModal({
       return
     }
 
-    setAssignees([...assignees, { 
-      name: newAssigneeName.trim(), 
-      email: newAssigneeEmail.trim() 
+    setAssignees([...assignees, {
+      name: newAssigneeName.trim(),
+      email: newAssigneeEmail.trim()
     }])
     setNewAssigneeName("")
     setNewAssigneeEmail("")
@@ -315,7 +315,7 @@ export default function TaskModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
+
     if (!formData.description.trim()) {
       setError("Task description is required")
       return
@@ -354,7 +354,10 @@ export default function TaskModal({
         status: 'open',
         external_update_token: externalToken,
         token_expires_at: tokenExpiry.toISOString(),
-        created_by: currentUser?.id
+        created_by: currentUser?.id,
+        ...(typeof window !== 'undefined' &&
+          (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+          ? { created_at: new Date().toISOString() } : {})
       }
 
       if (formData.sendNotification) {
@@ -439,29 +442,29 @@ export default function TaskModal({
 
       toast.success('Task created successfully')
 
-// ✅ Reset state and clear form
-setSaving(false)
-setFormData({
-  description: "",
-  dueDate: "",
-  status: "open",
-  sendNotification: true,
-})
-setAssignees([])
-setAttachments([])
-setError(null)
+      // ✅ Reset state and clear form
+      setSaving(false)
+      setFormData({
+        description: "",
+        dueDate: "",
+        status: "open",
+        sendNotification: true,
+      })
+      setAssignees([])
+      setAttachments([])
+      setError(null)
 
-// ✅ If embedded mode, stay open and ready for next task
-if (embedded) {
-  onClose() // Just marks data changed for when modal closes
-  return
-}
+      // ✅ If embedded mode, stay open and ready for next task
+      if (embedded) {
+        onClose() // Just marks data changed for when modal closes
+        return
+      }
 
-// ✅ If standalone modal, close it
-onClose()
-if (onSave) {
-  setTimeout(() => onSave(), 100)
-}
+      // ✅ If standalone modal, close it
+      onClose()
+      if (onSave) {
+        setTimeout(() => onSave(), 100)
+      }
 
     } catch (err) {
       console.error('💥 Unexpected error:', err)
@@ -540,7 +543,7 @@ if (onSave) {
           console.log('📧 Sending email to', assignee.email)
 
           const greeting = emailTemplate.greeting.replace('{name}', assignee.name)
-          
+
           const emailHtml = `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
               <h2 style="color: #2563eb;">New Task Assigned</h2>
@@ -639,7 +642,7 @@ if (onSave) {
           <Paperclip className="h-4 w-4" />
           Attachments ({attachments.length})
         </label>
-        
+
         <div className="mb-2">
           <label htmlFor="task-file-upload">
             <Button
@@ -702,7 +705,7 @@ if (onSave) {
 
       <div>
         <label className="block text-sm font-medium text-foreground mb-2">Assignees *</label>
-        
+
         {assignees.length > 0 && (
           <div className="flex flex-wrap gap-2 mb-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
             {assignees.map((assignee, idx) => (
@@ -775,9 +778,8 @@ if (onSave) {
                       type="button"
                       onClick={() => handleAddFromAttendees(attendee)}
                       disabled={isAlreadyAssigned || saving}
-                      className={`w-full text-left px-3 py-2 rounded hover:bg-muted transition-colors ${
-                        isAlreadyAssigned ? 'opacity-50 cursor-not-allowed bg-green-50' : ''
-                      }`}
+                      className={`w-full text-left px-3 py-2 rounded hover:bg-muted transition-colors ${isAlreadyAssigned ? 'opacity-50 cursor-not-allowed bg-green-50' : ''
+                        }`}
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex-1">
@@ -833,10 +835,10 @@ if (onSave) {
       )}
 
       <div className="flex gap-3 pt-4">
-        <Button 
-          type="button" 
-          variant="outline" 
-          onClick={onClose} 
+        <Button
+          type="button"
+          variant="outline"
+          onClick={onClose}
           className="flex-1 bg-transparent"
           disabled={saving}
         >

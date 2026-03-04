@@ -1,12 +1,10 @@
 "use client"
 
-
 import { useState, useEffect, useRef, useCallback } from "react"
 import { GripVertical, Save, FileText, Loader2, Undo } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { supabase } from "@/lib/supabase"
-
 
 interface Building {
   id: number
@@ -17,12 +15,10 @@ interface Building {
   created_at: string
 }
 
-
 interface AgendaTemplatesTabProps {
   buildings: Building[]
   loading: boolean
 }
-
 
 interface CoverPageElement {
   id: string
@@ -33,7 +29,6 @@ interface CoverPageElement {
   align: 'left' | 'center' | 'right'
 }
 
-
 interface TemplateField {
   id: string
   label: string
@@ -41,16 +36,13 @@ interface TemplateField {
   enabled: boolean
 }
 
-
 interface TemplateState {
   coverPageElements: CoverPageElement[]
   infoCardFields: TemplateField[]
   coverPageColor: string
   infoCardAccentColor: string
   agendaItemsColor: string
-  coverPageHeight: number
 }
-
 
 interface Template {
   id?: number
@@ -60,9 +52,7 @@ interface Template {
   coverpage_color: string
   infocard_accent_color: string
   agenda_items_color: string
-  coverpage_height: number
 }
-
 
 interface Meeting {
   id: number
@@ -83,13 +73,11 @@ interface Meeting {
   }
 }
 
-
 interface Section {
   id: number
   title: string
   order_index: number
 }
-
 
 interface Topic {
   id: number
@@ -100,6 +88,7 @@ interface Topic {
   is_incamera?: boolean
 }
 
+const COVER_PAGE_HEIGHT = 175 // ✅ Fixed at 175px
 
 const DEFAULT_COVERPAGE_ELEMENTS: CoverPageElement[] = [
   { id: "logo", label: "Company Logo", enabled: true, x: 10, y: 15, align: 'left' },
@@ -107,7 +96,6 @@ const DEFAULT_COVERPAGE_ELEMENTS: CoverPageElement[] = [
   { id: "building_name", label: "Building Name", enabled: true, x: 50, y: 60, align: 'center' },
   { id: "meeting_type", label: "Meeting Type", enabled: true, x: 50, y: 70, align: 'center' },
 ]
-
 
 const DEFAULT_INFOCARD_FIELDS: TemplateField[] = [
   { id: "date", label: "Date", order: 1, enabled: true },
@@ -117,7 +105,6 @@ const DEFAULT_INFOCARD_FIELDS: TemplateField[] = [
   { id: "strata_plan", label: "Strata Plan", order: 5, enabled: true },
 ]
 
-
 export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplatesTabProps) {
   const [selectedBuildingId, setSelectedBuildingId] = useState<number | null>(null)
   const [coverPageElements, setCoverPageElements] = useState<CoverPageElement[]>(DEFAULT_COVERPAGE_ELEMENTS)
@@ -125,30 +112,28 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
   const [coverPageColor, setCoverPageColor] = useState("#1e3a8a")
   const [infoCardAccentColor, setInfoCardAccentColor] = useState("#2563eb")
   const [agendaItemsColor, setAgendaItemsColor] = useState("#2563eb")
-  const [coverPageHeight, setCoverPageHeight] = useState(350) // ✅ Reduced from 500 → 350
   const [saving, setSaving] = useState(false)
   const [hasChanges, setHasChanges] = useState(false)
   const [loadingTemplate, setLoadingTemplate] = useState(false)
   const [templateId, setTemplateId] = useState<number | null>(null)
-  
+
   // Undo history
   const [history, setHistory] = useState<TemplateState[]>([])
   const [historyIndex, setHistoryIndex] = useState(-1)
-  
+
   // Free drag state
   const [draggingElementId, setDraggingElementId] = useState<string | null>(null)
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 })
   const coverPageRef = useRef<HTMLDivElement>(null)
-  
+
   // Info card drag state
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
-  
+
   // Real meeting data
   const [meeting, setMeeting] = useState<Meeting | null>(null)
   const [sections, setSections] = useState<Section[]>([])
   const [topics, setTopics] = useState<Topic[]>([])
   const [loadingMeeting, setLoadingMeeting] = useState(false)
-
 
   // Save to history
   const saveToHistory = useCallback(() => {
@@ -158,9 +143,7 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
       coverPageColor,
       infoCardAccentColor,
       agendaItemsColor,
-      coverPageHeight
     }
-
 
     setHistory(prev => {
       const newHistory = prev.slice(0, historyIndex + 1)
@@ -168,8 +151,7 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
       return newHistory.slice(-20)
     })
     setHistoryIndex(prev => Math.min(prev + 1, 19))
-  }, [coverPageElements, infoCardFields, coverPageColor, infoCardAccentColor, agendaItemsColor, coverPageHeight, historyIndex])
-
+  }, [coverPageElements, infoCardFields, coverPageColor, infoCardAccentColor, agendaItemsColor, historyIndex])
 
   // Undo function
   const handleUndo = () => {
@@ -180,12 +162,10 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
       setCoverPageColor(prevState.coverPageColor)
       setInfoCardAccentColor(prevState.infoCardAccentColor)
       setAgendaItemsColor(prevState.agendaItemsColor)
-      setCoverPageHeight(prevState.coverPageHeight)
       setHistoryIndex(prev => prev - 1)
       setHasChanges(true)
     }
   }
-
 
   // Keyboard shortcut
   useEffect(() => {
@@ -196,18 +176,15 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
       }
     }
 
-
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [historyIndex, history])
-
 
   useEffect(() => {
     if (buildings.length > 0 && !selectedBuildingId) {
       setSelectedBuildingId(buildings[0].id)
     }
   }, [buildings])
-
 
   useEffect(() => {
     if (selectedBuildingId) {
@@ -216,10 +193,8 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
     }
   }, [selectedBuildingId])
 
-
   const loadMostRecentMeeting = async () => {
     if (!selectedBuildingId) return
-
 
     setLoadingMeeting(true)
     try {
@@ -243,7 +218,6 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
         .limit(1)
         .single()
 
-
       if (meetingError) {
         setMeeting(null)
         setSections([])
@@ -251,9 +225,7 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
         return
       }
 
-
       setMeeting(meetingData)
-
 
       const { data: sectionsData } = await supabase
         .from("sections")
@@ -261,9 +233,7 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
         .eq("meeting_id", meetingData.id)
         .order("order_index")
 
-
       setSections(sectionsData || [])
-
 
       const { data: topicsData } = await supabase
         .from("topics")
@@ -271,9 +241,7 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
         .eq("meeting_id", meetingData.id)
         .order("order_index")
 
-
       setTopics(topicsData || [])
-
 
     } catch (err) {
       console.error("Error loading meeting:", err)
@@ -282,10 +250,8 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
     }
   }
 
-
   const loadTemplate = async () => {
     if (!selectedBuildingId) return
-
 
     setLoadingTemplate(true)
     try {
@@ -295,7 +261,6 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
         .eq('buildingid', selectedBuildingId)
         .single()
 
-
       if (error) {
         if (error.code === 'PGRST116') {
           setCoverPageElements(DEFAULT_COVERPAGE_ELEMENTS)
@@ -303,7 +268,6 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
           setCoverPageColor("#1e3a8a")
           setInfoCardAccentColor("#2563eb")
           setAgendaItemsColor("#2563eb")
-          setCoverPageHeight(350) // ✅ Reduced default
           setTemplateId(null)
         }
       } else if (data) {
@@ -311,11 +275,10 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
         setCoverPageColor(data.coverpage_color || "#1e3a8a")
         setInfoCardAccentColor(data.infocard_accent_color || "#2563eb")
         setAgendaItemsColor(data.agenda_items_color || "#2563eb")
-        setCoverPageHeight(data.coverpage_height || 350) // ✅ Reduced default
         setCoverPageElements(data.coverpage_elements || DEFAULT_COVERPAGE_ELEMENTS)
         setInfoCardFields(data.infocard_fields || DEFAULT_INFOCARD_FIELDS)
       }
-      
+
       setHasChanges(false)
       saveToHistory()
     } catch (err) {
@@ -325,17 +288,15 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
     }
   }
 
-
   const handleCoverMouseDown = (e: React.MouseEvent, elementId: string) => {
     saveToHistory()
     const element = coverPageElements.find(el => el.id === elementId)
     if (!element || !coverPageRef.current) return
 
-
     const rect = coverPageRef.current.getBoundingClientRect()
     const elementX = (element.x / 100) * rect.width
     const elementY = (element.y / 100) * rect.height
-    
+
     setDraggingElementId(elementId)
     setDragOffset({
       x: e.clientX - elementX,
@@ -343,72 +304,61 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
     })
   }
 
-
   const handleCoverMouseMove = (e: React.MouseEvent) => {
     if (!draggingElementId || !coverPageRef.current) return
-
 
     const rect = coverPageRef.current.getBoundingClientRect()
     const newX = ((e.clientX - dragOffset.x) / rect.width) * 100
     const newY = ((e.clientY - dragOffset.y) / rect.height) * 100
 
-
     const clampedX = Math.max(0, Math.min(100, newX))
     const clampedY = Math.max(0, Math.min(100, newY))
 
-
-    setCoverPageElements(prev => prev.map(el => 
-      el.id === draggingElementId 
+    setCoverPageElements(prev => prev.map(el =>
+      el.id === draggingElementId
         ? { ...el, x: clampedX, y: clampedY }
         : el
     ))
     setHasChanges(true)
   }
 
-
   const handleCoverMouseUp = () => {
     setDraggingElementId(null)
   }
-
 
   const handleInfoDragStart = (index: number) => {
     saveToHistory()
     setDraggedIndex(index)
   }
 
-
   const handleInfoDragOver = (e: React.DragEvent, index: number) => {
     e.preventDefault()
     if (draggedIndex === null || draggedIndex === index) return
 
-
     const fields = [...infoCardFields]
     const draggedField = fields[draggedIndex]
-    
+
     fields.splice(draggedIndex, 1)
     fields.splice(index, 0, draggedField)
-    
+
     fields.forEach((field, i) => {
       field.order = i + 1
     })
-    
+
     setInfoCardFields(fields)
     setDraggedIndex(index)
     setHasChanges(true)
   }
 
-
   const handleInfoDragEnd = () => {
     setDraggedIndex(null)
   }
-
 
   const handleSave = async () => {
     if (!selectedBuildingId) {
       alert('Please select a building')
       return
     }
-
 
     setSaving(true)
     try {
@@ -419,9 +369,8 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
         coverpage_color: coverPageColor,
         infocard_accent_color: infoCardAccentColor,
         agenda_items_color: agendaItemsColor,
-        coverpage_height: coverPageHeight
+        coverpage_height: COVER_PAGE_HEIGHT // ✅ Always saves 175
       }
-
 
       if (templateId) {
         const { error } = await supabase
@@ -432,7 +381,6 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
           })
           .eq('id', templateId)
 
-
         if (error) throw error
       } else {
         const { data, error } = await supabase
@@ -441,11 +389,9 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
           .select()
           .single()
 
-
         if (error) throw error
         if (data) setTemplateId(data.id)
       }
-
 
       setHasChanges(false)
       alert('✅ Template saved! PDFs will now use this design.')
@@ -457,7 +403,6 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
     }
   }
 
-
   const formatMeetingDate = (dateStr: string) => {
     const date = new Date(dateStr)
     return date.toLocaleDateString("en-US", {
@@ -468,7 +413,6 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
     })
   }
 
-
   const hexToRgb = (hex: string): number[] => {
     const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)
     return result
@@ -476,14 +420,11 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
       : [30, 58, 138]
   }
 
-
   const getLighterColor = (hex: string, amount: number = 80) => {
     const rgb = hexToRgb(hex)
     return `rgb(${Math.min(255, rgb[0] + amount)}, ${Math.min(255, rgb[1] + amount)}, ${Math.min(255, rgb[2] + amount)})`
   }
 
-
-  // ✅ Only group topics with a valid section_id — orphaned topics ignored
   const topicsBySection = topics.reduce((acc, topic) => {
     if (topic.section_id) {
       if (!acc[topic.section_id]) acc[topic.section_id] = []
@@ -492,16 +433,14 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
     return acc
   }, {} as Record<number, Topic[]>)
 
-
   return (
     <>
       <div className="mb-6">
         <h2 className="text-2xl font-bold text-foreground mb-2">Agenda Templates</h2>
         <p className="text-muted-foreground">
-          Drag elements, adjust header height, change colors - Press Ctrl+Z to undo
+          Drag elements, change colors - Press Ctrl+Z to undo
         </p>
       </div>
-
 
       {loading ? (
         <div className="text-center py-12">
@@ -546,7 +485,6 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
             </div>
           </Card>
 
-
           {loadingTemplate || loadingMeeting ? (
             <div className="text-center py-12">
               <Loader2 className="h-8 w-8 animate-spin mx-auto mb-2 text-primary" />
@@ -560,33 +498,10 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
           ) : (
             <>
               <div className="grid grid-cols-12 gap-6 mb-6">
-                
-                {/* Color Pickers + Height Slider */}
+
+                {/* Color Pickers — NO height slider */}
                 <div className="col-span-12 lg:col-span-3 space-y-4">
-                  
-                  {/* Header Height Slider */}
-                  <Card className="p-4">
-                    <h3 className="text-sm font-semibold mb-3">Header Height</h3>
-                    <input
-                      type="range"
-                      min="200"
-                      max="800"
-                      value={coverPageHeight}
-                      onChange={(e) => {
-                        saveToHistory()
-                        setCoverPageHeight(Number(e.target.value))
-                        setHasChanges(true)
-                      }}
-                      className="w-full mb-2"
-                    />
-                    <div className="text-center text-sm font-semibold text-primary">
-                      {coverPageHeight}px
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-2">
-                      Adjust the cover page header height
-                    </p>
-                  </Card>
-                  
+
                   <Card className="p-4">
                     <h3 className="text-sm font-semibold mb-3">Cover Background</h3>
                     <input
@@ -610,7 +525,6 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
                     />
                   </Card>
 
-
                   <Card className="p-4">
                     <h3 className="text-sm font-semibold mb-3">Info Card Accent</h3>
                     <input
@@ -633,7 +547,6 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
                       className="w-full px-2 py-1 border rounded text-sm"
                     />
                   </Card>
-
 
                   <Card className="p-4">
                     <h3 className="text-sm font-semibold mb-3">Agenda Items</h3>
@@ -659,7 +572,6 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
                   </Card>
                 </div>
 
-
                 {/* LIVE PREVIEW */}
                 <div className="col-span-12 lg:col-span-9">
                   <Card className="p-6">
@@ -670,19 +582,17 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
                       </span>
                     </div>
 
-
-                    <div 
+                    <div
                       className="border-4 border-gray-400 rounded-lg overflow-y-auto bg-white shadow-2xl"
                       style={{ maxHeight: '1000px' }}
                     >
-                      
-                      {/* COVER PAGE - ADJUSTABLE HEIGHT */}
-                      <div 
+                      {/* COVER PAGE - FIXED 175px */}
+                      <div
                         ref={coverPageRef}
                         className="relative text-white cursor-crosshair select-none"
-                        style={{ 
+                        style={{
                           backgroundColor: coverPageColor,
-                          height: `${coverPageHeight}px`,
+                          height: `${COVER_PAGE_HEIGHT}px`,
                           position: 'relative'
                         }}
                         onMouseMove={handleCoverMouseMove}
@@ -692,57 +602,75 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
                         {coverPageElements.filter(el => el.enabled).map(element => (
                           <div
                             key={element.id}
-                            className={`absolute cursor-move transition-opacity ${
-                              draggingElementId === element.id ? 'opacity-70 scale-105' : 'hover:opacity-90'
-                            }`}
+                            className={`absolute cursor-move transition-opacity ${draggingElementId === element.id ? 'opacity-70 scale-105' : 'hover:opacity-90'
+                              }`}
                             style={{
                               left: `${element.x}%`,
                               top: `${element.y}%`,
                               transform: element.align === 'center' ? 'translate(-50%, -50%)' :
-                                        element.align === 'right' ? 'translate(-100%, -50%)' :
-                                        'translate(0, -50%)',
+                                element.align === 'right' ? 'translate(-100%, -50%)' :
+                                  'translate(0, -50%)',
                               zIndex: draggingElementId === element.id ? 50 : 10
                             }}
                             onMouseDown={(e) => handleCoverMouseDown(e, element.id)}
                           >
                             <div className="relative group">
                               <GripVertical className="absolute -left-7 top-1/2 -translate-y-1/2 h-5 w-5 opacity-50 group-hover:opacity-100" />
-                              
+
                               {element.id === 'logo' && (
-                                <div 
+                                <div
                                   className="bg-white rounded-full flex items-center justify-center shadow-lg"
-                                  style={{ width: '80px', height: '80px' }}
+                                  style={{
+                                    width: '80px',
+                                    height: '80px',
+                                    boxShadow: '0 4px 12px rgba(0,0,0,0.3)'
+                                  }}
                                 >
                                   {meeting.buildings.logo_url || meeting.buildings.companies?.logo_url ? (
-                                    <img 
-                                      src={meeting.buildings.logo_url || meeting.buildings.companies?.logo_url || ''} 
+                                    <img
+                                      src={meeting.buildings.logo_url || meeting.buildings.companies?.logo_url || ''}
                                       alt="Logo"
-                                      className="w-16 h-16 object-contain"
+                                      style={{
+                                        maxWidth: '70px',
+                                        maxHeight: '70px',
+                                        objectFit: 'contain'
+                                      }}
                                     />
                                   ) : (
-                                    <span className="text-5xl">🏢</span>
+                                    <span style={{ fontSize: '42px' }}>🏢</span>
                                   )}
                                 </div>
                               )}
 
-
                               {element.id === 'title' && (
-                                <div className="text-center">
-                                  <div className="text-5xl font-bold tracking-wider leading-tight">MEETING</div>
-                                  <div className="text-5xl font-bold tracking-wider leading-tight">AGENDA</div>
+                                <div className="text-center" style={{ width: '600px' }}>
+                                  <div style={{
+                                    fontWeight: 800,
+                                    letterSpacing: '3px',
+                                    fontSize: '48px',
+                                    lineHeight: '1.1',
+                                    textTransform: 'uppercase',
+                                    textShadow: '0 2px 4px rgba(0,0,0,0.3)'
+                                  }}>MEETING</div>
+                                  <div style={{
+                                    fontWeight: 800,
+                                    letterSpacing: '3px',
+                                    fontSize: '48px',
+                                    lineHeight: '1.1',
+                                    textTransform: 'uppercase',
+                                    textShadow: '0 2px 4px rgba(0,0,0,0.3)'
+                                  }}>AGENDA</div>
                                 </div>
                               )}
 
-
                               {element.id === 'building_name' && (
-                                <div className="text-2xl font-light tracking-wide whitespace-nowrap" style={{ color: 'rgba(200, 220, 255, 0.95)' }}>
+                                <div className="text-2xl font-light tracking-wide text-center max-w-[80%]" style={{ color: 'rgba(200, 220, 255, 0.95)' }}>
                                   {meeting.buildings.name}
                                 </div>
                               )}
 
-
                               {element.id === 'meeting_type' && (
-                                <div className="text-lg font-normal tracking-wide whitespace-nowrap" style={{ color: 'rgba(200, 220, 255, 0.9)' }}>
+                                <div className="text-lg font-normal tracking-wide text-center max-w-[80%]" style={{ color: 'rgba(200, 220, 255, 0.9)' }}>
                                   {meeting.meeting_type || "Council Meeting"}
                                 </div>
                               )}
@@ -751,17 +679,16 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
                         ))}
                       </div>
 
-
                       {/* INFO CARD */}
                       <div className="p-6 bg-gray-50">
                         <div className="bg-white rounded-lg shadow-xl overflow-hidden border">
-                          <div 
+                          <div
                             className="px-4 py-3 text-white font-bold text-sm"
                             style={{ backgroundColor: infoCardAccentColor }}
                           >
                             MEETING INFORMATION
                           </div>
-                          
+
                           <div className="p-4 grid grid-cols-2 gap-x-6 gap-y-4">
                             {infoCardFields
                               .filter(f => f.enabled)
@@ -773,9 +700,8 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
                                   onDragStart={() => handleInfoDragStart(index)}
                                   onDragOver={(e) => handleInfoDragOver(e, index)}
                                   onDragEnd={handleInfoDragEnd}
-                                  className={`group cursor-move transition-all ${
-                                    draggedIndex === index ? "scale-105 bg-blue-50 p-2 rounded" : "hover:bg-gray-50 p-2 rounded"
-                                  }`}
+                                  className={`group cursor-move transition-all ${draggedIndex === index ? "scale-105 bg-blue-50 p-2 rounded" : "hover:bg-gray-50 p-2 rounded"
+                                    }`}
                                 >
                                   <div className="flex items-start gap-2">
                                     <GripVertical className="h-4 w-4 text-gray-300 mt-0.5 opacity-0 group-hover:opacity-100" />
@@ -798,28 +724,25 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
                         </div>
                       </div>
 
-
                       {/* AGENDA ITEMS */}
                       <div className="p-6 bg-white">
-                        <div 
+                        <div
                           className="px-4 py-3 text-white font-bold text-xl mb-6 rounded"
                           style={{ backgroundColor: agendaItemsColor }}
                         >
                           AGENDA ITEMS
                         </div>
 
-
-                        {/* ✅ Only render sections — no OTHER BUSINESS block */}
                         {sections.map((section, sectionIdx) => {
                           const sectionTopics = (topicsBySection[section.id] || []).sort((a, b) => a.order_index - b.order_index)
-                          
+
                           return (
                             <div key={section.id} className="mb-6">
-                              <div 
+                              <div
                                 className="p-3 rounded-lg mb-3 flex items-center gap-3"
                                 style={{ backgroundColor: getLighterColor(agendaItemsColor) }}
                               >
-                                <div 
+                                <div
                                   className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-sm"
                                   style={{ backgroundColor: agendaItemsColor }}
                                 >
@@ -828,21 +751,19 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
                                 <span className="font-bold text-white uppercase">{section.title}</span>
                               </div>
 
-
                               <div className="ml-6 space-y-3">
                                 {sectionTopics.map((topic, topicIdx) => (
-                                  <div 
+                                  <div
                                     key={topic.id}
-                                    className={`border rounded-lg p-3 shadow-sm ${
-                                      topic.is_incamera ? 'bg-red-50 border-red-200' : 'bg-white'
-                                    }`}
+                                    className={`border rounded-lg p-3 shadow-sm ${topic.is_incamera ? 'bg-red-50 border-red-200' : 'bg-white'
+                                      }`}
                                     style={{
                                       borderLeftWidth: '4px',
                                       borderLeftColor: topic.is_incamera ? '#dc2626' : agendaItemsColor
                                     }}
                                   >
                                     <div className="flex items-start gap-3">
-                                      <div 
+                                      <div
                                         className="w-7 h-7 rounded-full flex items-center justify-center text-white font-bold text-xs"
                                         style={{ backgroundColor: topic.is_incamera ? '#dc2626' : agendaItemsColor }}
                                       >
@@ -866,28 +787,19 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
                             </div>
                           )
                         })}
-                        {/* ✅ OTHER BUSINESS block completely removed */}
                       </div>
-
-
                     </div>
-
-
-                    <div className="mt-6 p-4 bg-gradient-to-r from-green-50 to-blue-50 border-2 border-green-300 rounded-lg">
-                      <p className="text-sm font-semibold text-green-900">
-                        🎯 Drag elements, adjust height slider, change colors. Press <kbd className="px-2 py-1 bg-white rounded border">Ctrl+Z</kbd> to undo!
-                      </p>
-                    </div>
-
-
                   </Card>
                 </div>
-
-
               </div>
 
+              <div className="mt-6 p-4 bg-gradient-to-r from-green-50 to-blue-50 border-2 border-green-300 rounded-lg">
+                <p className="text-sm font-semibold text-green-900">
+                  🎯 Drag elements, change colors. Press <kbd className="px-2 py-1 bg-white rounded border">Ctrl+Z</kbd> to undo!
+                </p>
+              </div>
 
-              <div className="flex justify-center">
+              <div className="flex justify-center mt-8">
                 <Button
                   onClick={handleSave}
                   disabled={saving || !hasChanges}
@@ -898,8 +810,6 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
                   {saving ? "Saving..." : hasChanges ? "Save Template" : "No Changes"}
                 </Button>
               </div>
-
-
             </>
           )}
         </>

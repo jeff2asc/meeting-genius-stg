@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
-import { ChevronDown, FileText, CheckSquare, Scale, Paperclip, Edit2, Trash2, X, Check, Sparkles, Loader2, Plus, Upload, Download, CornerDownRight, Lock, Unlock } from "lucide-react"
+import { ChevronDown, FileText, CheckSquare, Scale, Paperclip, Edit2, Trash2, X, Check, Sparkles, Loader2, Plus, Upload, Download, CornerDownRight, Lock, Unlock, Globe } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { supabase, getCurrentUser, TopicAttachment } from "@/lib/supabase"
@@ -68,6 +68,7 @@ interface HistoryItem {
   timestamp: string
   details?: string
   attachmentUrl?: string
+  visibility?: "public" | "private"
 }
 
 interface Decision {
@@ -547,7 +548,7 @@ export default function TopicCard({
               type: 'note',
               content: note.content.substring(0, 100) + (note.content.length > 100 ? '...' : ''),
               timestamp: new Date(note.created_at).toLocaleString(),
-              details: note.visibility === 'private' ? '🔒 Private Note' : undefined
+              visibility: (note.visibility as "public" | "private") || "public"
             })
           }
         })
@@ -900,8 +901,8 @@ export default function TopicCard({
                 <button
                   onClick={handleIncameraToggle}
                   className={`flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded transition-all border-2 ${isIncamera
-                      ? 'bg-red-50 border-red-300 text-red-700 hover:bg-red-100'
-                      : 'bg-muted hover:bg-muted/80 border-border hover:border-red-300'
+                    ? 'bg-red-50 border-red-300 text-red-700 hover:bg-red-100'
+                    : 'bg-muted hover:bg-muted/80 border-border hover:border-red-300'
                     }`}
                   title={isIncamera ? "Remove In-Camera status" : "Mark as In-Camera (Confidential)"}
                 >
@@ -1180,7 +1181,10 @@ export default function TopicCard({
                       }}
                     >
                       <div className="flex gap-2 items-center">
-                        <span className={`text-xs font-medium px-2 py-0.5 rounded border ${getHistoryBadgeColor(item.type)}`}>
+                        <span className={`text-xs font-medium px-2 py-0.5 rounded border inline-flex items-center gap-1.5 ${getHistoryBadgeColor(item.type)}`}>
+                          {item.type === 'note' && (
+                            item.visibility === 'private' ? <Lock className="h-3 w-3" /> : <Globe className="h-3 w-3" />
+                          )}
                           {item.type.toUpperCase()}
                         </span>
                         <span className="text-xs text-muted-foreground">{item.timestamp}</span>

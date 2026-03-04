@@ -65,21 +65,21 @@ export default function DecisionModal({
   const [error, setError] = useState<string | null>(null)
   const [decisionResults, setDecisionResults] = useState<string[]>([])
   const [attendees, setAttendees] = useState<Attendee[]>([])
-  
+
   const [parentDecision, setParentDecision] = useState<Decision | null>(null)
-  
+
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [suggestions, setSuggestions] = useState<Attendee[]>([])
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0)
   const [cursorPosition, setCursorPosition] = useState(0)
   const [mentionStartIndex, setMentionStartIndex] = useState(-1)
-  
+
   const [geniusWords, setGeniusWords] = useState<GeniusWord[]>([])
   const [showGeniusSuggestions, setShowGeniusSuggestions] = useState(false)
   const [geniusSuggestions, setGeniusSuggestions] = useState<GeniusWord[]>([])
   const [selectedGeniusIndex, setSelectedGeniusIndex] = useState(0)
   const [geniusStartIndex, setGeniusStartIndex] = useState(-1)
-  
+
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const suggestionsRef = useRef<HTMLDivElement>(null)
   const geniusSuggestionsRef = useRef<HTMLDivElement>(null)
@@ -94,11 +94,11 @@ export default function DecisionModal({
       fetchDecisionResults()
       fetchAttendees()
       fetchGeniusWords()
-      
+
       if (editMode && existingDecisionId) {
         loadExistingDecision(existingDecisionId)
       }
-      
+
       if (parentDecisionId) {
         loadParentDecision(parentDecisionId)
       }
@@ -156,7 +156,7 @@ export default function DecisionModal({
   const fetchDecisionResults = async () => {
     try {
       const meetingIdNum = typeof meetingId === 'string' ? parseInt(meetingId) : meetingId
-      
+
       const { data: meetingData, error: meetingError } = await supabase
         .from("meetings")
         .select("building_id")
@@ -204,7 +204,7 @@ export default function DecisionModal({
   const fetchAttendees = async () => {
     try {
       const meetingIdNum = typeof meetingId === 'string' ? parseInt(meetingId) : meetingId
-      
+
       const { data: meetingData, error } = await supabase
         .from("meetings")
         .select("attendees")
@@ -245,26 +245,26 @@ export default function DecisionModal({
   const handleMotionTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const text = e.target.value
     const cursorPos = e.target.selectionStart
-    
+
     setMotionText(text)
     setCursorPosition(cursorPos)
 
     const textBeforeCursor = text.substring(0, cursorPos)
     const atIndex = textBeforeCursor.lastIndexOf("@")
     const hashIndex = textBeforeCursor.lastIndexOf("#")
-    
+
     const mostRecentIsAt = atIndex > hashIndex
-    
+
     if (mostRecentIsAt && atIndex !== -1) {
       const textAfterAt = textBeforeCursor.substring(atIndex + 1)
-      
+
       if (!textAfterAt.includes(" ") && !textAfterAt.includes("\n")) {
         setMentionStartIndex(atIndex)
-        
+
         const filtered = attendees.filter(attendee =>
           attendee.name.toLowerCase().includes(textAfterAt.toLowerCase())
         )
-        
+
         setSuggestions(filtered)
         setShowSuggestions(filtered.length > 0)
         setSelectedSuggestionIndex(0)
@@ -274,17 +274,17 @@ export default function DecisionModal({
       }
     } else if (!mostRecentIsAt && hashIndex !== -1) {
       const textAfterHash = textBeforeCursor.substring(hashIndex + 1)
-      
+
       if (!textAfterHash.includes(" ") && !textAfterHash.includes("\n")) {
         setGeniusStartIndex(hashIndex)
-        
+
         const searchTerm = textAfterHash.toLowerCase()
         const filtered = geniusWords.filter(gw => {
           const shortcodeWithoutHash = gw.shortcode.replace(/^#/, '').toLowerCase()
-          return shortcodeWithoutHash.includes(searchTerm) || 
-                 gw.shortcode.toLowerCase().includes(`#${searchTerm}`)
+          return shortcodeWithoutHash.includes(searchTerm) ||
+            gw.shortcode.toLowerCase().includes(`#${searchTerm}`)
         })
-        
+
         setGeniusSuggestions(filtered)
         setShowGeniusSuggestions(filtered.length > 0)
         setSelectedGeniusIndex(0)
@@ -304,7 +304,7 @@ export default function DecisionModal({
     const beforeMention = motionText.substring(0, mentionStartIndex)
     const afterCursor = motionText.substring(cursorPosition)
     const newText = beforeMention + attendee.name + " " + afterCursor
-    
+
     setMotionText(newText)
     setShowSuggestions(false)
     setMentionStartIndex(-1)
@@ -324,7 +324,7 @@ export default function DecisionModal({
     const beforeGenius = motionText.substring(0, geniusStartIndex)
     const afterCursor = motionText.substring(cursorPosition)
     const newText = beforeGenius + geniusWord.description + " " + afterCursor
-    
+
     setMotionText(newText)
     setShowGeniusSuggestions(false)
     setGeniusStartIndex(-1)
@@ -342,7 +342,7 @@ export default function DecisionModal({
     if (showSuggestions) {
       if (e.key === "ArrowDown") {
         e.preventDefault()
-        setSelectedSuggestionIndex(prev => 
+        setSelectedSuggestionIndex(prev =>
           prev < suggestions.length - 1 ? prev + 1 : prev
         )
       } else if (e.key === "ArrowUp") {
@@ -360,7 +360,7 @@ export default function DecisionModal({
     if (showGeniusSuggestions) {
       if (e.key === "ArrowDown") {
         e.preventDefault()
-        setSelectedGeniusIndex(prev => 
+        setSelectedGeniusIndex(prev =>
           prev < geniusSuggestions.length - 1 ? prev + 1 : prev
         )
       } else if (e.key === "ArrowUp") {
@@ -378,7 +378,7 @@ export default function DecisionModal({
 
   const handleDelete = async () => {
     if (!existingDecisionId || !editMode) return
-    
+
     if (!confirm('Are you sure you want to delete this decision? This will also delete any threaded decisions under it. This action cannot be undone.')) {
       return
     }
@@ -398,9 +398,9 @@ export default function DecisionModal({
       }
 
       toast.success('Decision deleted successfully')
-      
+
       handleClose()
-      
+
       setTimeout(() => {
         if (onSave) {
           onSave()
@@ -454,7 +454,10 @@ export default function DecisionModal({
             votes_for: votesFor === "" ? null : votesFor,
             votes_against: votesAgainst === "" ? null : votesAgainst,
             votes_abstain: votesAbstain === "" ? null : votesAbstain,
-            parent_decision_id: parentDecisionId
+            parent_decision_id: parentDecisionId,
+            ...(typeof window !== 'undefined' &&
+              (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+              ? { recorded_at: new Date().toISOString() } : {})
           })
 
         if (insertError) {
@@ -465,7 +468,7 @@ export default function DecisionModal({
         }
 
         toast.success('Decision created successfully')
-        
+
         // ✅ Reset state and clear form
         setSaving(false)
         setMotionText("")
@@ -474,13 +477,13 @@ export default function DecisionModal({
         setVotesAgainst("")
         setVotesAbstain("")
         setError(null)
-        
+
         // ✅ If embedded mode, stay open and ready for next decision
         if (embedded) {
           onClose() // Just marks data changed for when modal closes
           return
         }
-        
+
         // ✅ If standalone modal, close it
         handleClose()
         if (onSave) {
@@ -562,7 +565,7 @@ export default function DecisionModal({
             className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary min-h-[120px]"
             disabled={saving || deleting}
           />
-          
+
           {showSuggestions && (
             <div
               ref={suggestionsRef}
@@ -572,9 +575,8 @@ export default function DecisionModal({
                 <button
                   key={index}
                   onClick={() => insertMention(attendee)}
-                  className={`w-full text-left px-4 py-2 hover:bg-muted transition-colors ${
-                    index === selectedSuggestionIndex ? 'bg-muted' : ''
-                  }`}
+                  className={`w-full text-left px-4 py-2 hover:bg-muted transition-colors ${index === selectedSuggestionIndex ? 'bg-muted' : ''
+                    }`}
                 >
                   <div className="font-medium text-foreground">{attendee.name}</div>
                   {attendee.email && (
@@ -594,9 +596,8 @@ export default function DecisionModal({
                 <button
                   key={gw.id}
                   onClick={() => insertGeniusWord(gw)}
-                  className={`w-full text-left px-4 py-2 hover:bg-muted transition-colors ${
-                    index === selectedGeniusIndex ? 'bg-muted' : ''
-                  }`}
+                  className={`w-full text-left px-4 py-2 hover:bg-muted transition-colors ${index === selectedGeniusIndex ? 'bg-muted' : ''
+                    }`}
                 >
                   <div className="flex items-start gap-2">
                     <code className="text-xs font-mono text-muted-foreground shrink-0">
@@ -689,9 +690,9 @@ export default function DecisionModal({
             {deleting ? "Deleting..." : "Delete"}
           </Button>
         )}
-        
+
         <div className="flex-1"></div>
-        
+
         <Button
           onClick={handleClose}
           variant="outline"

@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { Globe, Lock } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { supabase, getCurrentUser } from "@/lib/supabase"
 import GeniusWordsInput from "../GeniusWordsInput"
@@ -114,12 +115,14 @@ export default function NoteForm({ topicId, onSave }: NoteFormProps) {
           <SelectContent>
             <SelectItem value="public">
               <span className="flex items-center gap-2">
+                <Globe className="h-4 w-4 text-note-blue" />
                 <span>Public Note</span>
                 <span className="text-[10px] text-muted-foreground font-normal">(Visible to everyone)</span>
               </span>
             </SelectItem>
             <SelectItem value="private">
               <span className="flex items-center gap-2">
+                <Lock className="h-4 w-4 text-amber-600" />
                 <span>Private Note</span>
                 <span className="text-[10px] text-muted-foreground font-normal">(Restricted access)</span>
               </span>

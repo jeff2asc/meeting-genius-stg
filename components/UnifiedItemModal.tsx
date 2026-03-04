@@ -29,23 +29,19 @@ export default function UnifiedItemModal({
 
   if (!isOpen) return null
 
-  // Called when items are saved - we don't do anything here
-  // Parent will refresh when modal closes
   const handleItemSaved = () => {
     // Nothing - just acknowledge the save happened
   }
 
-  // Called when X is clicked - notify parent to refresh
   const handleClose = () => {
-    onClose() // This triggers fetchSectionsAndTopics() in meeting-view.tsx
+    onClose()
   }
-  
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <Card className="w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+      <Card className="w-full max-w-4xl max-h-[90vh] flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b">
+        <div className="flex items-center justify-between p-4 border-b shrink-0">
           <h2 className="text-xl font-bold">Topic Items</h2>
           <Button
             variant="ghost"
@@ -58,7 +54,7 @@ export default function UnifiedItemModal({
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b">
+        <div className="flex border-b shrink-0">
           <button
             onClick={() => setActiveTab('task')}
             className={`px-6 py-3 font-medium transition-colors ${
@@ -91,10 +87,9 @@ export default function UnifiedItemModal({
           </button>
         </div>
 
-        {/* Content - ALL tabs are mounted, just hidden with CSS */}
-        <div className="flex-1 overflow-hidden">
-          {/* Task Tab - Always mounted, just hidden */}
-          <div className={activeTab === 'task' ? 'block h-full' : 'hidden'}>
+        {/* ✅ FIX: overflow-y-auto so content scrolls instead of being clipped */}
+        <div className="flex-1 overflow-y-auto">
+          <div className={activeTab === 'task' ? 'block' : 'hidden'}>
             <TaskModal
               isOpen={true}
               onClose={handleItemSaved}
@@ -104,8 +99,7 @@ export default function UnifiedItemModal({
             />
           </div>
 
-          {/* Note Tab - Always mounted, just hidden */}
-          <div className={activeTab === 'note' ? 'block h-full' : 'hidden'}>
+          <div className={activeTab === 'note' ? 'block' : 'hidden'}>
             <NoteModal
               isOpen={true}
               onClose={handleItemSaved}
@@ -115,8 +109,7 @@ export default function UnifiedItemModal({
             />
           </div>
 
-          {/* Decision Tab - Always mounted, just hidden */}
-          <div className={activeTab === 'decision' ? 'block h-full' : 'hidden'}>
+          <div className={activeTab === 'decision' ? 'block' : 'hidden'}>
             <DecisionModal
               isOpen={true}
               onClose={handleItemSaved}

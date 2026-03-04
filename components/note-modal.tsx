@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { X, Trash2 } from "lucide-react"
+import { X, Trash2, Globe, Lock } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { supabase, getCurrentUser } from "@/lib/supabase"
@@ -170,11 +170,16 @@ export default function NoteModal({
         }
       } else {
         // CREATE NEW NOTE
+        const now = new Date().toISOString()
+        const isLocalhost = typeof window !== 'undefined' &&
+          (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+
         const { error: insertError } = await supabase.from("notes").insert({
           topic_id: topicId,
           content: content.trim(),
           created_by: currentUser?.id,
           visibility,
+          ...(isLocalhost ? { created_at: now } : {})
         })
 
         if (insertError) {
@@ -267,12 +272,14 @@ export default function NoteModal({
           <SelectContent>
             <SelectItem value="public">
               <span className="flex items-center gap-2">
+                <Globe className="h-4 w-4 text-note-blue" />
                 <span>Public Note</span>
                 <span className="text-[10px] text-muted-foreground font-normal">(Visible to everyone)</span>
               </span>
             </SelectItem>
             <SelectItem value="private">
               <span className="flex items-center gap-2">
+                <Lock className="h-4 w-4 text-amber-600" />
                 <span>Private Note</span>
                 <span className="text-[10px] text-muted-foreground font-normal">(Restricted access)</span>
               </span>
