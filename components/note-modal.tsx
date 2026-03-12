@@ -18,7 +18,7 @@ import {
 interface NoteModalProps {
   topicId: number
   onClose: () => void
-  onSave?: () => void
+  onSave?: (topicId: number) => void
   editMode?: boolean
   existingNoteId?: number | null
   embedded?: boolean
@@ -116,7 +116,7 @@ export default function NoteModal({
 
       onClose()
       if (onSave) {
-        setTimeout(() => onSave(), 100)
+        setTimeout(() => onSave(topicId), 100)
       }
     } catch (err) {
       console.error("Unexpected error:", err)
@@ -160,13 +160,14 @@ export default function NoteModal({
         setSaving(false)
 
         if (embedded) {
+          if (onSave) onSave(topicId)
           onClose()
           return
         }
 
         onClose()
         if (onSave) {
-          setTimeout(() => onSave(), 100)
+          setTimeout(() => onSave(topicId), 100)
         }
       } else {
         // CREATE NEW NOTE
@@ -197,13 +198,14 @@ export default function NoteModal({
         setVisibility("public")
 
         if (embedded) {
+          if (onSave) onSave(topicId)
           onClose()
           return
         }
 
         onClose()
         if (onSave) {
-          setTimeout(() => onSave(), 100)
+          setTimeout(() => onSave(topicId), 100)
         }
       }
     } catch (err) {

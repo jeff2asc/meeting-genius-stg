@@ -50,11 +50,11 @@ export default function AssignUsersToCompanyModal({
 
     setLoading(true)
     try {
-      // Fetch all users that can be assigned to companies (property_manager and corporate_administrator)
+      // Fetch all users that can be assigned to companies
       const { data: usersData, error: usersError } = await supabase
         .from('users')
         .select('id, name, email, user_type, company_id')
-        .in('user_type', ['property_manager', 'corporate_administrator'])
+        .neq('user_type', 'master') // Everyone except masters
         .order('name')
 
       if (usersError) {
@@ -133,10 +133,16 @@ export default function AssignUsersToCompanyModal({
   }
 
   const getUserTypeBadge = (userType: string) => {
-    if (userType === 'corporate_administrator') {
-      return <span className="text-xs px-2 py-1 rounded bg-purple-100 text-purple-800">Corp Admin</span>
+    switch (userType) {
+      case 'corporate_administrator':
+        return <span className="text-xs px-2 py-1 rounded bg-purple-100 text-purple-800">Corp Admin</span>
+      case 'property_manager':
+        return <span className="text-xs px-2 py-1 rounded bg-blue-100 text-blue-800">PM</span>
+      case 'vendor':
+        return <span className="text-xs px-2 py-1 rounded bg-orange-100 text-orange-800">Vendor</span>
+      default:
+        return <span className="text-xs px-2 py-1 rounded bg-gray-100 text-gray-800">{userType}</span>
     }
-    return <span className="text-xs px-2 py-1 rounded bg-blue-100 text-blue-800">Property Manager</span>
   }
 
   if (!isOpen || !company) return null
@@ -254,8 +260,8 @@ export default function AssignUsersToCompanyModal({
         </div>
 
         <div className="border-t border-border p-6">
-          <Button 
-            onClick={onClose} 
+          <Button
+            onClick={onClose}
             className="w-full bg-gradient-to-r from-primary to-decision-purple text-primary-foreground"
             disabled={saving}
           >

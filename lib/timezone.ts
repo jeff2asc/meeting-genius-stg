@@ -11,7 +11,7 @@ export function formatUtcToLocalLong(dateString: string, timeString?: string): s
   if (!dateString) return "No date"
 
   // Combine with midnight UTC time if no time provided
-  const combinedIso = timeString 
+  const combinedIso = timeString
     ? `${dateString}T${timeString}Z`
     : `${dateString}T00:00:00Z`
 
@@ -25,16 +25,12 @@ export function formatUtcToLocalLong(dateString: string, timeString?: string): s
   })
 }
 
-/**
- * Format UTC time to local short format
- * Used for displaying times (e.g., "2:00 PM")
- */
-export function formatUtcToLocalShort(timeString: string): string | null {
+export function formatUtcToLocalShort(timeString: string, contextDate?: string): string | null {
   if (!timeString) return null
 
-  // Create a date object with today's date + the time (assuming UTC)
-  const today = new Date().toISOString().split('T')[0]
-  const combinedIso = `${today}T${timeString}Z`
+  // ⭐ FIXED: Use the actual context date for correct DST offset handling
+  const referenceDate = contextDate || new Date().toISOString().split('T')[0]
+  const combinedIso = `${referenceDate}T${timeString}Z`
 
   const date = new Date(combinedIso)
   return date.toLocaleTimeString(undefined, {

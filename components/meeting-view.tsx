@@ -57,6 +57,7 @@ interface MeetingViewProps {
   onAddThreadedDecision?: (parentDecisionId: number, topicId: number) => void
   onEditTask?: (taskId: number, topicId: number) => void
   onEditNote?: (noteId: number, topicId: number) => void
+  onTopicSave?: (topicId: number) => void
 }
 
 interface Topic {
@@ -94,6 +95,7 @@ export default function MeetingView({
   onAddThreadedDecision,
   onEditTask,
   onEditNote,
+  onTopicSave,
 }: MeetingViewProps) {
   const [meeting, setMeeting] = useState<any>(null)
   const [sections, setSections] = useState<Section[]>([])
@@ -798,8 +800,10 @@ export default function MeetingView({
   const formatTime = (timeString: string) => {
     if (!timeString) return null
 
-    const today = new Date().toISOString().split('T')[0]
-    const combinedIso = `${today}T${timeString}Z`
+    // ⭐ FIXED: Use the actual meeting date for correct DST offset handling
+    // instead of always using "today".
+    const referenceDate = meeting?.meeting_date || new Date().toISOString().split('T')[0]
+    const combinedIso = `${referenceDate}T${timeString}Z`
 
     const date = new Date(combinedIso)
     return date.toLocaleTimeString(undefined, {
@@ -1811,6 +1815,7 @@ export default function MeetingView({
                 attendees={(meeting.attendees as Attendee[]) || []}
                 status={meeting.status}
                 userCanEdit={userCanEdit}
+                companyId={(meeting as any)?.buildings?.company_id ?? null}
                 onUpdate={async (updatedAttendees) => {
                   await supabase
                     .from("meetings")
@@ -2156,7 +2161,12 @@ export default function MeetingView({
           }}
           topicId={selectedTopicForModal}
           meetingId={meetingId}
-          onSave={() => { }}
+          onSave={() => {
+            // ✅ Trigger the refresh callback for this topic
+            if (onTopicSave && selectedTopicForModal) {
+              onTopicSave(selectedTopicForModal)
+            }
+          }}
           defaultTab={defaultTab}
         />
       )}

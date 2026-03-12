@@ -1,10 +1,11 @@
 "use client"
 
 import { useState } from "react"
-import { X, User, Key, Check } from "lucide-react"
+import { X, User, Key, Check, Eye, EyeOff } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { supabase } from "@/lib/supabase"
+import { verifyPassword, hashPassword } from "@/lib/auth"
 
 interface ProfileSettingsModalProps {
   user: {
@@ -18,16 +19,17 @@ interface ProfileSettingsModalProps {
 
 export default function ProfileSettingsModal({ user, onClose, onUpdate }: ProfileSettingsModalProps) {
   const [activeTab, setActiveTab] = useState<'profile' | 'password'>('profile')
-  
+
   // Profile form
   const [name, setName] = useState(user.name)
   const [savingProfile, setSavingProfile] = useState(false)
-  
+
   // Password form
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [savingPassword, setSavingPassword] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
 
   const handleSaveProfile = async () => {
     if (!name.trim()) {
@@ -50,11 +52,11 @@ export default function ProfileSettingsModal({ user, onClose, onUpdate }: Profil
       }
 
       // Update local storage
-      const storedUser = localStorage.getItem('mg_user')
+      const storedUser = localStorage.getItem('current_user')
       if (storedUser) {
         const userData = JSON.parse(storedUser)
         userData.name = name.trim()
-        localStorage.setItem('mg_user', JSON.stringify(userData))
+        localStorage.setItem('current_user', JSON.stringify(userData))
       }
 
       alert('Profile updated successfully')
@@ -85,10 +87,10 @@ export default function ProfileSettingsModal({ user, onClose, onUpdate }: Profil
 
     setSavingPassword(true)
     try {
-      // Verify current password
+      // Fetch stored password hash
       const { data: userData, error: verifyError } = await supabase
         .from('users')
-        .select('password')
+        .select('password_hash')
         .eq('id', user.id)
         .single()
 
@@ -98,18 +100,21 @@ export default function ProfileSettingsModal({ user, onClose, onUpdate }: Profil
         return
       }
 
-      // In production, you should use proper password hashing (bcrypt, etc.)
-      // For now, simple comparison (REPLACE THIS WITH PROPER HASHING)
-      if (userData.password !== currentPassword) {
+      // Use bcrypt to compare entered password against stored hash
+      const isCorrect = await verifyPassword(currentPassword, userData.password_hash)
+      if (!isCorrect) {
         alert('Current password is incorrect')
         setSavingPassword(false)
         return
       }
 
-      // Update password
+      // Hash the new password before saving
+      const newHash = await hashPassword(newPassword)
+
+      // Update password_hash in the database
       const { error: updateError } = await supabase
         .from('users')
-        .update({ password: newPassword })
+        .update({ password_hash: newHash })
         .eq('id', user.id)
 
       if (updateError) {
@@ -149,22 +154,20 @@ export default function ProfileSettingsModal({ user, onClose, onUpdate }: Profil
         <div className="flex border-b border-border">
           <button
             onClick={() => setActiveTab('profile')}
-            className={`flex-1 py-3 px-4 font-medium text-sm transition-colors ${
-              activeTab === 'profile'
-                ? 'text-primary border-b-2 border-primary bg-primary/5'
-                : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-            }`}
+            className={`flex-1 py-3 px-4 font-medium text-sm transition-colors ${activeTab === 'profile'
+              ? 'text-primary border-b-2 border-primary bg-primary/5'
+              : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+              }`}
           >
             <User className="h-4 w-4 inline mr-2" />
             Profile
           </button>
           <button
             onClick={() => setActiveTab('password')}
-            className={`flex-1 py-3 px-4 font-medium text-sm transition-colors ${
-              activeTab === 'password'
-                ? 'text-primary border-b-2 border-primary bg-primary/5'
-                : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-            }`}
+            className={`flex-1 py-3 px-4 font-medium text-sm transition-colors ${activeTab === 'password'
+              ? 'text-primary border-b-2 border-primary bg-primary/5'
+              : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+              }`}
           >
             <Key className="h-4 w-4 inline mr-2" />
             Password
@@ -220,26 +223,44 @@ export default function ProfileSettingsModal({ user, onClose, onUpdate }: Profil
                 <label className="block text-sm font-medium text-foreground mb-2">
                   Current Password *
                 </label>
-                <input
-                  type="password"
-                  value={currentPassword}
-                  onChange={(e) => setCurrentPassword(e.target.value)}
-                  placeholder="Enter current password"
-                  className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50"
-                />
+                <div className="relative">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    placeholder="Enter current password"
+                    className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-foreground mb-2">
                   New Password *
                 </label>
-                <input
-                  type="password"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="Enter new password"
-                  className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50"
-                />
+                <div className="relative">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="Enter new password"
+                    className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
                 <p className="text-xs text-muted-foreground mt-1">
                   Minimum 6 characters
                 </p>
@@ -249,13 +270,22 @@ export default function ProfileSettingsModal({ user, onClose, onUpdate }: Profil
                 <label className="block text-sm font-medium text-foreground mb-2">
                   Confirm New Password *
                 </label>
-                <input
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="Confirm new password"
-                  className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50"
-                />
+                <div className="relative">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="Confirm new password"
+                    className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
               </div>
 
               <Button

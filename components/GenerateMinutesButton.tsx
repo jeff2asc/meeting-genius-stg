@@ -1138,7 +1138,7 @@ function renderSectionsAndTopics(
         // Motion boxes matching the editor preview
         if (topic.decisions && topic.decisions.length > 0) {
           topic.decisions.forEach((decision: any, decisionIdx: number) => {
-            const motionNumber = `${sectionIndex + 1}.${decisionIdx + 1}`
+            const motionNumber = `${sectionIndex + 1}.${topicIndex + 1}`
             const votesFor = decision.votes_for || 0
             const votesAgainst = decision.votes_against || 0
             const votesAbstain = decision.votes_abstain || 0

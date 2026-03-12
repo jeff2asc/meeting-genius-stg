@@ -313,8 +313,8 @@ export default function CreateUserModal({
           isMaster && primaryRole
             ? primaryRole
             : isCorporateAdmin && primaryRole === "property_manager"
-            ? "property_manager"
-            : primaryRole
+              ? "property_manager"
+              : primaryRole
 
         const { data: newUser, error: userError } = await supabase
           .from("users")
@@ -329,8 +329,8 @@ export default function CreateUserModal({
               isMaster && (primaryRole === "user" || primaryRole === "owner")
                 ? userFormData.assignedPmId
                 : currentUser?.user_type === "property_manager"
-                ? currentUser.id
-                : null,
+                  ? currentUser.id
+                  : null,
           })
           .select()
           .single()
@@ -384,10 +384,10 @@ export default function CreateUserModal({
     { value: "property_manager", label: "Property Manager" },
     ...(isMaster
       ? [
-          { value: "vendor", label: "Vendor" },
-          { value: "attendee", label: "Attendee" },
-          { value: "corporate_administrator", label: "Corporate Administrator" },
-        ]
+        { value: "vendor", label: "Vendor" },
+        { value: "attendee", label: "Attendee" },
+        { value: "corporate_administrator", label: "Corporate Administrator" },
+      ]
       : []),
   ]
 
@@ -403,10 +403,10 @@ export default function CreateUserModal({
               {isEditMode
                 ? "Update user information and permissions"
                 : isMaster
-                ? "Create any user type"
-                : isCorporateAdmin
-                ? "Create a Property Manager or User"
-                : "Create a User for your team"}
+                  ? "Create any user type"
+                  : isCorporateAdmin
+                    ? "Create a Property Manager or User"
+                    : "Create a User for your team"}
             </p>
           </div>
           <button
@@ -470,33 +470,31 @@ export default function CreateUserModal({
             </div>
           )}
 
-          {isMaster &&
-            (userFormData.userType === "corporate_administrator" ||
-              userFormData.userType === "property_manager") && (
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">
-                  Company *
-                </label>
-                <select
-                  name="companyId"
-                  value={userFormData.companyId}
-                  onChange={handleInputChange}
-                  disabled={saving}
-                  required
-                  className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
-                >
-                  <option value={0}>Select Company</option>
-                  {companies.map((company) => (
-                    <option key={company.id} value={company.id}>
-                      {company.name}
-                    </option>
-                  ))}
-                </select>
-                <p className="text-xs text-muted-foreground mt-1">
-                  This user will belong to the selected company
-                </p>
-              </div>
-            )}
+          {isMaster && (
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-2">
+                Company *
+              </label>
+              <select
+                name="companyId"
+                value={userFormData.companyId}
+                onChange={handleInputChange}
+                disabled={saving}
+                required
+                className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
+              >
+                <option value={0}>Select Company</option>
+                {companies.map((company) => (
+                  <option key={company.id} value={company.id}>
+                    {company.name}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-muted-foreground mt-1">
+                This user will belong to the selected company
+              </p>
+            </div>
+          )}
 
           <div>
             <label className="block text-sm font-medium text-foreground mb-2">
@@ -589,57 +587,57 @@ export default function CreateUserModal({
           {(userFormData.userType === "property_manager" ||
             userFormData.userType === "owner" ||
             (!isMaster && !isCorporateAdmin)) && (
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-2">
-                Assign Buildings{" "}
-                {isMaster &&
-                  userFormData.userType === "property_manager" &&
-                  !isEditMode &&
-                  "*"}
-                {isCorporateAdmin &&
-                  userFormData.userType === "property_manager" &&
-                  " (Optional)"}
-              </label>
-              <div className="border border-border rounded p-4 space-y-2 max-h-48 overflow-y-auto">
-                {buildings.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
-                    {isCorporateAdmin &&
-                    userFormData.userType === "property_manager"
-                      ? "No buildings yet. Create a building first, then assign it to this Property Manager via the Admin Panel."
-                      : "No buildings available"}
-                  </p>
-                ) : (
-                  buildings.map((building) => (
-                    <label
-                      key={building.id}
-                      className="flex items-center gap-2 cursor-pointer hover:bg-muted p-2 rounded"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selectedUserBuildings.includes(building.id)}
-                        onChange={() => toggleUserBuilding(building.id)}
-                        disabled={saving}
-                        className="h-4 w-4 rounded border-border cursor-pointer"
-                      />
-                      <span className="text-sm text-foreground">
-                        {building.name}
-                      </span>
-                    </label>
-                  ))
-                )}
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-2">
+                  Assign Buildings{" "}
+                  {isMaster &&
+                    userFormData.userType === "property_manager" &&
+                    !isEditMode &&
+                    "*"}
+                  {isCorporateAdmin &&
+                    userFormData.userType === "property_manager" &&
+                    " (Optional)"}
+                </label>
+                <div className="border border-border rounded p-4 space-y-2 max-h-48 overflow-y-auto">
+                  {buildings.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      {isCorporateAdmin &&
+                        userFormData.userType === "property_manager"
+                        ? "No buildings yet. Create a building first, then assign it to this Property Manager via the Admin Panel."
+                        : "No buildings available"}
+                    </p>
+                  ) : (
+                    buildings.map((building) => (
+                      <label
+                        key={building.id}
+                        className="flex items-center gap-2 cursor-pointer hover:bg-muted p-2 rounded"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedUserBuildings.includes(building.id)}
+                          onChange={() => toggleUserBuilding(building.id)}
+                          disabled={saving}
+                          className="h-4 w-4 rounded border-border cursor-pointer"
+                        />
+                        <span className="text-sm text-foreground">
+                          {building.name}
+                        </span>
+                      </label>
+                    ))
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {isMaster &&
+                    userFormData.userType === "property_manager" &&
+                    !isEditMode
+                    ? "Property Managers need at least one building"
+                    : isCorporateAdmin &&
+                      userFormData.userType === "property_manager"
+                      ? "✅ You can create the Property Manager now and assign buildings later via Admin Panel → Buildings tab"
+                      : "Optional - You can assign buildings later"}
+                </p>
               </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                {isMaster &&
-                userFormData.userType === "property_manager" &&
-                !isEditMode
-                  ? "Property Managers need at least one building"
-                  : isCorporateAdmin &&
-                    userFormData.userType === "property_manager"
-                  ? "✅ You can create the Property Manager now and assign buildings later via Admin Panel → Buildings tab"
-                  : "Optional - You can assign buildings later"}
-              </p>
-            </div>
-          )}
+            )}
 
           <div className="flex gap-3 pt-4">
             <Button
@@ -661,8 +659,8 @@ export default function CreateUserModal({
                   ? "Updating..."
                   : "Creating..."
                 : isEditMode
-                ? "Update User"
-                : "Create User"}
+                  ? "Update User"
+                  : "Create User"}
             </Button>
           </div>
         </form>

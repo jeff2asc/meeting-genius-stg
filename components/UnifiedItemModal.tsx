@@ -57,31 +57,28 @@ export default function UnifiedItemModal({
         <div className="flex border-b shrink-0">
           <button
             onClick={() => setActiveTab('task')}
-            className={`px-6 py-3 font-medium transition-colors ${
-              activeTab === 'task'
+            className={`px-6 py-3 font-medium transition-colors ${activeTab === 'task'
                 ? 'border-b-2 border-primary text-primary'
                 : 'text-muted-foreground hover:text-foreground'
-            }`}
+              }`}
           >
             Tasks
           </button>
           <button
             onClick={() => setActiveTab('note')}
-            className={`px-6 py-3 font-medium transition-colors ${
-              activeTab === 'note'
+            className={`px-6 py-3 font-medium transition-colors ${activeTab === 'note'
                 ? 'border-b-2 border-primary text-primary'
                 : 'text-muted-foreground hover:text-foreground'
-            }`}
+              }`}
           >
             Notes
           </button>
           <button
             onClick={() => setActiveTab('decision')}
-            className={`px-6 py-3 font-medium transition-colors ${
-              activeTab === 'decision'
+            className={`px-6 py-3 font-medium transition-colors ${activeTab === 'decision'
                 ? 'border-b-2 border-primary text-primary'
                 : 'text-muted-foreground hover:text-foreground'
-            }`}
+              }`}
           >
             Decisions
           </button>
@@ -93,6 +90,7 @@ export default function UnifiedItemModal({
             <TaskModal
               isOpen={true}
               onClose={handleItemSaved}
+              onSave={onSave}
               topicId={topicId}
               meetingId={meetingId}
               embedded={true}
@@ -103,6 +101,7 @@ export default function UnifiedItemModal({
             <NoteModal
               isOpen={true}
               onClose={handleItemSaved}
+              onSave={onSave}
               topicId={topicId}
               meetingId={meetingId}
               embedded={true}
@@ -113,6 +112,7 @@ export default function UnifiedItemModal({
             <DecisionModal
               isOpen={true}
               onClose={handleItemSaved}
+              onSave={onSave}
               topicId={topicId}
               meetingId={meetingId}
               embedded={true}

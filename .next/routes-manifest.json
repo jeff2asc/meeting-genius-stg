@@ -15,6 +15,14 @@
   "headers": [],
   "dynamicRoutes": [
     {
+      "page": "/meeting-external/[token]",
+      "regex": "^/meeting\\-external/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPtoken": "nxtPtoken"
+      },
+      "namedRegex": "^/meeting\\-external/(?<nxtPtoken>[^/]+?)(?:/)?$"
+    },
+    {
       "page": "/task-update/[token]",
       "regex": "^/task\\-update/([^/]+?)(?:/)?$",
       "routeKeys": {

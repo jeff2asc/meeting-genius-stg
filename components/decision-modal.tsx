@@ -480,6 +480,7 @@ export default function DecisionModal({
 
         // ✅ If embedded mode, stay open and ready for next decision
         if (embedded) {
+          if (onSave) onSave()
           onClose() // Just marks data changed for when modal closes
           return
         }

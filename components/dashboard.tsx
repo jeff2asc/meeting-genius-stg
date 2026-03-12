@@ -18,10 +18,10 @@ interface DashboardProps {
 
 type Tab = "meetings" | "tasks" | "all"
 
-export default function Dashboard({ 
-  onStartMeeting, 
-  onCreateMeeting, 
-  onBuildingsLoaded, 
+export default function Dashboard({
+  onStartMeeting,
+  onCreateMeeting,
+  onBuildingsLoaded,
   onBuildingSelected,
   userCanCreateMeeting = true
 }: DashboardProps) {
@@ -103,7 +103,7 @@ export default function Dashboard({
     try {
       const currentUser = getCurrentUser()
       console.log('🔍 Current User:', currentUser)
-      
+
       if (!currentUser) {
         console.error('❌ No current user found!')
         return
@@ -151,7 +151,7 @@ export default function Dashboard({
 
         const buildingIds = userBuildings?.map(ub => ub.building_id) || []
         console.log('📋 User building IDs:', buildingIds)
-        
+
         if (buildingIds.length === 0) {
           console.warn('⚠️ User has no buildings assigned')
           setBuildings([])
@@ -169,11 +169,11 @@ export default function Dashboard({
       console.log('📤 Executing buildings query...')
       const { data, error } = await query
 
-      console.log('📊 Buildings Query Result:', { 
+      console.log('📊 Buildings Query Result:', {
         success: !error,
         error: error,
         buildingCount: data?.length || 0,
-        buildings: data 
+        buildings: data
       })
 
       if (error) {
@@ -189,16 +189,16 @@ export default function Dashboard({
 
       console.log('✅ Buildings fetched successfully:', data)
       console.log('📍 Setting buildings state with', data?.length || 0, 'buildings')
-      
+
       setBuildings(data || [])
-      
+
       if (onBuildingsLoaded) {
         onBuildingsLoaded(data || [])
       }
 
       setSelectedBuilding("All")
       console.log('✅ Selected building set to "All"')
-      
+
       if (onBuildingSelected) {
         onBuildingSelected("All")
       }
@@ -257,19 +257,19 @@ export default function Dashboard({
         building: meeting.buildings?.name || selectedBuilding,
         building_id: meeting.building_id,
         title: meeting.title,
-        date: new Date(meeting.meeting_date).toLocaleDateString('en-US', { 
-          month: 'short', 
-          day: 'numeric', 
-          year: 'numeric' 
+        date: new Date(meeting.meeting_date).toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric'
         }),
         meeting_date: meeting.meeting_date,
         location: meeting.location,
         start_time: meeting.start_time,
         meeting_type: meeting.meeting_type,
         strata_plan_number: meeting.strata_plan_number,
-        status: meeting.status === 'working_agenda' ? 'Draft' : 
-                meeting.status === 'agenda' ? 'In Progress' : 
-                'Finalized'
+        status: meeting.status === 'working_agenda' ? 'Draft' :
+          meeting.status === 'agenda' ? 'In Progress' :
+            'Finalized'
       }))
 
       setMeetings(formattedMeetings)
@@ -314,9 +314,9 @@ export default function Dashboard({
       }
 
       const { data: topicsData, error: topicsError } = await supabase
-      .from('topics')
-      .select('id, title, meeting_id, meetings(id, title, building_id, buildings(name))')
-      .in('meeting_id', meetingIds)
+        .from('topics')
+        .select('id, title, meeting_id, meetings(id, title, building_id, buildings(name))')
+        .in('meeting_id', meetingIds)
 
       if (topicsError) {
         console.error('Error fetching topics:', topicsError)
@@ -467,11 +467,11 @@ export default function Dashboard({
     const assigneeNames =
       task.assignees && task.assignees.length > 0
         ? task.assignees
-            .map((a: any) => a?.name?.toLowerCase())
-            .filter(Boolean)
+          .map((a: any) => a?.name?.toLowerCase())
+          .filter(Boolean)
         : task.assigned_name
-        ? [task.assigned_name.toLowerCase()]
-        : []
+          ? [task.assigned_name.toLowerCase()]
+          : []
 
     const matchesAssignee =
       assigneeFilter === "All" ||
@@ -585,9 +585,9 @@ export default function Dashboard({
         <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <img 
-                src="/MG2 logo.png" 
-                alt="Meeting Genius Logo" 
+              <img
+                src="/MG2 logo.png"
+                alt="Meeting Genius Logo"
                 className="h-10 w-auto object-contain"
               />
             </div>
@@ -601,9 +601,9 @@ export default function Dashboard({
           {/* LEFT: Company Logo */}
           <div className="flex items-center">
             {companyLogo && (
-              <img 
-                src={companyLogo} 
-                alt="Company Logo" 
+              <img
+                src={companyLogo}
+                alt="Company Logo"
                 className="h-16 w-16 rounded-full object-cover border-2 border-border shadow-sm"
               />
             )}
@@ -612,7 +612,7 @@ export default function Dashboard({
           {/* CENTER: Building Name + Count */}
           <div className="flex-1 text-center">
             <h2 className="text-2xl font-bold text-foreground">
-              {selectedBuilding === "All" ? "All Buildingszzzz" : selectedBuilding}
+              {selectedBuilding === "All" ? "All Buildings" : selectedBuilding}
             </h2>
             <p className="text-sm text-muted-foreground mt-1">
               {activeTab === "meetings" && `${filteredMeetings.length} meeting${filteredMeetings.length !== 1 ? 's' : ''}`}
@@ -639,16 +639,15 @@ export default function Dashboard({
               </Button>
               {showBuildingDropdown && (
                 <>
-                  <div 
-                    className="fixed inset-0 z-40" 
+                  <div
+                    className="fixed inset-0 z-40"
                     onClick={() => setShowBuildingDropdown(false)}
                   />
                   <div className="absolute right-0 mt-2 w-56 bg-card border border-border rounded-lg shadow-lg z-50">
                     <button
                       onClick={() => handleBuildingSelect("All")}
-                      className={`w-full px-4 py-2 text-left hover:bg-muted transition-colors first:rounded-t-lg ${
-                        selectedBuilding === "All" ? "bg-muted font-semibold" : ""
-                      }`}
+                      className={`w-full px-4 py-2 text-left hover:bg-muted transition-colors first:rounded-t-lg ${selectedBuilding === "All" ? "bg-muted font-semibold" : ""
+                        }`}
                     >
                       All Buildings
                     </button>
@@ -656,9 +655,8 @@ export default function Dashboard({
                       <button
                         key={building.id}
                         onClick={() => handleBuildingSelect(building.name)}
-                        className={`w-full px-4 py-2 text-left hover:bg-muted transition-colors last:rounded-b-lg ${
-                          building.name === selectedBuilding ? "bg-muted font-semibold" : ""
-                        }`}
+                        className={`w-full px-4 py-2 text-left hover:bg-muted transition-colors last:rounded-b-lg ${building.name === selectedBuilding ? "bg-muted font-semibold" : ""
+                          }`}
                       >
                         {building.name}
                       </button>
@@ -686,33 +684,30 @@ export default function Dashboard({
           <div className="flex gap-4">
             <button
               onClick={() => setActiveTab("meetings")}
-              className={`pb-3 px-1 font-medium text-sm transition-colors ${
-                activeTab === "meetings"
+              className={`pb-3 px-1 font-medium text-sm transition-colors ${activeTab === "meetings"
                   ? "border-b-2 border-primary text-primary"
                   : "text-muted-foreground hover:text-foreground"
-              }`}
+                }`}
             >
               <Calendar className="h-4 w-4 inline mr-2" />
               Meetings
             </button>
             <button
               onClick={() => setActiveTab("tasks")}
-              className={`pb-3 px-1 font-medium text-sm transition-colors ${
-                activeTab === "tasks"
+              className={`pb-3 px-1 font-medium text-sm transition-colors ${activeTab === "tasks"
                   ? "border-b-2 border-primary text-primary"
                   : "text-muted-foreground hover:text-foreground"
-              }`}
+                }`}
             >
               <CheckSquare className="h-4 w-4 inline mr-2" />
               Tasks
             </button>
             <button
               onClick={() => setActiveTab("all")}
-              className={`pb-3 px-1 font-medium text-sm transition-colors ${
-                activeTab === "all"
+              className={`pb-3 px-1 font-medium text-sm transition-colors ${activeTab === "all"
                   ? "border-b-2 border-primary text-primary"
                   : "text-muted-foreground hover:text-foreground"
-              }`}
+                }`}
             >
               <FileText className="h-4 w-4 inline mr-2" />
               All
@@ -748,16 +743,15 @@ export default function Dashboard({
               </Button>
               {showMeetingTypeDropdown && (
                 <>
-                  <div 
-                    className="fixed inset-0 z-40" 
+                  <div
+                    className="fixed inset-0 z-40"
                     onClick={() => setShowMeetingTypeDropdown(false)}
                   />
                   <div className="absolute right-0 mt-2 w-56 bg-card border border-border rounded-lg shadow-lg z-50">
                     <button
                       onClick={() => handleMeetingTypeSelect("All")}
-                      className={`w-full px-4 py-2 text-left hover:bg-muted transition-colors first:rounded-t-lg ${
-                        selectedMeetingType === "All" ? "bg-muted font-semibold" : ""
-                      }`}
+                      className={`w-full px-4 py-2 text-left hover:bg-muted transition-colors first:rounded-t-lg ${selectedMeetingType === "All" ? "bg-muted font-semibold" : ""
+                        }`}
                     >
                       All Types
                     </button>
@@ -765,9 +759,8 @@ export default function Dashboard({
                       <button
                         key={type}
                         onClick={() => handleMeetingTypeSelect(type)}
-                        className={`w-full px-4 py-2 text-left hover:bg-muted transition-colors last:rounded-b-lg ${
-                          type === selectedMeetingType ? "bg-muted font-semibold" : ""
-                        }`}
+                        className={`w-full px-4 py-2 text-left hover:bg-muted transition-colors last:rounded-b-lg ${type === selectedMeetingType ? "bg-muted font-semibold" : ""
+                          }`}
                       >
                         {type}
                       </button>
@@ -860,11 +853,11 @@ export default function Dashboard({
                     <tr>
                       <td colSpan={selectedBuilding === "All" ? 6 : 5} className="px-6 py-12 text-center">
                         <p className="text-muted-foreground mb-4">
-                          {searchQuery 
+                          {searchQuery
                             ? `No meetings found matching "${searchQuery}"`
                             : selectedMeetingType !== "All"
-                            ? `No ${selectedMeetingType} meetings found`
-                            : `No meetings found`
+                              ? `No ${selectedMeetingType} meetings found`
+                              : `No meetings found`
                           }
                         </p>
                       </td>
@@ -956,11 +949,11 @@ export default function Dashboard({
                     <tr>
                       <td colSpan={selectedBuilding === "All" ? 7 : 6} className="px-6 py-12 text-center">
                         <p className="text-muted-foreground">
-                          {searchQuery 
+                          {searchQuery
                             ? `No tasks found matching "${searchQuery}"`
                             : assigneeFilter !== "All"
-                            ? `No tasks found for ${assigneeFilter}`
-                            : `No tasks found`
+                              ? `No tasks found for ${assigneeFilter}`
+                              : `No tasks found`
                           }
                         </p>
                       </td>
@@ -1003,7 +996,7 @@ export default function Dashboard({
           <Card className="w-full max-w-md p-6 m-4">
             <h3 className="text-lg font-semibold text-foreground mb-2">Delete Meeting</h3>
             <p className="text-muted-foreground mb-4">
-              Are you sure you want to delete <strong>{meetingToDelete.title}</strong>? 
+              Are you sure you want to delete <strong>{meetingToDelete.title}</strong>?
               This action cannot be undone and will also delete all associated topics, tasks, decisions, and notes.
             </p>
             <div className="flex gap-3 justify-end">
@@ -1032,7 +1025,7 @@ export default function Dashboard({
           <Card className="w-full max-w-md p-6 m-4">
             <h3 className="text-lg font-semibold text-foreground mb-2">Delete Task</h3>
             <p className="text-muted-foreground mb-4">
-              Are you sure you want to delete this task: <strong>{taskToDelete.description}</strong>? 
+              Are you sure you want to delete this task: <strong>{taskToDelete.description}</strong>?
               This action cannot be undone.
             </p>
             <div className="flex gap-3 justify-end">

@@ -1317,8 +1317,7 @@ export default function MinutesTemplatesTab({
                                                           motionBoxesColor,
                                                       }}
                                                     >
-                                                      {`MOTION ${sIdx + 1}.${dIdx + 1
-                                                        }`}
+                                                      {`MOTION ${sIdx + 1}.${tIdx + 1}`}
                                                     </div>
                                                   </div>
                                                   <div className="text-sm font-semibold text-gray-800 mb-3">

@@ -54,7 +54,7 @@ export default function Home() {
   const [noteEditMode, setNoteEditMode] = useState(false)
   const [editingNoteId, setEditingNoteId] = useState<number | null>(null)
 
-  const topicRefreshCallbackRef = useRef<(() => void) | null>(null)
+  const topicRefreshCallbackRef = useRef<Map<number, () => void>>(new Map())
 
   useEffect(() => {
     const loggedIn = isLoggedIn()
@@ -62,7 +62,7 @@ export default function Home() {
     if (loggedIn) {
       const user = getCurrentUser()
       setCurrentUser(user)
-      
+
       if (user?.user_type === 'attendee') {
         setCurrentScreen("dashboard")
       } else if (user?.user_type === 'vendor') {
@@ -75,7 +75,7 @@ export default function Home() {
     setIsAuthenticated(true)
     const user = getCurrentUser()
     setCurrentUser(user)
-    
+
     if (user?.user_type === 'attendee' || user?.user_type === 'vendor') {
       setCurrentScreen("dashboard")
     }
@@ -112,7 +112,7 @@ export default function Home() {
   }
 
   const registerTopicRefresh = (topicId: number, callback: () => void) => {
-    topicRefreshCallbackRef.current = callback
+    topicRefreshCallbackRef.current.set(topicId, callback)
   }
 
   // ⭐ UPDATED: Note click for new note
@@ -191,21 +191,24 @@ export default function Home() {
     setShowTaskModal(true)
   }
 
-  const handleNoteSave = () => {
-    if (topicRefreshCallbackRef.current) {
-      topicRefreshCallbackRef.current()
+  const handleNoteSave = (topicId: number) => {
+    const callback = topicRefreshCallbackRef.current.get(topicId)
+    if (callback) {
+      callback()
     }
   }
 
   const handleTaskSave = () => {
-    if (topicRefreshCallbackRef.current) {
-      topicRefreshCallbackRef.current()
+    if (selectedTopicId !== null) {
+      const callback = topicRefreshCallbackRef.current.get(selectedTopicId)
+      if (callback) callback()
     }
   }
 
   const handleDecisionSave = () => {
-    if (topicRefreshCallbackRef.current) {
-      topicRefreshCallbackRef.current()
+    if (selectedTopicId !== null) {
+      const callback = topicRefreshCallbackRef.current.get(selectedTopicId)
+      if (callback) callback()
     }
   }
 
@@ -258,8 +261,8 @@ export default function Home() {
         {/* User Dropdown Menu */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               size="sm"
               className="bg-background/80 backdrop-blur flex items-center gap-2 px-3 py-2 h-auto"
             >
@@ -267,12 +270,12 @@ export default function Home() {
               <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-primary-foreground font-semibold text-xs">
                 {getInitials(currentUser?.name || 'User')}
               </div>
-              
+
               {/* User name */}
               <span className="text-sm font-medium">
                 {currentUser?.name || 'User'}
               </span>
-              
+
               <ChevronDown className="h-4 w-4 text-muted-foreground" />
             </Button>
           </DropdownMenuTrigger>
@@ -289,9 +292,9 @@ export default function Home() {
                 </p>
               </div>
             </DropdownMenuLabel>
-            
+
             <DropdownMenuSeparator />
-            
+
             <DropdownMenuItem
               onClick={() => setShowProfileModal(true)}
               className="cursor-pointer"
@@ -299,7 +302,7 @@ export default function Home() {
               <User className="mr-2 h-4 w-4" />
               <span>Profile Settings</span>
             </DropdownMenuItem>
-            
+
             <DropdownMenuItem
               onClick={handleGeniusWordsClick}
               className="cursor-pointer"
@@ -307,9 +310,9 @@ export default function Home() {
               <Sparkles className="mr-2 h-4 w-4" />
               <span>GeniusWords</span>
             </DropdownMenuItem>
-            
+
             <DropdownMenuSeparator />
-            
+
             <DropdownMenuItem
               onClick={handleLogout}
               className="cursor-pointer text-red-600 focus:text-red-600 focus:bg-red-50"
@@ -323,7 +326,7 @@ export default function Home() {
 
       {/* Screen Router */}
       {currentScreen === "dashboard" && (
-        <Dashboard 
+        <Dashboard
           key={refreshKey}
           onStartMeeting={handleStartMeeting}
           onCreateMeeting={handleCreateMeeting}
@@ -346,6 +349,7 @@ export default function Home() {
           // ⭐ NEW: Pass edit handlers for task and note
           onEditTask={handleEditTask}
           onEditNote={handleEditNote}
+          onTopicSave={handleNoteSave}
         />
       )}
 
@@ -356,10 +360,10 @@ export default function Home() {
       {currentScreen === "genius-words" && (
         <GeniusWordsManager onBack={handleBackToDashboard} />
       )}
-      
+
       {/* ⭐ UPDATED: Task Modal with edit mode support */}
       {showTaskModal && selectedTopicId && (
-        <TaskModal 
+        <TaskModal
           topicId={selectedTopicId}
           onClose={() => {
             setShowTaskModal(false)
@@ -372,10 +376,10 @@ export default function Home() {
           existingTaskId={editingTaskId}
         />
       )}
-      
+
       {/* ⭐ UPDATED: Note Modal with edit mode support */}
       {showNoteModal && selectedTopicId && (
-        <NoteModal 
+        <NoteModal
           topicId={selectedTopicId}
           onClose={() => {
             setShowNoteModal(false)
@@ -388,10 +392,10 @@ export default function Home() {
           existingNoteId={editingNoteId}
         />
       )}
-      
+
       {/* ⭐ FIXED: Decision Modal with edit/threading support - onSave only calls handleDecisionSave */}
       {showDecisionModal && selectedTopicId && selectedMeetingId && (
-        <DecisionModal 
+        <DecisionModal
           topicId={selectedTopicId}
           meetingId={selectedMeetingId}
           isOpen={showDecisionModal}
@@ -409,7 +413,7 @@ export default function Home() {
           onSave={handleDecisionSave}
         />
       )}
-      
+
       {showCreateMeetingModal && userCanCreateMeeting && (
         <CreateMeetingModal
           onClose={() => setShowCreateMeetingModal(false)}
@@ -431,5 +435,5 @@ export default function Home() {
         />
       )}
     </main>
-  ) 
+  )
 }

@@ -38,8 +38,8 @@ interface TopicCardProps {
   isReadOnly?: boolean
 }
 
-export default function TopicCard({ 
-  topic, 
+export default function TopicCard({
+  topic,
   topicNumber,
   meetingId,
   onUpdate,
@@ -152,16 +152,22 @@ export default function TopicCard({
 
   const fetchAiAnalysis = async () => {
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('ai_analyses')
         .select('analysis_result')
         .eq('topic_id', topic.id)
         .order('created_at', { ascending: false })
         .limit(1)
-        .single()
+        .maybeSingle()
+
+      if (error && error.code !== 'PGRST116') {
+        console.error('Error fetching AI analysis:', error)
+        return
+      }
+
       if (data) setAiAnalysis(data.analysis_result)
     } catch (err) {
-      console.error('Error fetching AI analysis:', err)
+      console.error('Unexpected error fetching AI analysis:', err)
     }
   }
 
@@ -459,55 +465,55 @@ export default function TopicCard({
                     </span>
                   </div>
                   <div className="space-y-1">
-  {loadingHistory && <div className="text-xs text-muted-foreground px-2">Loading...</div>}
-  {!loadingHistory && history.filter(h => h.type === type).length > 0 ? (
-    history.filter(h => h.type === type).map(item => (
-      <div 
-        key={item.id} 
-        className="flex items-start gap-2 rounded bg-background border border-border px-3 py-2"
-      >
-        <div className="flex-1 min-w-0">
-          <div className="flex gap-2 items-center mb-1">
-            <span className={`text-xs font-medium px-2 py-0.5 rounded ${getHistoryBadgeColor(item.type)}`}>
-              {item.type.toUpperCase()}
-            </span>
-            <span className="text-xs text-muted-foreground">{item.timestamp}</span>
-          </div>
-          <div className="flex gap-2 items-center">
-            <p className="text-sm text-foreground mb-0">{item.content}</p>
-            <button
-              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors"
-              title={item.attachmentUrl ? "View Attachment" : "Attach File"}
-            >
-              <Paperclip className="h-4 w-4" />
-              {item.attachmentUrl ? "File" : "Attach"}
-            </button>
-          </div>
-          {item.details && (
-            <p className="text-xs text-muted-foreground">{item.details}</p>
-          )}
-          {item.type === 'task' && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setSelectedTaskId(item.id)}
-              className="mt-2 text-task-green border-task-green hover:bg-task-green/10"
-            >
-              <CheckSquare className="h-3 w-3 mr-1" />
-              View Task Details
-            </Button>
-          )}
-        </div>
-      </div>
-    ))
-  ) : (
-    !loadingHistory && <div className="text-xs text-muted-foreground px-2">
-      {isReadOnly 
-        ? `No ${type}s yet.`
-        : `No ${type}s yet. Click the button above to add one.`}
-    </div>
-  )}
-</div>
+                    {loadingHistory && <div className="text-xs text-muted-foreground px-2">Loading...</div>}
+                    {!loadingHistory && history.filter(h => h.type === type).length > 0 ? (
+                      history.filter(h => h.type === type).map(item => (
+                        <div
+                          key={item.id}
+                          className="flex items-start gap-2 rounded bg-background border border-border px-3 py-2"
+                        >
+                          <div className="flex-1 min-w-0">
+                            <div className="flex gap-2 items-center mb-1">
+                              <span className={`text-xs font-medium px-2 py-0.5 rounded ${getHistoryBadgeColor(item.type)}`}>
+                                {item.type.toUpperCase()}
+                              </span>
+                              <span className="text-xs text-muted-foreground">{item.timestamp}</span>
+                            </div>
+                            <div className="flex gap-2 items-center">
+                              <p className="text-sm text-foreground mb-0">{item.content}</p>
+                              <button
+                                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors"
+                                title={item.attachmentUrl ? "View Attachment" : "Attach File"}
+                              >
+                                <Paperclip className="h-4 w-4" />
+                                {item.attachmentUrl ? "File" : "Attach"}
+                              </button>
+                            </div>
+                            {item.details && (
+                              <p className="text-xs text-muted-foreground">{item.details}</p>
+                            )}
+                            {item.type === 'task' && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setSelectedTaskId(item.id)}
+                                className="mt-2 text-task-green border-task-green hover:bg-task-green/10"
+                              >
+                                <CheckSquare className="h-3 w-3 mr-1" />
+                                View Task Details
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      !loadingHistory && <div className="text-xs text-muted-foreground px-2">
+                        {isReadOnly
+                          ? `No ${type}s yet.`
+                          : `No ${type}s yet. Click the button above to add one.`}
+                      </div>
+                    )}
+                  </div>
 
 
                 </div>

@@ -611,16 +611,22 @@ export default function TopicCard({
 
   const fetchAiAnalysis = async () => {
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('ai_analyses')
         .select('analysis_result')
         .eq('topic_id', topic.id)
         .order('created_at', { ascending: false })
         .limit(1)
-        .single()
+        .maybeSingle()
+
+      if (error && error.code !== 'PGRST116') {
+        console.error('Error fetching AI analysis:', error)
+        return
+      }
+
       if (data) setAiAnalysis(data.analysis_result)
     } catch (err) {
-      console.error('Error fetching AI analysis:', err)
+      console.error('Unexpected error fetching AI analysis:', err)
     }
   }
 

@@ -456,6 +456,7 @@ export default function TaskModal({
 
       // ✅ If embedded mode, stay open and ready for next task
       if (embedded) {
+        if (onSave) onSave()
         onClose() // Just marks data changed for when modal closes
         return
       }
