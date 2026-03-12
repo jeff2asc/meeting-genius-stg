@@ -75,15 +75,6 @@
       "static/chunks/main-app-835472d9061c6ae4.js",
       "static/chunks/app/api/users/bulk-import/route-8d7d1c03469a8a79.js"
     ],
-    "/task-update/[token]/page": [
-      "static/chunks/webpack-bc16c749d1b947da.js",
-      "static/chunks/4bd1b696-43271da9759a623e.js",
-      "static/chunks/684-1b3438d6c7f72212.js",
-      "static/chunks/main-app-835472d9061c6ae4.js",
-      "static/chunks/134-614044f8fc570055.js",
-      "static/chunks/26-b1e0f3629c337db2.js",
-      "static/chunks/app/task-update/[token]/page-b8a07a241e9a3d9e.js"
-    ],
     "/meeting-external/[token]/page": [
       "static/chunks/webpack-bc16c749d1b947da.js",
       "static/chunks/4bd1b696-43271da9759a623e.js",
@@ -107,7 +98,16 @@
       "static/chunks/26-b1e0f3629c337db2.js",
       "static/chunks/589-6c62bf36b75d7417.js",
       "static/chunks/120-19966ed03f95860b.js",
-      "static/chunks/app/page-32da9941bc6f6df3.js"
+      "static/chunks/app/page-726b7a36fe0b1e50.js"
+    ],
+    "/task-update/[token]/page": [
+      "static/chunks/webpack-bc16c749d1b947da.js",
+      "static/chunks/4bd1b696-43271da9759a623e.js",
+      "static/chunks/684-1b3438d6c7f72212.js",
+      "static/chunks/main-app-835472d9061c6ae4.js",
+      "static/chunks/134-614044f8fc570055.js",
+      "static/chunks/26-b1e0f3629c337db2.js",
+      "static/chunks/app/task-update/[token]/page-b8a07a241e9a3d9e.js"
     ]
   }
 }

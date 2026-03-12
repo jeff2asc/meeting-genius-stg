@@ -8,7 +8,7 @@
   "/api/transcripts/list/route": "/api/transcripts/list",
   "/api/transcripts/upload/route": "/api/transcripts/upload",
   "/api/users/bulk-import/route": "/api/users/bulk-import",
-  "/task-update/[token]/page": "/task-update/[token]",
   "/meeting-external/[token]/page": "/meeting-external/[token]",
-  "/page": "/"
+  "/page": "/",
+  "/task-update/[token]/page": "/task-update/[token]"
 }
