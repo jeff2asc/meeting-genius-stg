@@ -15,8 +15,7 @@ if errorlevel 1 (
 )
 
 echo.
-echo [2/3] Pushing to GitHub (including .next)...
-git add .next -f
+echo [2/3] Pushing to GitHub...
 git add .
 git commit -m "Deploy %date% %time%"
 git push origin main
