@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import nodemailer from 'nodemailer'
 import { createClient } from '@supabase/supabase-js'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://iehrlogqpsebhubbafxo.supabase.co'
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImllaHJsb2dxcHNlYmh1YmJhZnhvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA4OTMzNjIsImV4cCI6MjA3NjQ2OTM2Mn0.f00dmQAb0jNDni5hB_8seuHJwz_S3skkepmc_fIrEOk'
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 
 const supabase = createClient(supabaseUrl, supabaseKey)
 
@@ -11,6 +11,16 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { companyId, to, subject, html, text } = body
+
+    // API Key verification
+    const apiKey = request.headers.get('x-api-key')
+    const validApiKey = process.env.NEXT_PUBLIC_API_KEY || 'meeting-genius-secret-key-2026'
+    if (!apiKey || apiKey !== validApiKey) {
+      return NextResponse.json(
+        { error: 'Unauthorized: Invalid API key' },
+        { status: 401 }
+      )
+    }
 
     // Validation
     if (!companyId || !to || !subject || !html) {

@@ -6,6 +6,17 @@ import { extractTextFromFile } from "@/lib/documentExtractor";
 export async function POST(request: NextRequest) {
   try {
     const supabase = createClient();
+    
+    // API Key verification
+    const apiKey = request.headers.get('x-api-key');
+    const validApiKey = process.env.NEXT_PUBLIC_API_KEY || 'meeting-genius-secret-key-2026';
+    if (!apiKey || apiKey !== validApiKey) {
+      return NextResponse.json(
+        { error: 'Unauthorized: Invalid API key' },
+        { status: 401 }
+      );
+    }
+
     const formData = await request.formData();
 
     const file = formData.get("file") as File;

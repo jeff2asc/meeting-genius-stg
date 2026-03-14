@@ -3,14 +3,14 @@ import { createClient } from '@supabase/supabase-js'
 import bcrypt from 'bcryptjs'
 
 
-// Supabase client (hardcoded credentials)
-const supabaseUrl = 'https://iehrlogqpsebhubbafxo.supabase.co'
-const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImllaHJsb2dxcHNlYmh1YmJhZnhvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA4OTMzNjIsImV4cCI6MjA3NjQ2OTM2Mn0.f00dmQAb0jNDni5hB_8seuHJwz_S3skkepmc_fIrEOk'
+// Supabase client (using env variables)
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
 
 // API Key validation
-const VALID_API_KEY = 'meeting-genius-secret-key-2026'
+const VALID_API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'meeting-genius-secret-key-2026'
 
 
 export async function POST(request: NextRequest) {

@@ -1,0 +1,56 @@
+=====================================================
+MEETING GENIUS - ROUTINE DEPLOYMENT GUIDE
+Updated: Mar 13, 2026
+=====================================================
+
+Use this process for every code change to ensure the 
+reCAPTCHA keys and latest features are deployed correctly.
+
+-----------------------------------------------------
+STEP 1: LOCAL MACHINE (PowerShell)
+-----------------------------------------------------
+Location: C:\Users\Jeff Domingo\Videos\meeting-genius
+
+1. Get latest updates:
+   git pull origin main
+
+2. FORCE CLEAN BUILD (Ensures .env keys are baked in):
+   Remove-Item -Recurse -Force .next -ErrorAction SilentlyContinue
+   npm run build
+
+3. Clean up before pushing (Prevents storage errors):
+   Remove-Item -Recurse -Force .next/cache -ErrorAction SilentlyContinue
+   Remove-Item -Force .next/trace -ErrorAction SilentlyContinue
+
+4. Push to GitHub:
+   git add .
+   git commit -m "Production update $(Get-Date -Format 'yyyy-MM-dd HH:mm')"
+   git push origin main
+
+-----------------------------------------------------
+STEP 2: SERVER (PuTTY)
+-----------------------------------------------------
+SSH into: 149.5.247.118 (root)
+putty.exe -i "C:\Users\Jeff Domingo\Videos\newkeymeeting.ppk" root@ca.meetinggenius.ca
+
+1. Switch to the deployment user:
+   su - pm2
+   cd /opt/meetinggenius/app
+
+2. Update the code:
+   git reset --hard origin/main
+   git pull origin main
+
+3. Restart the app using PM2:
+   pm2 restart meeting-genius
+
+4. Verify it is working:
+   curl -I http://localhost:3000
+   (Should return HTTP/1.1 200 OK)
+
+-----------------------------------------------------
+NOTES:
+- Domain: https://ca.meetinggenius.ca
+- App logs: pm2 logs meeting-genius
+- Server logs: tail -f /var/log/nginx/error.log
+-----------------------------------------------------
