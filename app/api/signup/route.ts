@@ -10,7 +10,7 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
 
 // API Key validation
-const VALID_API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'meeting-genius-secret-key-2026'
+const VALID_API_KEY = process.env.NEXT_PUBLIC_API_KEY || ''
 
 
 export async function POST(request: NextRequest) {

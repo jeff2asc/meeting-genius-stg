@@ -315,7 +315,10 @@ export default function TaskForm({ topicId, meetingId, onSave }: TaskFormProps) 
 
           const response = await fetch('/api/send-email', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+              'Content-Type': 'application/json',
+              'x-api-key': process.env.NEXT_PUBLIC_API_KEY || ''
+            },
             body: JSON.stringify({
               companyId,
               to: assignee.email,

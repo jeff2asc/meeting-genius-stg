@@ -130,7 +130,10 @@ export default function AttendeeManagement({
 
       const res = await fetch('/api/send-email', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-api-key': process.env.NEXT_PUBLIC_API_KEY || ''
+        },
         body: JSON.stringify({
           companyId,
           to: attendee.email,

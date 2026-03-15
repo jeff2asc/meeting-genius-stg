@@ -1,56 +1,65 @@
 =====================================================
-MEETING GENIUS - ROUTINE DEPLOYMENT GUIDE
-Updated: Mar 13, 2026
+MEETING GENIUS - SECURE DEPLOYMENT GUIDE
+Updated: Mar 14, 2026
 =====================================================
 
-Use this process for every code change to ensure the 
-reCAPTCHA keys and latest features are deployed correctly.
+This is the secure deployment process. Do NOT build the app 
+locally and push `.next` to GitHub. The build must always 
+happen on the server to prevent malware injections.
 
 -----------------------------------------------------
-STEP 1: LOCAL MACHINE (PowerShell)
+STEP 1: LOCAL MACHINE (VS Code Terminal / PowerShell)
 -----------------------------------------------------
-Location: C:\Users\Jeff Domingo\Videos\meeting-genius
 
-1. Get latest updates:
-   git pull origin main
+Whenever you make changes to the code, push them to GitHub:
 
-2. FORCE CLEAN BUILD (Ensures .env keys are baked in):
-   Remove-Item -Recurse -Force .next -ErrorAction SilentlyContinue
-   npm run build
-
-3. Clean up before pushing (Prevents storage errors):
-   Remove-Item -Recurse -Force .next/cache -ErrorAction SilentlyContinue
-   Remove-Item -Force .next/trace -ErrorAction SilentlyContinue
-
-4. Push to GitHub:
+1. Stage your changes:
    git add .
-   git commit -m "Production update $(Get-Date -Format 'yyyy-MM-dd HH:mm')"
+
+2. Commit your code:
+   git commit -m "Update: Describe what you changed"
+
+3. Push to GitHub:
    git push origin main
 
 -----------------------------------------------------
 STEP 2: SERVER (PuTTY)
 -----------------------------------------------------
-SSH into: 149.5.247.118 (root)
-putty.exe -i "C:\Users\Jeff Domingo\Videos\newkeymeeting.ppk" root@ca.meetinggenius.ca
 
-1. Switch to the deployment user:
+SSH into the server using PuTTY (run this in PowerShell):
+putty.exe -i "C:\Users\Jeff Domingo\Videos\newkeymeeting.ppk" root@app.meetinggenius.ca
+
+1. Switch to the application user and directory:
    su - pm2
    cd /opt/meetinggenius/app
 
-2. Update the code:
+2. Pull the latest code from GitHub:
+   git fetch origin
    git reset --hard origin/main
-   git pull origin main
 
-3. Restart the app using PM2:
+3. Install new dependencies (if any):
+   npm install --legacy-peer-deps
+
+4. BUILD the fresh code on the server:
+   npm run build
+
+5. Restart the application:
    pm2 restart meeting-genius
 
-4. Verify it is working:
-   curl -I http://localhost:3000
-   (Should return HTTP/1.1 200 OK)
+-----------------------------------------------------
+SERVER MAINTENANCE COMMANDS
+-----------------------------------------------------
 
------------------------------------------------------
-NOTES:
-- Domain: https://ca.meetinggenius.ca
-- App logs: pm2 logs meeting-genius
-- Server logs: tail -f /var/log/nginx/error.log
------------------------------------------------------
+* See live error logs (if the app crashes):
+  pm2 logs meeting-genius
+
+* Completely restart everything (if the server is stuck):
+  pm2 reload all
+
+* Edit environment variables (Database keys, API keys):
+  nano /opt/meetinggenius/app/.env.local
+  (Remember to rebuild and restart after editing keys!)
+
+* See Nginx web server errors:
+  tail -f /var/log/nginx/error.log
+=====================================================

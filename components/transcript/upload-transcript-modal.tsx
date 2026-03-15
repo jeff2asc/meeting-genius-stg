@@ -74,6 +74,9 @@ export function UploadTranscriptModal({
       // Upload to API
       const response = await fetch("/api/transcripts/upload", {
         method: "POST",
+        headers: {
+          "x-api-key": process.env.NEXT_PUBLIC_API_KEY || "",
+        },
         body: formData,
       })
 

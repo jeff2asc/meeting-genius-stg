@@ -23,6 +23,15 @@ interface ImportRequest {
 
 export async function POST(request: NextRequest) {
   try {
+    // 1. Validate API Key
+    const apiKey = request.headers.get('x-api-key')
+    if (!apiKey || apiKey !== (process.env.NEXT_PUBLIC_API_KEY || '')) {
+      return NextResponse.json(
+        { error: 'Unauthorized: Invalid API key' },
+        { status: 401 }
+      )
+    }
+
     const body: ImportRequest = await request.json()
     const { users, buildingId, buildingType, companyId, managerId } = body
 
