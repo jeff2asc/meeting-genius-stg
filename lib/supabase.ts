@@ -274,6 +274,8 @@ export type Database = {
           is_incamera: boolean
           incamera_start_time: string | null
           incamera_end_time: string | null
+          created_by_name: string | null
+          updated_by_name: string | null
           created_at: string
           updated_at: string
         }
@@ -287,6 +289,8 @@ export type Database = {
           is_incamera?: boolean
           incamera_start_time?: string | null
           incamera_end_time?: string | null
+          created_by_name?: string | null
+          updated_by_name?: string | null
         }
       }
       notes: {

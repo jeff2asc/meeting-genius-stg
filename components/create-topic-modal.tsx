@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { X, Check, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { supabase } from "@/lib/supabase"
+import { supabase, getCurrentUser } from "@/lib/supabase"
 import GeniusWordsInput from "./GeniusWordsInput"
 
 // ⭐ NEW: Debounce hook for 3-second auto-save
@@ -42,6 +42,11 @@ export default function CreateTopicModal({
   const [title, setTitle] = useState("")
   const [description, setDescription] = useState("")
   const [saving, setSaving] = useState(false)
+  const [currentUser, setCurrentUser] = useState<any>(null)
+
+  useEffect(() => {
+    setCurrentUser(getCurrentUser())
+  }, [])
   const [createdTopicId, setCreatedTopicId] = useState<number | null>(null)
   const [autoSaving, setAutoSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -65,7 +70,10 @@ export default function CreateTopicModal({
     try {
       const { error: updateError } = await supabase
         .from("topics")
-        .update({ description: description })
+        .update({ 
+          description: description,
+          updated_by_name: currentUser?.name || "User"
+        })
         .eq("id", createdTopicId)
 
       if (updateError) {
@@ -111,7 +119,8 @@ export default function CreateTopicModal({
           section_id: sectionId,
           title: title.trim(),
           description: description.trim() || null,
-          order_index: nextOrderIndex
+          order_index: nextOrderIndex,
+          created_by_name: currentUser?.name || "User"
         })
         .select()
         .single()

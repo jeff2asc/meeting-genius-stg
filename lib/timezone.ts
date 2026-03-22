@@ -106,3 +106,34 @@ export function localDateTimeToUtcIso(
 
   return { date: utcDate, time: utcTime }
 }
+
+/**
+ * Format a full UTC ISO string to local locale string
+ * Ensures 'Z' is appended if missing to force UTC interpretation
+ */
+export function formatUtcToLocalDateTime(utcIsoString: string): string {
+  if (!utcIsoString) return ""
+
+  // If it already has Z or offset, use as is. 
+  // Otherwise, handle space-as-T and append Z.
+  let cleanIso = utcIsoString.trim()
+  if (!cleanIso.includes('Z') && !cleanIso.match(/[+-]\d{2}(:?\d{2})?$/)) {
+    cleanIso = cleanIso.replace(' ', 'T') + 'Z'
+  }
+
+  const date = new Date(cleanIso)
+  
+  // Check if date is valid
+  if (isNaN(date.getTime())) {
+    return utcIsoString // fallback to original string if parsing fails
+  }
+
+  return date.toLocaleString(undefined, {
+    month: "numeric",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  })
+}

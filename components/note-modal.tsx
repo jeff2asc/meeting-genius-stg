@@ -172,15 +172,13 @@ export default function NoteModal({
       } else {
         // CREATE NEW NOTE
         const now = new Date().toISOString()
-        const isLocalhost = typeof window !== 'undefined' &&
-          (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
 
         const { error: insertError } = await supabase.from("notes").insert({
           topic_id: topicId,
           content: content.trim(),
           created_by: currentUser?.id,
           visibility,
-          ...(isLocalhost ? { created_at: now } : {})
+          created_at: now
         })
 
         if (insertError) {

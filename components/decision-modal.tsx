@@ -455,9 +455,7 @@ export default function DecisionModal({
             votes_against: votesAgainst === "" ? null : votesAgainst,
             votes_abstain: votesAbstain === "" ? null : votesAbstain,
             parent_decision_id: parentDecisionId,
-            ...(typeof window !== 'undefined' &&
-              (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-              ? { recorded_at: new Date().toISOString() } : {})
+            recorded_at: new Date().toISOString()
           })
 
         if (insertError) {

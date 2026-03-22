@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { supabase } from "@/lib/supabase"
 import jsPDF from "jspdf"
 import html2canvas from "html2canvas"
+import { formatUtcToLocalLong, formatUtcToLocalShort } from "@/lib/timezone"
 
 interface GenerateAgendaButtonProps {
   meetingId: number
@@ -312,16 +313,18 @@ export default function GenerateAgendaButton({
             }
             .topic-number {
               display: inline-block;
-              width: 24px;
-              height: 24px;
+              width: 26px;
+              height: 26px;
               border-radius: 50%;
               color: white;
-              text-align: center;
-              line-height: 24px;
-              font-size: 10px;
+              font-size: 9px;
               font-weight: 700;
               margin-right: 8px;
               vertical-align: middle;
+              text-align: center;
+              line-height: 1;
+              padding-top: 10px;
+              box-sizing: border-box;
             }
             .incamera-badge {
               display: inline-block;
@@ -529,13 +532,11 @@ function buildAgendaHtml({
   logoUrl: string | null
 }): string {
   const formatDate = (dateStr: string) => {
-    const date = new Date(dateStr)
-    return date.toLocaleDateString("en-US", {
-      weekday: "long",
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    })
+    return formatUtcToLocalLong(dateStr)
+  }
+
+  const formatTime = (timeStr: string | null) => {
+    return formatUtcToLocalShort(timeStr || "", meeting.meeting_date)
   }
 
   const escapeHtml = (text: any): string => {
@@ -612,7 +613,7 @@ function buildAgendaHtml({
     .forEach((field) => {
       let value = "TBA"
       if (field.id === "date") value = formatDate(meeting.meeting_date)
-      else if (field.id === "time") value = meeting.start_time || "TBA"
+      else if (field.id === "time") value = formatTime(meeting.start_time) || "TBA"
       else if (field.id === "location") value = meeting.location || "TBA"
       else if (field.id === "address") value = building?.address || "TBA"
       else if (field.id === "strata_plan") value = meeting.strata_plan_number || "TBA"
@@ -641,6 +642,14 @@ function buildAgendaHtml({
     topicsBySection[Number(sectionId)].sort((a, b) => a.order_index - b.order_index)
   })
 
+  const makeCircle = (text: string, color: string) => {
+    const fontSize = text.length > 2 ? 7 : 9
+    return `<svg width="24" height="24" viewBox="0 0 24 24" style="display:inline-block;vertical-align:middle;margin-right:8px;" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="12" cy="12" r="12" fill="${color}"/>
+      <text x="12" y="12" text-anchor="middle" dominant-baseline="central" font-size="${fontSize}" font-weight="700" fill="white" font-family="Segoe UI,sans-serif">${text}</text>
+    </svg>`
+  }
+
   sections
     .sort((a, b) => a.order_index - b.order_index)
     .forEach((section, sectionIdx) => {
@@ -648,7 +657,7 @@ function buildAgendaHtml({
       const lighterColor = getLighterColor(template.agendaItemsColor)
 
       agendaHtml += `<div class="section-header" style="background-color: ${lighterColor};">
-        <span class="topic-number" style="background-color: ${template.agendaItemsColor};">${sectionIdx + 1}</span>
+        ${makeCircle(String(sectionIdx + 1), template.agendaItemsColor)}
         ${section.title.toUpperCase()}
       </div>`
 
@@ -656,9 +665,10 @@ function buildAgendaHtml({
         const borderColor = topic.is_incamera ? "#dc2626" : template.agendaItemsColor
         const bgColor = topic.is_incamera ? "#fef2f2" : "#ffffff"
 
+        const topicColor = topic.is_incamera ? "#dc2626" : template.agendaItemsColor
         agendaHtml += `<div class="topic-box" style="border-left-color: ${borderColor}; background-color: ${bgColor};">
           <div>
-            <span class="topic-number" style="background-color: ${topic.is_incamera ? "#dc2626" : template.agendaItemsColor};">${sectionIdx + 1}.${topicIdx + 1}</span>
+            ${makeCircle(`${sectionIdx + 1}.${topicIdx + 1}`, topicColor)}
             <span class="topic-title">${topic.title}${topic.is_incamera ? '<span class="incamera-badge">[CONFIDENTIAL]</span>' : ""}</span>
           </div>`
 

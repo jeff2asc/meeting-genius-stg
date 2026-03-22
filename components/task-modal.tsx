@@ -355,9 +355,7 @@ export default function TaskModal({
         external_update_token: externalToken,
         token_expires_at: tokenExpiry.toISOString(),
         created_by: currentUser?.id,
-        ...(typeof window !== 'undefined' &&
-          (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-          ? { created_at: new Date().toISOString() } : {})
+        created_at: new Date().toISOString()
       }
 
       if (formData.sendNotification) {

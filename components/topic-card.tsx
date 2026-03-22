@@ -9,6 +9,7 @@ import { fetchAndExtractBuildingDocuments, fetchAndExtractTopicAttachments } fro
 import TaskDetailsModal from "./TaskDetailsModal"
 import GeniusWordsInput from "./GeniusWordsInput"
 import { toast } from "sonner"
+import { formatUtcToLocalDateTime } from "@/lib/timezone"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -59,6 +60,8 @@ interface Topic {
   is_incamera?: boolean
   incamera_start_time?: string | null
   incamera_end_time?: string | null
+  created_by_name?: string | null
+  updated_by_name?: string | null
 }
 
 interface HistoryItem {
@@ -69,6 +72,7 @@ interface HistoryItem {
   details?: string
   attachmentUrl?: string
   visibility?: "public" | "private"
+  status?: string
 }
 
 interface Decision {
@@ -547,7 +551,7 @@ export default function TopicCard({
               id: note.id,
               type: 'note',
               content: note.content.substring(0, 100) + (note.content.length > 100 ? '...' : ''),
-              timestamp: new Date(note.created_at).toLocaleString(),
+              timestamp: formatUtcToLocalDateTime(note.created_at),
               visibility: (note.visibility as "public" | "private") || "public"
             })
           }
@@ -581,7 +585,7 @@ export default function TopicCard({
               .from('tasks')
               .select('id, description, assigned_name, assigned_email, status, created_at')
               .in('topic_id', topicIds)
-              .in('status', ['open', 'in_progress'])
+              .in('status', ['open', 'in_progress', 'completed'])
               .order('created_at', { ascending: false })
 
             if (tasks) {
@@ -591,8 +595,9 @@ export default function TopicCard({
                   id: task.id,
                   type: 'task',
                   content: task.description.substring(0, 100) + (task.description.length > 100 ? '...' : ''),
-                  timestamp: new Date(task.created_at).toLocaleString(),
-                  details: `Assigned to: ${assignee} · Status: ${task.status}`
+                  timestamp: formatUtcToLocalDateTime(task.created_at),
+                  details: `Assigned to: ${assignee} · Status: ${task.status}`,
+                  status: task.status
                 })
               })
             }
@@ -729,7 +734,10 @@ export default function TopicCard({
     if (saving) return
 
     setSaving(true)
-    await onUpdate({ description: editedDescription })
+    await onUpdate({ 
+      description: editedDescription,
+      updated_by_name: currentUser?.name || "User"
+    })
     setSaving(false)
 
     console.log('Description saved')
@@ -738,7 +746,10 @@ export default function TopicCard({
   const handleSaveTitle = async () => {
     if (saving) return
     setSaving(true)
-    await onUpdate({ title: editedTitle })
+    await onUpdate({ 
+      title: editedTitle,
+      updated_by_name: currentUser?.name || "User"
+    })
     setIsEditingTitle(false)
     setSaving(false)
     fetchHistory()
@@ -794,7 +805,7 @@ export default function TopicCard({
                 DECISION {depth > 0 && '(THREADED)'}
               </span>
               <span className="text-xs text-muted-foreground">
-                {new Date(decision.recorded_at).toLocaleString()}
+                {formatUtcToLocalDateTime(decision.recorded_at)}
               </span>
               {decision.edited_at && (
                 <span className="text-xs text-amber-600">(Edited)</span>
@@ -1103,6 +1114,18 @@ export default function TopicCard({
                 </div>
               )}
 
+              {/* Audit Info */}
+              {(topic.created_by_name || topic.updated_by_name) && (
+                <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-muted-foreground font-medium italic mb-2 px-1">
+                  {topic.created_by_name && (
+                    <span>👤 Added by: {topic.created_by_name}</span>
+                  )}
+                  {topic.updated_by_name && (
+                    <span>✏️ Last edited by: {topic.updated_by_name}</span>
+                  )}
+                </div>
+              )}
+
               {editedDescription && !isReadOnly && (
                 <div className="flex gap-2 mt-2">
                   <Button
@@ -1195,7 +1218,7 @@ export default function TopicCard({
                         </span>
                         <span className="text-xs text-muted-foreground">{item.timestamp}</span>
                       </div>
-                      <p className="text-sm text-foreground">{item.content}</p>
+                      <p className={`text-sm text-foreground ${item.type === 'task' && item.status === 'completed' ? 'line-through text-muted-foreground italic' : ''}`}>{item.content}</p>
                       {item.details && (
                         <p className="text-xs text-muted-foreground">{item.details}</p>
                       )}

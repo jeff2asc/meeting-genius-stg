@@ -132,7 +132,7 @@ export default function AttendeeManagement({
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
-          'x-api-key': process.env.NEXT_PUBLIC_API_KEY || ''
+          'x-api-key': process.env.NEXT_PUBLIC_API_KEY || 'meeting-genius-secret-key-2026'
         },
         body: JSON.stringify({
           companyId,
@@ -158,6 +158,7 @@ export default function AttendeeManagement({
   }
 
   const isAgenda = status === "working_agenda"
+  const isStarted = status === "working_minutes" || status === "minutes"
   const isMinutes = status === "working_minutes"
   const isFinal = status === "minutes"
   const canSendLink = !isFinal && !!companyId
@@ -171,7 +172,7 @@ export default function AttendeeManagement({
               <th className="px-2 py-1.5 text-left text-xs font-medium text-muted-foreground">Name</th>
               <th className="px-2 py-1.5 text-left text-xs font-medium text-muted-foreground">Email</th>
               <th className="px-2 py-1.5 text-left text-xs font-medium text-muted-foreground">Role</th>
-              <th className="px-2 py-1.5 text-center text-xs font-medium text-muted-foreground w-20">Present</th>
+              {isStarted && <th className="px-2 py-1.5 text-center text-xs font-medium text-muted-foreground w-20">Present</th>}
               {isAgenda && userCanEdit && <th className="w-10"></th>}
               {canSendLink && <th className="w-20 text-center text-xs font-medium text-muted-foreground">Link</th>}
             </tr>
@@ -215,19 +216,21 @@ export default function AttendeeManagement({
                     <span className="text-xs text-muted-foreground">{a.role}</span>
                   )}
                 </td>
-                <td className="px-2 py-1.5 text-center">
-                  {isMinutes && userCanEdit ? (
-                    <div className="flex justify-center">
-                      <Checkbox
-                        checked={a.present}
-                        onCheckedChange={checked => handlePresentChange(idx, !!checked)}
-                        className="h-4 w-4"
-                      />
-                    </div>
-                  ) : (
-                    <span className="text-base">{a.present ? "✓" : ""}</span>
-                  )}
-                </td>
+                {isStarted && (
+                  <td className="px-2 py-1.5 text-center">
+                    {isMinutes && userCanEdit ? (
+                      <div className="flex justify-center">
+                        <Checkbox
+                          checked={a.present}
+                          onCheckedChange={checked => handlePresentChange(idx, !!checked)}
+                          className="h-4 w-4"
+                        />
+                      </div>
+                    ) : (
+                      <span className="text-base">{a.present ? "✓" : ""}</span>
+                    )}
+                  </td>
+                )}
                 {isAgenda && userCanEdit && (
                   <td className="px-2 py-1.5">
                     <Button

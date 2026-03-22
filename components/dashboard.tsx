@@ -261,7 +261,7 @@ export default function Dashboard({
           month: 'short',
           day: 'numeric',
           year: 'numeric'
-        }),
+        }) + (meeting.start_time ? ` at ${meeting.start_time}` : ''),
         meeting_date: meeting.meeting_date,
         location: meeting.location,
         start_time: meeting.start_time,
@@ -896,55 +896,66 @@ export default function Dashboard({
                 </thead>
                 <tbody>
                   {filteredTasks.length > 0 ? (
-                    filteredTasks.map((task) => (
-                      <tr key={task.id} className="border-b border-border hover:bg-muted/50 transition-colors">
-                        {selectedBuilding === "All" && (
-                          <td className="px-6 py-4 text-sm text-muted-foreground">{task.building}</td>
-                        )}
-                        <td className="px-6 py-4">
-                          <button
-                            onClick={() => setSelectedTaskId(task.id)}
-                            className="font-medium text-foreground underline hover:text-task-green focus:outline-none text-left"
-                          >
-                            {task.description}
-                          </button>
-                          <p className="text-xs text-muted-foreground mt-1">Topic: {task.topic}</p>
-                        </td>
-                        <td className="px-6 py-4 text-sm text-muted-foreground">{task.meeting}</td>
-                        <td className="px-6 py-4 text-sm">
-                          {task.assignees && task.assignees.length > 0 ? (
-                            <div className="flex flex-wrap gap-1">
-                              {task.assignees.map((assignee: any, idx: number) => (
-                                <span key={idx} className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
-                                  {assignee.name}
-                                </span>
-                              ))}
-                            </div>
-                          ) : (
-                            <span className="text-muted-foreground">{task.assigned_name}</span>
+                    filteredTasks.map((task) => {
+                      const isOverdue = task.due_date && 
+                        new Date(task.due_date) < new Date() && 
+                        task.status !== 'completed';
+                        
+                      return (
+                        <tr 
+                          key={task.id} 
+                          className={`border-b border-border transition-colors ${
+                            isOverdue ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-muted/50'
+                          }`}
+                        >
+                          {selectedBuilding === "All" && (
+                            <td className="px-6 py-4 text-sm text-muted-foreground">{task.building}</td>
                           )}
-                        </td>
-                        <td className="px-6 py-4">
-                          <span className={`px-3 py-1 rounded-full text-xs font-medium ${taskStatusStyles[task.status] || 'bg-gray-100 text-gray-800'}`}>
-                            {task.status.replace('_', ' ')}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 text-sm text-muted-foreground">
-                          {task.due_date ? new Date(task.due_date).toLocaleDateString() : '-'}
-                        </td>
-                        <td className="px-6 py-4">
-                          <Button
-                            onClick={() => setTaskToDelete(task)}
-                            size="sm"
-                            variant="ghost"
-                            className="hover:bg-red-50 text-red-600 hover:text-red-700"
-                            title="Delete Task"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </td>
-                      </tr>
-                    ))
+                          <td className="px-6 py-4">
+                            <button
+                              onClick={() => setSelectedTaskId(task.id)}
+                              className="font-medium text-foreground underline hover:text-task-green focus:outline-none text-left"
+                            >
+                              {task.description}
+                            </button>
+                            <p className="text-xs text-muted-foreground mt-1">Topic: {task.topic}</p>
+                          </td>
+                          <td className="px-6 py-4 text-sm text-muted-foreground">{task.meeting}</td>
+                          <td className="px-6 py-4 text-sm">
+                            {task.assignees && task.assignees.length > 0 ? (
+                              <div className="flex flex-wrap gap-1">
+                                {task.assignees.map((assignee: any, idx: number) => (
+                                  <span key={idx} className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                                    {assignee.name}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-muted-foreground">{task.assigned_name}</span>
+                            )}
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className={`px-3 py-1 rounded-full text-xs font-medium ${taskStatusStyles[task.status] || 'bg-gray-100 text-gray-800'}`}>
+                              {task.status.replace('_', ' ')}
+                            </span>
+                          </td>
+                          <td className={`px-6 py-4 text-sm ${isOverdue ? 'text-red-700 font-semibold' : 'text-muted-foreground'}`}>
+                            {task.due_date ? new Date(task.due_date).toLocaleDateString() : '-'}
+                          </td>
+                          <td className="px-6 py-4">
+                            <Button
+                              onClick={() => setTaskToDelete(task)}
+                              size="sm"
+                              variant="ghost"
+                              className="hover:bg-red-50 text-red-600 hover:text-red-700"
+                              title="Delete Task"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </td>
+                        </tr>
+                      )
+                    })
                   ) : (
                     <tr>
                       <td colSpan={selectedBuilding === "All" ? 7 : 6} className="px-6 py-12 text-center">
