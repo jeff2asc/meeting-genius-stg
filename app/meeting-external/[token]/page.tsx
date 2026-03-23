@@ -176,11 +176,19 @@ export default function ExternalMeetingPage({ params }: PageProps) {
                   {section.topics && section.topics.length > 0 ? (
                     section.topics
                       .sort((a: any, b: any) => (a.order_index || 0) - (b.order_index || 0))
-                      .map((topic: any) => (
+                      .map((topic: any, tIdx: number) => (
                         <TopicCard 
                           key={topic.id} 
                           topic={topic} 
-                          readOnly={true} // Guests shouldn't edit
+                          topicNumber={tIdx + 1}
+                          meetingId={meeting.id}
+                          meetingStatus={meeting.status}
+                          isReadOnly={true}
+                          onUpdate={() => {}}
+                          onDelete={() => {}}
+                          onTaskClick={() => {}}
+                          onNoteClick={() => {}}
+                          onDecisionClick={() => {}}
                         />
                       ))
                   ) : (
