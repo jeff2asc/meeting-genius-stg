@@ -7,6 +7,10 @@ import { Loader2, AlertCircle, Calendar, MapPin, Clock } from "lucide-react"
 import ExternalAccessLogin from "@/components/ExternalAccessLogin"
 import TopicCard from "@/components/topic-card"
 import { formatUtcToLocalLong, formatUtcToLocalShort } from "@/lib/timezone"
+import { toast } from "sonner"
+import TaskModal from "@/components/task-modal"
+import NoteModal from "@/components/note-modal"
+import DecisionModal from "@/components/decision-modal"
 
 interface PageProps {
   params: Promise<{ token: string }>
@@ -21,6 +25,13 @@ export default function ExternalMeetingPage({ params }: PageProps) {
   const [sections, setSections] = useState<any[]>([])
   const [authenticatedAttendee, setAuthenticatedAttendee] = useState<any>(null)
   const [error, setError] = useState<string | null>(null)
+
+  // Modals state
+  const [activeTopicId, setActiveTopicId] = useState<number | null>(null)
+  const [showTaskModal, setShowTaskModal] = useState(false)
+  const [showNoteModal, setShowNoteModal] = useState(false)
+  const [showDecisionModal, setShowDecisionModal] = useState(false)
+  const [refreshCallbacks, setRefreshCallbacks] = useState<Record<number, () => void>>({})
 
   useEffect(() => {
     if (token) {
@@ -76,6 +87,34 @@ export default function ExternalMeetingPage({ params }: PageProps) {
     }
   }
 
+  const handleTopicUpdate = async (topicId: number, updates: any) => {
+    try {
+      const { error } = await supabase
+        .from("topics")
+        .update(updates)
+        .eq("id", topicId)
+
+      if (error) {
+        toast.error("Failed to update topic")
+        return
+      }
+
+      // Refresh local state
+      setSections(prev => prev.map(section => ({
+        ...section,
+        topics: section.topics.map((t: any) => t.id === topicId ? { ...t, ...updates } : t)
+      })))
+    } catch (err) {
+      toast.error("An error occurred")
+    }
+  }
+
+  const handleTopicRefresh = (topicId: number) => {
+    if (refreshCallbacks[topicId]) {
+      refreshCallbacks[topicId]()
+    }
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4 bg-muted/30">
@@ -110,7 +149,6 @@ export default function ExternalMeetingPage({ params }: PageProps) {
     )
   }
 
-  // Authenticated - show meeting view
   return (
     <div className="min-h-screen bg-muted/10">
       {/* Header */}
@@ -156,7 +194,7 @@ export default function ExternalMeetingPage({ params }: PageProps) {
           </div>
           <div>
             <p className="text-sm">Logged in as <strong>{authenticatedAttendee.name}</strong></p>
-            <p className="text-xs text-muted-foreground">You have guest access to this meeting agenda.</p>
+            <p className="text-xs text-muted-foreground">You can view and update topics for this meeting.</p>
           </div>
         </div>
 
@@ -183,12 +221,24 @@ export default function ExternalMeetingPage({ params }: PageProps) {
                           topicNumber={tIdx + 1}
                           meetingId={meeting.id}
                           meetingStatus={meeting.status}
-                          isReadOnly={true}
-                          onUpdate={() => {}}
-                          onDelete={() => {}}
-                          onTaskClick={() => {}}
-                          onNoteClick={() => {}}
-                          onDecisionClick={() => {}}
+                          isReadOnly={false}
+                          onUpdate={(updates) => handleTopicUpdate(topic.id, updates)}
+                          onDelete={() => {}} // Guest should not delete
+                          onTaskClick={() => {
+                            setActiveTopicId(topic.id)
+                            setShowTaskModal(true)
+                          }}
+                          onNoteClick={() => {
+                            setActiveTopicId(topic.id)
+                            setShowNoteModal(true)
+                          }}
+                          onDecisionClick={() => {
+                            setActiveTopicId(topic.id)
+                            setShowDecisionModal(true)
+                          }}
+                          onRegisterRefresh={(tid, cb) => {
+                            setRefreshCallbacks(prev => ({ ...prev, [tid]: cb }))
+                          }}
                         />
                       ))
                   ) : (
@@ -206,6 +256,37 @@ export default function ExternalMeetingPage({ params }: PageProps) {
           )}
         </div>
       </main>
+
+      {/* Modals */}
+      {activeTopicId && (
+        <>
+          <TaskModal
+            isOpen={showTaskModal}
+            onClose={() => {
+              setShowTaskModal(false)
+              handleTopicRefresh(activeTopicId)
+            }}
+            topicId={activeTopicId}
+            meetingId={meeting.id}
+          />
+          <NoteModal
+            isOpen={showNoteModal}
+            onClose={() => {
+              setShowNoteModal(false)
+              handleTopicRefresh(activeTopicId)
+            }}
+            topicId={activeTopicId}
+          />
+          <DecisionModal
+            isOpen={showDecisionModal}
+            onClose={() => {
+              setShowDecisionModal(false)
+              handleTopicRefresh(activeTopicId)
+            }}
+            topicId={activeTopicId}
+          />
+        </>
+      )}
 
       {/* Footer */}
       <footer className="mt-20 py-10 border-t bg-white">
