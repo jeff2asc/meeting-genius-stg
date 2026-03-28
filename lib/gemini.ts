@@ -14,7 +14,7 @@ if (typeof Promise.withResolvers === 'undefined') {
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 // Hardcoded API key for MVP testing
-const genAI = new GoogleGenerativeAI("AIzaSyAXYijSEmkPGwJ3AFVYJ9cEQRREMZ5k3Hc");
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
 interface ExtractedTask {
   description: string;

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase";
-import { extractTasksFromTranscript } from "@/lib/gemini";
+import { extractTasksFromTranscript } from "@/lib/ai";
 import { extractTextFromFile } from "@/lib/documentExtractor";
 
 export async function POST(request: NextRequest) {
