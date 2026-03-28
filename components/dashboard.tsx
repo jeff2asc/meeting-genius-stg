@@ -5,6 +5,7 @@ import { ChevronDown, User, Plus, Search, Calendar, FileText, Eye, Play, Edit2, 
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { supabase, getCurrentUser } from "@/lib/supabase"
+import { formatUtcToLocalShort } from "@/lib/timezone"
 import EditMeetingModal from "./EditMeetingModal"
 import TaskDetailsModal from "./TaskDetailsModal"
 
@@ -257,11 +258,11 @@ export default function Dashboard({
         building: meeting.buildings?.name || selectedBuilding,
         building_id: meeting.building_id,
         title: meeting.title,
-        date: new Date(meeting.meeting_date).toLocaleDateString('en-US', {
+        date: new Date(meeting.meeting_date + 'T00:00:00').toLocaleDateString('en-US', {
           month: 'short',
           day: 'numeric',
           year: 'numeric'
-        }) + (meeting.start_time ? ` at ${meeting.start_time}` : ''),
+        }) + (meeting.start_time ? ` at ${formatUtcToLocalShort(meeting.start_time, meeting.meeting_date)}` : ''),
         meeting_date: meeting.meeting_date,
         location: meeting.location,
         start_time: meeting.start_time,

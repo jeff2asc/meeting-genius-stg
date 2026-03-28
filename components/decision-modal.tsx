@@ -60,6 +60,7 @@ export default function DecisionModal({
   const [votesFor, setVotesFor] = useState<number | "">("")
   const [votesAgainst, setVotesAgainst] = useState<number | "">("")
   const [votesAbstain, setVotesAbstain] = useState<number | "">("")
+  const [status, setStatus] = useState<"open" | "completed">("open")
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -125,6 +126,7 @@ export default function DecisionModal({
         setVotesFor(data.votes_for ?? '')
         setVotesAgainst(data.votes_against ?? '')
         setVotesAbstain(data.votes_abstain ?? '')
+        setStatus(data.status || 'open')
       }
     } catch (err) {
       console.error('Unexpected error loading decision:', err)
@@ -432,6 +434,7 @@ export default function DecisionModal({
             votes_for: votesFor === "" ? null : votesFor,
             votes_against: votesAgainst === "" ? null : votesAgainst,
             votes_abstain: votesAbstain === "" ? null : votesAbstain,
+            status,
             edited_at: new Date().toISOString()
           })
           .eq('id', existingDecisionId)
@@ -455,6 +458,7 @@ export default function DecisionModal({
             votes_against: votesAgainst === "" ? null : votesAgainst,
             votes_abstain: votesAbstain === "" ? null : votesAbstain,
             parent_decision_id: parentDecisionId,
+            status,
             recorded_at: new Date().toISOString()
           })
 
@@ -474,6 +478,7 @@ export default function DecisionModal({
         setVotesFor("")
         setVotesAgainst("")
         setVotesAbstain("")
+        setStatus("open")
         setError(null)
 
         // ✅ If embedded mode, stay open and ready for next decision
@@ -513,6 +518,7 @@ export default function DecisionModal({
     setVotesFor("")
     setVotesAgainst("")
     setVotesAbstain("")
+    setStatus("open")
     setError(null)
     setShowSuggestions(false)
     setSuggestions([])
@@ -675,6 +681,23 @@ export default function DecisionModal({
             />
           </div>
         </div>
+
+        {editMode && (
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-2">
+              Status
+            </label>
+            <select
+              value={status}
+              onChange={(e) => setStatus(e.target.value as "open" | "completed")}
+              className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+              disabled={saving || deleting}
+            >
+              <option value="open">Open</option>
+              <option value="completed">Completed</option>
+            </select>
+          </div>
+        )}
       </div>
 
       <div className="flex gap-3 mt-6">

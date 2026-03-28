@@ -1630,7 +1630,7 @@ export default function MeetingView({
                 </Button>
               )}
 
-            {userCanEdit && meeting.status === "working_agenda" && (
+            {userCanEdit && meeting.status === "working_minutes" && (
               <Button
                 size="sm"
                 onClick={() => setShowUploadTranscript(true)}
@@ -1642,7 +1642,7 @@ export default function MeetingView({
               </Button>
             )}
 
-            {meeting.status === "working_agenda" && (
+            {meeting.status === "working_minutes" && (
               <Button
                 size="sm"
                 onClick={() => setShowViewTranscripts(true)}

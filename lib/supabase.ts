@@ -301,12 +301,14 @@ export type Database = {
           created_by: number | null
           created_at: string
           visibility: 'public' | 'private'
+          status: 'open' | 'completed' | null
         }
         Insert: {
           topic_id: number
           content: string
           created_by?: number | null
           visibility?: 'public' | 'private'
+          status?: 'open' | 'completed' | null
         }
       }
       tasks: {
@@ -349,6 +351,7 @@ export type Database = {
           recorded_by: number | null
           recorded_at: string
           edited_at: string | null // ⭐ NEW - for edit tracking
+          status: 'open' | 'completed' | null
         }
         Insert: {
           topic_id: number
@@ -360,6 +363,7 @@ export type Database = {
           parent_decision_id?: number | null // ⭐ NEW
           recorded_by?: number | null
           edited_at?: string | null // ⭐ NEW
+          status?: 'open' | 'completed' | null
         }
       }
       // ⭐ task_attachments table
@@ -430,29 +434,36 @@ export type Database = {
 // ============================================
 
 /**
- * Get the most recent finalized meeting of the same type for a building
+ * Get the most recent previous meeting of the same type for a building.
+ * Searches ALL statuses so rollover works even if the previous meeting
+ * is still in Draft or Working Minutes (not just fully finalized ones).
+ * Pass excludeMeetingId to skip the newly created meeting.
  */
 export async function getPreviousMeetingOfSameType(
   buildingId: number,
   meetingType: string,
+  excludeMeetingId?: number,
 ) {
-  const { data, error } = await supabase
+  let query = supabase
     .from("meetings")
     .select("id, title, meeting_date, attendees")
     .eq("building_id", buildingId)
     .eq("meeting_type", meetingType)
-    .eq("status", "minutes") // Only finalized meetings
     .order("meeting_date", { ascending: false })
     .limit(1)
-    .single()
+
+  if (excludeMeetingId) {
+    query = query.neq("id", excludeMeetingId)
+  }
+
+  const { data, error } = await query.single()
 
   if (error && error.code !== "PGRST116") {
-    // PGRST116 = no rows found
     console.error("Error fetching previous meeting:", error)
     return null
   }
 
-  return data
+  return data ?? null
 }
 
 /**

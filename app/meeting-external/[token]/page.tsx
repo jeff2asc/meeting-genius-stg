@@ -319,15 +319,17 @@ export default function MeetingExternalPage() {
             setSections((prev) =>
                 prev.map((s) =>
                     s.id === sectionId
-                        ? { ...s, topics: [...s.topics, { 
-                            id: data.id, 
-                            title: data.title, 
-                            description: data.description, 
-                            section_id: data.section_id, 
-                            order_index: data.order_index,
-                            created_by_name: data.created_by_name,
-                            updated_by_name: data.updated_by_name
-                        }] }
+                        ? {
+                            ...s, topics: [...s.topics, {
+                                id: data.id,
+                                title: data.title,
+                                description: data.description,
+                                section_id: data.section_id,
+                                order_index: data.order_index,
+                                created_by_name: data.created_by_name,
+                                updated_by_name: data.updated_by_name
+                            }]
+                        }
                         : s
                 )
             )
@@ -353,8 +355,8 @@ export default function MeetingExternalPage() {
 
         const { error: updateErr } = await supabase
             .from("topics")
-            .update({ 
-                title: editTopicTitle.trim(), 
+            .update({
+                title: editTopicTitle.trim(),
                 description: editTopicDesc.trim() || null,
                 updated_by_name: attendeeName || currentUser?.name || "Attendee"
             })
@@ -368,9 +370,9 @@ export default function MeetingExternalPage() {
                             ...s,
                             topics: s.topics.map((t) =>
                                 t.id === topicId
-                                    ? { 
-                                        ...t, 
-                                        title: editTopicTitle.trim(), 
+                                    ? {
+                                        ...t,
+                                        title: editTopicTitle.trim(),
                                         description: editTopicDesc.trim() || null,
                                         updated_by_name: attendeeName || currentUser?.name || "Attendee"
                                     }

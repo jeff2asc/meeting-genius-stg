@@ -40,6 +40,7 @@ export default function NoteModal({
 }: NoteModalProps) {
   const [content, setContent] = useState("")
   const [visibility, setVisibility] = useState<NoteVisibility>("public")
+  const [status, setStatus] = useState<"open" | "completed">("open")
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -72,6 +73,7 @@ export default function NoteModal({
       setVisibility(
         (noteData.visibility as NoteVisibility) || "public"
       )
+      setStatus(noteData.status || "open")
     } catch (err) {
       console.error("Error loading note:", err)
       setError("Failed to load note")
@@ -146,6 +148,7 @@ export default function NoteModal({
           .update({
             content: content.trim(),
             visibility,
+            status,
           })
           .eq("id", existingNoteId)
 
@@ -178,6 +181,7 @@ export default function NoteModal({
           content: content.trim(),
           created_by: currentUser?.id,
           visibility,
+          status,
           created_at: now
         })
 
@@ -194,6 +198,7 @@ export default function NoteModal({
         setContent("")
         setError(null)
         setVisibility("public")
+        setStatus("open")
 
         if (embedded) {
           if (onSave) onSave(topicId)
@@ -287,6 +292,27 @@ export default function NoteModal({
           </SelectContent>
         </Select>
       </div>
+
+      {editMode && (
+        <div className="space-y-1 pt-2">
+          <label className="block text-sm font-medium text-foreground">
+            Status
+          </label>
+          <Select
+            value={status}
+            onValueChange={(value: "open" | "completed") => setStatus(value)}
+            disabled={saving || deleting}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="Select status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="open">Open</SelectItem>
+              <SelectItem value="completed">Completed</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      )}
 
       <div className="flex gap-3 pt-4">
         {editMode && existingNoteId && (

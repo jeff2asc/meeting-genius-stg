@@ -512,38 +512,26 @@ export default function TopicCard({
       const building = meetingData?.buildings
       setBuildingData(building)
 
-      // Fetch ALL notes for this topic
+      // 1. Only fetch items for the current topic since rollover now clones them
+      const topicIds = [topic.id]
+
+      // 2. Fetch notes
       const { data: notes } = await supabase
         .from('notes')
-        .select('id, content, created_at, created_by, visibility')
+        .select('id, content, created_at, created_by, visibility, status')
         .eq('topic_id', topic.id)
         .order('created_at', { ascending: false })
 
       if (notes) {
-        // Filter notes based on the visibility rules:
-        // Creator, Property Manager of that building, Corporate Admin (of same company), and Master account can see private notes
         notes.forEach(note => {
           let canSee = false
-
           if (note.visibility === 'public' || !note.visibility) {
             canSee = true
           } else if (currentUser) {
-            // Creator can see
-            if (note.created_by === currentUser.id) {
-              canSee = true
-            }
-            // Master account can see everything
-            else if (currentUser.user_type === 'master') {
-              canSee = true
-            }
-            // Corporate Admin of that company can see
-            else if (currentUser.user_type === 'corporate_administrator' && currentUser.company_id === building.company_id) {
-              canSee = true
-            }
-            // Property Manager of that building can see
-            else if (currentUser.user_type === 'property_manager' && currentUser.id === building.manager_id) {
-              canSee = true
-            }
+            if (note.created_by === currentUser.id) canSee = true
+            else if (currentUser.user_type === 'master') canSee = true
+            else if (currentUser.user_type === 'corporate_administrator' && currentUser.company_id === building.company_id) canSee = true
+            else if (currentUser.user_type === 'property_manager' && currentUser.id === building.manager_id) canSee = true
           }
 
           if (canSee) {
@@ -552,57 +540,33 @@ export default function TopicCard({
               type: 'note',
               content: note.content.substring(0, 100) + (note.content.length > 100 ? '...' : ''),
               timestamp: formatUtcToLocalDateTime(note.created_at),
-              visibility: (note.visibility as "public" | "private") || "public"
+              visibility: (note.visibility as "public" | "private") || "public",
+              status: note.status || 'open'
             })
           }
         })
       }
 
-      // Fetch tasks (existing logic)
-      if (meetingData) {
-        const buildingId = meetingData.building_id
-        const meetingType = meetingData.meeting_type
+      // 3. Fetch tasks
+      const { data: tasks } = await supabase
+        .from('tasks')
+        .select('id, description, assigned_name, assigned_email, status, created_at')
+        .eq('topic_id', topic.id)
+        .in('status', ['open', 'in_progress', 'completed'])
+        .order('created_at', { ascending: false })
 
-        const { data: allMeetings } = await supabase
-          .from('meetings')
-          .select('id')
-          .eq('building_id', buildingId)
-          .eq('meeting_type', meetingType)
-
-        if (allMeetings) {
-          const meetingIds = allMeetings.map(m => m.id)
-
-          const { data: allTopicsWithSameTitle } = await supabase
-            .from('topics')
-            .select('id')
-            .in('meeting_id', meetingIds)
-            .eq('title', topicWithBuilding.title)
-
-          if (allTopicsWithSameTitle) {
-            const topicIds = allTopicsWithSameTitle.map(t => t.id)
-
-            const { data: tasks } = await supabase
-              .from('tasks')
-              .select('id, description, assigned_name, assigned_email, status, created_at')
-              .in('topic_id', topicIds)
-              .in('status', ['open', 'in_progress', 'completed'])
-              .order('created_at', { ascending: false })
-
-            if (tasks) {
-              tasks.forEach(task => {
-                const assignee = task.assigned_name || task.assigned_email || 'Unassigned'
-                historyItems.push({
-                  id: task.id,
-                  type: 'task',
-                  content: task.description.substring(0, 100) + (task.description.length > 100 ? '...' : ''),
-                  timestamp: formatUtcToLocalDateTime(task.created_at),
-                  details: `Assigned to: ${assignee} · Status: ${task.status}`,
-                  status: task.status
-                })
-              })
-            }
-          }
-        }
+      if (tasks) {
+        tasks.forEach(task => {
+          const assignee = task.assigned_name || task.assigned_email || 'Unassigned'
+          historyItems.push({
+            id: task.id,
+            type: 'task',
+            content: task.description.substring(0, 100) + (task.description.length > 100 ? '...' : ''),
+            timestamp: formatUtcToLocalDateTime(task.created_at),
+            details: `Assigned to: ${assignee} · Status: ${task.status}`,
+            status: task.status
+          })
+        })
       }
 
       historyItems.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
@@ -811,7 +775,7 @@ export default function TopicCard({
                 <span className="text-xs text-amber-600">(Edited)</span>
               )}
             </div>
-            <p className="text-sm text-foreground mb-1">{decision.motion_text}</p>
+            <p className={`text-sm mb-1 ${decision.status === 'completed' ? 'line-through text-muted-foreground italic' : 'text-foreground'}`}>{decision.motion_text}</p>
             {(decision.result || decision.votes_for !== null || decision.votes_against !== null) && (
               <p className="text-xs text-muted-foreground">
                 {decision.result && `Result: ${decision.result}`}
@@ -1218,7 +1182,7 @@ export default function TopicCard({
                         </span>
                         <span className="text-xs text-muted-foreground">{item.timestamp}</span>
                       </div>
-                      <p className={`text-sm text-foreground ${item.type === 'task' && item.status === 'completed' ? 'line-through text-muted-foreground italic' : ''}`}>{item.content}</p>
+                      <p className={`text-sm ${((item.type === 'task' || item.type === 'note') && item.status === 'completed') ? 'line-through text-muted-foreground italic' : 'text-foreground'}`}>{item.content}</p>
                       {item.details && (
                         <p className="text-xs text-muted-foreground">{item.details}</p>
                       )}
