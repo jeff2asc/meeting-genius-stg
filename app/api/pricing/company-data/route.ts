@@ -9,6 +9,40 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey)
 // API Key validation
 const VALID_API_KEY = process.env.NEXT_PUBLIC_API_KEY || ''
 
+/**
+ * Calculates the billing tier based on building count
+ */
+function calculateTier(buildingCount: number) {
+  if (buildingCount === 0) {
+    return {
+      tier: "Empty",
+      base_price: 0,
+      description: "No buildings managed yet"
+    };
+  } else if (buildingCount <= 5) {
+    return {
+      tier: "Starter",
+      base_price: 99,
+      range: "1-5 buildings",
+      description: "Small portfolio management"
+    };
+  } else if (buildingCount <= 20) {
+    return {
+      tier: "Growth",
+      base_price: 299,
+      range: "6-20 buildings",
+      description: "Expanding property portfolio"
+    };
+  } else {
+    return {
+      tier: "Enterprise",
+      base_price: 599,
+      range: "21+ buildings",
+      description: "Professional multi-property management"
+    };
+  }
+}
+
 export async function GET(request: NextRequest) {
   try {
     // 1. Validate API Key
@@ -111,19 +145,23 @@ export async function GET(request: NextRequest) {
         building_address: building.address || 'N/A'
       }))
 
-    // 8. Calculate totals
+    // 8. Calculate totals and tiers
     const totalPmCount = pmList.length
     const totalAssignedBuildings = pmList.reduce((sum, pm) => sum + pm.building_count, 0)
     const totalUnassignedBuildings = unassignedBuildings.length
     const totalBuildingCount = totalAssignedBuildings + totalUnassignedBuildings
+    
+    // 9. Check Tiers for Odoo Billing
+    const billingTier = calculateTier(totalBuildingCount)
 
-    // 9. Build response
+    // 10. Build response
     return NextResponse.json({
       success: true,
       company_id: company.id,
       company_name: company.name,
       total_pm_count: totalPmCount,
       total_building_count: totalBuildingCount,
+      billing_tier: billingTier,
       property_managers: pmList,
       unassigned_buildings: unassignedBuildings,
       unassigned_building_count: totalUnassignedBuildings

@@ -120,11 +120,27 @@ export async function POST(request: NextRequest) {
       topics: Array.isArray(section.topics) ? section.topics : [],
     }));
 
-    // Extract tasks using Gemini AI
+    // Extract tasks using AI
     let extractedTasks;
     try {
+      const parsedUserId = userId ? parseInt(userId) : undefined;
+      // Fetch company_id for the user
+      let companyId: number | undefined;
+      if (parsedUserId) {
+        const { data: userData } = await supabase
+          .from("users")
+          .select("company_id")
+          .eq("id", parsedUserId)
+          .single();
+        if (userData?.company_id) {
+          companyId = userData.company_id;
+        }
+      }
+
       extractedTasks = await extractTasksFromTranscript(
-        transcriptText
+        transcriptText,
+        formattedSections,
+        { userId: parsedUserId, companyId: companyId }
       );
     } catch (error) {
       console.error("Gemini extraction error:", error);

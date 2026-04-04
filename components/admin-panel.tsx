@@ -24,6 +24,9 @@ import AssignUsersToCompanyModal from "./admin/AssignUsersToCompanyModal"
 
 // UPDATED: Minutes templates designer (now per building via buildings+loading)
 import MinutesTemplatesTab from "./MinutesTemplatesTab"
+import SystemAuditTab from "./admin/SystemAuditTab"
+import LlmSettingsTab from "./admin/LlmSettingsTab"
+
 
 interface AdminPanelProps {
   onBack: () => void
@@ -58,7 +61,7 @@ interface Building {
   users?: Array<{ id: number; name: string; email: string; user_type: string }>
 }
 
-type TabType = "users" | "buildings" | "companies" | "minutes" | "agenda"
+type TabType = "users" | "buildings" | "companies" | "minutes" | "agenda" | "audit" | "settings"
 
 export default function AdminPanel({ onBack }: AdminPanelProps) {
   const [activeTab, setActiveTab] = useState<TabType>("users")
@@ -594,7 +597,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
             >
               📄 Minutes Templates
             </button>
-            <button
+              <button
               onClick={() => setActiveTab("agenda")}
               className={`pb-2 px-1 font-medium text-sm transition-colors ${
                 activeTab === "agenda"
@@ -604,11 +607,38 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
             >
               📋 Agenda Templates
             </button>
+            {isMaster && (
+              <>
+                <button
+                  onClick={() => setActiveTab("audit")}
+                  className={`pb-2 px-1 font-medium text-sm transition-colors ${
+                    activeTab === "audit"
+                      ? "text-primary border-b-2 border-primary"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  🔍 System Audit
+                </button>
+                <button
+                  onClick={() => setActiveTab("settings")}
+                  className={`pb-2 px-1 font-medium text-sm transition-colors ${
+                    activeTab === "settings"
+                      ? "text-primary border-b-2 border-primary"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  ⚙️ LLM Settings
+                </button>
+              </>
+            )}
           </div>
         </div>
       </header>
 
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+        {activeTab === "audit" && isMaster && <SystemAuditTab />}
+        {activeTab === "settings" && isMaster && <LlmSettingsTab />}
+
         {activeTab === "users" && (
           <UsersTab
             users={users}

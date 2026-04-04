@@ -45,10 +45,12 @@ interface Section {
  */
 export async function extractTasksFromTranscript(
   transcriptText: string,
-  sections?: Section[]
+  sections?: Section[],
+  customApiKey?: string
 ): Promise<ExtractedTask[]> {
   try {
-    const model = genAI.getGenerativeModel({ model: "models/gemini-2.5-flash" });
+    const aiClient = customApiKey ? new GoogleGenerativeAI(customApiKey) : genAI;
+    const model = aiClient.getGenerativeModel({ model: "models/gemini-2.5-flash" });
 
     // Build topics list for the prompt
     let topicsContext = "";

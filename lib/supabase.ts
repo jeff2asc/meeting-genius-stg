@@ -28,6 +28,9 @@ export interface Company {
   smtp_use_tls?: boolean | null
   // ⭐ NEW: Company logo
   logo_url?: string | null
+  // ⭐ NEW: LLM Settings
+  llm_provider?: string | null
+  llm_api_key?: string | null
 }
 
 // User roles and interface - multiple roles supported
@@ -48,6 +51,7 @@ export interface User {
   user_type: UserRole
   roles?: UserRole[] // NEW: multiple roles
   company_id?: number | null
+  assigned_pm_id?: number | null // ⭐ NEW: for residents
 }
 
 // ⭐ TaskAttachment interface
@@ -177,6 +181,7 @@ export type Database = {
           user_type: UserRole
           roles: UserRole[] | null // ⭐ NEW: multiple roles column
           company_id: number | null
+          assigned_pm_id: number | null // ⭐ NEW
           smtp_config: any
           created_at: string
           updated_at: string
@@ -423,6 +428,31 @@ export type Database = {
           task_id: number
           task_description: string
           analysis_result: string
+        }
+      }
+      // ⭐ audit_logs table
+      audit_logs: {
+        Row: {
+          id: string
+          user_id: number | null
+          company_id: number | null
+          action_type: string
+          model_name: string | null
+          status: string
+          duration_ms: number | null
+          error_message: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id?: number | null
+          company_id?: number | null
+          action_type: string
+          model_name?: string | null
+          status: string
+          duration_ms?: number | null
+          error_message?: string | null
+          created_at?: string
         }
       }
     }

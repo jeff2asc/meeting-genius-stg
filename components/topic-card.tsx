@@ -4,7 +4,8 @@ import { useState, useEffect, useRef } from "react"
 import { ChevronDown, FileText, CheckSquare, Scale, Paperclip, Edit2, Trash2, X, Check, Sparkles, Loader2, Plus, Upload, Download, CornerDownRight, Lock, Unlock, Globe } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { supabase, getCurrentUser, TopicAttachment } from "@/lib/supabase"
+import { supabase, getCurrentUser } from "@/lib/supabase"
+import type { TopicAttachment } from "@/lib/supabase"
 import { fetchAndExtractBuildingDocuments, fetchAndExtractTopicAttachments } from "@/lib/documentExtractor"
 import TaskDetailsModal from "./TaskDetailsModal"
 import GeniusWordsInput from "./GeniusWordsInput"
@@ -86,6 +87,7 @@ interface Decision {
   parent_decision_id: number | null
   recorded_at: string
   edited_at: string | null
+  status?: string | null
   children?: Decision[]
 }
 

@@ -11,6 +11,7 @@ import {
   Trash2,
   UserCog,
   Image as ImageIcon,
+  Cpu,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import LogoTab from "./LogoTab"
@@ -41,7 +42,9 @@ interface Building {
   company_id?: number | null
 }
 
-type Tab = "overview" | "buildings" | "admins" | "users" | "logo"
+type Tab = "overview" | "buildings" | "admins" | "users" | "logo" | "usage_logs" | "llm_config"
+
+import SystemAuditTab from "./SystemAuditTab"
 
 const ALL_ROLES: { value: string; label: string }[] = [
   { value: "user", label: "User" },
@@ -52,6 +55,15 @@ const ALL_ROLES: { value: string; label: string }[] = [
   { value: "corporate_administrator", label: "Corporate Administrator" },
   { value: "master", label: "Master" },
 ]
+
+/**
+ * Helper to get tier info based on building count
+ */
+function getTierInfo(count: number) {
+  if (count <= 5) return { name: "Starter", color: "from-slate-50 to-slate-100", textColor: "text-slate-900", iconColor: "bg-slate-500", price: "$99/mo" };
+  if (count <= 20) return { name: "Growth", color: "from-blue-50 to-blue-100", textColor: "text-blue-900", iconColor: "bg-blue-500", price: "$299/mo" };
+  return { name: "Enterprise", color: "from-purple-50 to-purple-100", textColor: "text-purple-900", iconColor: "bg-purple-500", price: "$599/mo" };
+}
 
 export default function CompanyDetailsModal({
   isOpen,
@@ -122,6 +134,11 @@ export default function CompanyDetailsModal({
   const [smtpUseTls, setSmtpUseTls] = useState(true)
   const [savingSmtp, setSavingSmtp] = useState(false)
 
+  // LLM Config state
+  const [llmProvider, setLlmProvider] = useState<string>("global")
+  const [llmApiKey, setLlmApiKey] = useState("")
+  const [savingLlm, setSavingLlm] = useState(false)
+
   const [error, setError] = useState<string | null>(null)
 
   const currentUser = getCurrentUser()
@@ -144,6 +161,9 @@ export default function CompanyDetailsModal({
       setSmtpFromName(company.smtp_from_name || "")
       setSmtpFromEmail(company.smtp_from_email || "")
       setSmtpUseTls(company.smtp_use_tls ?? true)
+
+      setLlmProvider(company.llm_provider || "global")
+      setLlmApiKey(company.llm_api_key || "")
 
       setShowAttachExisting(false)
       setSelectedExistingBuildingId("")
@@ -625,6 +645,36 @@ export default function CompanyDetailsModal({
     }
   }
 
+  const handleSaveLlm = async () => {
+    if (!company) return
+
+    setSavingLlm(true)
+    setError(null)
+
+    try {
+      const { error } = await supabase
+        .from("companies")
+        .update({
+          llm_provider: llmProvider === "global" ? null : llmProvider,
+          llm_api_key: llmApiKey.trim() || null,
+        })
+        .eq("id", company.id)
+
+      if (error) {
+        console.error("Error saving LLM settings:", error)
+        setError("Failed to save LLM settings")
+        return
+      }
+
+      alert("✅ LLM settings saved")
+    } catch (err) {
+      console.error("Unexpected error saving LLM:", err)
+      setError("An unexpected error occurred")
+    } finally {
+      setSavingLlm(false)
+    }
+  }
+
   const handleDeleteUser = async (userId: number) => {
     if (
       !confirm(
@@ -731,6 +781,7 @@ export default function CompanyDetailsModal({
     (u) => u.user_type === "corporate_administrator",
   )
   const filteredUsers = getFilteredUsers()
+  const tier = getTierInfo(buildings.length)
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 animate-in fade-in overflow-y-auto p-4">
@@ -806,6 +857,28 @@ export default function CompanyDetailsModal({
               <ImageIcon className="h-4 w-4 inline mr-2" />
               Logo
             </button>
+            <button
+              onClick={() => setActiveTab("usage_logs")}
+              className={`pb-3 px-1 font-medium text-sm transition-colors ${
+                activeTab === "usage_logs"
+                  ? "border-b-2 border-primary text-primary"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <UserCog className="h-4 w-4 inline mr-2" />
+              AI Usage Logs
+            </button>
+            <button
+              onClick={() => setActiveTab("llm_config")}
+              className={`pb-3 px-1 font-medium text-sm transition-colors ${
+                activeTab === "llm_config"
+                  ? "border-b-2 border-primary text-primary"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Cpu className="h-4 w-4 inline mr-2" />
+              AI Settings
+            </button>
           </div>
         </div>
 
@@ -816,10 +889,72 @@ export default function CompanyDetailsModal({
             </div>
           ) : (
             <>
+              {activeTab === "usage_logs" && (
+                <SystemAuditTab companyId={company.id} />
+              )}
+              {activeTab === "llm_config" && (
+                <div className="space-y-6">
+                  <Card className="p-6 border-border">
+                    <h3 className="text-xl font-bold text-foreground mb-4">
+                      Company AI Settings
+                    </h3>
+                    <p className="text-sm text-muted-foreground mb-6">
+                      Override the global AI configuration for this specific company. 
+                      If set to 'System Default', the company will use the global model configured in the Admin Panel.
+                    </p>
+
+                    <div className="space-y-4 max-w-2xl">
+                      <div>
+                        <label className="block text-sm font-medium text-foreground mb-2">
+                          AI Provider Preference
+                        </label>
+                        <select
+                          value={llmProvider}
+                          onChange={(e) => setLlmProvider(e.target.value)}
+                          className="w-full px-3 py-2 bg-background border border-input rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                        >
+                          <option value="global">System Default (Inherit)</option>
+                          <option value="ollama">Ollama (Llama 3.2 - Local)</option>
+                          <option value="gemini">Google Gemini (Gemini 2.5 Flash)</option>
+                          <option value="openai">OpenAI (GPT-4o Mini)</option>
+                        </select>
+                      </div>
+
+                      {llmProvider !== 'global' && llmProvider !== 'ollama' && (
+                        <div>
+                          <label className="block text-sm font-medium text-foreground mb-2">
+                            Custom API Key (Optional)
+                          </label>
+                          <input
+                            type="password"
+                            value={llmApiKey}
+                            onChange={(e) => setLlmApiKey(e.target.value)}
+                            placeholder={`Enter custom ${llmProvider === 'openai' ? 'OpenAI' : 'Gemini'} API Key...`}
+                            className="w-full px-3 py-2 bg-background border border-input rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                          />
+                          <p className="text-xs text-muted-foreground mt-2">
+                            If omitted, the server's global API key will be used instead.
+                          </p>
+                        </div>
+                      )}
+
+                      <div className="pt-4 flex justify-end gap-3">
+                        <Button 
+                          onClick={handleSaveLlm}
+                          disabled={savingLlm}
+                          className="font-medium"
+                        >
+                          {savingLlm ? "Saving..." : "Save AI Settings"}
+                        </Button>
+                      </div>
+                    </div>
+                  </Card>
+                </div>
+              )}
               {activeTab === "overview" && (
                 <div className="space-y-6">
-                  <div className="grid grid-cols-3 gap-4">
-                    <Card className="p-4 bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200">
+                  <div className="grid grid-cols-4 gap-4">
+                    <Card className="p-4 bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200 shadow-sm">
                       <div className="flex items-center gap-3">
                         <div className="p-3 bg-blue-500 rounded-lg">
                           <Users className="h-6 w-6 text-white" />
@@ -833,7 +968,7 @@ export default function CompanyDetailsModal({
                       </div>
                     </Card>
 
-                    <Card className="p-4 bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200">
+                    <Card className="p-4 bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200 shadow-sm">
                       <div className="flex items-center gap-3">
                         <div className="p-3 bg-purple-500 rounded-lg">
                           <UserCheck className="h-6 w-6 text-white" />
@@ -847,7 +982,7 @@ export default function CompanyDetailsModal({
                       </div>
                     </Card>
 
-                    <Card className="p-4 bg-gradient-to-br from-green-50 to-green-100 border-green-200">
+                    <Card className="p-4 bg-gradient-to-br from-green-50 to-green-100 border-green-200 shadow-sm">
                       <div className="flex items-center gap-3">
                         <div className="p-3 bg-green-500 rounded-lg">
                           <Building2 className="h-6 w-6 text-white" />
@@ -858,6 +993,23 @@ export default function CompanyDetailsModal({
                           </p>
                           <p className="text-sm text-green-700">Buildings</p>
                         </div>
+                      </div>
+                    </Card>
+
+                    <Card className={`p-4 bg-gradient-to-br ${tier.color} border-slate-200 shadow-sm relative overflow-hidden`}>
+                      <div className="flex items-center gap-3">
+                        <div className={`p-3 ${tier.iconColor} rounded-lg`}>
+                          <UserCog className="h-6 w-6 text-white" />
+                        </div>
+                        <div>
+                          <p className={`text-2xl font-bold ${tier.textColor}`}>
+                            {tier.name}
+                          </p>
+                          <p className={`text-sm opacity-80 ${tier.textColor}`}>{tier.price}</p>
+                        </div>
+                      </div>
+                      <div className="absolute top-0 right-0 p-1">
+                        <span className="text-[8px] font-bold uppercase tracking-widest bg-white/50 px-1.5 py-0.5 rounded-bl">Billing Tier</span>
                       </div>
                     </Card>
                   </div>

@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase } from "@/supabase";
+import { supabase } from "@/lib/supabase";
 import type { CanvasBlock, MinutesTemplate } from "@/types/minutes";
 
 interface PageProps {
