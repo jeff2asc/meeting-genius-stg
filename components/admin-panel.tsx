@@ -607,36 +607,38 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
             >
               📋 Agenda Templates
             </button>
+            {(isMaster || isCorporateAdmin) && (
+              <button
+                onClick={() => setActiveTab("audit")}
+                className={`pb-2 px-1 font-medium text-sm transition-colors ${
+                  activeTab === "audit"
+                    ? "text-primary border-b-2 border-primary"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                🔍 System Audit
+              </button>
+            )}
             {isMaster && (
-              <>
-                <button
-                  onClick={() => setActiveTab("audit")}
-                  className={`pb-2 px-1 font-medium text-sm transition-colors ${
-                    activeTab === "audit"
-                      ? "text-primary border-b-2 border-primary"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  🔍 System Audit
-                </button>
-                <button
-                  onClick={() => setActiveTab("settings")}
-                  className={`pb-2 px-1 font-medium text-sm transition-colors ${
-                    activeTab === "settings"
-                      ? "text-primary border-b-2 border-primary"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  ⚙️ LLM Settings
-                </button>
-              </>
+              <button
+                onClick={() => setActiveTab("settings")}
+                className={`pb-2 px-1 font-medium text-sm transition-colors ${
+                  activeTab === "settings"
+                    ? "text-primary border-b-2 border-primary"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                ⚙️ LLM Settings
+              </button>
             )}
           </div>
         </div>
       </header>
 
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-        {activeTab === "audit" && isMaster && <SystemAuditTab />}
+        {activeTab === "audit" && (isMaster || isCorporateAdmin) && (
+          <SystemAuditTab companyId={isCorporateAdmin ? (currentUser?.company_id ?? undefined) : undefined} />
+        )}
         {activeTab === "settings" && isMaster && <LlmSettingsTab />}
 
         {activeTab === "users" && (

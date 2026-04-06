@@ -31,6 +31,7 @@ export interface Company {
   // ⭐ NEW: LLM Settings
   llm_provider?: string | null
   llm_api_key?: string | null
+  llm_model?: string | null
 }
 
 // User roles and interface - multiple roles supported
@@ -155,6 +156,10 @@ export type Database = {
           smtp_use_tls: boolean | null
           // ⭐ NEW: Company logo
           logo_url: string | null
+          // ⭐ NEW: LLM Settings
+          llm_provider: string | null
+          llm_api_key: string | null
+          llm_model: string | null
         }
         Insert: {
           name: string
@@ -170,6 +175,10 @@ export type Database = {
           smtp_use_tls?: boolean | null
           // ⭐ NEW: Company logo optional on insert
           logo_url?: string | null
+          // ⭐ NEW: LLM Settings optional on insert
+          llm_provider?: string | null
+          llm_api_key?: string | null
+          llm_model?: string | null
         }
       }
       users: {

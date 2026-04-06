@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 
 export default function LlmSettingsTab() {
   const [primaryLlm, setPrimaryLlm] = useState<string>("ollama")
+  const [primaryLlmModel, setPrimaryLlmModel] = useState<string>("")
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState<{ type: "success" | "error"; text: string } | null>(null)
@@ -21,7 +22,7 @@ export default function LlmSettingsTab() {
       const { data, error } = await supabase
         .from("system_settings")
         .select("key, value")
-        .in("key", ["primary_llm", "global_llm_api_key"])
+        .in("key", ["primary_llm", "primary_llm_model", "global_llm_api_key"])
 
       if (error) {
         if (error.code !== "PGRST116") { // Ignore 'no rows' error since it might not be initialized
@@ -33,6 +34,7 @@ export default function LlmSettingsTab() {
       if (data) {
         data.forEach(setting => {
            if (setting.key === 'primary_llm') setPrimaryLlm(setting.value);
+           if (setting.key === 'primary_llm_model') setPrimaryLlmModel(setting.value);
            if (setting.key === 'global_llm_api_key') setGlobalApiKey(setting.value);
         });
       }
@@ -54,6 +56,11 @@ export default function LlmSettingsTab() {
           { 
             key: "primary_llm", 
             value: primaryLlm,
+            updated_by: currentUser?.id || null 
+          },
+          { 
+            key: "primary_llm_model", 
+            value: primaryLlmModel,
             updated_by: currentUser?.id || null 
           },
           {
@@ -113,19 +120,33 @@ export default function LlmSettingsTab() {
                   </select>
                   
                   {primaryLlm !== 'ollama' && (
-                     <div className="mt-4">
-                        <label className="block text-sm font-medium text-foreground mb-2">
-                           Global {primaryLlm === 'openai' ? 'OpenAI' : 'Gemini'} API Key
-                        </label>
-                        <input
-                           type="password"
-                           value={globalApiKey}
-                           onChange={(e) => setGlobalApiKey(e.target.value)}
-                           placeholder={`Enter global ${primaryLlm === 'openai' ? 'OpenAI' : 'Gemini'} API Key...`}
-                           className="w-full h-10 px-3 py-2 bg-background border border-input rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                        />
-                        <p className="text-xs text-muted-foreground mt-2">
-                          This API key acts as the system default. Individual companies can override this in their own Company Details settings. If left blank, the server environment variables will be used.
+                     <div className="mt-4 grid grid-cols-2 gap-4">
+                        <div>
+                           <label className="block text-sm font-medium text-foreground mb-2">
+                              Global {primaryLlm === 'openai' ? 'OpenAI' : 'Gemini'} API Key
+                           </label>
+                           <input
+                              type="password"
+                              value={globalApiKey}
+                              onChange={(e) => setGlobalApiKey(e.target.value)}
+                              placeholder={`Enter global ${primaryLlm === 'openai' ? 'OpenAI' : 'Gemini'} API Key...`}
+                              className="w-full h-10 px-3 py-2 bg-background border border-input rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                           />
+                        </div>
+                        <div>
+                           <label className="block text-sm font-medium text-foreground mb-2">
+                              Default Model Name
+                           </label>
+                           <input
+                              type="text"
+                              value={primaryLlmModel}
+                              onChange={(e) => setPrimaryLlmModel(e.target.value)}
+                              placeholder={primaryLlm === 'openai' ? 'gpt-4o-mini' : 'gemini-1.5-flash'}
+                              className="w-full h-10 px-3 py-2 bg-background border border-input rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                           />
+                        </div>
+                        <p className="col-span-2 text-xs text-muted-foreground mt-2">
+                          This API key and model act as the system defaults. Individual companies can override these in their own Company Details settings. If the model name is left blank, the system's hardcoded defaults will be used.
                         </p>
                      </div>
                   )}

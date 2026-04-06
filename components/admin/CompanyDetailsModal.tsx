@@ -137,6 +137,7 @@ export default function CompanyDetailsModal({
   // LLM Config state
   const [llmProvider, setLlmProvider] = useState<string>("global")
   const [llmApiKey, setLlmApiKey] = useState("")
+  const [llmModel, setLlmModel] = useState("")
   const [savingLlm, setSavingLlm] = useState(false)
 
   const [error, setError] = useState<string | null>(null)
@@ -164,6 +165,7 @@ export default function CompanyDetailsModal({
 
       setLlmProvider(company.llm_provider || "global")
       setLlmApiKey(company.llm_api_key || "")
+      setLlmModel(company.llm_model || "")
 
       setShowAttachExisting(false)
       setSelectedExistingBuildingId("")
@@ -657,6 +659,7 @@ export default function CompanyDetailsModal({
         .update({
           llm_provider: llmProvider === "global" ? null : llmProvider,
           llm_api_key: llmApiKey.trim() || null,
+          llm_model: llmModel.trim() || null,
         })
         .eq("id", company.id)
 
@@ -921,19 +924,33 @@ export default function CompanyDetailsModal({
                       </div>
 
                       {llmProvider !== 'global' && llmProvider !== 'ollama' && (
-                        <div>
-                          <label className="block text-sm font-medium text-foreground mb-2">
-                            Custom API Key (Optional)
-                          </label>
-                          <input
-                            type="password"
-                            value={llmApiKey}
-                            onChange={(e) => setLlmApiKey(e.target.value)}
-                            placeholder={`Enter custom ${llmProvider === 'openai' ? 'OpenAI' : 'Gemini'} API Key...`}
-                            className="w-full px-3 py-2 bg-background border border-input rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-                          />
-                          <p className="text-xs text-muted-foreground mt-2">
-                            If omitted, the server's global API key will be used instead.
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium text-foreground mb-2">
+                              Custom API Key (Optional)
+                            </label>
+                            <input
+                              type="password"
+                              value={llmApiKey}
+                              onChange={(e) => setLlmApiKey(e.target.value)}
+                              placeholder={`Enter custom ${llmProvider === 'openai' ? 'OpenAI' : 'Gemini'} API Key...`}
+                              className="w-full px-3 py-2 bg-background border border-input rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-foreground mb-2">
+                              Custom Model Name (Optional)
+                            </label>
+                            <input
+                              type="text"
+                              value={llmModel}
+                              onChange={(e) => setLlmModel(e.target.value)}
+                              placeholder={llmProvider === 'openai' ? 'gpt-4o' : 'gemini-1.5-pro'}
+                              className="w-full px-3 py-2 bg-background border border-input rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                            />
+                          </div>
+                          <p className="col-span-2 text-xs text-muted-foreground mt-2">
+                            If omitted, the server&apos;s global API key and model will be used instead.
                           </p>
                         </div>
                       )}

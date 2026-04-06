@@ -24,7 +24,8 @@ interface Section {
 export async function extractTasksFromTranscript(
   transcriptText: string,
   sections?: Section[],
-  customApiKey?: string
+  customApiKey?: string,
+  customModel?: string
 ): Promise<ExtractedTask[]> {
   const apiKey = customApiKey || process.env.OPENAI_API_KEY;
   if (!apiKey) {
@@ -84,7 +85,7 @@ ${transcriptText}
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: "gpt-4o-mini", // Cost efficient model
+      model: customModel || "gpt-4o-mini", // Cost efficient model
       response_format: { type: "json_object" },
       messages: [{ role: "user", content: prompt }],
       temperature: 0.1,

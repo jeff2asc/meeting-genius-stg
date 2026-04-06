@@ -2,9 +2,11 @@
 
 import { useState, useEffect } from "react"
 import { ChevronDown, FileText, CheckSquare, Scale, Paperclip, Edit2, Trash2, X, Check, Sparkles, Loader2, Plus } from "lucide-react"
+import { toast } from "sonner"
+import { logLlmUsage } from "@/lib/logging"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { supabase } from "@/lib/supabase"
+import { supabase, getCurrentUser } from "@/lib/supabase"
 import TaskDetailsModal from "./TaskDetailsModal"
 
 interface Topic {
@@ -63,6 +65,8 @@ export default function TopicCard({
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null)
   const [showAiResult, setShowAiResult] = useState(false)
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null)
+  const [buildingData, setBuildingData] = useState<{ id: number; company_id: number | null } | null>(null)
+  const currentUser = getCurrentUser()
 
   // NEW: Register the refresh callback on mount
   useEffect(() => {
@@ -76,8 +80,22 @@ export default function TopicCard({
     if (isExpanded) {
       fetchHistory()
       fetchAiAnalysis()
+      fetchBuildingData()
     }
   }, [topic.id, isExpanded])
+
+  const fetchBuildingData = async () => {
+    const { data } = await supabase
+      .from('topics')
+      .select('meeting_id, meetings!inner(building_id, buildings!inner(id, company_id))')
+      .eq('id', topic.id)
+      .single()
+    
+    if (data) {
+      const meeting = data.meetings as any
+      setBuildingData(meeting?.buildings)
+    }
+  }
 
   const fetchHistory = async () => {
     setLoadingHistory(true)
@@ -188,8 +206,7 @@ export default function TopicCard({
         .select(`
           meeting_id,
           meetings!inner(
-            building_id,
-            buildings!inner(name)
+            buildings!inner(id, name, company_id)
           )
         `)
         .eq('id', topic.id)
@@ -202,7 +219,7 @@ export default function TopicCard({
       }
 
       const meetingData = topicData.meetings as any
-      const buildingId = meetingData?.building_id
+      const buildingId = meetingData?.buildings?.id
       const buildingName = meetingData?.buildings?.name
 
       if (!buildingId || !buildingName) {
@@ -210,6 +227,7 @@ export default function TopicCard({
         setAnalyzingAI(false)
         return
       }
+      const startTime = Date.now()
       const response = await fetch('https://rulesengine.asccreative.com/webhook/843afc5f-abe0-4bb4-bb9f-369d2657c4d0', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -225,8 +243,29 @@ export default function TopicCard({
         await new Promise(resolve => setTimeout(resolve, 2000))
         await fetchAiAnalysis()
         setShowAiResult(true)
+        
+        // Log successful analysis
+        logLlmUsage({
+          user_id: currentUser?.id,
+          company_id: meetingData?.buildings?.company_id,
+          action_type: "task_card_ai_analysis",
+          model_name: "n8n-webhook-analysis",
+          status: "success",
+          duration_ms: Date.now() - startTime
+        })
+        
         alert('✅ AI Analysis complete!')
       } else {
+        // Log failed attempt
+        logLlmUsage({
+          user_id: currentUser?.id,
+          company_id: meetingData?.buildings?.company_id,
+          action_type: "task_card_ai_analysis",
+          model_name: "n8n-webhook-analysis",
+          status: "failure",
+          duration_ms: Date.now() - startTime,
+          error_message: `Webhook returned status ${response.status}`
+        })
         alert('Failed to analyze with AI. Please try again.')
       }
     } catch (error) {

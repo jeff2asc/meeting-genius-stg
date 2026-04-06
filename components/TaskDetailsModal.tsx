@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card"
 import { supabase, getCurrentUser, TaskAttachment } from "@/lib/supabase"
 import { toast } from "sonner"
 import { fetchAndExtractBuildingDocuments, fetchAndExtractTaskAttachments } from "@/lib/documentExtractor"
+import { logLlmUsage } from "@/lib/logging"
 
 interface TaskDetailsModalProps {
   taskId: number
@@ -202,7 +203,7 @@ export default function TaskDetailsModal({ taskId, onClose, onUpdate }: TaskDeta
 
       const { data: building, error: buildingError } = await supabase
         .from('buildings')
-        .select('id, name')
+        .select('id, name, company_id')
         .eq('id', meeting.building_id)
         .single()
 
@@ -231,6 +232,7 @@ export default function TaskDetailsModal({ taskId, onClose, onUpdate }: TaskDeta
 
       console.log('Sending payload to n8n webhook:', payload)
 
+      const startTime = Date.now()
       const response = await fetch('https://rulesengine.asccreative.com/webhook/ac3f411b-401a-4a97-ae07-f241dbc2d1ed', {
         method: 'POST',
         headers: {
@@ -240,11 +242,31 @@ export default function TaskDetailsModal({ taskId, onClose, onUpdate }: TaskDeta
       })
 
       if (!response.ok) {
+        // Log failed attempt
+        logLlmUsage({
+          user_id: currentUser?.id,
+          company_id: building.company_id,
+          action_type: "task_ai_analysis",
+          model_name: "n8n-webhook-analysis",
+          status: "failure",
+          duration_ms: Date.now() - startTime,
+          error_message: `Webhook returned status ${response.status}`
+        })
         throw new Error('Failed to analyze task')
       }
 
       const result = await response.json()
       console.log('n8n response:', result)
+
+      // Log successful analysis
+      logLlmUsage({
+        user_id: currentUser?.id,
+        company_id: building.company_id,
+        action_type: "task_ai_analysis",
+        model_name: "n8n-webhook-analysis",
+        status: "success",
+        duration_ms: Date.now() - startTime
+      })
 
       toast.success('AI analysis complete!')
       

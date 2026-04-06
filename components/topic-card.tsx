@@ -11,6 +11,7 @@ import TaskDetailsModal from "./TaskDetailsModal"
 import GeniusWordsInput from "./GeniusWordsInput"
 import { toast } from "sonner"
 import { formatUtcToLocalDateTime } from "@/lib/timezone"
+import { logLlmUsage } from "@/lib/logging"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -651,6 +652,7 @@ export default function TopicCard({
       const topicAttachments = await fetchAndExtractTopicAttachments(topic.id)
       console.log(`Fetched ${topicAttachments.length} topic attachments`)
 
+      const startTime = Date.now()
       const response = await fetch('https://rulesengine.asccreative.com/webhook/843afc5f-abe0-4bb4-bb9f-369d2657c4d0', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -669,8 +671,29 @@ export default function TopicCard({
         await new Promise(resolve => setTimeout(resolve, 2000))
         await fetchAiAnalysis()
         setShowAiResult(true)
+        
+        // Log successful analysis
+        logLlmUsage({
+          user_id: currentUser?.id,
+          company_id: buildingData?.company_id,
+          action_type: "topic_ai_analysis",
+          model_name: "n8n-webhook-analysis",
+          status: "success",
+          duration_ms: Date.now() - startTime
+        })
+        
         alert('✅ AI Analysis complete!')
       } else {
+        // Log failed attempt
+        logLlmUsage({
+          user_id: currentUser?.id,
+          company_id: buildingData?.company_id,
+          action_type: "topic_ai_analysis",
+          model_name: "n8n-webhook-analysis",
+          status: "failure",
+          duration_ms: Date.now() - startTime,
+          error_message: `Webhook returned status ${response.status}`
+        })
         alert('Failed to analyze with AI. Please try again.')
       }
     } catch (error) {

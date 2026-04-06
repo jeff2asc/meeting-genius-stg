@@ -57,62 +57,7 @@ export default function SystemAuditTab({ companyId }: { companyId?: number }) {
         }))
         setLogs(formattedData)
       } else {
-        // Mock data for visualization if table is empty
-        const mockLogs: AuditLog[] = [
-          {
-            id: "1",
-            user_id: 123,
-            company_id: 45,
-            action_type: "transcript_summary",
-            model_name: "gpt-4o-mini",
-            status: "success",
-            duration_ms: 1240,
-            error_message: null,
-            created_at: new Date(Date.now() - 1000 * 60 * 5).toISOString(),
-            user_name: "Jeffrey Domingo",
-            company_name: "ABC Corp"
-          },
-          {
-            id: "2",
-            user_id: 124,
-            company_id: 45,
-            action_type: "task_extraction",
-            model_name: "gemini-2.5-flash",
-            status: "success",
-            duration_ms: 850,
-            error_message: null,
-            created_at: new Date(Date.now() - 1000 * 60 * 15).toISOString(),
-            user_name: "Sarah Smith",
-            company_name: "ABC Corp"
-          },
-          {
-            id: "3",
-            user_id: 123,
-            company_id: null,
-            action_type: "agenda_generation",
-            model_name: "ollama (llama3)",
-            status: "failure",
-            duration_ms: 4200,
-            error_message: "Connection refused to local Ollama server",
-            created_at: new Date(Date.now() - 1000 * 60 * 45).toISOString(),
-            user_name: "Jeffrey Domingo",
-            company_name: "No Company"
-          },
-          {
-            id: "4",
-            user_id: null,
-            company_id: 46,
-            action_type: "transcript_analysis",
-            model_name: "gpt-4o-mini",
-            status: "success",
-            duration_ms: 1540,
-            error_message: null,
-            created_at: new Date(Date.now() - 1000 * 60 * 120).toISOString(),
-            user_name: "System System",
-            company_name: "Global Property Group"
-          }
-        ]
-        setLogs(mockLogs)
+        setLogs([])
       }
     } catch (err) {
       console.error("Unexpected error:", err)
