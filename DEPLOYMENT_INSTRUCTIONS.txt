@@ -17,7 +17,7 @@ Whenever you make changes to the code, push them to GitHub:
    git add .
 
 2. Commit your code:
-   git commit -m "Update: Describe what you changed"
+   git commit -m "Update: Additional Fixes"
 
 3. Push to GitHub:
    git push origin main

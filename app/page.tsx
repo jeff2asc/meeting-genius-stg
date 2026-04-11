@@ -12,9 +12,10 @@ import LoginForm from "@/components/login-form"
 import ProfileSettingsModal from "@/components/ProfileSettingsModal"
 import GeniusWordsManager from "@/components/GeniusWordsManager"
 import { isLoggedIn, getCurrentUser, clearCurrentUser } from "@/lib/supabase"
-import { canAccessAdmin, canCreateMeeting, getUserTypeDisplayName } from "@/lib/permissions"
+import { canAccessAdmin, canCreateMeeting, getUserTypeDisplayName, canAccessIntegrations } from "@/lib/permissions"
+import IntegrationsPage from "@/components/IntegrationsPage"
 import { Button } from "@/components/ui/button"
-import { LogOut, Settings, User, Key, Sparkles, ChevronDown } from "lucide-react"
+import { LogOut, Settings, User, Key, Sparkles, ChevronDown, Share2 } from "lucide-react"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,7 +25,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 
-type Screen = "dashboard" | "meeting" | "admin" | "genius-words"
+type Screen = "dashboard" | "meeting" | "admin" | "genius-words" | "integrations"
 
 export default function Home() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
@@ -224,6 +225,10 @@ export default function Home() {
     setCurrentScreen("genius-words")
   }
 
+  const handleIntegrationsClick = () => {
+    setCurrentScreen("integrations")
+  }
+
   // Get user initials for avatar
   const getInitials = (name: string) => {
     if (!name) return "U"
@@ -311,6 +316,16 @@ export default function Home() {
               <span>GeniusWords</span>
             </DropdownMenuItem>
 
+            {canAccessIntegrations(currentUser) && (
+              <DropdownMenuItem
+                onClick={handleIntegrationsClick}
+                className="cursor-pointer"
+              >
+                <Share2 className="mr-2 h-4 w-4" />
+                <span>Integrations</span>
+              </DropdownMenuItem>
+            )}
+
             <DropdownMenuSeparator />
 
             <DropdownMenuItem
@@ -359,6 +374,10 @@ export default function Home() {
 
       {currentScreen === "genius-words" && (
         <GeniusWordsManager onBack={handleBackToDashboard} />
+      )}
+
+      {currentScreen === "integrations" && (
+        <IntegrationsPage onBack={handleBackToDashboard} />
       )}
 
       {/* ⭐ UPDATED: Task Modal with edit mode support */}

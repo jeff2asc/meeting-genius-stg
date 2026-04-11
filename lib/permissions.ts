@@ -70,6 +70,14 @@ export const canAccessAdmin = (user: UserRolesInput): boolean => {
 }
 
 /**
+ * Can this user type access the Integrations Page?
+ * Restricted to Master and Corporate Administrators
+ */
+export const canAccessIntegrations = (user: UserRolesInput): boolean => {
+  return hasAnyRole(user, ["corporate_administrator"])
+}
+
+/**
  * Can this user type manage companies?
  * Master and Corporate Administrators can create/edit/delete companies
  */
