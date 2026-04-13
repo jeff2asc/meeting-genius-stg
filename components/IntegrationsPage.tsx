@@ -294,7 +294,7 @@ export default function IntegrationsPage({ onBack }: { onBack: () => void }) {
     const isLocal = typeof window !== 'undefined' && window.location.hostname === 'localhost';
     const JANUS_SYNC_URL = isLocal 
       ? "http://localhost:3001/api/janus/v1/sync"
-      : (process.env.NEXT_PUBLIC_JANUS_URL || "https://janus.asccreative.com/api/janus/v1/sync");
+      : (process.env.NEXT_PUBLIC_JANUS_URL || "https://janusapp.meetinggenius.ca/api/janus/v1/sync");
 
     const API_KEY = "meeting-genius-secret-key-2026"
 
@@ -413,7 +413,7 @@ export default function IntegrationsPage({ onBack }: { onBack: () => void }) {
     const isLocal = typeof window !== 'undefined' && window.location.hostname === 'localhost';
     const JANUS_BASE_URL = isLocal 
       ? "http://localhost:3001" 
-      : (process.env.NEXT_PUBLIC_JANUS_URL || "https://janus.asccreative.com/api/janus/v1/sync").replace('/api/janus/v1/sync', '').replace(/\/$/, "");
+      : (process.env.NEXT_PUBLIC_JANUS_URL || "https://janusapp.meetinggenius.ca/api/janus/v1/sync").replace('/api/janus/v1/sync', '').replace(/\/$/, "");
       
     const autoLoginUrl = `${JANUS_BASE_URL}/login?email=${encodeURIComponent(email)}&bridge_token=${token}`
     
