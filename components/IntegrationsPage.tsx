@@ -74,7 +74,7 @@ export default function IntegrationsPage({ onBack }: { onBack: () => void }) {
       name: "Janus",
       description: "AI-powered property management automation for email triage and ticketing.",
       logo: "https://api.dicebear.com/7.x/initials/svg?seed=JA&backgroundColor=6366f1",
-      website: "https://janus.asccreative.com",
+      website: "https://janusapp.meetinggenius.ca/dashboard",
       installed: false
     },
     {
@@ -327,13 +327,33 @@ export default function IntegrationsPage({ onBack }: { onBack: () => void }) {
         userBuildingsMap[ub.user_id] = ub.building_id
       }
 
-      const enrichedUsers = filteredUsers.map((u: any) => ({
-        ...u,
-        building_id: userBuildingsMap[u.id] || u.building_id || null,
-        role: u.user_type || u.role || "resident",
-        user_type: u.user_type || "resident",
-        suite_number: userUnits[u.id] || u.suite_number || ""
-      }))
+      const enrichedUsers = filteredUsers.map((u: any) => {
+        // Find the most privileged role for Janus since it only accepts a single role constraint
+        let allRoles = [];
+        if (u.user_type) allRoles.push(u.user_type);
+        if (u.role) allRoles.push(u.role);
+        if (Array.isArray(u.roles)) allRoles.push(...u.roles);
+        
+        const rolesStr = allRoles.join(' ').toLowerCase();
+        let highestRole = "resident";
+        if (rolesStr.includes("master") || rolesStr.includes("corporate_admin") || rolesStr.includes("admin")) {
+          highestRole = "corporate_administrator";
+        } else if (rolesStr.includes("property_manager") || rolesStr.includes("manager") || rolesStr.includes("pm")) {
+          highestRole = "property_manager";
+        } else if (rolesStr.includes("owner")) {
+          highestRole = "owner";
+        } else if (rolesStr.includes("vendor")) {
+          highestRole = "vendor";
+        }
+
+        return {
+          ...u,
+          building_id: userBuildingsMap[u.id] || u.building_id || null,
+          role: highestRole,
+          user_type: highestRole,
+          suite_number: userUnits[u.id] || u.suite_number || ""
+        }
+      })
 
       const payload = {
         companies: filteredCompanies,
