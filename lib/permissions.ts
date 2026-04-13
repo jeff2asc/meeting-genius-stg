@@ -17,6 +17,8 @@ export type UserRolesInput =
   | string
   | Array<UserType | string>
   | { user_type?: string; roles?: string[] }
+  | null
+  | undefined
 
 /**
  * Normalize various inputs (single type, array of types, or user object)
@@ -60,6 +62,27 @@ const hasAnyRole = (
   const roles = normalizeRoles(input)
   if (roles.length === 0) return false
   return roles.some((r) => allowed.includes(r))
+}
+
+/**
+ * Help: Is this user a master?
+ */
+export const isMaster = (user: UserRolesInput): boolean => {
+  return hasAnyRole(user, ["master"])
+}
+
+/**
+ * Help: Is this user a corporate administrator?
+ */
+export const isCorporateAdmin = (user: UserRolesInput): boolean => {
+  return hasAnyRole(user, ["corporate_administrator"])
+}
+
+/**
+ * Help: Is this user a property manager?
+ */
+export const isPropertyManager = (user: UserRolesInput): boolean => {
+  return hasAnyRole(user, ["property_manager"])
 }
 
 /**

@@ -95,7 +95,7 @@ export default function Home() {
   }
 
   const handleCreateMeeting = () => {
-    if (!canCreateMeeting(currentUser?.user_type)) {
+    if (!canCreateMeeting(currentUser)) {
       alert(`${getUserTypeDisplayName(currentUser?.user_type)} cannot create meetings.`)
       return
     }
@@ -214,7 +214,7 @@ export default function Home() {
   }
 
   const handleAdminClick = () => {
-    if (!canAccessAdmin(currentUser?.user_type)) {
+    if (!canAccessAdmin(currentUser)) {
       alert(`${getUserTypeDisplayName(currentUser?.user_type)} cannot access the Admin Panel.`)
       return
     }
@@ -240,8 +240,8 @@ export default function Home() {
       .slice(0, 2)
   }
 
-  const userCanAccessAdmin = canAccessAdmin(currentUser?.user_type)
-  const userCanCreateMeeting = canCreateMeeting(currentUser?.user_type)
+  const userCanAccessAdmin = canAccessAdmin(currentUser)
+  const userCanCreateMeeting = canCreateMeeting(currentUser)
 
   if (!isAuthenticated) {
     return <LoginForm onSuccess={handleLoginSuccess} />

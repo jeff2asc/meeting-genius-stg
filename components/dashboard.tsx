@@ -8,6 +8,7 @@ import { supabase, getCurrentUser } from "@/lib/supabase"
 import { formatUtcToLocalShort } from "@/lib/timezone"
 import EditMeetingModal from "./EditMeetingModal"
 import TaskDetailsModal from "./TaskDetailsModal"
+import { isMaster as checkIsMaster, isCorporateAdmin as checkIsCorporateAdmin, isPropertyManager as checkIsPropertyManager } from "@/lib/permissions"
 
 interface DashboardProps {
   onStartMeeting: (meetingId: string) => void
@@ -68,7 +69,7 @@ export default function Dashboard({
       const currentUser = getCurrentUser()
       if (!currentUser) return
 
-      if (currentUser.user_type === 'master') {
+      if (checkIsMaster(currentUser)) {
         setCompanyLogo('/MG2 logo.png')
         return
       }
@@ -112,10 +113,10 @@ export default function Dashboard({
 
       let query = supabase.from('buildings').select('*')
 
-      if (currentUser.user_type === 'master') {
+      if (checkIsMaster(currentUser)) {
         console.log('👑 Master user - fetching ALL buildings')
         query = query.order('name')
-      } else if (currentUser.user_type === 'corporate_administrator') {
+      } else if (checkIsCorporateAdmin(currentUser)) {
         if (currentUser.company_id) {
           console.log('🏢 Corporate Admin - fetching buildings for company_id:', currentUser.company_id)
           query = query.eq('company_id', currentUser.company_id).order('name')
@@ -129,7 +130,7 @@ export default function Dashboard({
           }
           return
         }
-      } else if (currentUser.user_type === 'property_manager') {
+      } else if (checkIsPropertyManager(currentUser)) {
         console.log('🏘️ Property Manager - fetching buildings for manager_id:', currentUser.id)
         query = query.eq('manager_id', currentUser.id).order('name')
       } else {

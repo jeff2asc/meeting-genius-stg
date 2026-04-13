@@ -5,7 +5,7 @@ import { ArrowLeft, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { getCurrentUser, Company } from "@/lib/supabase"
 import { supabase } from "@/lib/supabase"
-import { canManageCompanies, shouldFilterByCompany } from "@/lib/permissions"
+import { canManageCompanies, shouldFilterByCompany, isMaster as checkIsMaster, isCorporateAdmin as checkIsCorporateAdmin, isPropertyManager as checkIsPropertyManager } from "@/lib/permissions"
 
 // Import all the separated components
 import CreateUserModal from "./admin/CreateUserModal"
@@ -103,14 +103,15 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
   const [filterUserType, setFilterUserType] = useState<string>("all")
   const [filterBuilding, setFilterBuilding] = useState<string>("all")
 
-  const isMaster = currentUser?.user_type === "master"
-  const isCorporateAdmin = currentUser?.user_type === "corporate_administrator"
+  const isMaster = checkIsMaster(currentUser)
+  const isCorporateAdmin = checkIsCorporateAdmin(currentUser)
+  const isPropManager = checkIsPropertyManager(currentUser)
   const canCreateUser =
-    isMaster || currentUser?.user_type === "property_manager" || isCorporateAdmin
+    isMaster || isPropManager || isCorporateAdmin
   const canCreateBuilding =
-    isMaster || currentUser?.user_type === "property_manager" || isCorporateAdmin
-  const userCanManageCompanies = canManageCompanies(currentUser?.user_type || "")
-  const userShouldFilterByCompany = shouldFilterByCompany(currentUser?.user_type || "")
+    isMaster || isPropManager || isCorporateAdmin
+  const userCanManageCompanies = canManageCompanies(currentUser)
+  const userShouldFilterByCompany = shouldFilterByCompany(currentUser)
 
   useEffect(() => {
     fetchCompanies()

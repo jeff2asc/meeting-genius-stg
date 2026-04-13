@@ -42,7 +42,7 @@ import {
 } from "@/components/ui/select"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { supabase, getCurrentUser } from "@/lib/supabase"
-import { canAccessIntegrations } from "@/lib/permissions"
+import { canAccessIntegrations, isMaster as checkIsMaster, isCorporateAdmin as checkIsCorporateAdmin, isPropertyManager as checkIsPropertyManager } from "@/lib/permissions"
 import { toast } from "sonner"
 
 interface Integration {
@@ -194,9 +194,8 @@ export default function IntegrationsPage({ onBack }: { onBack: () => void }) {
       const data = payload.data
       
       const user = getCurrentUser()
-      const userRoles = user?.roles || (user?.user_type ? [user.user_type] : [])
-      const isMaster = userRoles.includes("master")
-      const isCorpAdmin = userRoles.includes("corporate_administrator")
+      const isMaster = checkIsMaster(user)
+      const isCorpAdmin = checkIsCorporateAdmin(user)
       
       // Filter available data based on role permissions
       let companies = data.companies || []
@@ -227,7 +226,7 @@ export default function IntegrationsPage({ onBack }: { onBack: () => void }) {
 
       // 2. Intra-Company Filtering (Admin vs PM vs Resident)
       if (!isMaster && !isCorpAdmin) {
-        if (userRoles.includes("property_manager")) {
+        if (checkIsPropertyManager(user)) {
           // PMs see buildings they manage OR buildings they are assigned to
           buildings = buildings.filter((b: any) => b.manager_id === user?.id)
           const buildingIds = buildings.map((b: any) => b.id)
@@ -238,11 +237,16 @@ export default function IntegrationsPage({ onBack }: { onBack: () => void }) {
           
           users = users.filter((u: any) => allowedUserIds.includes(u.id) || u.id === user?.id)
         } 
-        else if (userRoles.includes("user") || userRoles.includes("owner")) {
-          const userBuildingIds = junctions.filter((j: any) => j.user_id === user?.id).map((j: any) => j.building_id)
-          buildings = buildings.filter((b: any) => userBuildingIds.includes(b.id))
-          users = users.filter((u: any) => u.id === user?.id)
-          vendors = []
+        else {
+          // Check for regular user/owner via user_type since we don't have helpers for those yet or just check directly
+          const isRegularUser = user?.user_type === "user" || user?.user_type === "owner" || (user?.roles || []).includes("user") || (user?.roles || []).includes("owner")
+          
+          if (isRegularUser) {
+            const userBuildingIds = junctions.filter((j: any) => j.user_id === user?.id).map((j: any) => j.building_id)
+            buildings = buildings.filter((b: any) => userBuildingIds.includes(b.id))
+            users = users.filter((u: any) => u.id === user?.id)
+            vendors = []
+          }
         }
       }
       
