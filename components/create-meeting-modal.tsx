@@ -26,7 +26,8 @@ import { Card } from "@/components/ui/card"
 import { 
   supabase, 
   getPreviousMeetingOfSameType,
-  getTopicsFromMeeting
+  getTopicsFromMeeting,
+  createAdminClient
 } from "@/lib/supabase"
 
 interface CreateMeetingModalProps {
@@ -219,14 +220,15 @@ export default function CreateMeetingModal({ onClose, onSuccess, buildings }: Cr
   const runExplicitRollover = async (newMeetingId: number) => {
     if (!prevMeeting) return
 
-    const { data: oldSections } = await supabase.from('sections').select('*').eq('meeting_id', prevMeeting.id).order('order_index')
+    const adminSupabase = createAdminClient()
+    const { data: oldSections } = await adminSupabase.from('sections').select('*').eq('meeting_id', prevMeeting.id).order('order_index')
     if (!oldSections) return
 
     const sectionIdMap: Record<number, number> = {}
     const newSectionTitleMap: Record<string, number> = {}
 
     for (const oldSec of oldSections) {
-      const { data: newSec } = await supabase
+      const { data: newSec } = await adminSupabase
         .from('sections')
         .insert({
           meeting_id: newMeetingId,
@@ -258,7 +260,7 @@ export default function CreateMeetingModal({ onClose, onSuccess, buildings }: Cr
       if (newSectionId) {
         sectionTopicCount[newSectionId] = (sectionTopicCount[newSectionId] || 0) + 1
         
-        const { data: newTopic } = await supabase
+        const { data: newTopic } = await adminSupabase
           .from('topics')
           .insert({
             meeting_id: newMeetingId,
@@ -266,7 +268,8 @@ export default function CreateMeetingModal({ onClose, onSuccess, buildings }: Cr
             title: topic.title,
             description: topic.description,
             order_index: sectionTopicCount[newSectionId],
-            rolled_over_from_topic_id: topic.id
+            rolled_over_from_topic_id: topic.id,
+            created_at: topic.created_at // Preserve original creation date
           })
           .select()
           .single()
@@ -281,7 +284,7 @@ export default function CreateMeetingModal({ onClose, onSuccess, buildings }: Cr
     if (targetOldBusinessId && movedTopics.length > 0) {
       for (const topic of movedTopics) {
         sectionTopicCount[targetOldBusinessId] = (sectionTopicCount[targetOldBusinessId] || 0) + 1
-        const { data: newTopic } = await supabase
+        const { data: newTopic } = await adminSupabase
           .from('topics')
           .insert({
             meeting_id: newMeetingId,
@@ -289,7 +292,8 @@ export default function CreateMeetingModal({ onClose, onSuccess, buildings }: Cr
             title: topic.title,
             description: topic.description,
             order_index: sectionTopicCount[targetOldBusinessId],
-            rolled_over_from_topic_id: topic.id
+            rolled_over_from_topic_id: topic.id,
+            created_at: topic.created_at // Preserve original creation date
           })
           .select()
           .single()
@@ -313,39 +317,41 @@ export default function CreateMeetingModal({ onClose, onSuccess, buildings }: Cr
           user_id: a.user_id,
           present: false
         }))
-      await supabase.from('meetings').update({ attendees: attendeesToInsert }).eq('id', newMeetingId)
+      await adminSupabase.from('meetings').update({ attendees: attendeesToInsert }).eq('id', newMeetingId)
     }
   }
 
   async function cloneTopicItems(oldTopicId: number, newTopicId: number) {
+    const adminSupabase = createAdminClient()
+    
     // Clone selected tasks
     const tasksToClone = prevTasks.filter(t => t.topic_id === oldTopicId && selectedTaskIds.includes(t.id))
     if (tasksToClone.length > 0) {
       const toInsert = tasksToClone.map(t => {
-        const { id, ...rest } = t;
+        const { id, updated_at, ...rest } = t;
         return { ...rest, topic_id: newTopicId };
       })
-      await supabase.from('tasks').insert(toInsert)
+      await adminSupabase.from('tasks').insert(toInsert)
     }
 
     // Clone selected notes
     const notesToClone = prevNotes.filter(n => n.topic_id === oldTopicId && selectedNoteIds.includes(n.id))
     if (notesToClone.length > 0) {
       const toInsert = notesToClone.map(n => {
-        const { id, ...rest } = n;
+        const { id, updated_at, ...rest } = n;
         return { ...rest, topic_id: newTopicId };
       })
-      await supabase.from('notes').insert(toInsert)
+      await adminSupabase.from('notes').insert(toInsert)
     }
 
     // Clone selected decisions
     const decisionsToClone = prevDecisions.filter(d => d.topic_id === oldTopicId && selectedDecisionIds.includes(d.id))
     if (decisionsToClone.length > 0) {
       const toInsert = decisionsToClone.map(d => {
-        const { id, ...rest } = d;
+        const { id, edited_at, ...rest } = d;
         return { ...rest, topic_id: newTopicId };
       })
-      await supabase.from('decisions').insert(toInsert)
+      await adminSupabase.from('decisions').insert(toInsert)
     }
   }
 

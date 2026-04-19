@@ -315,6 +315,7 @@ export type Database = {
           incamera_end_time?: string | null
           created_by_name?: string | null
           updated_by_name?: string | null
+          created_at?: string // ⭐ ADDED: To allow preserving date on rollover
         }
       }
       notes: {
@@ -333,6 +334,7 @@ export type Database = {
           created_by?: number | null
           visibility?: 'public' | 'private'
           status?: 'open' | 'completed' | null
+          created_at?: string // ⭐ ADDED: To allow preserving date on rollover
         }
       }
       tasks: {
@@ -360,6 +362,7 @@ export type Database = {
           assignees?: any | null
           due_date?: string | null
           status?: "open" | "in_progress" | "completed"
+          created_at?: string // ⭐ ADDED: To allow preserving date on rollover
         }
       }
       decisions: {
@@ -388,6 +391,7 @@ export type Database = {
           recorded_by?: number | null
           edited_at?: string | null // ⭐ NEW
           status?: 'open' | 'completed' | null
+          recorded_at?: string // ⭐ ADDED: To allow preserving date on rollover
         }
       }
       // ⭐ task_attachments table
