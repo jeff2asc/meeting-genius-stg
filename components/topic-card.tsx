@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
-import { ChevronDown, FileText, CheckSquare, Scale, Paperclip, Edit2, Trash2, X, Check, Sparkles, Loader2, Plus, Upload, Download, CornerDownRight, Lock, Unlock, Globe } from "lucide-react"
+import { ChevronDown, FileText, CheckSquare, Scale, Paperclip, Edit2, Trash2, X, Check, Sparkles, Loader2, Plus, Upload, Download, CornerDownRight, Lock, Unlock, Globe, Archive, ArrowUpCircle } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { supabase, getCurrentUser } from "@/lib/supabase"
@@ -64,6 +64,7 @@ interface Topic {
   incamera_end_time?: string | null
   created_by_name?: string | null
   updated_by_name?: string | null
+  is_archived?: boolean
 }
 
 interface HistoryItem {
@@ -108,6 +109,8 @@ interface TopicCardProps {
   onAddThreadedDecision?: (parentDecisionId: number, topicId: number) => void
   onEditTask?: (taskId: number, topicId: number) => void
   onEditNote?: (noteId: number, topicId: number) => void
+  onRestore?: (topicId: number) => void
+  onArchive?: () => void
   buildingInfo?: { id: number; manager_id: number; company_id: number | null }
 }
 
@@ -126,7 +129,10 @@ export default function TopicCard({
   onEditDecision,
   onAddThreadedDecision,
   onEditTask,
-  onEditNote
+  onEditNote,
+  onRestore,
+  onArchive,
+  buildingInfo
 }: TopicCardProps) {
   const [isExpanded, setIsExpanded] = useState(true)
   const [isEditingTitle, setIsEditingTitle] = useState(false)
@@ -274,6 +280,28 @@ export default function TopicCard({
     } catch (err) {
       console.error('Unexpected error:', err)
       toast.error('Failed to delete task')
+    }
+  }
+
+  const handleToggleTaskStatus = async (taskId: number, currentStatus: string) => {
+    try {
+      const newStatus = currentStatus === 'completed' ? 'open' : 'completed'
+      const { error } = await supabase
+        .from('tasks')
+        .update({ status: newStatus })
+        .eq('id', taskId)
+
+      if (error) {
+        console.error('Error updating task status:', error)
+        toast.error('Failed to update task')
+        return
+      }
+
+      toast.success(newStatus === 'completed' ? 'Task marked as completed' : 'Task reopened')
+      fetchHistory()
+    } catch (err) {
+      console.error('Unexpected error:', err)
+      toast.error('Failed to update task')
     }
   }
 
@@ -757,6 +785,58 @@ export default function TopicCard({
     setIsEditingTitle(false)
   }
 
+  const handleArchive = async () => {
+    if (isReadOnly) return
+    if (!confirm('Are you sure you want to archive this topic? It will be moved to the storage but can be retrieved later.')) return
+    
+    try {
+      const { error } = await supabase
+        .from('topics')
+        .update({ is_archived: true })
+        .eq('id', topic.id)
+
+      if (error) {
+        console.error('Error archiving topic:', error)
+        toast.error('Failed to archive topic')
+        return
+      }
+
+      toast.success('Topic archived successfully')
+      if (onArchive) {
+        onArchive()
+      } else {
+        onDelete(topic.id) // Fallback for safety, though onArchive is preferred
+      }
+    } catch (err) {
+      console.error('Unexpected error:', err)
+      toast.error('Failed to archive topic')
+    }
+  }
+
+  const handleRestoreTopic = async () => {
+    if (!onRestore) return
+    if (!confirm('Bring this topic back to the active agenda?')) return
+    
+    try {
+      const { error } = await supabase
+        .from('topics')
+        .update({ is_archived: false })
+        .eq('id', topic.id)
+
+      if (error) {
+        console.error('Error restoring topic:', error)
+        toast.error('Failed to restore topic')
+        return
+      }
+
+      toast.success('Topic restored successfully')
+      onRestore(topic.id)
+    } catch (err) {
+      console.error('Unexpected error:', err)
+      toast.error('Failed to restore topic')
+    }
+  }
+
   const handleDelete = async () => {
     if (isReadOnly) {
       alert('You do not have permission to delete topics.')
@@ -926,6 +1006,17 @@ export default function TopicCard({
                 {attachments.length}
               </button>
 
+              {isReadOnly && onRestore && (
+                <button
+                  onClick={handleRestoreTopic}
+                  className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium bg-amber-100/50 text-amber-800 hover:bg-amber-100 rounded transition-colors border border-amber-200/50 shadow-sm"
+                  title="Restore to active agenda"
+                >
+                  <ArrowUpCircle className="h-4 w-4" />
+                  Restore
+                </button>
+              )}
+
               {!isEditingTitle && !isReadOnly && (
                 <div className="flex items-center gap-1">
                   <button
@@ -934,6 +1025,13 @@ export default function TopicCard({
                     title="Edit title"
                   >
                     <Edit2 className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={handleArchive}
+                    className="flex h-8 w-8 items-center justify-center rounded hover:bg-muted transition-colors text-amber-600"
+                    title="Move to Topic Bank (Archive)"
+                  >
+                    <Archive className="h-4 w-4" />
                   </button>
                   <button
                     onClick={() => setShowDeleteConfirm(true)}
@@ -1142,6 +1240,26 @@ export default function TopicCard({
                       {showAiResult ? 'Hide' : 'Show'} Analysis
                     </Button>
                   )}
+                  {topic.is_archived && onRestore && (
+                    <Button
+                      onClick={handleRestoreTopic}
+                      variant="outline"
+                      size="sm"
+                      className="text-emerald-600 border-emerald-600 hover:bg-emerald-50"
+                    >
+                      <Plus className="h-4 w-4 mr-2" /> Restore Topic
+                    </Button>
+                  )}
+                  {!topic.is_archived && !isReadOnly && (
+                    <Button
+                      onClick={handleArchive}
+                      variant="outline"
+                      size="sm"
+                      className="text-amber-600 border-amber-600 hover:bg-amber-50"
+                    >
+                      <Download className="h-4 w-4 mr-2" /> Archive Topic
+                    </Button>
+                  )}
                 </div>
               )}
 
@@ -1212,7 +1330,31 @@ export default function TopicCard({
                         <p className="text-xs text-muted-foreground">{item.details}</p>
                       )}
                       {item.type === 'task' && !isReadOnly && (
-                        <div className="grid grid-cols-2 gap-2 mt-1">
+                        <div className="grid grid-cols-3 gap-2 mt-1">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleToggleTaskStatus(item.id, item.status || 'open')
+                            }}
+                            className={item.status === 'completed' 
+                              ? "text-amber-600 border-amber-600 hover:bg-amber-50"
+                              : "text-green-600 border-green-600 hover:bg-green-50"
+                            }
+                          >
+                            {item.status === 'completed' ? (
+                              <>
+                                <X className="h-3 w-3 mr-1" />
+                                Reopen
+                              </>
+                            ) : (
+                              <>
+                                <Check className="h-3 w-3 mr-1" />
+                                Complete
+                              </>
+                            )}
+                          </Button>
                           <Button
                             size="sm"
                             variant="outline"
@@ -1222,7 +1364,7 @@ export default function TopicCard({
                                 onEditTask(item.id, topic.id)
                               }
                             }}
-                            className="text-green-600 border-green-600 hover:bg-green-50"
+                            className="text-blue-600 border-blue-600 hover:bg-blue-50"
                           >
                             <Edit2 className="h-3 w-3 mr-1" />
                             Edit

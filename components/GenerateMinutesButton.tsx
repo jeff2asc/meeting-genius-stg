@@ -46,13 +46,47 @@ interface MinutesTemplate {
 const COVER_PAGE_HEIGHT = 175
 const COVER_PAGE_WIDTH = 794
 
+interface EditableMinutesInfo {
+  startTime: string
+  endTime: string
+  chairPerson: string
+  minuteTaker: string
+}
+
 export default function GenerateMinutesButton({
   meetingId,
   buildingId,
 }: GenerateMinutesButtonProps) {
   const [generating, setGenerating] = useState(false)
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [editableInfo, setEditableInfo] = useState<EditableMinutesInfo>({
+    startTime: "",
+    endTime: "",
+    chairPerson: "",
+    minuteTaker: "",
+  })
 
-  const handleGenerateMinutes = async () => {
+  // Load initial values from meeting data
+  const loadInitialInfo = async () => {
+    const { data: meeting } = await supabase
+      .from("meetings")
+      .select("start_time, end_time, chair_person, minute_taker")
+      .eq("id", meetingId)
+      .single()
+
+    if (meeting) {
+      setEditableInfo({
+        startTime: meeting.start_time || "",
+        endTime: meeting.end_time || "",
+        chairPerson: meeting.chair_person || "",
+        minuteTaker: meeting.minute_taker || "",
+      })
+    }
+    setShowEditModal(true)
+  }
+
+  const handleGenerateMinutes = async (finalInfo: EditableMinutesInfo) => {
+    setShowEditModal(false)
     setGenerating(true)
     try {
       // 1) Load per-building minutes template from DB
@@ -282,13 +316,22 @@ export default function GenerateMinutesButton({
           })),
       }))
 
-      // 4) Attendees from meeting.attendees JSONB
+      // 4) Update meeting data with final edited info for PDF generation
+      const meetingForPdf = {
+        ...meeting,
+        start_time: finalInfo.startTime,
+        end_time: finalInfo.endTime,
+        chair_person: finalInfo.chairPerson,
+        minute_taker: finalInfo.minuteTaker,
+      }
+
+      // 5) Attendees from meeting.attendees JSONB
       const attendees = (meeting.attendees as any[]) || []
 
-      // 5) Build HTML
+      // 6) Build HTML
       const minutesHtml = buildMinutesHtml({
         template,
-        meeting,
+        meeting: meetingForPdf,
         sections: sectionsWithTopics,
         attendees,
         logoUrl,
@@ -818,23 +861,97 @@ export default function GenerateMinutesButton({
   }
 
   return (
-    <Button
-      onClick={handleGenerateMinutes}
-      disabled={generating}
-      className="bg-gradient-to-r from-primary to-decision-purple text-white"
-    >
-      {generating ? (
-        <>
-          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-          Generating...
-        </>
-      ) : (
-        <>
-          <Download className="h-4 w-4 mr-2" />
-          Download Minutes PDF
-        </>
+    <>
+      <Button
+        onClick={loadInitialInfo}
+        disabled={generating}
+        className="bg-gradient-to-r from-primary to-decision-purple text-white"
+      >
+        {generating ? (
+          <>
+            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            Generating...
+          </>
+        ) : (
+          <>
+            <Download className="h-4 w-4 mr-2" />
+            Download Minutes PDF
+          </>
+        )}
+      </Button>
+
+      {/* Edit Info Dialog */}
+      {showEditModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="bg-gradient-to-r from-primary to-primary/80 px-6 py-4">
+              <h3 className="text-xl font-bold text-white">Finalize Meeting Info</h3>
+              <p className="text-white/80 text-sm">Verify details before generating minutes</p>
+            </div>
+            
+            <div className="p-6 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-muted-foreground uppercase">Start Time</label>
+                  <input
+                    type="time"
+                    value={editableInfo.startTime}
+                    onChange={(e) => setEditableInfo({ ...editableInfo, startTime: e.target.value })}
+                    className="w-full px-3 py-2 bg-muted/30 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-muted-foreground uppercase">End Time</label>
+                  <input
+                    type="time"
+                    value={editableInfo.endTime}
+                    onChange={(e) => setEditableInfo({ ...editableInfo, endTime: e.target.value })}
+                    className="w-full px-3 py-2 bg-muted/30 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-muted-foreground uppercase">Chair Person</label>
+                <input
+                  type="text"
+                  placeholder="e.g. John Doe"
+                  value={editableInfo.chairPerson}
+                  onChange={(e) => setEditableInfo({ ...editableInfo, chairPerson: e.target.value })}
+                  className="w-full px-3 py-2 bg-muted/30 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-muted-foreground uppercase">Minute Taker</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Jane Smith"
+                  value={editableInfo.minuteTaker}
+                  onChange={(e) => setEditableInfo({ ...editableInfo, minuteTaker: e.target.value })}
+                  className="w-full px-3 py-2 bg-muted/30 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                />
+              </div>
+            </div>
+
+            <div className="px-6 py-4 bg-muted/30 flex justify-end gap-3">
+              <button
+                onClick={() => setShowEditModal(false)}
+                className="px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-muted rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleGenerateMinutes(editableInfo)}
+                className="px-6 py-2 bg-primary text-white text-sm font-bold rounded-lg shadow-lg hover:bg-primary/90 transition-all hover:scale-[1.02] active:scale-[0.98]"
+              >
+                Generate PDF
+              </button>
+            </div>
+          </div>
+        </div>
       )}
-    </Button>
+    </>
   )
 }
 
@@ -1117,24 +1234,8 @@ function renderSectionsAndTopics(
         }
         html += `</div>` // close topic-meta
 
-        if (topic.notes && topic.notes.length > 0) {
-          topic.notes.forEach((note: any) => {
-            const content = (note.content || "").trim()
-            if (!content) return
-            html += `<div class="note-box"><span class="note-icon">🌐</span><strong>NOTE:</strong> ${escapeHtml(content)}</div>`
-          })
-        }
-
-        if (topic.tasks && topic.tasks.length > 0) {
-          topic.tasks.forEach((task: any) => {
-            const description = (task.description || "").trim()
-            if (!description) return
-            const assignee = task.assigned_name || task.assigned_email || ""
-            const due = task.due_date ? ` (Due: ${task.due_date})` : ""
-            html += `<div class="task-box"><strong>TASK:</strong> ${escapeHtml(description)}${assignee ? ` - ${escapeHtml(assignee)}` : ""}${due}</div>`
-          })
-        }
-
+        // Reordered: Decisions (Motions) first, then Public Notes. Tasks removed.
+        
         // Motion boxes matching the editor preview
         if (topic.decisions && topic.decisions.length > 0) {
           topic.decisions.forEach((decision: any, decisionIdx: number) => {
@@ -1168,6 +1269,14 @@ function renderSectionsAndTopics(
                 </div>
               </div>
             `
+          })
+        }
+
+        if (topic.notes && topic.notes.length > 0) {
+          topic.notes.forEach((note: any) => {
+            const content = (note.content || "").trim()
+            if (!content) return
+            html += `<div class="note-box"><span class="note-icon">🌐</span><strong>NOTE:</strong> ${escapeHtml(content)}</div>`
           })
         }
 

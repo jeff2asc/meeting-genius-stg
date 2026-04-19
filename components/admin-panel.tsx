@@ -307,9 +307,9 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
         }
       })
 
-      if (currentUser?.user_type === "property_manager") {
+      if (!isMaster && !isCorporateAdmin && isPropManager) {
         const filteredUsers = usersWithBuildings.filter(
-          (user) => user.assigned_pm_id === currentUser.id || user.id === currentUser.id
+          (user) => user.assigned_pm_id === currentUser?.id || user.id === currentUser?.id
         )
         setUsers(filteredUsers)
       } else {
@@ -335,8 +335,8 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
         // master sees all buildings
       } else if (isCorporateAdmin && currentUser?.company_id) {
         buildingsQuery = buildingsQuery.eq("company_id", currentUser.company_id)
-      } else if (currentUser?.user_type === "property_manager") {
-        buildingsQuery = buildingsQuery.eq("manager_id", currentUser.id)
+      } else if (isPropManager) {
+        buildingsQuery = buildingsQuery.eq("manager_id", currentUser?.id)
       } else {
         setBuildings([])
         return
@@ -491,11 +491,11 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
       return users
     }
 
-    if (currentUser?.user_type === "property_manager") {
+    if (isPropManager) {
       const filtered = users.filter(
         (u) =>
-          (u.assigned_pm_id === currentUser.id && u.user_type === "user") ||
-          u.id === currentUser.id
+          (u.assigned_pm_id === currentUser?.id && u.user_type === "user") ||
+          u.id === currentUser?.id
       )
       return filtered
     }

@@ -5,6 +5,7 @@ import { ChevronDown, User, Plus, Search, Calendar, FileText, Eye, Play, Edit2, 
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { supabase, getCurrentUser } from "@/lib/supabase"
+import { apiClient } from "@/lib/api-client"
 import { formatUtcToLocalShort } from "@/lib/timezone"
 import EditMeetingModal from "./EditMeetingModal"
 import TaskDetailsModal from "./TaskDetailsModal"
@@ -75,23 +76,8 @@ export default function Dashboard({
       }
 
       if (currentUser.company_id) {
-        const { data, error } = await supabase
-          .from('companies')
-          .select('logo_url')
-          .eq('id', currentUser.company_id)
-          .single()
-
-        if (error) {
-          console.error('Error fetching company logo:', error)
-          setCompanyLogo('/MG2 logo.png')
-          return
-        }
-
-        if (data?.logo_url) {
-          setCompanyLogo(data.logo_url)
-        } else {
-          setCompanyLogo('/MG2 logo.png')
-        }
+        const logoUrl = await apiClient.v1.companies.getLogo(currentUser.company_id)
+        setCompanyLogo(logoUrl || '/MG2 logo.png')
       } else {
         setCompanyLogo('/MG2 logo.png')
       }
@@ -111,83 +97,33 @@ export default function Dashboard({
         return
       }
 
-      let query = supabase.from('buildings').select('*')
-
+      console.log('📤 Executing buildings query via API...')
+      let data: any[] = []
+      
       if (checkIsMaster(currentUser)) {
-        console.log('👑 Master user - fetching ALL buildings')
-        query = query.order('name')
+        data = await apiClient.v1.buildings.list()
       } else if (checkIsCorporateAdmin(currentUser)) {
-        if (currentUser.company_id) {
-          console.log('🏢 Corporate Admin - fetching buildings for company_id:', currentUser.company_id)
-          query = query.eq('company_id', currentUser.company_id).order('name')
-        } else {
-          console.warn('⚠️ Corporate Admin has no company_id')
-          setBuildings([])
-          setLoading(false)
-          setSelectedBuilding("All")
-          if (onBuildingSelected) {
-            onBuildingSelected("All")
-          }
-          return
-        }
+        data = await apiClient.v1.buildings.list({ company_id: currentUser.company_id! })
       } else if (checkIsPropertyManager(currentUser)) {
-        console.log('🏘️ Property Manager - fetching buildings for manager_id:', currentUser.id)
-        query = query.eq('manager_id', currentUser.id).order('name')
+        data = await apiClient.v1.buildings.list({ manager_id: currentUser.id })
       } else {
-        console.log('👤 Regular user - fetching assigned buildings')
-        const { data: userBuildings, error: userBuildingsError } = await supabase
+        const { data: userBuildings } = await supabase
           .from('user_buildings')
           .select('building_id')
           .eq('user_id', currentUser.id)
-
-        if (userBuildingsError) {
-          console.error('❌ Error fetching user buildings:', userBuildingsError)
-          setBuildings([])
-          setLoading(false)
-          setSelectedBuilding("All")
-          if (onBuildingSelected) {
-            onBuildingSelected("All")
-          }
-          return
-        }
-
+        
         const buildingIds = userBuildings?.map(ub => ub.building_id) || []
-        console.log('📋 User building IDs:', buildingIds)
-
-        if (buildingIds.length === 0) {
-          console.warn('⚠️ User has no buildings assigned')
-          setBuildings([])
-          setLoading(false)
-          setSelectedBuilding("All")
-          if (onBuildingSelected) {
-            onBuildingSelected("All")
-          }
-          return
+        if (buildingIds.length > 0) {
+          // Note: using building_ids filter if we decide to add it or just list with mapping
+          data = await apiClient.v1.buildings.list() // Should probably add support for ids filter
+          data = data.filter(b => buildingIds.includes(b.id))
         }
-
-        query = query.in('id', buildingIds).order('name')
       }
 
-      console.log('📤 Executing buildings query...')
-      const { data, error } = await query
-
-      console.log('📊 Buildings Query Result:', {
-        success: !error,
-        error: error,
+      console.log('📊 Buildings API Result:', {
         buildingCount: data?.length || 0,
         buildings: data
       })
-
-      if (error) {
-        console.error('❌ Error fetching buildings:', error)
-        setBuildings([])
-        setLoading(false)
-        setSelectedBuilding("All")
-        if (onBuildingSelected) {
-          onBuildingSelected("All")
-        }
-        return
-      }
 
       console.log('✅ Buildings fetched successfully:', data)
       console.log('📍 Setting buildings state with', data?.length || 0, 'buildings')
@@ -219,34 +155,22 @@ export default function Dashboard({
   const fetchMeetings = async () => {
     try {
       console.log('📅 fetchMeetings called for building:', selectedBuilding)
-      let query = supabase
-        .from('meetings')
-        .select('*, buildings(name)')
-        .order('meeting_date', { ascending: false })
-
+      let data: any[] = []
+      
       if (selectedBuilding !== "All") {
         const building = buildings.find(b => b.name === selectedBuilding)
         if (building) {
-          query = query.eq('building_id', building.id)
+          data = await apiClient.v1.meetings.list({ building_id: building.id })
         }
       } else {
         const buildingIds = buildings.map(b => b.id)
-        console.log('🏢 Building IDs for meetings query:', buildingIds)
         if (buildingIds.length > 0) {
-          query = query.in('building_id', buildingIds)
+          data = await apiClient.v1.meetings.list({ building_ids: buildingIds })
         } else {
-          console.warn('⚠️ No buildings to fetch meetings for')
           setMeetings([])
           setAvailableMeetingTypes([])
           return
         }
-      }
-
-      const { data, error } = await query
-
-      if (error) {
-        console.error('❌ Error fetching meetings:', error)
-        return
       }
 
       console.log('✅ Meetings fetched:', data?.length || 0)
@@ -282,78 +206,30 @@ export default function Dashboard({
 
   const fetchTasks = async () => {
     try {
-      let meetingQuery = supabase
-        .from('meetings')
-        .select('id')
-
+      let data: any[] = []
+      
       if (selectedBuilding !== "All") {
         const building = buildings.find(b => b.name === selectedBuilding)
         if (building) {
-          meetingQuery = meetingQuery.eq('building_id', building.id)
+          data = await apiClient.v1.tasks.list({ building_id: building.id })
         }
       } else {
         const buildingIds = buildings.map(b => b.id)
         if (buildingIds.length > 0) {
-          meetingQuery = meetingQuery.in('building_id', buildingIds)
+          data = await apiClient.v1.tasks.list({ building_ids: buildingIds })
         } else {
           setTasks([])
           return
         }
       }
 
-      const { data: meetingsData, error: meetingsError } = await meetingQuery
-
-      if (meetingsError) {
-        console.error('Error fetching meetings for tasks:', meetingsError)
-        return
-      }
-
-      const meetingIds = (meetingsData || []).map(m => m.id)
-
-      if (meetingIds.length === 0) {
-        setTasks([])
-        return
-      }
-
-      const { data: topicsData, error: topicsError } = await supabase
-        .from('topics')
-        .select('id, title, meeting_id, meetings(id, title, building_id, buildings(name))')
-        .in('meeting_id', meetingIds)
-
-      if (topicsError) {
-        console.error('Error fetching topics:', topicsError)
-        return
-      }
-
-      const topicIds = (topicsData || []).map(t => t.id)
-
-      if (topicIds.length === 0) {
-        setTasks([])
-        return
-      }
-
-      const { data: tasksData, error: tasksError } = await supabase
-        .from('tasks')
-        .select('*')
-        .in('topic_id', topicIds)
-        .order('created_at', { ascending: false })
-
-      if (tasksError) {
-        console.error('Error fetching tasks:', tasksError)
-        return
-      }
-
-      const formattedTasks = (tasksData || []).map(task => {
-        const topic = topicsData?.find(t => t.id === task.topic_id)
-        const meeting = topic?.meetings as any
-        const building = meeting?.buildings as any
-
+      const formattedTasks = (data || []).map(task => {
         return {
           id: task.id,
           description: task.description,
-          building: building?.name || 'Unknown',
-          meeting: meeting?.title || 'Unknown Meeting',
-          topic: topic?.title || 'Unknown Topic',
+          building: task.building_name,
+          meeting: task.meeting_title,
+          topic: task.topic_title,
           assigned_name: task.assigned_name,
           assigned_email: task.assigned_email,
           assignees: task.assignees || [],
@@ -379,18 +255,9 @@ export default function Dashboard({
 
     setDeleting(true)
     try {
-      const { error } = await supabase
-        .from('meetings')
-        .delete()
-        .eq('id', parseInt(meetingToDelete.id))
-
-      if (error) {
-        console.error('Error deleting meeting:', error)
-        alert('Failed to delete meeting. Please try again.')
-      } else {
-        await fetchMeetings()
-        setMeetingToDelete(null)
-      }
+      await apiClient.v1.meetings.delete(parseInt(meetingToDelete.id))
+      await fetchMeetings()
+      setMeetingToDelete(null)
     } catch (err) {
       console.error('Unexpected error:', err)
       alert('An error occurred while deleting the meeting.')
@@ -404,18 +271,9 @@ export default function Dashboard({
 
     setDeleting(true)
     try {
-      const { error } = await supabase
-        .from('tasks')
-        .delete()
-        .eq('id', taskToDelete.id)
-
-      if (error) {
-        console.error('Error deleting task:', error)
-        alert('Failed to delete task. Please try again.')
-      } else {
-        await fetchTasks()
-        setTaskToDelete(null)
-      }
+      await apiClient.v1.tasks.delete(taskToDelete.id)
+      await fetchTasks()
+      setTaskToDelete(null)
     } catch (err) {
       console.error('Unexpected error:', err)
       alert('An error occurred while deleting the task.')

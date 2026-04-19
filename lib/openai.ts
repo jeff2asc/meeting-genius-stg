@@ -101,13 +101,35 @@ ${transcriptText}
   const content = data.choices[0].message.content;
 
   try {
-    const result = JSON.parse(content);
-    if (!result.tasks || !Array.isArray(result.tasks)) {
-      throw new Error("Invalid format from OpenAI: Missing tasks array");
+    let jsonText = content.trim();
+    
+    // Remove markdown code blocks if present
+    const jsonBlockMatch = jsonText.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+    if (jsonBlockMatch) {
+      jsonText = jsonBlockMatch[1].trim();
     }
-    return result.tasks;
+
+    const result = JSON.parse(jsonText);
+    if (!result.tasks || !Array.isArray(result.tasks)) {
+      console.warn("OpenAI returned invalid structure:", jsonText);
+      return [];
+    }
+    return result.tasks.filter((t: any) => t.description && t.confidence >= 0.5);
   } catch (parseError) {
     console.error("OpenAI JSON Parse Error:", parseError, "Raw content:", content);
-    throw new Error("Failed to parse JSON directly from OpenAI response");
+    
+    // Attempt to find any JSON-like array in the text if full parse failed
+    const arrayMatch = content.match(/\[\s*\{[\s\S]*\}\s*\]/);
+    if (arrayMatch) {
+      try {
+        const tasks = JSON.parse(arrayMatch[0]);
+        return Array.isArray(tasks) ? tasks : [];
+      } catch (e) {
+        // Fall through
+      }
+    }
+
+    const snippet = content.substring(0, 100);
+    throw new Error(`AI response was not valid JSON. Started with: ${snippet}`);
   }
 }

@@ -115,32 +115,45 @@ Return the JSON response:`;
     let jsonText = text.trim();
     
     // Remove markdown code blocks if present
-    if (jsonText.startsWith("```json")) {
-      jsonText = jsonText.replace(/```json\n?/g, "").replace(/```\n?/g, "");
-    } else if (jsonText.startsWith("```")) {
-      jsonText = jsonText.replace(/```\n?/g, "");
+    const jsonBlockMatch = jsonText.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+    if (jsonBlockMatch) {
+      jsonText = jsonBlockMatch[1].trim();
     }
 
-    // Parse JSON
-    const parsed: TaskExtractionResult = JSON.parse(jsonText);
+    try {
+      const parsed: TaskExtractionResult = JSON.parse(jsonText);
+      
+      if (!parsed.tasks || !Array.isArray(parsed.tasks)) {
+        console.warn("Gemini returned invalid structure:", jsonText);
+        return [];
+      }
 
-    if (!parsed.tasks || !Array.isArray(parsed.tasks)) {
-      console.warn("No tasks array in response:", parsed);
-      return [];
+      return parsed.tasks.filter(
+        (task: any) => 
+          task.description && 
+          typeof task.description === "string" && 
+          task.confidence >= 0.5
+      );
+    } catch (parseError) {
+      console.error("Failed to parse Gemini JSON response. Full text was:", jsonText);
+      
+      // Attempt to find any JSON-like array in the text if full parse failed
+      const arrayMatch = jsonText.match(/\[\s*\{[\s\S]*\}\s*\]/);
+      if (arrayMatch) {
+        try {
+          const tasks = JSON.parse(arrayMatch[0]);
+          return Array.isArray(tasks) ? tasks : [];
+        } catch (e) {
+          // Fall through
+        }
+      }
+
+      const snippet = jsonText.substring(0, 100);
+      throw new Error(`AI response was not valid JSON. Started with: ${snippet}`);
     }
-
-    // Filter and validate tasks
-    const validTasks = parsed.tasks.filter(
-      (task) =>
-        task.description &&
-        typeof task.description === "string" &&
-        task.confidence >= 0.5 // Only return tasks with at least 50% confidence
-    );
-
-    return validTasks;
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error extracting tasks from transcript:", error);
-    throw new Error("Failed to extract tasks from transcript");
+    throw new Error(error.message || "Failed to extract tasks from transcript");
   }
 }
 

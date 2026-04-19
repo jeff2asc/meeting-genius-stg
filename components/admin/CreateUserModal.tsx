@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { supabase, Company } from "@/lib/supabase"
 import { hashPassword } from "@/lib/auth"
+import { isMaster as checkIsMaster, isCorporateAdmin as checkIsCorporateAdmin, isPropertyManager as checkIsPropertyManager } from "@/lib/permissions"
 
 interface CreateUserModalProps {
   isOpen: boolean
@@ -63,8 +64,9 @@ export default function CreateUserModal({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const isMaster = currentUser?.user_type === "master"
-  const isCorporateAdmin = currentUser?.user_type === "corporate_administrator"
+  const isMaster = checkIsMaster(currentUser)
+  const isCorporateAdmin = checkIsCorporateAdmin(currentUser)
+  const isPropertyManager = checkIsPropertyManager(currentUser)
   const isEditMode = !!userId
 
   useEffect(() => {
@@ -303,7 +305,7 @@ export default function CreateUserModal({
           ) {
             companyIdToAssign = currentUser.company_id
           }
-        } else if (currentUser?.user_type === "property_manager") {
+        } else if (isPropertyManager) {
           if (primaryRole === "user" || primaryRole === "owner") {
             companyIdToAssign = currentUser.company_id
           }
@@ -328,7 +330,7 @@ export default function CreateUserModal({
             assigned_pm_id:
               isMaster && (primaryRole === "user" || primaryRole === "owner")
                 ? userFormData.assignedPmId
-                : currentUser?.user_type === "property_manager"
+                : isPropertyManager && !isCorporateAdmin && !isMaster
                   ? currentUser.id
                   : null,
           })

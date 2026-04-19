@@ -99,23 +99,42 @@ Return the JSON response:`;
     const data = await response.json();
     let jsonText = data.response.trim();
 
-    // Clean up if it still has markdown
-    if (jsonText.startsWith("```json")) {
-        jsonText = jsonText.replace(/```json\n?/g, "").replace(/```\n?/g, "");
-    } else if (jsonText.startsWith("```")) {
-        jsonText = jsonText.replace(/```\n?/g, "");
+    try {
+      // Clean up markdown code blocks
+      const jsonBlockMatch = jsonText.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+      if (jsonBlockMatch) {
+        jsonText = jsonBlockMatch[1].trim();
+      }
+
+      const parsed = JSON.parse(jsonText);
+
+      if (!parsed.tasks || !Array.isArray(parsed.tasks)) {
+        console.warn("Ollama returned invalid structure:", jsonText);
+        return [];
+      }
+
+      return parsed.tasks.filter(
+        (task: any) => task.description && task.confidence >= 0.5
+      );
+    } catch (parseError) {
+      console.error("Ollama JSON Parse Error:", parseError, "Raw content:", jsonText);
+      
+      // Attempt to find any JSON-like array in the text if full parse failed
+      const arrayMatch = jsonText.match(/\[\s*\{[\s\S]*\}\s*\]/);
+      if (arrayMatch) {
+        try {
+          const tasks = JSON.parse(arrayMatch[0]);
+          return Array.isArray(tasks) ? tasks : [];
+        } catch (e) {
+          // Fall through
+        }
+      }
+
+      const snippet = jsonText.substring(0, 100);
+      throw new Error(`AI response was not valid JSON. Started with: ${snippet}`);
     }
-
-    const parsed = JSON.parse(jsonText);
-
-    if (!parsed.tasks || !Array.isArray(parsed.tasks)) {
-      return [];
-    }
-
-    return parsed.tasks.filter((task: any) => task.description && task.confidence >= 0.5);
-
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error in Ollama extraction:", error);
-    throw error;
+    throw new Error(error.message || "Failed to extract tasks from transcript");
   }
 }

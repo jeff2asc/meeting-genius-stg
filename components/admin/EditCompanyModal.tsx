@@ -206,208 +206,149 @@ export default function EditCompanyModal({
             />
           </div>
 
-          {/* Default Meeting Sections */}
-          <div>
-            <label className="block text-sm font-semibold text-foreground mb-3">
-              Default Meeting Sections
-            </label>
-            <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-              {meetingSections.map((section, idx) =>
-                editingSectionIdx === idx ? (
-                  <div key={idx} className="flex items-center gap-2 p-3 bg-primary/5 border border-primary/20 rounded-lg">
-                    <input
-                      type="text"
-                      value={editingValue}
-                      onChange={e => setEditingValue(e.target.value)}
-                      className="flex-1 px-3 py-2 bg-background text-foreground rounded-md border border-border focus:outline-none focus:ring-2 focus:ring-primary/50"
-                      autoFocus
-                    />
-                    <Button 
-                      variant="default" 
-                      size="sm" 
-                      onClick={handleSaveSectionEdit} 
-                      type="button"
-                      className="bg-primary hover:bg-primary/90"
-                    >
-                      <Save className="h-4 w-4" />
-                    </Button>
-                  </div>
-                ) : (
-                  <div key={idx} className="flex items-center justify-between gap-3 p-3 bg-muted/50 hover:bg-muted rounded-lg border border-border/50 transition-colors group">
-                    <span className="flex-1 text-sm font-medium">{section}</span>
-                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Button 
-                        variant="ghost" 
-                        size="sm" 
-                        title="Edit" 
-                        type="button" 
-                        onClick={() => handleEditSection(idx)}
-                        className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary"
-                      >
-                        <Edit2 className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button 
-                        variant="ghost" 
-                        size="sm" 
-                        title="Delete" 
-                        type="button" 
-                        onClick={() => handleDeleteSection(idx)}
-                        className="h-8 w-8 p-0 hover:bg-red-100 hover:text-red-600"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            {/* Default Meeting Sections */}
+            <div className="space-y-3">
+              <label className="block text-sm font-semibold text-foreground flex items-center justify-between">
+                Default Meeting Sections
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  type="button" 
+                  onClick={handleAddSection}
+                  className="h-6 px-2 text-[10px] uppercase tracking-wider font-bold hover:bg-primary/10"
+                >
+                  <Plus className="h-3 w-3 mr-1" />
+                  Add
+                </Button>
+              </label>
+              <div className="space-y-1.5 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                {meetingSections.map((section, idx) =>
+                  editingSectionIdx === idx ? (
+                    <div key={idx} className="flex items-center gap-2 p-1.5 bg-primary/5 border border-primary/20 rounded-lg">
+                      <input
+                        type="text"
+                        value={editingValue}
+                        onChange={e => setEditingValue(e.target.value)}
+                        className="flex-1 px-2 py-1 bg-background text-sm rounded border border-border focus:ring-1 focus:ring-primary"
+                        autoFocus
+                      />
+                      <Button variant="default" size="sm" onClick={handleSaveSectionEdit} type="button" className="h-7 w-7 p-0">
+                        <Save className="h-3 w-3" />
                       </Button>
                     </div>
-                  </div>
-                )
-              )}
+                  ) : (
+                    <div key={idx} className="flex items-center justify-between gap-2 px-3 py-1.5 bg-muted/30 hover:bg-muted/60 rounded-md border border-border/40 group transition-all">
+                      <span className="flex-1 text-xs font-medium truncate">{section}</span>
+                      <div className="flex gap-0.5 opacity-0 group-hover:opacity-100">
+                        <Button variant="ghost" size="sm" type="button" onClick={() => handleEditSection(idx)} className="h-6 w-6 p-0">
+                          <Edit2 className="h-3 w-3" />
+                        </Button>
+                        <Button variant="ghost" size="sm" type="button" onClick={() => handleDeleteSection(idx)} className="h-6 w-6 p-0 text-red-500 hover:text-red-700">
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    </div>
+                  )
+                )}
+              </div>
             </div>
-            <Button 
-              variant="outline" 
-              size="sm" 
-              type="button" 
-              onClick={handleAddSection}
-              className="w-full mt-3 border-dashed hover:bg-primary/5 hover:border-primary/50 hover:text-primary"
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              Add Section
-            </Button>
-          </div>
 
-          {/* Default Meeting Types */}
-          <div>
-            <label className="block text-sm font-semibold text-foreground mb-3">
-              Default Meeting Types
-            </label>
-            <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-              {meetingTypes.map((type, idx) =>
-                editingTypeIdx === idx ? (
-                  <div key={idx} className="flex items-center gap-2 p-3 bg-primary/5 border border-primary/20 rounded-lg">
-                    <input
-                      type="text"
-                      value={editingValue}
-                      onChange={e => setEditingValue(e.target.value)}
-                      className="flex-1 px-3 py-2 bg-background text-foreground rounded-md border border-border focus:outline-none focus:ring-2 focus:ring-primary/50"
-                      autoFocus
-                    />
-                    <Button 
-                      variant="default" 
-                      size="sm" 
-                      onClick={handleSaveTypeEdit} 
-                      type="button"
-                      className="bg-primary hover:bg-primary/90"
-                    >
-                      <Save className="h-4 w-4" />
-                    </Button>
-                  </div>
-                ) : (
-                  <div key={idx} className="flex items-center justify-between gap-3 p-3 bg-muted/50 hover:bg-muted rounded-lg border border-border/50 transition-colors group">
-                    <span className="flex-1 text-sm font-medium">{type}</span>
-                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Button 
-                        variant="ghost" 
-                        size="sm" 
-                        title="Edit" 
-                        type="button" 
-                        onClick={() => handleEditType(idx)}
-                        className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary"
-                      >
-                        <Edit2 className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button 
-                        variant="ghost" 
-                        size="sm" 
-                        title="Delete" 
-                        type="button" 
-                        onClick={() => handleDeleteType(idx)}
-                        className="h-8 w-8 p-0 hover:bg-red-100 hover:text-red-600"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  </div>
-                )
-              )}
-            </div>
-            <Button 
-              variant="outline" 
-              size="sm" 
-              type="button" 
-              onClick={handleAddType}
-              className="w-full mt-3 border-dashed hover:bg-primary/5 hover:border-primary/50 hover:text-primary"
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              Add Type
-            </Button>
-          </div>
+            <div className="space-y-8">
+              {/* Default Meeting Types */}
+              <div className="space-y-3">
+                <label className="block text-sm font-semibold text-foreground flex items-center justify-between">
+                  Default Meeting Types
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    type="button" 
+                    onClick={handleAddType}
+                    className="h-6 px-2 text-[10px] uppercase tracking-wider font-bold hover:bg-primary/10"
+                  >
+                    <Plus className="h-3 w-3 mr-1" />
+                    Add
+                  </Button>
+                </label>
+                <div className="space-y-1.5 max-h-[160px] overflow-y-auto pr-2 custom-scrollbar">
+                  {meetingTypes.map((type, idx) =>
+                    editingTypeIdx === idx ? (
+                      <div key={idx} className="flex items-center gap-2 p-1.5 bg-primary/5 border border-primary/20 rounded-lg">
+                        <input
+                          type="text"
+                          value={editingValue}
+                          onChange={e => setEditingValue(e.target.value)}
+                          className="flex-1 px-2 py-1 bg-background text-sm rounded border border-border focus:ring-1 focus:ring-primary"
+                          autoFocus
+                        />
+                        <Button variant="default" size="sm" onClick={handleSaveTypeEdit} type="button" className="h-7 w-7 p-0">
+                          <Save className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    ) : (
+                      <div key={idx} className="flex items-center justify-between gap-2 px-3 py-1.5 bg-muted/30 hover:bg-muted/60 rounded-md border border-border/40 group transition-all">
+                        <span className="flex-1 text-xs font-medium truncate">{type}</span>
+                        <div className="flex gap-0.5 opacity-0 group-hover:opacity-100">
+                          <Button variant="ghost" size="sm" type="button" onClick={() => handleEditType(idx)} className="h-6 w-6 p-0">
+                            <Edit2 className="h-3 w-3" />
+                          </Button>
+                          <Button variant="ghost" size="sm" type="button" onClick={() => handleDeleteType(idx)} className="h-6 w-6 p-0 text-red-500 hover:text-red-700">
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      </div>
+                    )
+                  )}
+                </div>
+              </div>
 
-          {/* ← NEW: Default Decision Results */}
-          <div>
-            <label className="block text-sm font-semibold text-foreground mb-3">
-              Decision Result Options
-            </label>
-            <p className="text-xs text-muted-foreground mb-3">
-              Customize the dropdown options for decision results (e.g., M/S/C, Defeated, Deferred)
-            </p>
-            <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-              {decisionResults.map((result, idx) =>
-                editingResultIdx === idx ? (
-                  <div key={idx} className="flex items-center gap-2 p-3 bg-primary/5 border border-primary/20 rounded-lg">
-                    <input
-                      type="text"
-                      value={editingValue}
-                      onChange={e => setEditingValue(e.target.value)}
-                      className="flex-1 px-3 py-2 bg-background text-foreground rounded-md border border-border focus:outline-none focus:ring-2 focus:ring-primary/50"
-                      autoFocus
-                    />
-                    <Button 
-                      variant="default" 
-                      size="sm" 
-                      onClick={handleSaveResultEdit} 
-                      type="button"
-                      className="bg-primary hover:bg-primary/90"
-                    >
-                      <Save className="h-4 w-4" />
-                    </Button>
-                  </div>
-                ) : (
-                  <div key={idx} className="flex items-center justify-between gap-3 p-3 bg-muted/50 hover:bg-muted rounded-lg border border-border/50 transition-colors group">
-                    <span className="flex-1 text-sm font-medium">{result}</span>
-                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Button 
-                        variant="ghost" 
-                        size="sm" 
-                        title="Edit" 
-                        type="button" 
-                        onClick={() => handleEditResult(idx)}
-                        className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary"
-                      >
-                        <Edit2 className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button 
-                        variant="ghost" 
-                        size="sm" 
-                        title="Delete" 
-                        type="button" 
-                        onClick={() => handleDeleteResult(idx)}
-                        className="h-8 w-8 p-0 hover:bg-red-100 hover:text-red-600"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  </div>
-                )
-              )}
+              {/* Decision Result Options */}
+              <div className="space-y-3 pt-4 border-t border-border/50">
+                <label className="block text-sm font-semibold text-foreground flex items-center justify-between">
+                  Decision Results
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    type="button" 
+                    onClick={handleAddResult}
+                    className="h-6 px-2 text-[10px] uppercase tracking-wider font-bold hover:bg-primary/10"
+                  >
+                    <Plus className="h-3 w-3 mr-1" />
+                    Add
+                  </Button>
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {decisionResults.map((result, idx) =>
+                    editingResultIdx === idx ? (
+                      <div key={idx} className="flex items-center gap-2 p-1 bg-primary/5 border border-primary/20 rounded-lg">
+                        <input
+                          type="text"
+                          value={editingValue}
+                          onChange={e => setEditingValue(e.target.value)}
+                          className="w-24 px-2 py-0.5 bg-background text-xs rounded border border-border focus:ring-1 focus:ring-primary"
+                          autoFocus
+                        />
+                        <Button variant="default" size="sm" onClick={handleSaveResultEdit} type="button" className="h-6 w-6 p-0">
+                          <Save className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    ) : (
+                      <div key={idx} className="flex items-center gap-1.5 px-2.5 py-1 bg-primary/5 text-primary border border-primary/10 rounded-full group hover:bg-primary/10 transition-colors">
+                        <span className="text-[11px] font-bold">{result}</span>
+                        <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button type="button" onClick={() => handleEditResult(idx)} className="hover:text-primary-foreground">
+                            <Edit2 className="h-2.5 w-2.5" />
+                          </button>
+                          <button type="button" onClick={() => handleDeleteResult(idx)} className="hover:text-red-500">
+                            <Trash2 className="h-2.5 w-2.5" />
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  )}
+                </div>
+              </div>
             </div>
-            <Button 
-              variant="outline" 
-              size="sm" 
-              type="button" 
-              onClick={handleAddResult}
-              className="w-full mt-3 border-dashed hover:bg-primary/5 hover:border-primary/50 hover:text-primary"
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              Add Result Option
-            </Button>
           </div>
 
           {/* Save/Cancel buttons */}

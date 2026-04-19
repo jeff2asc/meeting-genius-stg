@@ -60,7 +60,15 @@ export async function extractTextFromFile(
     // Handle File object (from uploads)
     if (fileOrUrl instanceof File) {
       const file = fileOrUrl
-      const fileMimeType = file.type
+      let fileMimeType = file.type
+      const fileName = file.name.toLowerCase()
+
+      // Fallback for missing or generic mime types
+      if (!fileMimeType || fileMimeType === 'application/octet-stream') {
+        if (fileName.endsWith('.txt')) fileMimeType = 'text/plain'
+        else if (fileName.endsWith('.pdf')) fileMimeType = 'application/pdf'
+        else if (fileName.endsWith('.docx')) fileMimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+      }
 
       if (fileMimeType === 'application/pdf') {
         const text = await pdfToText(file)
@@ -71,14 +79,19 @@ export async function extractTextFromFile(
         const arrayBuffer = await file.arrayBuffer()
         const result = await mammoth.extractRawText({ arrayBuffer })
         return result.value
-      } else if (fileMimeType === 'text/plain') {
+      } else if (fileMimeType === 'text/plain' || fileName.endsWith('.txt')) {
         return await file.text()
       } else if (fileMimeType.startsWith('image/')) {
         console.log(`Image file detected: ${file.name}. OCR not implemented yet.`)
         return '[Image file - text extraction not supported]'
       } else {
-        console.warn(`Unsupported file type: ${fileMimeType}`)
-        return '[Unsupported file type]'
+        console.warn(`Unsupported file type: ${fileMimeType} for file ${fileName}`)
+        // Last resort: try to read as text if it's not a known binary type
+        try {
+          return await file.text()
+        } catch (e) {
+          return '[Unsupported file type]'
+        }
       }
     }
 

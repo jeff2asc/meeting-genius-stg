@@ -1,13 +1,31 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { X } from "lucide-react"
+import { 
+  X, 
+  ChevronRight, 
+  ChevronLeft, 
+  Check, 
+  Layout, 
+  ListTodo, 
+  Users, 
+  StickyNote, 
+  FileCheck, 
+  Info,
+  Calendar,
+  Clock,
+  MapPin,
+  Building2,
+  Hash
+} from "lucide-react"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Badge } from "@/components/ui/badge"
+import { ScrollArea } from "@/components/ui/scroll-area"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { 
   supabase, 
   getPreviousMeetingOfSameType,
-  getSectionsFromMeeting,
   getTopicsFromMeeting
 } from "@/lib/supabase"
 
@@ -18,33 +36,10 @@ interface CreateMeetingModalProps {
   selectedBuildingName?: string
 }
 
-// Type for sections
-type Section = {
-  id: number
-  meeting_id: number
-  title: string
-  order_index: number
-  created_at?: string
-  updated_at?: string
-}
-
-// Type for topics
-type Topic = {
-  id: number
-  meeting_id: number
-  section_id: number | null
-  title: string
-  description: string | null
-  order_index: number
-  rolled_over_from_topic_id: number | null
-  created_at?: string
-  updated_at?: string
-}
-
 export default function CreateMeetingModal({ onClose, onSuccess, buildings }: CreateMeetingModalProps) {
   const [formData, setFormData] = useState({
     title: "",
-    meetingDate: new Date().toISOString().split('T')[0], // ✅ AUTO-FILL TODAY'S DATE
+    meetingDate: new Date().toISOString().split('T')[0],
     location: "",
     startTime: "",
     meetingType: "",
@@ -53,69 +48,54 @@ export default function CreateMeetingModal({ onClose, onSuccess, buildings }: Cr
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
+  const [step, setStep] = useState(0) // 0: Details, 1: Rollover Selection
   const [meetingTypes, setMeetingTypes] = useState<string[]>([])
   const [meetingSections, setMeetingSections] = useState<string[]>([])
+  
+  // Rollover Preview Data
+  const [prevMeeting, setPrevMeeting] = useState<any>(null)
+  const [prevSections, setPrevSections] = useState<any[]>([])
+  const [prevTopics, setPrevTopics] = useState<any[]>([])
+  const [prevAttendees, setPrevAttendees] = useState<any[]>([])
+  const [loadingPrev, setLoadingPrev] = useState(false)
+
+  // Explicit Selections
+  const [selectedTopicIds, setSelectedTopicIds] = useState<number[]>([])
+  const [selectedTaskIds, setSelectedTaskIds] = useState<number[]>([])
+  const [selectedNoteIds, setSelectedNoteIds] = useState<number[]>([])
+  const [selectedDecisionIds, setSelectedDecisionIds] = useState<number[]>([])
+  const [selectedAttendeeIds, setSelectedAttendeeIds] = useState<number[]>([])
+
+  // Collapsed state for topics in selection view
+  const [expandedTopics, setExpandedTopics] = useState<number[]>([])
+  
+  // Storage for all items to display in selection
+  const [prevTasks, setPrevTasks] = useState<any[]>([])
+  const [prevNotes, setPrevNotes] = useState<any[]>([])
+  const [prevDecisions, setPrevDecisions] = useState<any[]>([])
 
   useEffect(() => {
-    // Fetch company defaults when modal opens or building changes
     async function fetchCompanyDefaults() {
       const selectedBuilding = buildings.find(b => b.id === formData.buildingId)
       if (!selectedBuilding || !selectedBuilding.company_id) {
-        setMeetingTypes([
-          "Council Meeting",
-          "AGM",
-          "SGM",
-          "Special Meeting",
-          "Emergency Meeting"
-        ])
-        setMeetingSections([
-          "Call to Order",
-          "Approval of Agenda",
-          "Old Business / Business Arising",
-          "New Business",
-          "Financial Report",
-          "Maintenance & Operations",
-          "Correspondence",
-          "Council Roundtable",
-          "Adjournment"
-        ])
+        setMeetingTypes(["Council Meeting", "AGM", "SGM", "Special Meeting", "Emergency Meeting"])
+        setMeetingSections(["Call to Order", "Approval of Agenda", "Old Business / Business Arising", "New Business", "Financial Report", "Maintenance & Operations", "Correspondence", "Council Roundtable", "Adjournment"])
         setFormData(f => ({ ...f, meetingType: "Council Meeting" }))
         return
       }
 
-      const { data: company, error } = await supabase
+      const { data: company } = await supabase
         .from("companies")
         .select("default_meeting_sections, default_meeting_types")
         .eq("id", selectedBuilding.company_id)
         .single()
 
-      setMeetingTypes(
-        company?.default_meeting_types || [
-          "Council Meeting",
-          "AGM",
-          "SGM",
-          "Special Meeting",
-          "Emergency Meeting"
-        ]
-      )
-      setMeetingSections(
-        company?.default_meeting_sections || [
-          "Call to Order",
-          "Approval of Agenda",
-          "Old Business / Business Arising",
-          "New Business",
-          "Financial Report",
-          "Maintenance & Operations",
-          "Correspondence",
-          "Council Roundtable",
-          "Adjournment"
-        ]
-      )
+      setMeetingTypes(company?.default_meeting_types || ["Council Meeting", "AGM", "SGM", "Special Meeting", "Emergency Meeting"])
+      setMeetingSections(company?.default_meeting_sections || ["Call to Order", "Approval of Agenda", "Old Business / Business Arising", "New Business", "Financial Report", "Maintenance & Operations", "Correspondence", "Council Roundtable", "Adjournment"])
       setFormData(f => ({ ...f, meetingType: company?.default_meeting_types?.[0] || "Council Meeting" }))
     }
 
     fetchCompanyDefaults()
-    // eslint-disable-next-line
   }, [formData.buildingId, buildings])
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -126,15 +106,76 @@ export default function CreateMeetingModal({ onClose, onSuccess, buildings }: Cr
     }))
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleNext = async () => {
+    if (!formData.title || !formData.meetingDate || !formData.meetingType) {
+      setError("Please fill in all required fields")
+      return
+    }
+
+    setLoadingPrev(true)
+    setError("")
+    try {
+      const previous = await getPreviousMeetingOfSameType(formData.buildingId, formData.meetingType)
+      
+      if (previous) {
+        setPrevMeeting(previous)
+        const topics = await getTopicsFromMeeting(previous.id)
+        setPrevTopics(topics || [])
+        setSelectedTopicIds([])
+
+        const [tasksRes, notesRes, decisionsRes, sectionsRes] = await Promise.all([
+          supabase.from('tasks').select('*').in('topic_id', (topics || []).map(t => t.id)),
+          supabase.from('notes').select('*').in('topic_id', (topics || []).map(t => t.id)),
+          supabase.from('decisions').select('*').in('topic_id', (topics || []).map(t => t.id)),
+          supabase.from('sections').select('*').eq('meeting_id', previous.id).order('order_index')
+        ])
+        
+        setPrevTasks(tasksRes.data || [])
+        setPrevNotes(notesRes.data || [])
+        setPrevDecisions(decisionsRes.data || [])
+        setPrevAttendees(previous.attendees || [])
+        setPrevSections(sectionsRes.data || [])
+
+        // Default selections (Attendees and New Business items selected by default)
+        const newBusinessSection = sectionsRes.data?.find((s: any) => s.title === "New Business")
+        const newBusinessTopics = newBusinessSection 
+          ? (topics || []).filter((t: any) => t.section_id === newBusinessSection.id)
+          : []
+        const newBusinessTopicIds = newBusinessTopics.map((t: any) => t.id)
+
+        setSelectedTopicIds(newBusinessTopicIds)
+        setSelectedTaskIds((tasksRes.data || []).filter((t: any) => newBusinessTopicIds.includes(t.topic_id)).map((t: any) => t.id))
+        setSelectedNoteIds((notesRes.data || []).filter((n: any) => newBusinessTopicIds.includes(n.topic_id)).map((n: any) => n.id))
+        setSelectedDecisionIds((decisionsRes.data || []).filter((d: any) => newBusinessTopicIds.includes(d.topic_id)).map((d: any) => d.id))
+        
+        // For attendees, use name fallback string as an identifier since some might be custom guests
+        setSelectedAttendeeIds((previous.attendees || []).map((a: any) => a.user_id?.toString() || a.name || a.email))
+
+        // Pre-expand topics that have tasks, notes, or decisions
+        const topicsWithItems = (topics || []).filter(t => 
+           (tasksRes.data || []).some(task => task.topic_id === t.id) ||
+           (notesRes.data || []).some(note => note.topic_id === t.id) ||
+           (decisionsRes.data || []).some(dec => dec.topic_id === t.id)
+        ).map(t => t.id)
+        setExpandedTopics(topicsWithItems)
+        
+        setStep(1)
+      } else {
+        await createMeeting(false)
+      }
+    } catch (err) {
+      console.error("Error fetching rollover data:", err)
+      setError("Could not fetch previous meeting data")
+    } finally {
+      setLoadingPrev(false)
+    }
+  }
+
+  const createMeeting = async (withRollover: boolean) => {
     setLoading(true)
     setError("")
 
     try {
-      // ============================================
-      // STEP 1: Create the meeting record
-      // ============================================
       const { data: meetingData, error: insertError } = await supabase
         .from("meetings")
         .insert([
@@ -152,402 +193,574 @@ export default function CreateMeetingModal({ onClose, onSuccess, buildings }: Cr
         .select()
         .single()
 
-      if (insertError || !meetingData) {
-        console.error("Error creating meeting:", insertError)
-        setError(insertError?.message || "Failed to create meeting")
-        setLoading(false)
-        return
-      }
+      if (insertError) throw insertError
 
-      // ============================================
-      // STEP 2: Check for previous meeting (ROLLOVER LOGIC)
-      // ============================================
-      const previousMeeting = await getPreviousMeetingOfSameType(
-        formData.buildingId,
-        formData.meetingType,
-        meetingData.id // exclude the meeting we just created
-      )
-
-      if (previousMeeting) {
-        // ============================================
-        // PATH A: ROLLOVER from previous meeting (STRUCTURE + ATTENDEES - NO TASKS)
-        // ============================================
-        console.log('🔄 Rolling over structure from previous meeting:', previousMeeting.title)
-
-        // Step 2.1: Get sections from previous meeting
-        const prevSections = await getSectionsFromMeeting(previousMeeting.id)
-
-        // Step 2.2: Copy sections to new meeting
-        const newSections: Section[] = []
-
-        for (const section of prevSections) {
-          const { data: newSection, error: sectionError } = await supabase
-            .from('sections')
-            .insert({
-              meeting_id: meetingData.id,
-              title: section.title,
-              order_index: section.order_index
-            })
-            .select()
-            .single()
-
-          if (sectionError) {
-            console.error('Error inserting section:', sectionError)
-          } else if (newSection) {
-            newSections.push(newSection as Section)
-          }
-        }
-
-        // Step 2.3: Create mapping of old section IDs to new section IDs
-        const sectionIdMap: Record<number, number> = {}
-        prevSections.forEach((oldSection, index) => {
-          if (newSections[index]) {
-            sectionIdMap[oldSection.id] = newSections[index].id
-          }
-        })
-
-        // Step 2.4: Get topics from previous meeting
-        const prevTopics = await getTopicsFromMeeting(previousMeeting.id)
-
-        // Step 2.5: Copy topics to new meeting
-        for (const topic of prevTopics) {
-          const newSectionId = topic.section_id ? sectionIdMap[topic.section_id] : null
-
-          const { data: newTopic, error: topicError } = await supabase
-            .from('topics')
-            .insert({
-              meeting_id: meetingData.id,
-              section_id: newSectionId,
-              title: topic.title,
-              description: topic.description,
-              order_index: topic.order_index,
-              rolled_over_from_topic_id: topic.id
-            })
-            .select()
-            .single()
-
-          if (topicError) {
-            console.error('Error inserting topic:', topicError)
-            continue
-          }
-
-          if (newTopic) {
-            // Copy tasks
-            const { data: oldTasks } = await supabase.from('tasks').select('*').eq('topic_id', topic.id)
-            if (oldTasks && oldTasks.length > 0) {
-              const tasksToInsert = oldTasks.map(t => ({
-                topic_id: newTopic.id,
-                description: t.description,
-                assigned_name: t.assigned_name,
-                assigned_email: t.assigned_email,
-                assignees: t.assignees,
-                due_date: t.due_date,
-                status: t.status,
-                created_by: t.created_by,
-                // keep the original created_at or new time? Usually new time or omit to let it default.
-                // Alternatively we can omit created_at so it gets latest
-              }))
-              await supabase.from('tasks').insert(tasksToInsert)
-            }
-
-            // Copy notes
-            const { data: oldNotes } = await supabase.from('notes').select('*').eq('topic_id', topic.id)
-            if (oldNotes && oldNotes.length > 0) {
-              const notesToInsert = oldNotes.map(n => ({
-                topic_id: newTopic.id,
-                content: n.content,
-                created_by: n.created_by,
-                visibility: n.visibility,
-                status: n.status
-              }))
-              await supabase.from('notes').insert(notesToInsert)
-            }
-
-            // Copy decisions
-            const { data: oldDecisions } = await supabase.from('decisions').select('*').eq('topic_id', topic.id)
-            if (oldDecisions && oldDecisions.length > 0) {
-              const decisionsToInsert = oldDecisions.map(d => ({
-                topic_id: newTopic.id,
-                motion_text: d.motion_text,
-                result: d.result,
-                votes_for: d.votes_for,
-                votes_against: d.votes_against,
-                votes_abstain: d.votes_abstain,
-                parent_decision_id: d.parent_decision_id, // This might be broken if parent was also old, but skipping complex logic for now
-                recorded_by: d.recorded_by,
-                status: d.status
-              }))
-              await supabase.from('decisions').insert(decisionsToInsert)
-            }
-          }
-        }
-
-        // ============================================
-        // Step 2.6: Copy attendees JSONB from previous meeting
-        // ============================================
-        if (previousMeeting.attendees && Array.isArray(previousMeeting.attendees) && previousMeeting.attendees.length > 0) {
-          // Reset attendance status to 'pending' for all attendees
-          const attendeesForNewMeeting = previousMeeting.attendees.map((attendee: any) => ({
-            ...attendee,
-            attendance_status: 'pending' // Reset for new meeting
-          }))
-
-          const { error: updateAttendeesError } = await supabase
-            .from('meetings')
-            .update({ attendees: attendeesForNewMeeting })
-            .eq('id', meetingData.id)
-
-          if (updateAttendeesError) {
-            console.error('Error copying attendees:', updateAttendeesError)
-          } else {
-            console.log(`✅ Rolled over ${attendeesForNewMeeting.length} attendees to new meeting`)
-          }
-        }
-
-        console.log('✅ Meeting structure created and all topic tasks/notes/decisions rolled over.')
-
+      if (withRollover && prevMeeting) {
+        await runExplicitRollover(meetingData.id)
       } else {
-        // ============================================
-        // PATH B: Use TEMPLATE (first time this meeting type)
-        // ============================================
-        console.log('📋 Using company template (no previous meeting found)')
-
-        // Compose sections from defaults array
-        const standardSections = (meetingSections.length > 0 ? meetingSections : [
-          "Call to Order",
-          "Approval of Agenda",
-          "Old Business / Business Arising",
-          "New Business",
-          "Financial Report",
-          "Maintenance & Operations",
-          "Correspondence",
-          "Council Roundtable",
-          "Adjournment"
-        ]).map((title, idx) => ({
+        const sectionsToInsert = meetingSections.map((title, index) => ({
+          meeting_id: meetingData.id,
           title,
-          order_index: idx + 1,
+          order_index: index + 1,
         }))
-
-        // Insert sections
-        const { data: insertedSections, error: sectionsError } = await supabase
-          .from("sections")
-          .insert(
-            standardSections.map(section => ({
-              meeting_id: meetingData.id,
-              title: section.title,
-              order_index: section.order_index,
-            }))
-          )
-          .select()
-
-        if (sectionsError) {
-          console.error("Error inserting sections:", sectionsError)
-        } else {
-          // Insert preset topics for Call to Order, Approval of Agenda, Adjournment
-          const presetTopics = [
-            { section_title: "Call to Order", title: "Meeting called to order at [time]" },
-            { section_title: "Approval of Agenda", title: "Approval of the agenda" },
-            { section_title: "Adjournment", title: "Meeting adjourned at [time]" },
-          ]
-
-          // Map section title to section id
-          const sectionIdMap: Record<string, number> = {}
-          insertedSections?.forEach(section => {
-            if (section.title && section.id) {
-              sectionIdMap[section.title] = section.id
-            }
-          })
-
-          // Insert preset topics
-          const topicsToInsert = presetTopics.map(topic => ({
-            meeting_id: meetingData.id,
-            section_id: sectionIdMap[topic.section_title] || null,
-            title: topic.title,
-            order_index: 1,
-          }))
-
-          const { error: topicsError } = await supabase.from("topics").insert(topicsToInsert)
-          if (topicsError) {
-            console.error("Error inserting preset topics:", topicsError)
-          }
-        }
+        await supabase.from("sections").insert(sectionsToInsert)
       }
 
-      // ============================================
-      // STEP 3: Success - close modal and refresh
-      // ============================================
       onSuccess()
       onClose()
-
-    } catch (err) {
-      console.error("Unexpected error:", err)
-      setError("An unexpected error occurred")
+    } catch (err: any) {
+      console.error("Error creating meeting:", err)
+      setError(err.message || "Failed to create meeting")
     } finally {
       setLoading(false)
     }
   }
 
+  const runExplicitRollover = async (newMeetingId: number) => {
+    if (!prevMeeting) return
+
+    const { data: oldSections } = await supabase.from('sections').select('*').eq('meeting_id', prevMeeting.id).order('order_index')
+    if (!oldSections) return
+
+    const sectionIdMap: Record<number, number> = {}
+    const newSectionTitleMap: Record<string, number> = {}
+
+    for (const oldSec of oldSections) {
+      const { data: newSec } = await supabase
+        .from('sections')
+        .insert({
+          meeting_id: newMeetingId,
+          title: oldSec.title,
+          order_index: oldSec.order_index
+        })
+        .select()
+        .single()
+      
+      if (newSec) {
+        sectionIdMap[oldSec.id] = newSec.id
+        newSectionTitleMap[newSec.title] = newSec.id
+      }
+    }
+
+    const topicsToClone = prevTopics.filter(t => selectedTopicIds.includes(t.id))
+    const movedTopics: any[] = []
+    const sectionTopicCount: Record<number, number> = {}
+
+    for (const topic of topicsToClone) {
+      const isNewBusiness = oldSections.find(s => s.id === topic.section_id)?.title === "New Business"
+      
+      if (isNewBusiness) {
+        movedTopics.push(topic)
+        continue
+      }
+
+      const newSectionId = topic.section_id ? sectionIdMap[topic.section_id] : null
+      if (newSectionId) {
+        sectionTopicCount[newSectionId] = (sectionTopicCount[newSectionId] || 0) + 1
+        
+        const { data: newTopic } = await supabase
+          .from('topics')
+          .insert({
+            meeting_id: newMeetingId,
+            section_id: newSectionId,
+            title: topic.title,
+            description: topic.description,
+            order_index: sectionTopicCount[newSectionId],
+            rolled_over_from_topic_id: topic.id
+          })
+          .select()
+          .single()
+        
+        if (newTopic) {
+          await cloneTopicItems(topic.id, newTopic.id)
+        }
+      }
+    }
+
+    const targetOldBusinessId = newSectionTitleMap["Old Business / Business Arising"]
+    if (targetOldBusinessId && movedTopics.length > 0) {
+      for (const topic of movedTopics) {
+        sectionTopicCount[targetOldBusinessId] = (sectionTopicCount[targetOldBusinessId] || 0) + 1
+        const { data: newTopic } = await supabase
+          .from('topics')
+          .insert({
+            meeting_id: newMeetingId,
+            section_id: targetOldBusinessId,
+            title: topic.title,
+            description: topic.description,
+            order_index: sectionTopicCount[targetOldBusinessId],
+            rolled_over_from_topic_id: topic.id
+          })
+          .select()
+          .single()
+        
+        if (newTopic) {
+          await cloneTopicItems(topic.id, newTopic.id)
+        }
+      }
+    }
+
+    if (selectedAttendeeIds.length > 0) {
+      const attendeesToInsert = prevAttendees
+        .filter((a: any) => {
+           const id = a.user_id?.toString() || a.name || a.email
+           return selectedAttendeeIds.includes(id)
+        })
+        .map((a: any) => ({
+          name: a.name || a.users?.name || a.users?.email?.split('@')[0],
+          email: a.email || a.users?.email,
+          role: a.role || 'Member',
+          user_id: a.user_id,
+          present: false
+        }))
+      await supabase.from('meetings').update({ attendees: attendeesToInsert }).eq('id', newMeetingId)
+    }
+  }
+
+  async function cloneTopicItems(oldTopicId: number, newTopicId: number) {
+    // Clone selected tasks
+    const tasksToClone = prevTasks.filter(t => t.topic_id === oldTopicId && selectedTaskIds.includes(t.id))
+    if (tasksToClone.length > 0) {
+      const toInsert = tasksToClone.map(t => {
+        const { id, ...rest } = t;
+        return { ...rest, topic_id: newTopicId };
+      })
+      await supabase.from('tasks').insert(toInsert)
+    }
+
+    // Clone selected notes
+    const notesToClone = prevNotes.filter(n => n.topic_id === oldTopicId && selectedNoteIds.includes(n.id))
+    if (notesToClone.length > 0) {
+      const toInsert = notesToClone.map(n => {
+        const { id, ...rest } = n;
+        return { ...rest, topic_id: newTopicId };
+      })
+      await supabase.from('notes').insert(toInsert)
+    }
+
+    // Clone selected decisions
+    const decisionsToClone = prevDecisions.filter(d => d.topic_id === oldTopicId && selectedDecisionIds.includes(d.id))
+    if (decisionsToClone.length > 0) {
+      const toInsert = decisionsToClone.map(d => {
+        const { id, ...rest } = d;
+        return { ...rest, topic_id: newTopicId };
+      })
+      await supabase.from('decisions').insert(toInsert)
+    }
+  }
+
+  const toggleTopicCascade = (topicId: number, checked: boolean) => {
+    if (checked) {
+      setSelectedTopicIds(prev => [...prev, topicId])
+      setSelectedTaskIds(prev => [...prev, ...prevTasks.filter(t => t.topic_id === topicId).map(t => t.id)])
+      setSelectedNoteIds(prev => [...prev, ...prevNotes.filter(n => n.topic_id === topicId).map(n => n.id)])
+      setSelectedDecisionIds(prev => [...prev, ...prevDecisions.filter(d => d.topic_id === topicId).map(d => d.id)])
+    } else {
+      setSelectedTopicIds(prev => prev.filter(id => id !== topicId))
+      setSelectedTaskIds(prev => prev.filter(id => !prevTasks.some(t => t.topic_id === topicId && t.id === id)))
+      setSelectedNoteIds(prev => prev.filter(id => !prevNotes.some(n => n.topic_id === topicId && n.id === id)))
+      setSelectedDecisionIds(prev => prev.filter(id => !prevDecisions.some(d => d.topic_id === topicId && d.id === id)))
+    }
+  }
+
+  const toggleAllTopics = (checked: boolean) => {
+    if (checked) {
+      setSelectedTopicIds(prevTopics.map(t => t.id))
+      setSelectedTaskIds(prevTasks.map(t => t.id))
+      setSelectedNoteIds(prevNotes.map(n => n.id))
+      setSelectedDecisionIds(prevDecisions.map(d => d.id))
+    } else {
+      setSelectedTopicIds([])
+      setSelectedTaskIds([])
+      setSelectedNoteIds([])
+      setSelectedDecisionIds([])
+    }
+  }
+
+  const toggleAllAttendees = (checked: boolean) => {
+    if (checked) setSelectedAttendeeIds(prevAttendees.map((a: any) => a.user_id?.toString() || a.name || a.email))
+    else setSelectedAttendeeIds([])
+  }
+
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 animate-in fade-in">
-      <Card className="w-full sm:max-w-md border-0 rounded-t-2xl sm:rounded-2xl shadow-2xl max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between border-b border-border bg-gradient-to-r from-primary/5 to-decision-purple/5 p-6 sticky top-0 z-10">
-          <h2 className="text-xl font-bold text-foreground">Create New Meeting</h2>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in p-4 overflow-y-auto">
+      <Card className="w-full max-w-[850px] border-0 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-border bg-gradient-to-r from-primary/10 via-background to-decision-purple/10 p-6">
+          <div className="flex items-center gap-3">
+             <div className="h-10 w-10 bg-primary/10 rounded-xl flex items-center justify-center text-primary">
+                {step === 0 ? <Calendar className="h-6 w-6" /> : <ListTodo className="h-6 w-6" />}
+             </div>
+             <div>
+                <h2 className="text-xl font-bold text-foreground">
+                  {step === 0 ? "Create New Meeting" : "Rollover Selection"}
+                </h2>
+                <p className="text-xs text-muted-foreground">
+                  {step === 0 ? "Step 1: Meeting Details" : `Step 2: Choose contents from ${prevMeeting?.title}`}
+                </p>
+             </div>
+          </div>
           <button
             onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center rounded hover:bg-muted transition-colors"
+            className="flex h-10 w-10 items-center justify-center rounded-full hover:bg-muted transition-colors"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <div className="flex-1 overflow-y-auto p-6">
           {error && (
-            <div className="p-3 bg-red-100 border border-red-200 text-red-800 rounded-lg text-sm">
+            <div className="mb-6 p-4 bg-red-50 border border-red-200 text-red-800 rounded-xl text-sm flex items-center gap-3 animate-in slide-in-from-top-2">
+              <Info className="h-5 w-5 text-red-500" />
               {error}
             </div>
           )}
 
-          {/* Building Selector */}
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-2">
-              Building *
-            </label>
-            {buildings.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Loading buildings...</p>
-            ) : (
-              <select
-                name="buildingId"
-                value={formData.buildingId}
-                onChange={handleInputChange}
-                required
-                className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50"
-              >
-                {buildings.map((building) => (
-                  <option key={building.id} value={building.id}>
-                    {building.name}
-                  </option>
-                ))}
-              </select>
-            )}
-          </div>
+          {step === 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in slide-in-from-left-4 duration-300">
+              {/* Basic Fields ... existing logic is fine here ... I will just focus on Step 1 below */}
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+                    <Building2 className="h-3 w-3" />
+                    Building
+                  </label>
+                  <select
+                    name="buildingId"
+                    value={formData.buildingId}
+                    onChange={handleInputChange}
+                    className="w-full px-4 py-2.5 bg-muted/20 border-border/50 rounded-xl text-sm focus:ring-2 focus:ring-primary/20 outline-none transition-all"
+                  >
+                    {buildings.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                  </select>
+                </div>
 
-          {/* Meeting Title */}
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-2">
-              Meeting Title *
-            </label>
-            <input
-              type="text"
-              name="title"
-              value={formData.title}
-              onChange={handleInputChange}
-              placeholder="e.g., October 2024 Board Meeting"
-              required
-              className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50"
-            />
-          </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+                    <Layout className="h-3 w-3" />
+                    Meeting Title
+                  </label>
+                  <input
+                    type="text"
+                    name="title"
+                    value={formData.title}
+                    onChange={handleInputChange}
+                    placeholder="e.g., October 2024 Board Meeting"
+                    className="w-full px-4 py-2.5 bg-muted/20 border-border/50 rounded-xl text-sm focus:ring-2 focus:ring-primary/20 outline-none transition-all"
+                  />
+                </div>
 
-          {/* Meeting Type */}
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-2">
-              Meeting Type *
-            </label>
-            <select
-              name="meetingType"
-              value={formData.meetingType}
-              onChange={handleInputChange}
-              required
-              className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50"
-            >
-              {meetingTypes.map(type => (
-                <option key={type} value={type}>{type}</option>
-              ))}
-            </select>
-          </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+                      <Calendar className="h-3 w-3" />
+                      Type
+                    </label>
+                    <select
+                      name="meetingType"
+                      value={formData.meetingType}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-2.5 bg-muted/20 border-border/50 rounded-xl text-sm focus:ring-2 focus:ring-primary/20 outline-none"
+                    >
+                      {meetingTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+                      <Clock className="h-3 w-3" />
+                      Starts At
+                    </label>
+                    <input
+                      type="time"
+                      name="startTime"
+                      value={formData.startTime}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-2.5 bg-muted/20 border-border/50 rounded-xl text-sm focus:ring-2 focus:ring-primary/20 outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
 
-          {/* Meeting Date */}
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-2">
-              Meeting Date *
-            </label>
-            <input
-              type="date"
-              name="meetingDate"
-              value={formData.meetingDate}
-              onChange={handleInputChange}
-              required
-              className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50"
-            />
-            <p className="text-xs text-muted-foreground mt-1">
-              ✅ Auto-filled with today's date in your timezone
-            </p>
-          </div>
+              <div className="space-y-4">
+                 <div className="space-y-2">
+                    <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+                      <Calendar className="h-3 w-3" />
+                      Meeting Date
+                    </label>
+                    <input
+                      type="date"
+                      name="meetingDate"
+                      value={formData.meetingDate}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-2.5 bg-muted/20 border-border/50 rounded-xl text-sm focus:ring-2 focus:ring-primary/20 outline-none"
+                    />
+                 </div>
 
-          {/* Start Time */}
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-2">
-              Start Time (Optional)
-            </label>
-            <input
-              type="time"
-              name="startTime"
-              value={formData.startTime}
-              onChange={handleInputChange}
-              className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50"
-            />
-            <p className="text-xs text-muted-foreground mt-1">e.g., 7:00 PM</p>
-          </div>
+                 <div className="space-y-2">
+                    <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+                      <MapPin className="h-3 w-3" />
+                      Location
+                    </label>
+                    <input
+                      type="text"
+                      name="location"
+                      value={formData.location}
+                      onChange={handleInputChange}
+                      placeholder="e.g., Amenity Room / Zoom"
+                      className="w-full px-4 py-2.5 bg-muted/20 border-border/50 rounded-xl text-sm focus:ring-2 focus:ring-primary/20 outline-none"
+                    />
+                 </div>
 
-          {/* Location */}
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-2">
-              Location (Optional)
-            </label>
-            <input
-              type="text"
-              name="location"
-              value={formData.location}
-              onChange={handleInputChange}
-              placeholder="e.g., Conference Room A or Zoom Meeting"
-              className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50"
-            />
-          </div>
+                 <div className="space-y-2">
+                    <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+                      <Hash className="h-3 w-3" />
+                      Strata Plan
+                    </label>
+                    <input
+                      type="text"
+                      name="strataPlanNumber"
+                      value={formData.strataPlanNumber}
+                      onChange={handleInputChange}
+                      placeholder="e.g., BCS1234"
+                      className="w-full px-4 py-2.5 bg-muted/20 border-border/50 rounded-xl text-sm focus:ring-2 focus:ring-primary/20 outline-none"
+                    />
+                 </div>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-6 animate-in slide-in-from-right-4 duration-300">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 h-[500px]">
+                {/* Agenda Outline Selection */}
+                <div className="flex flex-col space-y-3 p-4 bg-muted/20 rounded-2xl border border-border/50 overflow-hidden">
+                  <div className="flex items-center justify-between px-1">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+                       <Layout className="h-3 w-3 text-primary" />
+                       Agenda Outline
+                    </label>
+                    <div className="flex items-center gap-2">
+                       <button onClick={() => toggleAllTopics(true)} className="text-[9px] font-bold text-primary hover:underline">ALL</button>
+                       <span className="text-[10px] text-muted-foreground/30">|</span>
+                       <button onClick={() => toggleAllTopics(false)} className="text-[9px] font-bold text-muted-foreground hover:underline">NONE</button>
+                    </div>
+                  </div>
+                  <div className="flex-1 overflow-y-auto pr-3 min-h-0 custom-scrollbar">
+                    <div className="space-y-4">
+                      {prevSections.map((section, sIdx) => {
+                        const sectionTopics = prevTopics.filter(t => t.section_id === section.id && !t.is_archived)
+                        if (sectionTopics.length === 0) return null
 
-          {/* Strata Plan Number */}
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-2">
-              Strata Plan Number (Optional)
-            </label>
-            <input
-              type="text"
-              name="strataPlanNumber"
-              value={formData.strataPlanNumber}
-              onChange={handleInputChange}
-              placeholder="e.g., LMS1234"
-              className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50"
-            />
-            <p className="text-xs text-muted-foreground mt-1">Reference number for the building/strata</p>
-          </div>
+                        return (
+                          <div key={section.id} className="space-y-2">
+                            <h4 className="text-xs font-bold text-primary flex items-center gap-2 px-1">
+                              <span className="text-primary/70">{sIdx + 1}.</span>
+                              {section.title}
+                            </h4>
+                            <div className="pl-3 space-y-2 border-l-2 border-primary/10 ml-2">
+                              {sectionTopics.map(topic => {
+                                const topicTasks = prevTasks.filter(t => t.topic_id === topic.id)
+                                const topicNotes = prevNotes.filter(n => n.topic_id === topic.id)
+                                const topicDecisions = prevDecisions.filter(d => d.topic_id === topic.id)
+                                const isExpanded = expandedTopics.includes(topic.id)
+                                const hasItems = topicTasks.length > 0 || topicNotes.length > 0 || topicDecisions.length > 0
+        
+                                return (
+                                  <div key={topic.id} className="space-y-1">
+                                    <div 
+                                      className={`flex items-center gap-3 p-2.5 rounded-xl cursor-pointer transition-all border ${
+                                        selectedTopicIds.includes(topic.id) 
+                                          ? "bg-white border-primary/20 shadow-sm shadow-primary/5" 
+                                          : "border-transparent hover:bg-white/50"
+                                      }`}
+                                      onClick={() => {
+                                        const checked = !selectedTopicIds.includes(topic.id)
+                                        toggleTopicCascade(topic.id, checked)
+                                      }}
+                                    >
+                               <Checkbox checked={selectedTopicIds.includes(topic.id)} onCheckedChange={() => {}} />
+                               <div className="min-w-0 flex-1">
+                                  <p className="text-xs font-bold truncate leading-none mb-1">{topic.title}</p>
+                                  <div className="flex items-center gap-2">
+                                     <Badge variant="outline" className="text-[8px] h-3.5 leading-none px-1 border-muted-foreground/10 text-muted-foreground">Topics</Badge>
+                                     {hasItems && (
+                                       <button 
+                                          onClick={(e) => {
+                                            e.stopPropagation()
+                                            setExpandedTopics(prev => isExpanded ? prev.filter(id => id !== topic.id) : [...prev, topic.id])
+                                          }}
+                                          className="text-[9px] text-primary hover:underline font-bold"
+                                       >
+                                          {isExpanded ? 'Collapse' : `Select Items (${topicTasks.length + topicNotes.length + topicDecisions.length})`}
+                                       </button>
+                                     )}
+                                  </div>
+                               </div>
+                            </div>
+                            
+                            {isExpanded && (
+                               <div className="ml-8 space-y-3 py-2 border-l-2 border-primary/10 pl-4 animate-in slide-in-from-top-2 duration-200">
+                                  {topicTasks.length > 0 && (
+                                     <div className="space-y-1.5">
+                                        <p className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                                           <ListTodo className="h-2.5 w-2.5" />
+                                           Tasks
+                                        </p>
+                                        {topicTasks.map(t => (
+                                           <label key={t.id} className="flex items-start gap-2.5 group cursor-pointer">
+                                              <Checkbox 
+                                                checked={selectedTaskIds.includes(t.id)} 
+                                                onCheckedChange={(c) => {
+                                                   if (c) setSelectedTaskIds(prev => [...prev, t.id])
+                                                   else setSelectedTaskIds(prev => prev.filter(id => id !== t.id))
+                                                }}
+                                              />
+                                              <span className="text-[11px] leading-tight text-foreground/80 group-hover:text-foreground transition-colors">{t.description}</span>
+                                           </label>
+                                        ))}
+                                     </div>
+                                  )}
 
-          {/* Buttons */}
-          <div className="flex gap-3 pt-4">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={onClose}
-              className="flex-1 bg-transparent"
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              disabled={loading}
-              className="flex-1 bg-gradient-to-r from-primary to-decision-purple text-primary-foreground hover:opacity-90"
-            >
-              {loading ? "Creating..." : "Create Meeting"}
-            </Button>
-          </div>
-        </form>
+                                  {topicNotes.length > 0 && (
+                                     <div className="space-y-1.5">
+                                        <p className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                                           <StickyNote className="h-2.5 w-2.5" />
+                                           Notes
+                                        </p>
+                                        {topicNotes.map(n => (
+                                           <label key={n.id} className="flex items-start gap-2.5 group cursor-pointer">
+                                              <Checkbox 
+                                                checked={selectedNoteIds.includes(n.id)} 
+                                                onCheckedChange={(c) => {
+                                                   if (c) setSelectedNoteIds(prev => [...prev, n.id])
+                                                   else setSelectedNoteIds(prev => prev.filter(id => id !== n.id))
+                                                }}
+                                              />
+                                              <span className="text-[11px] leading-tight text-foreground/80 group-hover:text-foreground transition-colors line-clamp-2">{n.content}</span>
+                                           </label>
+                                        ))}
+                                     </div>
+                                  )}
+
+                                  {topicDecisions.length > 0 && (
+                                     <div className="space-y-1.5">
+                                        <p className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                                           <FileCheck className="h-2.5 w-2.5" />
+                                           Decisions
+                                        </p>
+                                        {topicDecisions.map(d => (
+                                           <label key={d.id} className="flex items-start gap-2.5 group cursor-pointer">
+                                              <Checkbox 
+                                                checked={selectedDecisionIds.includes(d.id)} 
+                                                onCheckedChange={(c) => {
+                                                   if (c) setSelectedDecisionIds(prev => [...prev, d.id])
+                                                   else setSelectedDecisionIds(prev => prev.filter(id => id !== d.id))
+                                                }}
+                                              />
+                                              <span className="text-[11px] leading-tight text-foreground/80 group-hover:text-foreground transition-colors">{d.motion_text}</span>
+                                           </label>
+                                        ))}
+                                     </div>
+                                  )}
+                               </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Attendees Selection */}
+                <div className="flex flex-col space-y-3 p-4 bg-muted/20 rounded-2xl border border-border/50 overflow-hidden">
+                   <div className="flex items-center justify-between px-1">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+                       <Users className="h-3 w-3 text-decision-purple" />
+                       Attendees
+                    </label>
+                    <div className="flex items-center gap-2">
+                       <button onClick={() => toggleAllAttendees(true)} className="text-[9px] font-bold text-primary hover:underline">ALL</button>
+                       <span className="text-[10px] text-muted-foreground/30">|</span>
+                       <button onClick={() => toggleAllAttendees(false)} className="text-[9px] font-bold text-muted-foreground hover:underline">NONE</button>
+                    </div>
+                  </div>
+                  <div className="flex-1 overflow-y-auto pr-3 min-h-0 custom-scrollbar">
+                    <div className="space-y-1.5">
+                      {prevAttendees.map((att: any, idx) => {
+                        const uniqueId = att.user_id?.toString() || att.name || att.email || String(idx)
+                        return (
+                        <div 
+                          key={uniqueId}
+                          onClick={() => {
+                            if (selectedAttendeeIds.includes(uniqueId)) setSelectedAttendeeIds(selectedAttendeeIds.filter(id => id !== uniqueId))
+                            else setSelectedAttendeeIds([...selectedAttendeeIds, uniqueId])
+                          }}
+                          className={`flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all border ${
+                            selectedAttendeeIds.includes(uniqueId) 
+                              ? "bg-white border-decision-purple/20 shadow-sm shadow-decision-purple/5" 
+                              : "border-transparent hover:bg-white/50"
+                          }`}
+                        >
+                           <Checkbox checked={selectedAttendeeIds.includes(uniqueId)} onCheckedChange={() => {}} />
+                           <div className="min-w-0 flex-1">
+                              <p className="text-xs font-bold truncate leading-none mb-1">{att.name || att.users?.name || att.users?.email?.split('@')[0]}</p>
+                              <p className="text-[9px] text-muted-foreground truncate">{att.role || 'Member'}</p>
+                           </div>
+                        </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="p-6 border-t border-border bg-muted/20 flex items-center justify-between gap-3">
+           {step === 0 ? (
+              <Button variant="ghost" onClick={onClose} disabled={loadingPrev}>Cancel</Button>
+           ) : (
+              <Button variant="ghost" onClick={() => setStep(0)} className="gap-2">
+                 <ChevronLeft className="h-4 w-4" />
+                 Back to Details
+              </Button>
+           )}
+           
+           <div className="flex items-center gap-3">
+              {step === 0 ? (
+                 <Button 
+                   onClick={handleNext} 
+                   disabled={loadingPrev}
+                   className="min-w-[140px] bg-primary hover:bg-primary/90 text-primary-foreground gap-2 font-bold shadow-lg shadow-primary/10"
+                 >
+                   {loadingPrev ? (
+                      <>
+                        <div className="h-3 w-3 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
+                        Analyzing...
+                      </>
+                   ) : (
+                      <>
+                        Configure Rollover
+                        <ChevronRight className="h-4 w-4" />
+                      </>
+                   )}
+                 </Button>
+              ) : (
+                 <Button 
+                   onClick={() => createMeeting(true)}
+                   disabled={loading}
+                   className="min-w-[140px] bg-gradient-to-r from-primary to-decision-purple text-primary-foreground font-bold shadow-xl animate-in zoom-in-95 duration-200"
+                 >
+                   {loading ? "Creating..." : "Finalize & Create"}
+                   {!loading && <Check className="h-4 w-4 ml-2" />}
+                 </Button>
+              )}
+           </div>
+        </div>
       </Card>
     </div>
   )

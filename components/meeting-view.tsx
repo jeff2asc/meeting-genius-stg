@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import React, { useState, useEffect } from "react"
 import GenerateAgendaButton from "./GenerateAgendaButton"
 import GenerateMinutesButton from "./GenerateMinutesButton"
 import {
@@ -40,6 +40,7 @@ import EditMeetingModal from "./EditMeetingModal"
 import AttendeeManagement, { Attendee } from "./AttendeeManagement"
 import SelectRecorderModal from "./SelectRecorderModal"
 import { supabase, getCurrentUser } from "@/lib/supabase"
+import { apiClient } from "@/lib/api-client"
 import { canEditMeeting, isReadOnly } from "@/lib/permissions"
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd"
 import UnifiedItemModal from "./UnifiedItemModal"
@@ -107,6 +108,9 @@ export default function MeetingView({
   const [showCreateSectionModal, setShowCreateSectionModal] = useState(false)
   const [showCreateTopicModal, setShowCreateTopicModal] = useState(false)
   const [showEditMeetingModal, setShowEditMeetingModal] = useState(false)
+  const [showSidebar, setShowSidebar] = useState(true)
+  const [showArchived, setShowArchived] = useState(false)
+  const [archivedTopics, setArchivedTopics] = useState<any[]>([])
 
   // ⭐ NEW: Recording upload state
   const [uploadingRecording, setUploadingRecording] = useState(false)
@@ -134,6 +138,7 @@ export default function MeetingView({
   const [showUnifiedModal, setShowUnifiedModal] = useState(false)
   const [selectedTopicForModal, setSelectedTopicForModal] = useState<number | null>(null)
   const [defaultTab, setDefaultTab] = useState<"task" | "note" | "decision">("task")
+  const [activeSectionId, setActiveSectionId] = useState<number | null>(null)
 
   const currentUser = getCurrentUser()
   const userCanEdit = currentUser ? canEditMeeting(currentUser.user_type) : false
@@ -148,33 +153,29 @@ export default function MeetingView({
     if (meetingId) fetchMeetingData()
   }, [meetingId])
 
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            const id = parseInt(entry.target.id.replace("section-", ""))
+            if (!isNaN(id)) setActiveSectionId(id)
+          }
+        })
+      },
+      { rootMargin: "-10% 0px -80% 0px" }
+    )
+    sections.forEach((s) => {
+      const el = document.getElementById(`section-${s.id}`)
+      if (el) observer.observe(el)
+    })
+    return () => observer.disconnect()
+  }, [sections])
+
   const fetchMeetingData = async () => {
     try {
       setLoading(true)
-      const { data: meetingData, error: meetingError } = await supabase
-        .from("meetings")
-        .select(
-          `
-          *,
-          buildings(
-            id,
-            name,
-            logo_url,
-            company_id,
-            companies(
-              id,
-              logo_url
-            )
-          )
-        `
-        )
-        .eq("id", meetingId)
-        .single()
-
-      if (meetingError) {
-        console.error("Error fetching meeting:", meetingError)
-        return
-      }
+      const meetingData = await apiClient.v1.meetings.get(meetingId)
 
       setMeeting({
         ...meetingData,
@@ -199,16 +200,7 @@ export default function MeetingView({
     const newValue = !meeting.is_incamera
 
     try {
-      const { error } = await supabase
-        .from("meetings")
-        .update({ is_incamera: newValue })
-        .eq("id", meetingId)
-
-      if (error) {
-        console.error("Error updating in-camera status:", error)
-        alert("Failed to update in-camera status")
-        return
-      }
+      await apiClient.v1.meetings.updateIncamera(meetingId, newValue)
 
       setMeeting({ ...meeting, is_incamera: newValue })
 
@@ -278,33 +270,8 @@ export default function MeetingView({
         return acc
       }, {} as Record<number, boolean>)
 
-      const { data: sectionsData, error: sectionsError } = await supabase
-        .from("sections")
-        .select("*")
-        .eq("meeting_id", meetingId)
-        .order("order_index")
-
-      if (sectionsError) {
-        console.error("Error fetching sections:", sectionsError)
-        return
-      }
-
-      const { data: topicsData, error: topicsError } = await supabase
-        .from("topics")
-        .select(
-          `
-          *,
-          notes(count),
-          decisions(count)
-        `
-        )
-        .eq("meeting_id", meetingId)
-        .order("order_index")
-
-      if (topicsError) {
-        console.error("Error fetching topics:", topicsError)
-        return
-      }
+      const sectionsData = await apiClient.v1.sections.list(meetingId)
+      const topicsData = await apiClient.v1.topics.list(meetingId)
 
       const allOpenTasks = await fetchOpenTasksFromPreviousMeetings()
 
@@ -314,7 +281,7 @@ export default function MeetingView({
         order_index: section.order_index,
         isExpanded: expandedStates[section.id] ?? false,
         topics: (topicsData || [])
-          .filter((topic) => topic.section_id === section.id)
+          .filter((topic) => topic.section_id === section.id && !topic.is_archived) // ✅ Hide archived
           .map((topic) => {
             const tasksForThisTopic = allOpenTasks.filter(
               (task) => task.topics?.title === topic.title
@@ -332,11 +299,21 @@ export default function MeetingView({
               is_incamera: topic.is_incamera,
               incamera_start_time: topic.incamera_start_time,
               incamera_end_time: topic.incamera_end_time,
+              is_archived: topic.is_archived
             }
           }),
       }))
 
+      // ✅ Fetch archived topics specifically
+      const archived = (topicsData || []).filter(t => t.is_archived).map(t => ({
+        ...t,
+        tasks: 0,
+        decisions: t.decisions?.[0]?.count || 0,
+        attachments: 0
+      }))
+
       setSections(sectionsWithTopics)
+      setArchivedTopics(archived)
     } catch (err) {
       console.error("Unexpected error fetching sections/topics:", err)
     }
@@ -377,7 +354,7 @@ export default function MeetingView({
 
   const saveSectionRename = async () => {
     if (!editingSection) return
-    await supabase.from("sections").update({ title: sectionRenameValue }).eq("id", editingSection.id)
+    await apiClient.v1.sections.update(editingSection.id, sectionRenameValue)
     setEditingSection(null)
     setSectionRenameValue("")
     await fetchSectionsAndTopics()
@@ -388,7 +365,7 @@ export default function MeetingView({
 
   const confirmDeleteSection = async () => {
     if (!sectionToDelete) return
-    await supabase.from("sections").delete().eq("id", sectionToDelete.id)
+    await apiClient.v1.sections.delete(sectionToDelete.id)
     setSectionToDelete(null)
     await fetchSectionsAndTopics()
     await checkForTranscripts()
@@ -414,12 +391,8 @@ export default function MeetingView({
       if (updates.incamera_end_time !== undefined)
         updatePayload.incamera_end_time = updates.incamera_end_time
 
-      const { error } = await supabase.from("topics").update(updatePayload).eq("id", id)
+      await apiClient.v1.topics.update(id, updatePayload)
 
-      if (error) {
-        console.error("Error updating topic:", error)
-        return
-      }
       if (updates.title) {
         const expandedStates = sections.reduce((acc, section) => {
           acc[section.id] = section.isExpanded
@@ -447,16 +420,18 @@ export default function MeetingView({
       return
     }
     try {
-      const { error } = await supabase.from("topics").delete().eq("id", id)
-      if (error) {
-        console.error("Error deleting topic:", error)
-        return
-      }
+      await apiClient.v1.topics.delete(id)
       await fetchSectionsAndTopics()
       await checkForTranscripts()
     } catch (err) {
       console.error("Unexpected error:", err)
     }
+  }
+
+  const archiveTopic = async () => {
+    // Just refresh the data after archiving is handled in TopicCard
+    await fetchSectionsAndTopics()
+    await checkForTranscripts()
   }
 
   const toggleSection = (sectionId: number) => {
@@ -485,13 +460,8 @@ export default function MeetingView({
       })
       setSections(newSections)
       try {
-        await Promise.all(
-          newSections.map((section) =>
-            supabase
-              .from("sections")
-              .update({ order_index: section.order_index })
-              .eq("id", section.id)
-          )
+        await apiClient.v1.sections.updateOrder(
+          newSections.map(s => ({ id: s.id, order_index: s.order_index }))
         )
       } catch (err) {
         console.error("Failed to update sections order:", err)
@@ -514,13 +484,8 @@ export default function MeetingView({
         newSections[fromIdx].topics.forEach((t, idx) => (t.order_index = idx + 1))
         setSections(newSections)
         try {
-          await Promise.all(
-            newSections[fromIdx].topics.map((topic) =>
-              supabase
-                .from("topics")
-                .update({ order_index: topic.order_index })
-                .eq("id", topic.id)
-            )
+          await apiClient.v1.topics.updateOrder(
+            newSections[fromIdx].topics.map(t => ({ id: t.id, order_index: t.order_index! }))
           )
         } catch (err) {
           console.error("Failed to update topic order:", err)
@@ -535,23 +500,18 @@ export default function MeetingView({
         newSections[toIdx].topics.forEach((t, idx) => (t.order_index = idx + 1))
         setSections(newSections)
         try {
-          await Promise.all([
-            ...newSections[fromIdx].topics.map((topic) =>
-              supabase
-                .from("topics")
-                .update({ order_index: topic.order_index })
-                .eq("id", topic.id)
-            ),
-            ...newSections[toIdx].topics.map((topic) =>
-              supabase
-                .from("topics")
-                .update({
-                  order_index: topic.order_index,
-                  section_id: newSections[toIdx].id,
-                })
-                .eq("id", topic.id)
-            ),
-          ])
+          const updates = [
+            ...newSections[fromIdx].topics.map((t) => ({
+              id: t.id,
+              order_index: t.order_index!,
+            })),
+            ...newSections[toIdx].topics.map((t) => ({
+              id: t.id,
+              order_index: t.order_index!,
+              section_id: newSections[toIdx].id,
+            })),
+          ]
+          await apiClient.v1.topics.updateOrder(updates)
         } catch (err) {
           console.error("Failed to update topics order:", err)
         }
@@ -612,7 +572,7 @@ export default function MeetingView({
     try {
       setLoading(true)
 
-      const updateData: any = { status: targetStatus }
+      const updateData: any = {}
 
       if (targetStatus === "working_minutes" && recorderName) {
         updateData.recorder_name = recorderName
@@ -627,14 +587,8 @@ export default function MeetingView({
         updateData.attendees = resetAttendees
       }
 
-      const { error } = await supabase
-        .from("meetings")
-        .update(updateData)
-        .eq("id", meetingId)
-
-      if (!error) {
-        await fetchMeetingData()
-      }
+      await apiClient.v1.meetings.updateStatus(meetingId, targetStatus, updateData)
+      await fetchMeetingData()
     } catch (err) {
       console.error("Error updating meeting status:", err)
     } finally {
@@ -1469,11 +1423,12 @@ export default function MeetingView({
   const attendeeCount = ((meeting.attendees as Attendee[]) || []).length
   const presentCount = ((meeting.attendees as Attendee[]) || []).filter(
     (a) => a.present
-  ).length
+  ).length;
 
   return (
     <>
-      <header className="border-b border-border bg-card shadow-sm sticky top-0 z-40">
+      <div className="flex flex-col h-screen overflow-hidden bg-background">
+      <header className="border-b border-border bg-card shadow-sm sticky top-0 z-40 flex-shrink-0">
         <div className="mx-auto max-w-7xl px-4 py-3 sm:px-6 lg:px-8">
           <div className="flex items-center gap-3 mb-2">
             <Button
@@ -1483,6 +1438,16 @@ export default function MeetingView({
               className="hover:bg-muted flex-shrink-0 h-8 w-8"
             >
               <ArrowLeft className="h-4 w-4" />
+            </Button>
+
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setShowSidebar(!showSidebar)}
+              className={`hover:bg-muted flex-shrink-0 h-8 w-8 ${showSidebar ? 'text-primary' : 'text-muted-foreground'}`}
+              title={showSidebar ? "Hide Sidebar" : "Show Sidebar"}
+            >
+              <FileText className="h-4 w-4" />
             </Button>
 
             <div className="flex-1 min-w-0">
@@ -1787,12 +1752,62 @@ export default function MeetingView({
           </div>
         </div>
       </header>
+      
+      <div className="flex flex-1 overflow-hidden relative">
+        {/* Agenda Outline Sidebar */}
+        {showSidebar && (
+          <aside className="hidden lg:flex w-64 border-r border-border bg-background flex-col shrink-0 h-full overflow-y-auto px-4 pt-2 pb-4 transition-all duration-300 shadow-sm">
+            <h3 className="text-sm font-bold text-primary flex items-center gap-2 mb-4">
+              <FileText className="h-4 w-4" />
+              AGENDA OUTLINE
+            </h3>
+            <nav className="space-y-1">
+              {sections.map((section, idx) => (
+                <div key={section.id} className="space-y-1">
+                  <button
+                    onClick={() => {
+                      if (!section.isExpanded) toggleSection(section.id)
+                      const element = document.getElementById(`section-${section.id}`)
+                      element?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                    }}
+                    className={`w-full text-left text-xs font-bold px-2 py-1.5 rounded transition-colors flex items-center gap-2 ${
+                      activeSectionId === section.id 
+                        ? "bg-primary/10 text-primary border-r-2 border-primary" 
+                        : "hover:bg-primary/5 text-foreground"
+                    }`}
+                  >
+                    <span className="text-primary/70">{idx + 1}.</span>
+                    <span className="truncate">{section.title}</span>
+                  </button>
+                  <div className="ml-4 space-y-0.5 border-l-2 border-primary/10 pl-2">
+                    {section.topics.map((topic, tIdx) => (
+                      <button
+                        key={topic.id}
+                        onClick={() => {
+                          if (!section.isExpanded) toggleSection(section.id)
+                          const element = document.getElementById(`topic-${topic.id}`)
+                          element?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                        }}
+                        className="w-full text-left text-[11px] px-2 py-1 rounded hover:bg-primary/5 text-muted-foreground hover:text-foreground truncate"
+                      >
+                        <span className="mr-1">{idx + 1}.{tIdx + 1}</span>
+                        {topic.title}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </nav>
+          </aside>
+        )}
 
-      <div className="mx-auto max-w-4xl px-4 pt-0 sm:px-6 lg:px-8">
-        <button
-          onClick={() => setAttendeesExpanded(!attendeesExpanded)}
-          className="w-full flex items-center justify-between px-4 py-2 bg-card border border-border rounded-lg hover:bg-muted/30 transition-colors shadow-sm"
-        >
+        <div className="flex-1 overflow-y-auto relative">
+          {/* Main Content Container */}
+          <div className="mx-auto max-w-4xl px-4 pt-1 sm:px-6 lg:px-8">
+            <button
+              onClick={() => setAttendeesExpanded(!attendeesExpanded)}
+              className="w-full flex items-center justify-between px-4 py-2 bg-card border border-border rounded-lg hover:bg-muted/30 transition-colors shadow-sm"
+            >
           <div className="flex items-center gap-2">
             <Users className="h-4 w-4 text-blue-600" />
             <span className="text-sm font-medium text-foreground">Attendees</span>
@@ -1839,7 +1854,7 @@ export default function MeetingView({
             <div
               {...provided.droppableProps}
               ref={provided.innerRef}
-              className="mx-auto max-w-4xl px-4 py-0 sm:px-6 lg:px-8 space-y-1"
+              className="mx-auto max-w-4xl px-4 pt-0 pb-10 sm:px-6 lg:px-8 space-y-1"
             >
               {sections.map((section, sectionIndex) => (
                 <Draggable
@@ -1848,7 +1863,7 @@ export default function MeetingView({
                   index={sectionIndex}
                 >
                   {(provided: any) => (
-                    <div ref={provided.innerRef} {...provided.draggableProps}>
+                    <div ref={provided.innerRef} {...provided.draggableProps} id={`section-${section.id}`}>
                       <Card className="border-0 bg-gradient-to-r from-primary/10 to-decision-purple/10 mb-1">
                         <div className="w-full py-0 px-3 flex items-center justify-between">
                           <div className="flex items-center gap-3">
@@ -1955,6 +1970,7 @@ export default function MeetingView({
                                           ref={provided.innerRef}
                                           {...provided.draggableProps}
                                           {...provided.dragHandleProps}
+                                          id={`topic-${topic.id}`}
                                         >
                                           <TopicCard
                                             topic={topic}
@@ -1965,6 +1981,7 @@ export default function MeetingView({
                                               updateTopic(topic.id, updates)
                                             }
                                             onDelete={(id) => deleteTopic(id)}
+                                            onArchive={() => archiveTopic()}
                                             onTaskClick={() => {
                                               setSelectedTopicForModal(topic.id)
                                               setDefaultTab("task")
@@ -2037,16 +2054,102 @@ export default function MeetingView({
             </div>
           )}
         </Droppable>
+
+        {showArchived && archivedTopics.length > 0 && (
+          <div className="mx-auto max-w-4xl px-4 pt-8 pb-32 sm:px-6 lg:px-8 border-t-2 border-dashed border-amber-200 mt-12">
+            <h2 className="text-xl font-bold text-amber-800 mb-6 flex items-center gap-2">
+              <Download className="h-5 w-5" />
+              Archived Topics (Historical)
+            </h2>
+            <div className="space-y-4">
+              {archivedTopics.map((topic) => (
+                <div key={topic.id} id={`topic-${topic.id}`}>
+                  <TopicCard
+                    topic={topic}
+                    topicNumber={0}
+                    meetingId={parseInt(meetingId)}
+                    meetingStatus={meeting.status}
+                    isReadOnly={true} // Archived topics are read-only
+                    onUpdate={(_updates) => {}}
+                    onDelete={(_topicId) => {}}
+                    onTaskClick={() => {}}
+                    onNoteClick={() => {}}
+                    onDecisionClick={() => {}}
+                    onRestore={async (id) => {
+                      console.log("Restoring topic:", id)
+                      await fetchSectionsAndTopics()
+                      await checkForTranscripts()
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </DragDropContext>
+          </div> {/* Close max-w-4xl container */}
+        </div> {/* Close the flex-1 container */}
+
+      {/* ⭐ FIXED: Topic Bank Floating Button in Bottom Right */}
+      <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3">
+        {showArchived && archivedTopics.length > 0 && (
+          <Card className="w-80 shadow-2xl border-amber-200 overflow-hidden mb-2 animate-in slide-in-from-bottom-5">
+            <div className="bg-amber-50 px-4 py-2 border-b border-amber-100 flex items-center justify-between">
+              <span className="text-[10px] font-bold text-amber-800 uppercase flex items-center gap-2">
+                <Download className="h-3.5 w-3.5" />
+                Topic Bank
+              </span>
+              <button 
+                onClick={() => setShowArchived(false)}
+                className="text-amber-800 hover:bg-amber-100 p-1 rounded"
+              >
+                <ChevronDown className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="p-2 max-h-[400px] overflow-y-auto bg-white">
+              {archivedTopics.map((topic) => (
+                <button
+                  key={topic.id}
+                  onClick={() => {
+                    const element = document.getElementById(`topic-${topic.id}`)
+                    element?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                  }}
+                  className="w-full text-left text-sm px-3 py-2 rounded hover:bg-amber-50 text-amber-900 border-b border-amber-50 last:border-0 transition-colors"
+                >
+                  <div className="font-medium truncate">{topic.title}</div>
+                  <div className="text-[10px] text-amber-600/70 italic">Click to view in archive below</div>
+                </button>
+              ))}
+            </div>
+          </Card>
+        )}
+        
+        <Button
+          onClick={() => setShowArchived(!showArchived)}
+          className={`h-14 w-14 rounded-full shadow-2xl transition-all hover:scale-105 active:scale-95 ${
+            showArchived 
+              ? 'bg-amber-600 hover:bg-amber-700 text-white ring-4 ring-amber-100' 
+              : 'bg-primary hover:bg-primary/90 text-white'
+          }`}
+          title="Open Topic Bank"
+        >
+          <div className="relative">
+            <Download className="h-6 w-6" />
+            {archivedTopics.length > 0 && (
+              <span className="absolute -top-2 -right-2 bg-amber-500 text-white text-[10px] font-bold h-5 w-5 rounded-full flex items-center justify-center border-2 border-white">
+                {archivedTopics.length}
+              </span>
+            )}
+          </div>
+        </Button>
+      </div>
 
       {sectionToDelete && (
         <div className="fixed inset-0 bg-black bg-opacity-40 z-50 flex items-center justify-center">
           <div className="bg-white border p-6 rounded-lg shadow-lg max-w-md w-full">
             <h2 className="text-xl font-bold mb-2">Delete Section?</h2>
             <p className="mb-4">
-              Are you sure you want to permanently delete{" "}
-              <b>{sectionToDelete.title}</b> and all its topics? This cannot be
-              undone.
+              <b>{sectionToDelete?.title || "this section"}</b>
             </p>
             <div className="flex gap-4 justify-end">
               <Button variant="outline" onClick={cancelDeleteSection}>
@@ -2089,8 +2192,8 @@ export default function MeetingView({
       {showCreateTopicModal && selectedSection && userCanEdit && (
         <CreateTopicModal
           meetingId={meetingId}
-          sectionId={selectedSection.id}
-          sectionTitle={selectedSection.title}
+          sectionId={selectedSection?.id || 0}
+          sectionTitle={selectedSection?.title || ""}
           onClose={() => {
             setShowCreateTopicModal(false)
             setSelectedSection(null)
@@ -2149,18 +2252,6 @@ export default function MeetingView({
           isOpen={showUnifiedModal}
           onClose={() => {
             setShowUnifiedModal(false)
-
-            const sectionWithTopic = sections.find((section) =>
-              section.topics.some((topic) => topic.id === selectedTopicForModal)
-            )
-
-            if (sectionWithTopic) {
-              toggleSection(sectionWithTopic.id)
-
-              setTimeout(() => {
-                toggleSection(sectionWithTopic.id)
-              }, 50)
-            }
           }}
           topicId={selectedTopicForModal}
           meetingId={meetingId}
@@ -2173,6 +2264,7 @@ export default function MeetingView({
           defaultTab={defaultTab}
         />
       )}
+      </div>
     </>
   )
 }

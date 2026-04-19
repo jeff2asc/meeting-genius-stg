@@ -5,6 +5,7 @@ import { X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { supabase } from "@/lib/supabase"
+import { isMaster as checkIsMaster, isCorporateAdmin as checkIsCorporateAdmin, isPropertyManager as checkIsPropertyManager } from "@/lib/permissions"
 
 interface CreateBuildingModalProps {
   isOpen: boolean
@@ -31,16 +32,16 @@ export default function CreateBuildingModal({
   const [buildingFormData, setBuildingFormData] = useState({
     name: "",
     address: "",
-    managerId: currentUser?.user_type === 'property_manager' ? currentUser.id : 0,
+    managerId: checkIsPropertyManager(currentUser) && !checkIsCorporateAdmin(currentUser) && !checkIsMaster(currentUser) ? currentUser.id : 0,
   })
   const [buildingType, setBuildingType] = useState<'Strata/Condo' | 'Rental' | 'Housing Co-op'>('Strata/Condo')
   const [selectedBuildingUsers, setSelectedBuildingUsers] = useState<number[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const isMaster = currentUser?.user_type === 'master'
-  const isCorporateAdmin = currentUser?.user_type === 'corporate_administrator'
-  const isPropertyManager = currentUser?.user_type === 'property_manager'
+  const isMaster = checkIsMaster(currentUser)
+  const isCorporateAdmin = checkIsCorporateAdmin(currentUser)
+  const isPropertyManager = checkIsPropertyManager(currentUser)
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target
@@ -144,7 +145,7 @@ export default function CreateBuildingModal({
       setBuildingFormData({
         name: "",
         address: "",
-        managerId: currentUser?.user_type === 'property_manager' ? currentUser.id : 0,
+        managerId: checkIsPropertyManager(currentUser) && !checkIsCorporateAdmin(currentUser) && !checkIsMaster(currentUser) ? currentUser.id : 0,
       })
       setBuildingType('Strata/Condo')
       setSelectedBuildingUsers([])
@@ -302,7 +303,7 @@ export default function CreateBuildingModal({
           )}
 
           {/* Property Manager - Auto-assigned */}
-          {isPropertyManager && (
+          {isPropertyManager && !isCorporateAdmin && !isMaster && (
             <div>
               <label className="block text-sm font-medium text-foreground mb-2">
                 Property Manager
