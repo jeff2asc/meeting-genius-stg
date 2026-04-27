@@ -552,7 +552,7 @@ export default function CreateMeetingModal({ onClose, onSuccess, buildings }: Cr
                   <div className="flex-1 overflow-y-auto pr-3 min-h-0 custom-scrollbar">
                     <div className="space-y-4">
                       {prevSections.map((section, sIdx) => {
-                        const sectionTopics = prevTopics.filter(t => t.section_id === section.id && !t.is_archived)
+                        const sectionTopics = prevTopics.filter(t => t.section_id === section.id)
                         if (sectionTopics.length === 0) return null
 
                         return (
@@ -584,7 +584,12 @@ export default function CreateMeetingModal({ onClose, onSuccess, buildings }: Cr
                                     >
                                <Checkbox checked={selectedTopicIds.includes(topic.id)} onCheckedChange={() => {}} />
                                <div className="min-w-0 flex-1">
-                                  <p className="text-xs font-bold truncate leading-none mb-1">{topic.title}</p>
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <p className="text-xs font-bold truncate leading-none">{topic.title}</p>
+                                    {topic.is_archived && (
+                                      <Badge variant="outline" className="text-[8px] h-3.5 leading-none px-1 border-amber-500 text-amber-600 bg-amber-50">ARCHIVED</Badge>
+                                    )}
+                                  </div>
                                   <div className="flex items-center gap-2">
                                      <Badge variant="outline" className="text-[8px] h-3.5 leading-none px-1 border-muted-foreground/10 text-muted-foreground">Topics</Badge>
                                      {hasItems && (

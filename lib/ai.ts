@@ -32,59 +32,68 @@ export async function extractTasksFromTranscript(
   loggingContext?: { userId?: number; companyId?: number }
 ): Promise<ExtractedTask[]> {
   
-  let primaryAi = process.env.PRIMARY_AI || "ollama";
+  // Default to ollama; DB settings below are the source of truth
+  let primaryAi = "ollama";
+
   let llmApiKey: string | undefined = undefined;
   let llmModel: string | undefined = undefined;
+  let ollamaHost: string | undefined = undefined;
 
   try {
      const { createClient } = await import("./supabase");
      const supabase = createClient();
 
      // 1. Check for company override first if we have context
-     if (loggingContext?.companyId) {
-        const { data: companyData } = await supabase
-          .from("companies")
-          .select("llm_provider, llm_api_key, llm_model")
-          .eq("id", loggingContext.companyId)
-          .single();
-        
-        if (companyData && companyData.llm_provider && companyData.llm_provider !== 'global') {
-           primaryAi = companyData.llm_provider;
-            if (companyData.llm_api_key) {
-               llmApiKey = companyData.llm_api_key;
+      if (loggingContext?.companyId) {
+         const { data: companyData } = await supabase
+           .from("companies")
+           .select("llm_provider, llm_api_key, llm_model")
+           .eq("id", loggingContext.companyId)
+           .single();
+         
+         if (companyData && companyData.llm_provider && companyData.llm_provider !== 'global') {
+            primaryAi = companyData.llm_provider;
+             if (companyData.llm_api_key) {
+                llmApiKey = companyData.llm_api_key;
+             }
+             if (companyData.llm_model) {
+                llmModel = companyData.llm_model;
+             }
+             console.log(`🏢 Loaded Company Settings - Provider: ${primaryAi}, Key: ${llmApiKey ? (llmApiKey as string).substring(0, 5) : 'NONE'}`);
+         } else {
+            // Fallback to system settings if company is 'global' or unset
+             const { data } = await supabase
+               .from("system_settings")
+               .select("key, value")
+               .in("key", ["primary_llm", "primary_llm_model", "global_llm_api_key", "ollama_host", "ollama_api_key"]);
+              
+            if (data) {
+              data.forEach(setting => {
+                 if (setting.key === 'primary_llm' && setting.value) primaryAi = setting.value;
+                 if (setting.key === 'primary_llm_model' && setting.value) llmModel = setting.value;
+                 if (setting.key === 'global_llm_api_key' && setting.value && !llmApiKey) llmApiKey = setting.value;
+                 if (setting.key === 'ollama_host' && setting.value) ollamaHost = setting.value;
+                 if (setting.key === 'ollama_api_key' && setting.value && !llmApiKey) llmApiKey = setting.value;
+              });
             }
-            if (companyData.llm_model) {
-               llmModel = companyData.llm_model;
-            }
-        } else {
-           // Fallback to system settings if company is 'global' or unset
-            const { data } = await supabase
-              .from("system_settings")
-              .select("key, value")
-              .in("key", ["primary_llm", "primary_llm_model", "global_llm_api_key"]);
-             
-           if (data) {
-             data.forEach(setting => {
-                if (setting.key === 'primary_llm') primaryAi = setting.value;
-                if (setting.key === 'primary_llm_model' && !llmModel) llmModel = setting.value;
-                if (setting.key === 'global_llm_api_key' && !llmApiKey) llmApiKey = setting.value;
-             });
-           }
-        }
-     } else {
+         }
+      } else {
        // Only system settings (e.g. Master user uploading without company context)
         const { data } = await supabase
           .from("system_settings")
           .select("key, value")
-          .in("key", ["primary_llm", "primary_llm_model", "global_llm_api_key"]);
+          .in("key", ["primary_llm", "primary_llm_model", "global_llm_api_key", "ollama_host", "ollama_api_key"]);
 
        if (data) {
           data.forEach(setting => {
-             if (setting.key === 'primary_llm') primaryAi = setting.value;
-             if (setting.key === 'primary_llm_model') llmModel = setting.value;
-             if (setting.key === 'global_llm_api_key' && !llmApiKey) llmApiKey = setting.value;
+             if (setting.key === 'primary_llm' && setting.value) primaryAi = setting.value;
+             if (setting.key === 'primary_llm_model' && setting.value) llmModel = setting.value;
+             if (setting.key === 'global_llm_api_key' && setting.value && !llmApiKey) llmApiKey = setting.value;
+             if (setting.key === 'ollama_host' && setting.value) ollamaHost = setting.value;
+             if (setting.key === 'ollama_api_key' && setting.value && !llmApiKey) llmApiKey = setting.value;
           });
        }
+       console.log(`📡 Final Resolved AI: ${primaryAi}, Key Prefix: ${llmApiKey ? (llmApiKey as string).substring(0, 5) : 'NONE'}`);
      }
   } catch (e) {
      console.error("Failed to read DB for primary_llm", e);
@@ -93,21 +102,27 @@ export async function extractTasksFromTranscript(
   const startTime = Date.now();
 
   const logUsage = async (status: "success" | "failure", error?: any) => {
+    console.log(`📊 AI Usage Log - Provider: ${primaryAi}, Status: ${status}, Error:`, error || 'none');
     if (loggingContext?.userId || loggingContext?.companyId) {
-      const { logLlmUsage } = await import("./logging");
-      await logLlmUsage({
-        user_id: loggingContext.userId,
-        company_id: loggingContext.companyId,
-        action_type: "llm_task_extraction",
-        model_name: primaryAi === "openai" ? (llmModel || "openai-gpt-4o-mini") : (primaryAi === "gemini" ? (llmModel || "gemini-2.5-flash") : "ollama-llama3.2"),
-        status,
-        duration_ms: Date.now() - startTime,
-        error_message: error ? (error?.message || String(error)) : undefined,
-      });
+      try {
+        const { logLlmUsage } = await import("./logging");
+        await logLlmUsage({
+          user_id: loggingContext.userId,
+          company_id: loggingContext.companyId,
+          action_type: "llm_task_extraction",
+          model_name: primaryAi === "openai" ? (llmModel || "openai-gpt-4o-mini") : (primaryAi === "gemini" ? (llmModel || "gemini-1.5-flash") : "ollama-llama3.2"),
+          status,
+          duration_ms: Date.now() - startTime,
+          error_message: error ? (error?.message || String(error)) : undefined,
+        });
+      } catch (logErr) {
+        console.error("Failed to log usage to DB:", logErr);
+      }
     }
   };
 
   try {
+    console.log(`🤖 Attempting extraction with provider: ${primaryAi}, model: ${llmModel || 'default'}`);
     if (primaryAi === "openai") {
       console.log(`🌟 Extracting tasks with OpenAI (${llmModel || 'default-mini'})...`);
       const result = await openaiExtract(transcriptText, sections, llmApiKey, llmModel);
@@ -115,28 +130,75 @@ export async function extractTasksFromTranscript(
       return result;
     } else if (primaryAi === "gemini") {
       console.log(`✨ Extracting tasks with Gemini (${llmModel || 'default-flash'})...`);
-      const result = await googleGeminiExtract(transcriptText, sections, llmApiKey, llmModel);
-      await logUsage("success");
-      return result;
-    } else {
+      try {
+        const result = await googleGeminiExtract(transcriptText, sections, llmApiKey, llmModel);
+        await logUsage("success");
+        return result;
+      } catch (geminiError: any) {
+        console.error("⚠️ Gemini failed, attempting fallback to OpenAI...", geminiError.message);
+        
+        // Fallback to OpenAI if Gemini fails
+        if (process.env.OPENAI_API_KEY || llmApiKey) {
+          try {
+            console.log("✨ Fallback: Attempting extraction with OpenAI...");
+            const result = await openaiExtract(transcriptText, sections, llmApiKey, llmModel);
+            primaryAi = "openai";
+            await logUsage("success");
+            return result;
+          } catch (openaiErr) {
+            console.error("❌ Both Gemini and OpenAI fallback failed.");
+          }
+        }
+        // If fallback wasn't possible or also failed, throw the original Gemini error
+        throw geminiError;
+      }
+    } else if (primaryAi === "ollama") {
       // Default to Ollama
       console.log("🚀 Extracting tasks with Ollama...");
       try {
-        const result = await customOllamaExtract(transcriptText, sections);
+        const result = await customOllamaExtract(transcriptText, sections, {
+          host: ollamaHost,
+          model: llmModel,
+          apiKey: llmApiKey
+        });
         await logUsage("success");
         return result;
       } catch (ollamaError) {
-        console.error("⚠️ Ollama failed, falling back to Gemini:", ollamaError);
+        console.error("⚠️ Ollama failed, attempting fallback...", ollamaError);
         await logUsage("failure", ollamaError);
         
-        // Auto-fallback
-        console.log(`✨ Fallback: Extracting tasks with Gemini (${llmModel || 'default-flash'})...`);
-        const result = await googleGeminiExtract(transcriptText, sections, llmApiKey, llmModel);
-        // Only logging the fallback success using current timestamp logic. We can reuse logUsage by hacking primaryAi
-        primaryAi = "gemini";
-        await logUsage("success");
-        return result;
+        // Try OpenAI first
+        if (process.env.OPENAI_API_KEY || llmApiKey) {
+          try {
+            console.log("✨ Attempting extraction with OpenAI...");
+            const result = await openaiExtract(transcriptText, sections, llmApiKey, llmModel);
+            primaryAi = "openai";
+            await logUsage("success");
+            return result;
+          } catch (e) {
+            console.error("OpenAI failed, trying Gemini...", e);
+          }
+        }
+        
+        // Then try Gemini
+        if (process.env.GEMINI_API_KEY || llmApiKey) {
+          try {
+            console.log("✨ Fallback: Attempting extraction with Google Gemini...");
+            const result = await googleGeminiExtract(transcriptText, sections, llmApiKey, llmModel);
+            primaryAi = "gemini";
+            await logUsage("success");
+            return result;
+          } catch (geminiError: any) {
+            console.error("❌ Gemini extraction failed:", geminiError);
+            // If we get here, it means both OpenAI and Gemini failed
+            throw new Error(`AI extraction failed. OpenAI: Quota exceeded. Gemini: ${geminiError.message || 'Unknown error'}`);
+          }
+        }
+
+        throw new Error("No valid AI API keys (OpenAI or Gemini) were found in your settings.");
       }
+    } else {
+      throw new Error(`Unknown AI provider: ${primaryAi}`);
     }
   } catch (error: any) {
     console.error(`❌ ${primaryAi} failed:`, error);

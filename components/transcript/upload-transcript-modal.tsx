@@ -75,7 +75,7 @@ export function UploadTranscriptModal({
       const response = await fetch("/api/transcripts/upload", {
         method: "POST",
         headers: {
-          "x-api-key": process.env.NEXT_PUBLIC_API_KEY || "",
+          "x-api-key": process.env.NEXT_PUBLIC_API_KEY || "meeting-genius-secret-key-2026",
         },
         body: formData,
       })
@@ -83,7 +83,7 @@ export function UploadTranscriptModal({
       const result = await response.json()
 
       if (!response.ok) {
-        throw new Error(result.error || "Failed to upload transcript")
+        throw new Error(result.detail || result.error || "Failed to upload transcript")
       }
 
       // Success

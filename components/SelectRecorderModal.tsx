@@ -16,17 +16,26 @@ interface SelectRecorderModalProps {
   isOpen: boolean
   onClose: () => void
   attendees: Attendee[]
-  onConfirm: (recorderName: string, timekeeperName: string | null) => void
+  initialStartTime?: string | null
+  initialChairPerson?: string | null
+  initialMinuteTaker?: string | null
+  onConfirm: (recorderName: string, timekeeperName: string | null, startTime: string | null, chairPerson: string | null, minuteTaker: string | null) => void
 }
 
 export default function SelectRecorderModal({
   isOpen,
   onClose,
   attendees,
+  initialStartTime,
+  initialChairPerson,
+  initialMinuteTaker,
   onConfirm
 }: SelectRecorderModalProps) {
   const [recorderName, setRecorderName] = useState<string>("")
   const [timekeeperName, setTimekeeperName] = useState<string>("")
+  const [startTime, setStartTime] = useState<string>(initialStartTime || new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }))
+  const [chairPerson, setChairPerson] = useState<string>(initialChairPerson || "")
+  const [minuteTaker, setMinuteTaker] = useState<string>(initialMinuteTaker || "")
   const [error, setError] = useState<string | null>(null)
 
   const handleConfirm = () => {
@@ -35,7 +44,7 @@ export default function SelectRecorderModal({
       return
     }
 
-    onConfirm(recorderName, timekeeperName || null)
+    onConfirm(recorderName, timekeeperName || null, startTime || null, chairPerson || null, minuteTaker || null)
     onClose()
   }
 
@@ -43,7 +52,7 @@ export default function SelectRecorderModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 animate-in fade-in">
-      <Card className="w-full max-w-md p-6 m-4">
+      <Card className="w-full max-w-md p-6 m-4 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-bold text-foreground">Start Meeting</h2>
           <button
@@ -55,7 +64,7 @@ export default function SelectRecorderModal({
         </div>
 
         <p className="text-sm text-muted-foreground mb-4">
-          Please select who will be recording the minutes and optionally a timekeeper for this meeting.
+          Please confirm meeting details to begin.
         </p>
 
         {error && (
@@ -65,6 +74,41 @@ export default function SelectRecorderModal({
         )}
 
         <div className="space-y-4">
+          {/* Start Time */}
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-2">
+              Actual Start Time <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="time"
+              value={startTime}
+              onChange={(e) => setStartTime(e.target.value)}
+              className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+          </div>
+
+          {/* Chairperson Selection */}
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-2">
+              Chairperson <span className="text-sm text-muted-foreground">(Optional)</span>
+            </label>
+            <select
+              value={chairPerson}
+              onChange={(e) => {
+                setChairPerson(e.target.value)
+                setError(null)
+              }}
+              className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+            >
+              <option value="">No chairperson</option>
+              {attendees.map((attendee, idx) => (
+                <option key={idx} value={attendee.name}>
+                  {attendee.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
           {/* Recorder Selection (Required) */}
           <div>
             <label className="block text-sm font-medium text-foreground mb-2">
@@ -79,6 +123,25 @@ export default function SelectRecorderModal({
               className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
             >
               <option value="">Select recorder...</option>
+              {attendees.map((attendee, idx) => (
+                <option key={idx} value={attendee.name}>
+                  {attendee.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Duplicate Note Taker (Optional) */}
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-2">
+              Duplicate Note Taker <span className="text-sm text-muted-foreground">(Optional)</span>
+            </label>
+            <select
+              value={minuteTaker}
+              onChange={(e) => setMinuteTaker(e.target.value)}
+              className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+            >
+              <option value="">No duplicate note taker</option>
               {attendees.map((attendee, idx) => (
                 <option key={idx} value={attendee.name}>
                   {attendee.name}

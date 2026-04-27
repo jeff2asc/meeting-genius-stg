@@ -142,10 +142,11 @@ export async function POST(request: NextRequest) {
         formattedSections,
         { userId: parsedUserId, companyId: companyId }
       );
-    } catch (error) {
-      console.error("Gemini extraction error:", error);
+    } catch (error: any) {
+      const detail = error?.message || String(error);
+      console.error("AI extraction error:", detail);
       return NextResponse.json(
-        { error: "Failed to extract tasks from transcript" },
+        { error: "Failed to extract tasks from transcript", detail },
         { status: 500 }
       );
     }

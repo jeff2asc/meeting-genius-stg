@@ -152,21 +152,12 @@ export default function CompanyDetailsModal({
   useEffect(() => {
     if (company && isOpen) {
       setActiveTab("overview")
+      fetchCompanyDetails() // ⭐ Force fresh fetch of company columns
       fetchCompanyData()
       fetchPropertyManagers()
 
-      setSmtpHost(company.smtp_host || "")
-      setSmtpPort(company.smtp_port ?? "")
-      setSmtpUser(company.smtp_user || "")
+      // ... other resets
       setSmtpPassword("")
-      setSmtpFromName(company.smtp_from_name || "")
-      setSmtpFromEmail(company.smtp_from_email || "")
-      setSmtpUseTls(company.smtp_use_tls ?? true)
-
-      setLlmProvider(company.llm_provider || "global")
-      setLlmApiKey(company.llm_api_key || "")
-      setLlmModel(company.llm_model || "")
-
       setShowAttachExisting(false)
       setSelectedExistingBuildingId("")
       setAvailableBuildings([])
@@ -247,7 +238,16 @@ export default function CompanyDetailsModal({
     }
 
     if (data) {
-      Object.assign(company, data)
+      setSmtpHost(data.smtp_host || "")
+      setSmtpPort(data.smtp_port ?? "")
+      setSmtpUser(data.smtp_user || "")
+      setSmtpFromName(data.smtp_from_name || "")
+      setSmtpFromEmail(data.smtp_from_email || "")
+      setSmtpUseTls(data.smtp_use_tls ?? true)
+
+      setLlmProvider(data.llm_provider || "global")
+      setLlmApiKey(data.llm_api_key || "")
+      setLlmModel(data.llm_model || "")
     }
   }
 
@@ -654,12 +654,15 @@ export default function CompanyDetailsModal({
     setError(null)
 
     try {
+      // Sanitize model name (replace spaces with dashes)
+      const sanitizedModel = llmModel.trim().toLowerCase().replace(/\s+/g, '-');
+      
       const { error } = await supabase
         .from("companies")
         .update({
           llm_provider: llmProvider === "global" ? null : llmProvider,
           llm_api_key: llmApiKey.trim() || null,
-          llm_model: llmModel.trim() || null,
+          llm_model: sanitizedModel || null,
         })
         .eq("id", company.id)
 
@@ -918,7 +921,7 @@ export default function CompanyDetailsModal({
                         >
                           <option value="global">System Default (Inherit)</option>
                           <option value="ollama">Ollama (Llama 3.2 - Local)</option>
-                          <option value="gemini">Google Gemini (Gemini 2.5 Flash)</option>
+                          <option value="gemini">Google Gemini (Gemini 1.5 Flash)</option>
                           <option value="openai">OpenAI (GPT-4o Mini)</option>
                         </select>
                       </div>
@@ -945,12 +948,17 @@ export default function CompanyDetailsModal({
                               type="text"
                               value={llmModel}
                               onChange={(e) => setLlmModel(e.target.value)}
-                              placeholder={llmProvider === 'openai' ? 'gpt-4o' : 'gemini-1.5-pro'}
+                              placeholder={llmProvider === 'openai' ? 'gpt-4o-mini' : 'gemini-1.5-flash'}
                               className="w-full px-3 py-2 bg-background border border-input rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
                             />
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {llmProvider === 'gemini'
+                                ? 'Valid models: gemini-1.5-flash (recommended), gemini-1.5-flash-8b, gemini-1.5-pro'
+                                : 'Valid models: gpt-4o-mini (recommended), gpt-4o, gpt-3.5-turbo'}
+                            </p>
                           </div>
                           <p className="col-span-2 text-xs text-muted-foreground mt-2">
-                            If omitted, the server&apos;s global API key and model will be used instead.
+                            Leave blank to use the system default model. Only change if you know the exact model ID.
                           </p>
                         </div>
                       )}

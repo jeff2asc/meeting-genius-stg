@@ -1,32 +1,10 @@
-// Polyfill for Promise.withResolvers (Node.js < 22)
-if (typeof Promise.withResolvers === 'undefined') {
-  (Promise as any).withResolvers = function <T>() {
-    let resolve: (value: T | PromiseLike<T>) => void;
-    let reject: (reason?: any) => void;
-    const promise = new Promise<T>((res, rej) => {
-      resolve = res;
-      reject = rej;
-    });
-    return { promise, resolve: resolve!, reject: reject! };
-  };
-}
-
-import { GoogleGenerativeAI } from "@google/generative-ai";
-
-// Hardcoded API key for MVP testing
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
-
-interface ExtractedTask {
+export interface ExtractedTask {
   description: string;
   assigned_name: string | null;
   due_date: string | null;
   confidence: number;
   suggested_topic_id: number | null;
   suggested_topic_title: string | null;
-}
-
-interface TaskExtractionResult {
-  tasks: ExtractedTask[];
 }
 
 interface Topic {
@@ -41,7 +19,9 @@ interface Section {
 }
 
 /**
- * Extract tasks from transcript text using Gemini AI
+ * Extract tasks from transcript text using Gemini REST API directly.
+ * Automatically tries multiple models (1.5-flash, 1.5-flash-latest, 2.0-flash) 
+ * to find one with available quota.
  */
 export async function extractTasksFromTranscript(
   transcriptText: string,
@@ -49,34 +29,38 @@ export async function extractTasksFromTranscript(
   customApiKey?: string,
   customModel?: string
 ): Promise<ExtractedTask[]> {
-  try {
-    const aiClient = customApiKey ? new GoogleGenerativeAI(customApiKey) : genAI;
-    const model = aiClient.getGenerativeModel({ model: customModel || "models/gemini-1.5-flash" });
+  const apiKey = customApiKey || process.env.GEMINI_API_KEY || "";
+  if (!apiKey) throw new Error("Missing Gemini API Key");
 
-    // Build topics list for the prompt
-    let topicsContext = "";
-    if (sections && sections.length > 0) {
-      topicsContext = "\n\nAvailable meeting topics:\n";
-      sections.forEach((section) => {
-        if (section.topics && section.topics.length > 0) {
-          section.topics.forEach((topic) => {
-            topicsContext += `- Topic ID ${topic.id}: "${topic.title}" (in section: ${section.title})\n`;
-          });
-        }
-      });
-    }
+  // Models to try in order of preference/likelihood of quota
+  const modelsToTry = [
+    "gemini-1.5-flash",
+    "gemini-1.5-flash-latest",
+    "gemini-flash-latest",
+    "gemini-2.0-flash",
+    "gemini-pro"
+  ];
 
-    const prompt = `You are an AI assistant that extracts action items and tasks from meeting transcripts.
+  // If the user provided a specific model, put it at the front of the list
+  if (customModel && !modelsToTry.includes(customModel)) {
+    modelsToTry.unshift(customModel);
+  }
 
+  // Build topics context for the prompt
+  let topicsContext = "";
+  if (sections && sections.length > 0) {
+    topicsContext = "\n\nAvailable meeting topics:\n";
+    sections.forEach((section) => {
+      if (section.topics && section.topics.length > 0) {
+        section.topics.forEach((topic) => {
+          topicsContext += `- Topic ID ${topic.id}: "${topic.title}" (in section: ${section.title})\n`;
+        });
+      }
+    });
+  }
+
+  const prompt = `You are an AI assistant that extracts action items and tasks from meeting transcripts.
 Analyze the following transcript and extract all action items, tasks, and follow-ups.
-
-For each task, provide:
-1. description: A clear, actionable description of the task
-2. assigned_name: The name of the person assigned (if mentioned), otherwise null
-3. due_date: The due date in YYYY-MM-DD format (if mentioned), otherwise null
-4. confidence: A number between 0 and 1 indicating your confidence in this being a task
-5. suggested_topic_id: The ID of the most relevant topic from the list below (if applicable), otherwise null
-6. suggested_topic_title: The title of the suggested topic (if applicable), otherwise null
 ${topicsContext}
 Return ONLY valid JSON in this exact format:
 {
@@ -92,84 +76,61 @@ Return ONLY valid JSON in this exact format:
   ]
 }
 
-Guidelines:
-- Only extract clear action items that require someone to do something
-- Include both explicit assignments ("John will...") and implicit ones ("We need to...")
-- Be specific in task descriptions
-- If no person is mentioned, use null for assigned_name
-- If no date is mentioned, use null for due_date
-- Confidence should reflect how certain you are this is an actionable task
-- Try to match tasks to the most relevant topic from the available topics list
-- If no relevant topic exists, set suggested_topic_id and suggested_topic_title to null
-
 Transcript:
 ${transcriptText}
 
 Return the JSON response:`;
 
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text();
+  let lastError = null;
 
-    // Clean up the response text
-    let jsonText = text.trim();
-    
-    // Remove markdown code blocks if present
-    const jsonBlockMatch = jsonText.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-    if (jsonBlockMatch) {
-      jsonText = jsonBlockMatch[1].trim();
-    }
-
+  for (const model of modelsToTry) {
     try {
-      const parsed: TaskExtractionResult = JSON.parse(jsonText);
-      
-      if (!parsed.tasks || !Array.isArray(parsed.tasks)) {
-        console.warn("Gemini returned invalid structure:", jsonText);
-        return [];
+      console.log(`🤖 Trying Gemini model: ${model}...`);
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.1 },
+        }),
+      });
+
+      if (response.status === 404 || response.status === 429) {
+        const err = await response.json();
+        console.warn(`⚠️ Model ${model} failed (${response.status}): ${err.error?.message || 'Unknown'}`);
+        lastError = err.error?.message || `Error ${response.status}`;
+        continue; // Try the next model
       }
 
-      return parsed.tasks.filter(
-        (task: any) => 
-          task.description && 
-          typeof task.description === "string" && 
-          task.confidence >= 0.5
-      );
-    } catch (parseError) {
-      console.error("Failed to parse Gemini JSON response. Full text was:", jsonText);
-      
-      // Attempt to find any JSON-like array in the text if full parse failed
-      const arrayMatch = jsonText.match(/\[\s*\{[\s\S]*\}\s*\]/);
-      if (arrayMatch) {
-        try {
-          const tasks = JSON.parse(arrayMatch[0]);
-          return Array.isArray(tasks) ? tasks : [];
-        } catch (e) {
-          // Fall through
-        }
+      if (!response.ok) {
+        const errorData = await response.text();
+        throw new Error(`Gemini API Error: ${response.status} - ${errorData}`);
       }
 
-      const snippet = jsonText.substring(0, 100);
-      throw new Error(`AI response was not valid JSON. Started with: ${snippet}`);
+      const data = await response.json();
+      const text: string = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+
+      if (!text) continue;
+
+      let jsonText = text.trim();
+      const jsonBlockMatch = jsonText.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+      if (jsonBlockMatch) jsonText = jsonBlockMatch[1].trim();
+
+      const parsed = JSON.parse(jsonText);
+      console.log(`✅ Extraction successful with model: ${model}`);
+      return (parsed.tasks || []).filter((t: any) => t.description && t.confidence >= 0.5);
+
+    } catch (err: any) {
+      console.error(`❌ Error with model ${model}:`, err.message);
+      lastError = err.message;
     }
-  } catch (error: any) {
-    console.error("Error extracting tasks from transcript:", error);
-    throw new Error(error.message || "Failed to extract tasks from transcript");
   }
+
+  throw new Error(`All Gemini models failed. Last error: ${lastError}`);
 }
 
-/**
- * Validate extracted tasks
- */
 export function validateExtractedTask(task: any): task is ExtractedTask {
-  return (
-    typeof task === "object" &&
-    task !== null &&
-    typeof task.description === "string" &&
-    task.description.length > 0 &&
-    (task.assigned_name === null || typeof task.assigned_name === "string") &&
-    (task.due_date === null || typeof task.due_date === "string") &&
-    typeof task.confidence === "number" &&
-    task.confidence >= 0 &&
-    task.confidence <= 1
-  );
+  return typeof task === "object" && !!task.description;
 }

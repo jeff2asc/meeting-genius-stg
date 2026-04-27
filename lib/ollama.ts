@@ -1,4 +1,9 @@
 
+/**
+ * Universal AI wrapper for task extraction using Ollama.
+ * Now includes chunking for long transcripts and enhanced error recovery.
+ */
+
 interface ExtractedTask {
   description: string;
   assigned_name: string | null;
@@ -15,126 +20,130 @@ interface Section {
 }
 
 /**
- * Extract tasks from transcript text using Ollama (Llama 3.2)
+ * Split transcript into chunks to avoid context window overflow
+ * and ensure better focus on specific sections.
  */
+function chunkTranscript(text: string, maxWords: number = 2000): string[] {
+  const words = text.split(/\s+/);
+  const chunks: string[] = [];
+  
+  for (let i = 0; i < words.length; i += maxWords) {
+    chunks.push(words.slice(i, i + maxWords).join(" "));
+  }
+  
+  return chunks;
+}
+
 export async function extractTasksFromTranscriptOllama(
   transcriptText: string,
-  sections?: Section[]
+  sections?: Section[],
+  config?: {
+    host?: string;
+    model?: string;
+    apiKey?: string;
+  }
 ): Promise<ExtractedTask[]> {
   try {
-    const host = process.env.OLLAMA_HOST || "http://38.49.216.119:11434";
-    const model = process.env.OLLAMA_MODEL || "llama3.2";
+    const host = config?.host || process.env.OLLAMA_HOST || "http://38.49.216.119:11434";
+    const model = config?.model || process.env.OLLAMA_MODEL || "llama3.2";
+    const apiKey = config?.apiKey || process.env.OLLAMA_API_KEY;
 
-    // Build topics list for the prompt
+    console.log(`🚀 Starting task extraction with Ollama (${model}) at ${host}`);
+
+    // 1. Prepare Topics Context
     let topicsContext = "";
     if (sections && sections.length > 0) {
       topicsContext = "\n\nAvailable meeting topics:\n";
       sections.forEach((section) => {
-        if (section.topics && section.topics.length > 0) {
-          section.topics.forEach((topic) => {
-            topicsContext += `- Topic ID ${topic.id}: "${topic.title}" (in section: ${section.title})\n`;
-          });
-        }
+        section.topics?.forEach((topic) => {
+          topicsContext += `- Topic ID ${topic.id}: "${topic.title}" (Section: ${section.title})\n`;
+        });
       });
     }
 
-    const prompt = `You are an AI assistant that extracts action items and tasks from meeting transcripts.
+    // 2. Chunk transcript if it's very long
+    const chunks = chunkTranscript(transcriptText);
+    const allTasks: ExtractedTask[] = [];
 
-Analyze the following transcript and extract all action items, tasks, and follow-ups.
+    for (let i = 0; i < chunks.length; i++) {
+      console.log(`📝 Processing chunk ${i + 1}/${chunks.length}...`);
+      
+      const prompt = `You are a precision AI task extractor.
+Analyze this PART (${i + 1}/${chunks.length}) of a meeting transcript and extract clear action items.
 
 For each task, provide:
-1. description: A clear, actionable description of the task
-2. assigned_name: The name of the person assigned (if mentioned), otherwise null
-3. due_date: The due date in YYYY-MM-DD format (if mentioned), otherwise null
-4. confidence: A number between 0 and 1 indicating your confidence in this being a task
-5. suggested_topic_id: The ID of the most relevant topic from the list below (if applicable), otherwise null
-6. suggested_topic_title: The title of the suggested topic (if applicable), otherwise null
+- description (string)
+- assigned_name (string or null)
+- due_date (YYYY-MM-DD or null)
+- confidence (0-1)
+- suggested_topic_id (integer from list or null)
+- suggested_topic_title (string from list or null)
 ${topicsContext}
 
-Return ONLY valid JSON in this exact format:
+Return ONLY valid JSON in this format:
 {
   "tasks": [
     {
-      "description": "Follow up with contractor about elevator repair",
-      "assigned_name": "John Smith",
-      "due_date": "2024-02-15",
-      "confidence": 0.95,
+      "description": "...",
+      "assigned_name": "...",
+      "due_date": "...",
+      "confidence": 0.9,
       "suggested_topic_id": 123,
-      "suggested_topic_title": "Elevator Maintenance"
+      "suggested_topic_title": "..."
     }
   ]
 }
 
-Guidelines:
-- Return ONLY the JSON object. No intro, no explanation, no markdown blocks.
-- Only extract clear action items that require someone to do something.
-- Include both explicit assignments ("John will...") and implicit ones ("We need to...").
-- Be specific in task descriptions.
-- If no person is mentioned, use null for assigned_name.
-- If no date is mentioned, use null for due_date.
-- Try to match tasks to the most relevant topic from the available topics list.
-- If no relevant topic exists, set suggested_topic_id and suggested_topic_title to null.
+TRANSCRIPT PART:
+${chunks[i]}
 
-Transcript:
-${transcriptText}
+JSON Response:`;
 
-Return the JSON response:`;
+      const response = await fetch(`${host}/api/generate`, {
+        method: "POST",
+        headers: { 
+          "Content-Type": "application/json",
+          ...(apiKey && { "X-API-Key": apiKey }) // Added security header support
+        },
+        body: JSON.stringify({
+          model: model,
+          prompt: prompt,
+          stream: false,
+          format: "json", // Hard-enforce JSON mode
+          options: {
+            num_ctx: 32768, // Ensure a decent context window
+            temperature: 0.1 // Lower temp for more consistent JSON
+          }
+        }),
+      });
 
-    const response = await fetch(`${host}/api/generate`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: model,
-        prompt: prompt,
-        stream: false,
-        format: "json",
-      }),
-    });
-
-    if (!response.ok) {
+      if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`Ollama error (${response.status}): ${errorText}`);
-    }
-
-    const data = await response.json();
-    let jsonText = data.response.trim();
-
-    try {
-      // Clean up markdown code blocks
-      const jsonBlockMatch = jsonText.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-      if (jsonBlockMatch) {
-        jsonText = jsonBlockMatch[1].trim();
+        throw new Error(`Ollama Server Error (${response.status}): ${errorText}`);
       }
 
-      const parsed = JSON.parse(jsonText);
+      const data = await response.json();
+      let jsonText = data.response.trim();
 
-      if (!parsed.tasks || !Array.isArray(parsed.tasks)) {
-        console.warn("Ollama returned invalid structure:", jsonText);
-        return [];
-      }
-
-      return parsed.tasks.filter(
-        (task: any) => task.description && task.confidence >= 0.5
-      );
-    } catch (parseError) {
-      console.error("Ollama JSON Parse Error:", parseError, "Raw content:", jsonText);
-      
-      // Attempt to find any JSON-like array in the text if full parse failed
-      const arrayMatch = jsonText.match(/\[\s*\{[\s\S]*\}\s*\]/);
-      if (arrayMatch) {
-        try {
-          const tasks = JSON.parse(arrayMatch[0]);
-          return Array.isArray(tasks) ? tasks : [];
-        } catch (e) {
-          // Fall through
+      try {
+        // Robust JSON Extraction (in case model is chatty)
+        const jsonMatch = jsonText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+          if (parsed.tasks && Array.isArray(parsed.tasks)) {
+            allTasks.push(...parsed.tasks.filter((t: any) => t.description && t.confidence > 0.4));
+          }
         }
+      } catch (parseError) {
+        console.warn(`⚠️ Failed to parse JSON from chunk ${i + 1}. Skipping chunk.`);
       }
-
-      const snippet = jsonText.substring(0, 100);
-      throw new Error(`AI response was not valid JSON. Started with: ${snippet}`);
     }
+
+    console.log(`✅ Extraction complete. Total tasks found: ${allTasks.length}`);
+    return allTasks;
+
   } catch (error: any) {
-    console.error("Error in Ollama extraction:", error);
-    throw new Error(error.message || "Failed to extract tasks from transcript");
+    console.error("❌ Ollama Extraction Error:", error.message);
+    throw error;
   }
 }

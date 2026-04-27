@@ -87,6 +87,7 @@ export async function POST(request: NextRequest) {
       subject,
       html,
       text: text || undefined,
+      attachments: body.attachments || [],
     })
 
     console.log('Email sent:', info.messageId)

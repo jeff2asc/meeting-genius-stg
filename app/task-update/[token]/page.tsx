@@ -74,11 +74,11 @@ export default function TaskUpdatePage() {
         .from('tasks')
         .select(`
           *,
-          topics!inner(
+          topics(
             id,
             title,
             meeting_id,
-            meetings!inner(
+            meetings(
               id,
               title,
               building_id,

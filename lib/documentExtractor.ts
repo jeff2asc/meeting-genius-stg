@@ -71,8 +71,17 @@ export async function extractTextFromFile(
       }
 
       if (fileMimeType === 'application/pdf') {
-        const text = await pdfToText(file)
-        return text
+        if (typeof window !== 'undefined') {
+          const text = await pdfToText(file)
+          return text
+        } else {
+          // Dynamic import to avoid bundling Node modules on client
+          const pdfParseModule = await import('pdf-parse')
+          const pdfParse = (pdfParseModule as any).default || pdfParseModule
+          const arrayBuffer = await file.arrayBuffer()
+          const data = await pdfParse(Buffer.from(arrayBuffer))
+          return data.text
+        }
       } else if (
         fileMimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
       ) {
@@ -129,8 +138,6 @@ export async function fetchAndExtractBuildingDocuments(buildingId: number): Prom
   if (typeof window === 'undefined') {
     return []
   }
-
-
   try {
     const { data: documents, error: dbError } = await supabase
       .from('building_documents')
@@ -202,8 +209,6 @@ export async function fetchAndExtractTaskAttachments(taskId: number): Promise<Ta
   if (typeof window === 'undefined') {
     return []
   }
-
-
   try {
     const { data: attachments, error: dbError } = await supabase
       .from('task_attachments')
@@ -274,8 +279,6 @@ export async function fetchAndExtractTopicAttachments(topicId: number): Promise<
   if (typeof window === 'undefined') {
     return []
   }
-
-
   try {
     const { data: attachments, error: dbError } = await supabase
       .from('topic_attachments')

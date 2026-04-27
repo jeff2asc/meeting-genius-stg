@@ -24,6 +24,8 @@ import {
   Mail,
   FileUp,
   Download,
+  X,
+  Paperclip,
 } from "lucide-react"
 
 import { UploadTranscriptModal } from "@/components/transcript/upload-transcript-modal"
@@ -80,6 +82,7 @@ interface Section {
   title: string
   order_index: number
   topics: Topic[]
+  attachments: any[]
   isExpanded: boolean
 }
 
@@ -209,6 +212,7 @@ export default function MeetingView({
       } else {
         alert("🔓 In-Camera removed from meeting")
       }
+      await fetchSectionsAndTopics()
     } catch (err) {
       console.error("Unexpected error:", err)
       alert("Failed to update in-camera status")
@@ -247,7 +251,7 @@ export default function MeetingView({
 
       const { data: openTasks, error: tasksError } = await supabase
         .from("tasks")
-        .select("*, topics!inner(id, title, meeting_id)")
+        .select("*, topics(id, title, meeting_id)")
         .in("topic_id", topicIds)
         .in("status", ["open", "in_progress"])
 
@@ -273,43 +277,52 @@ export default function MeetingView({
       const sectionsData = await apiClient.v1.sections.list(meetingId)
       const topicsData = await apiClient.v1.topics.list(meetingId)
 
-      const allOpenTasks = await fetchOpenTasksFromPreviousMeetings()
+      const archived = topicsData.filter((t: any) => t.is_archived)
+
+      // Fetch all task counts and attachment counts for topics in this meeting
+      let taskCounts: any[] = []
+      let attachmentCounts: any[] = []
+
+      if (topicsData && topicsData.length > 0) {
+        const topicIds = topicsData.map((t: any) => t.id)
+        
+        const { data: tc } = await supabase
+          .from('tasks')
+          .select('topic_id')
+          .in('topic_id', topicIds)
+        
+        const { data: ac } = await supabase
+          .from('topic_attachments')
+          .select('topic_id')
+          .in('topic_id', topicIds)
+          
+        taskCounts = tc || []
+        attachmentCounts = ac || []
+      }
+
+      // Fetch section attachments
+      let sectionAttachments: any[] = []
+      if (sectionsData && sectionsData.length > 0) {
+        const sectionIds = sectionsData.map((s: any) => s.id)
+        const { data: sa } = await supabase
+          .from('section_attachments')
+          .select('*')
+          .in('section_id', sectionIds)
+        sectionAttachments = sa || []
+      }
 
       const sectionsWithTopics: Section[] = (sectionsData || []).map((section) => ({
-        id: section.id,
-        title: section.title,
-        order_index: section.order_index,
-        isExpanded: expandedStates[section.id] ?? false,
-        topics: (topicsData || [])
-          .filter((topic) => topic.section_id === section.id && !topic.is_archived) // ✅ Hide archived
-          .map((topic) => {
-            const tasksForThisTopic = allOpenTasks.filter(
-              (task) => task.topics?.title === topic.title
-            ).length
-
-            return {
-              id: topic.id,
-              title: topic.title,
-              description: topic.description,
-              section_id: topic.section_id,
-              attachments: 0,
-              tasks: tasksForThisTopic,
-              decisions: topic.decisions?.[0]?.count || 0,
-              order_index: topic.order_index,
-              is_incamera: topic.is_incamera,
-              incamera_start_time: topic.incamera_start_time,
-              incamera_end_time: topic.incamera_end_time,
-              is_archived: topic.is_archived
-            }
-          }),
-      }))
-
-      // ✅ Fetch archived topics specifically
-      const archived = (topicsData || []).filter(t => t.is_archived).map(t => ({
-        ...t,
-        tasks: 0,
-        decisions: t.decisions?.[0]?.count || 0,
-        attachments: 0
+        ...section,
+        isExpanded: expandedStates[section.id] ?? true,
+        attachments: sectionAttachments.filter(sa => sa.section_id === section.id),
+        topics: topicsData
+          .filter((t: any) => t.section_id === section.id && !t.is_archived)
+          .map((t: any) => ({
+            ...t,
+            tasks: taskCounts?.filter(tc => tc.topic_id === t.id).length || 0,
+            decisions: t.decisions?.[0]?.count || 0,
+            attachments: attachmentCounts?.filter(ac => ac.topic_id === t.id).length || 0
+          }))
       }))
 
       setSections(sectionsWithTopics)
@@ -335,6 +348,70 @@ export default function MeetingView({
     } catch (err) {
       console.error("Error checking transcripts:", err)
       setHasTranscript(false)
+    }
+  }
+
+  const handleSectionFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, sectionId: number) => {
+    const file = e.target.files?.[0]
+    if (!file || !meeting) return
+
+    try {
+      setLoading(true)
+      const fileExt = file.name.split('.').pop()
+      const fileName = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.]/g, '_')}`
+      const filePath = `section-attachments/${sectionId}/${fileName}`
+
+      const { error: uploadError } = await supabase.storage
+        .from('topic-attachments') // Reusing the same bucket for simplicity
+        .upload(filePath, file)
+
+      if (uploadError) throw uploadError
+
+      const { data: publicUrlData } = supabase.storage
+        .from('topic-attachments')
+        .getPublicUrl(filePath)
+
+      const { data: userData } = await supabase.auth.getUser()
+      const userId = userData.user?.id
+
+      const { error: dbError } = await supabase
+        .from('section_attachments')
+        .insert({
+          section_id: sectionId,
+          filename: file.name,
+          file_url: publicUrlData.publicUrl,
+          file_size: file.size,
+          mime_type: file.type,
+          uploaded_by: userId || null
+        })
+
+      if (dbError) throw dbError
+
+      toast.success("File uploaded to section successfully!")
+      await fetchSectionsAndTopics()
+    } catch (err: any) {
+      console.error("Upload error:", err)
+      toast.error(`Upload failed: ${err.message}`)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleDeleteSectionAttachment = async (attachmentId: number) => {
+    if (!confirm("Are you sure you want to remove this attachment?")) return
+
+    try {
+      const { error } = await supabase
+        .from('section_attachments')
+        .delete()
+        .eq('id', attachmentId)
+
+      if (error) throw error
+
+      toast.success("Attachment removed")
+      await fetchSectionsAndTopics()
+    } catch (err: any) {
+      toast.error(`Delete failed: ${err.message}`)
     }
   }
 
@@ -567,7 +644,10 @@ export default function MeetingView({
   const updateMeetingStatus = async (
     targetStatus: string,
     recorderName?: string,
-    timekeeperName?: string | null
+    timekeeperName?: string | null,
+    actualStartTime?: string | null,
+    chairPerson?: string | null,
+    minuteTaker?: string | null
   ) => {
     try {
       setLoading(true)
@@ -577,6 +657,9 @@ export default function MeetingView({
       if (targetStatus === "working_minutes" && recorderName) {
         updateData.recorder_name = recorderName
         updateData.timekeeper_name = timekeeperName
+        updateData.start_time = actualStartTime
+        updateData.chair_person = chairPerson
+        updateData.minute_taker = minuteTaker
       }
 
       if (targetStatus === "working_agenda" && meeting?.attendees) {
@@ -1126,6 +1209,15 @@ export default function MeetingView({
                     <div class="section-title">${section.title}</div>
                   </div>
                   <div class="section-body">
+                    ${section.attachments && section.attachments.length > 0
+                ? `
+                      <div style="margin-bottom: 16px; padding: 12px; background: #eff6ff; border-radius: 8px; border: 1px solid #bfdbfe;">
+                        <div style="font-size: 12px; font-weight: 700; color: #1e40af; text-transform: uppercase; margin-bottom: 8px;">📎 Section Attachments:</div>
+                        ${section.attachments.map(att => `<div style="font-size: 13px; color: #1e3a8a; margin-bottom: 4px;">• ${att.filename}</div>`).join("")}
+                      </div>
+                    `
+                : ""
+              }
                     ${section.topics.length > 0
                 ? `
                       <ul class="topics-list">
@@ -1165,11 +1257,40 @@ export default function MeetingView({
         </html>
       `
 
+      // Fetch all attachments for the meeting topics and sections
+      const allTopicIds = sections.flatMap(s => s.topics.map(t => t.id))
+      let emailAttachments: any[] = []
+
+      // Add section-level attachments
+      sections.forEach(s => {
+        if (s.attachments && s.attachments.length > 0) {
+          s.attachments.forEach(att => {
+            emailAttachments.push({
+              filename: att.filename,
+              path: encodeURI(att.file_url)
+            })
+          })
+        }
+      })
+
+      if (allTopicIds.length > 0) {
+        const { data: attachmentsData } = await supabase
+          .from('topic_attachments')
+          .select('filename, file_url')
+          .in('topic_id', allTopicIds)
+
+        const topicAtts = (attachmentsData || []).map(att => ({
+          filename: att.filename,
+          path: encodeURI(att.file_url)
+        }))
+        emailAttachments = [...emailAttachments, ...topicAtts]
+      }
+
       const response = await fetch("/api/send-email", {
         method: "POST",
         headers: { 
           'Content-Type': 'application/json',
-          'x-api-key': process.env.NEXT_PUBLIC_API_KEY || ''
+          'x-api-key': process.env.NEXT_PUBLIC_API_KEY || 'meeting-genius-secret-key-2026'
         },
         body: JSON.stringify({
           companyId: buildingData.company_id,
@@ -1179,6 +1300,7 @@ export default function MeetingView({
           text: `${meeting.title}\n\nBuilding: ${buildingData.name}\nDate: ${formatDate(
             meeting.meeting_date
           )}`,
+          attachments: emailAttachments,
         }),
       })
 
@@ -1629,6 +1751,20 @@ export default function MeetingView({
                 </div>
               )}
 
+            {archivedTopics.length > 0 && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setShowArchived(!showArchived)}
+                className={`h-8 px-3 text-xs whitespace-nowrap flex-shrink-0 border-amber-500 text-amber-700 hover:bg-amber-50 ${
+                  showArchived ? "bg-amber-100" : ""
+                }`}
+              >
+                <Download className="h-3 w-3 mr-1" />
+                Archive ({archivedTopics.length})
+              </Button>
+            )}
+
             {meeting.status === "minutes" && (
               <>
                 <div className="flex-shrink-0">
@@ -1735,11 +1871,21 @@ export default function MeetingView({
             </div>
 
             {meeting.status === "working_minutes" &&
-              (meeting.recorder_name || meeting.timekeeper_name) && (
+              (meeting.recorder_name || meeting.chair_person || meeting.minute_taker || meeting.timekeeper_name) && (
                 <div className="flex items-center gap-2 text-xs whitespace-nowrap flex-shrink-0">
+                  {meeting.chair_person && (
+                    <span>
+                      👑 <strong>{meeting.chair_person}</strong>
+                    </span>
+                  )}
                   {meeting.recorder_name && (
                     <span>
                       📝 <strong>{meeting.recorder_name}</strong>
+                    </span>
+                  )}
+                  {meeting.minute_taker && (
+                    <span>
+                      🖋️ <strong>{meeting.minute_taker}</strong>
                     </span>
                   )}
                   {meeting.timekeeper_name && (
@@ -1936,114 +2082,150 @@ export default function MeetingView({
                                 </>
                               )}
                             {userCanEdit && meeting.status !== "minutes" && (
-                              <Button
-                                size="sm"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  handleAddTopic(section.id, section.title)
-                                }}
-                                className="bg-primary hover:bg-primary/90"
-                              >
-                                <Plus className="h-4 w-4 mr-2" />
-                                Add Topic
-                              </Button>
+                              <div className="flex items-center gap-2">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-8 px-2 text-xs text-muted-foreground hover:text-primary"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const input = document.getElementById(`section-file-${section.id}`) as HTMLInputElement;
+                                    input?.click();
+                                  }}
+                                >
+                                  <Paperclip className="h-3.5 w-3.5 mr-1" />
+                                  Attach
+                                </Button>
+                                <input
+                                  id={`section-file-${section.id}`}
+                                  type="file"
+                                  className="hidden"
+                                  onChange={(e) => handleSectionFileUpload(e, section.id)}
+                                />
+
+                                <Button
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleAddTopic(section.id, section.title)
+                                  }}
+                                  className="bg-primary hover:bg-primary/90 h-8 px-3 text-xs"
+                                >
+                                  <Plus className="h-4 w-4 mr-2" />
+                                  Add Topic
+                                </Button>
+                              </div>
                             )}
                           </div>
                         </div>
                         {section.isExpanded && (
-                          <Droppable droppableId={section.id.toString()} type="TOPIC">
-                            {(provided: any) => (
-                              <div
-                                {...provided.droppableProps}
-                                ref={provided.innerRef}
-                                className="space-y-1 ml-8 pb-0"
-                              >
-                                {section.topics.length > 0 ? (
-                                  section.topics.map((topic, topicIndex) => (
-                                    <Draggable
-                                      key={topic.id}
-                                      draggableId={`topic-${topic.id}`}
-                                      index={topicIndex}
+                          <div className="px-12 pb-2">
+                            {section.attachments && section.attachments.length > 0 && (
+                              <div className="flex flex-wrap gap-2 mb-3">
+                                {section.attachments.map((att) => (
+                                  <div
+                                    key={att.id}
+                                    className="flex items-center gap-2 bg-white/50 border border-primary/20 rounded-full px-3 py-1 text-xs text-primary"
+                                  >
+                                    <Paperclip className="h-3 w-3" />
+                                    <a
+                                      href={att.file_url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="hover:underline max-w-[150px] truncate"
                                     >
-                                      {(provided: any) => (
-                                        <div
-                                          ref={provided.innerRef}
-                                          {...provided.draggableProps}
-                                          {...provided.dragHandleProps}
-                                          id={`topic-${topic.id}`}
-                                        >
-                                          <TopicCard
-                                            topic={topic}
-                                            topicNumber={topicIndex + 1}
-                                            meetingId={parseInt(meetingId)}
-                                            meetingStatus={meeting.status}
-                                            onUpdate={(updates) =>
-                                              updateTopic(topic.id, updates)
-                                            }
-                                            onDelete={(id) => deleteTopic(id)}
-                                            onArchive={() => archiveTopic()}
-                                            onTaskClick={() => {
-                                              setSelectedTopicForModal(topic.id)
-                                              setDefaultTab("task")
-                                              setShowUnifiedModal(true)
-                                            }}
-                                            onNoteClick={() => {
-                                              setSelectedTopicForModal(topic.id)
-                                              setDefaultTab("note")
-                                              setShowUnifiedModal(true)
-                                            }}
-                                            onDecisionClick={() => {
-                                              setSelectedTopicForModal(topic.id)
-                                              setDefaultTab("decision")
-                                              setShowUnifiedModal(true)
-                                            }}
-                                            onRegisterRefresh={onRegisterTopicRefresh}
-                                            isReadOnly={
-                                              userIsReadOnly ||
-                                              meeting.status === "minutes"
-                                            }
-                                            onEditDecision={(decisionId, topicId) => {
-                                              if (onEditDecision) {
-                                                onEditDecision(decisionId, topicId)
-                                              }
-                                            }}
-                                            onAddThreadedDecision={(
-                                              parentId,
-                                              topicId
-                                            ) => {
-                                              if (onAddThreadedDecision) {
-                                                onAddThreadedDecision(
-                                                  parentId,
-                                                  topicId
-                                                )
-                                              }
-                                            }}
-                                            onEditTask={(taskId, topicId) => {
-                                              if (onEditTask) {
-                                                onEditTask(taskId, topicId)
-                                              }
-                                            }}
-                                            onEditNote={(noteId, topicId) => {
-                                              if (onEditNote) {
-                                                onEditNote(noteId, topicId)
-                                              }
-                                            }}
-                                          />
-                                        </div>
-                                      )}
-                                    </Draggable>
-                                  ))
-                                ) : (
-                                  <div className="text-center py-8 text-muted-foreground border-2 border-dashed border-border rounded-lg">
-                                    {userCanEdit && meeting.status !== "minutes"
-                                      ? 'No topics in this section yet. Click "Add Topic" to create one.'
-                                      : "No topics in this section yet."}
+                                      {att.filename}
+                                    </a>
+                                    {userCanEdit && (
+                                      <button
+                                        onClick={() => handleDeleteSectionAttachment(att.id)}
+                                        className="text-red-500 hover:text-red-700 ml-1"
+                                      >
+                                        <X className="h-3 w-3" />
+                                      </button>
+                                    )}
                                   </div>
-                                )}
-                                {provided.placeholder}
+                                ))}
                               </div>
                             )}
-                          </Droppable>
+
+                                           <Droppable droppableId={section.id.toString()} type="TOPIC">
+                              {(provided: any) => (
+                                <div
+                                  {...provided.droppableProps}
+                                  ref={provided.innerRef}
+                                  className="space-y-1 pb-0"
+                                >
+                                  {section.topics.length > 0 ? (
+                                    section.topics.map((topic, topicIndex) => (
+                                      <Draggable
+                                        key={topic.id}
+                                        draggableId={`topic-${topic.id}`}
+                                        index={topicIndex}
+                                      >
+                                        {(provided: any) => (
+                                          <div
+                                            ref={provided.innerRef}
+                                            {...provided.draggableProps}
+                                            {...provided.dragHandleProps}
+                                            id={`topic-${topic.id}`}
+                                          >
+                                            <TopicCard
+                                              topic={topic}
+                                              topicNumber={topicIndex + 1}
+                                              meetingId={parseInt(meetingId)}
+                                              meetingStatus={meeting.status}
+                                              isReadOnly={userIsReadOnly}
+                                              onUpdate={(updates) => updateTopic(topic.id, updates)}
+                                              onDelete={(id) => deleteTopic(id)}
+                                              onArchive={() => archiveTopic()}
+                                              onTaskClick={() => onTaskClick(topic.id)}
+                                              onNoteClick={() => onNoteClick(topic.id)}
+                                              onDecisionClick={() => onDecisionClick(topic.id)}
+                                              onRegisterRefresh={onRegisterTopicRefresh}
+                                              onEditDecision={(decisionId, topicId) => {
+                                                if (onEditDecision) {
+                                                  onEditDecision(decisionId, topicId)
+                                                }
+                                              }}
+                                              onAddThreadedDecision={(
+                                                parentId,
+                                                topicId
+                                              ) => {
+                                                if (onAddThreadedDecision) {
+                                                  onAddThreadedDecision(
+                                                    parentId,
+                                                    topicId
+                                                  )
+                                                }
+                                              }}
+                                              onEditTask={(taskId, topicId) => {
+                                                if (onEditTask) {
+                                                  onEditTask(taskId, topicId)
+                                                }
+                                              }}
+                                              onEditNote={(noteId, topicId) => {
+                                                if (onEditNote) {
+                                                  onEditNote(noteId, topicId)
+                                                }
+                                              }}
+                                            />
+                                          </div>
+                                        )}
+                                      </Draggable>
+                                    ))
+                                  ) : (
+                                    <div className="text-center py-8 text-muted-foreground border-2 border-dashed border-border rounded-lg">
+                                      {userCanEdit && meeting.status !== "minutes"
+                                        ? 'No topics in this section yet. Click "Add Topic" to create one.'
+                                        : "No topics in this section yet."}
+                                    </div>
+                                  )}
+                                  {provided.placeholder}
+                                </div>
+                              )}
+                            </Droppable>
+                          </div>
                         )}
                       </Card>
                     </div>
@@ -2055,7 +2237,7 @@ export default function MeetingView({
           )}
         </Droppable>
 
-        {showArchived && archivedTopics.length > 0 && (
+        {archivedTopics.length > 0 && (
           <div className="mx-auto max-w-4xl px-4 pt-8 pb-32 sm:px-6 lg:px-8 border-t-2 border-dashed border-amber-200 mt-12">
             <h2 className="text-xl font-bold text-amber-800 mb-6 flex items-center gap-2">
               <Download className="h-5 w-5" />
@@ -2090,10 +2272,10 @@ export default function MeetingView({
           </div> {/* Close max-w-4xl container */}
         </div> {/* Close the flex-1 container */}
 
-      {/* ⭐ FIXED: Topic Bank Floating Button in Bottom Right */}
-      <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3">
-        {showArchived && archivedTopics.length > 0 && (
-          <Card className="w-80 shadow-2xl border-amber-200 overflow-hidden mb-2 animate-in slide-in-from-bottom-5">
+      {/* Archive / Topic Bank Modal/Card */}
+      {showArchived && archivedTopics.length > 0 && (
+        <div className="fixed bottom-20 right-6 z-50 animate-in slide-in-from-bottom-5">
+          <Card className="w-80 shadow-2xl border-amber-200 overflow-hidden shadow-amber-200/20">
             <div className="bg-amber-50 px-4 py-2 border-b border-amber-100 flex items-center justify-between">
               <span className="text-[10px] font-bold text-amber-800 uppercase flex items-center gap-2">
                 <Download className="h-3.5 w-3.5" />
@@ -2103,7 +2285,7 @@ export default function MeetingView({
                 onClick={() => setShowArchived(false)}
                 className="text-amber-800 hover:bg-amber-100 p-1 rounded"
               >
-                <ChevronDown className="h-4 w-4" />
+                <X className="h-4 w-4" />
               </button>
             </div>
             <div className="p-2 max-h-[400px] overflow-y-auto bg-white">
@@ -2113,6 +2295,7 @@ export default function MeetingView({
                   onClick={() => {
                     const element = document.getElementById(`topic-${topic.id}`)
                     element?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                    setShowArchived(false)
                   }}
                   className="w-full text-left text-sm px-3 py-2 rounded hover:bg-amber-50 text-amber-900 border-b border-amber-50 last:border-0 transition-colors"
                 >
@@ -2122,27 +2305,8 @@ export default function MeetingView({
               ))}
             </div>
           </Card>
-        )}
-        
-        <Button
-          onClick={() => setShowArchived(!showArchived)}
-          className={`h-14 w-14 rounded-full shadow-2xl transition-all hover:scale-105 active:scale-95 ${
-            showArchived 
-              ? 'bg-amber-600 hover:bg-amber-700 text-white ring-4 ring-amber-100' 
-              : 'bg-primary hover:bg-primary/90 text-white'
-          }`}
-          title="Open Topic Bank"
-        >
-          <div className="relative">
-            <Download className="h-6 w-6" />
-            {archivedTopics.length > 0 && (
-              <span className="absolute -top-2 -right-2 bg-amber-500 text-white text-[10px] font-bold h-5 w-5 rounded-full flex items-center justify-center border-2 border-white">
-                {archivedTopics.length}
-              </span>
-            )}
-          </div>
-        </Button>
-      </div>
+        </div>
+      )}
 
       {sectionToDelete && (
         <div className="fixed inset-0 bg-black bg-opacity-40 z-50 flex items-center justify-center">
@@ -2171,8 +2335,11 @@ export default function MeetingView({
           isOpen={showRecorderModal}
           onClose={() => setShowRecorderModal(false)}
           attendees={(meeting.attendees as Attendee[]) || []}
-          onConfirm={(recorderName, timekeeperName) => {
-            updateMeetingStatus("working_minutes", recorderName, timekeeperName)
+          initialStartTime={meeting.start_time}
+          initialChairPerson={meeting.chair_person}
+          initialMinuteTaker={meeting.minute_taker}
+          onConfirm={(recorderName, timekeeperName, actualStartTime, chairPerson, minuteTaker) => {
+            updateMeetingStatus("working_minutes", recorderName, timekeeperName, actualStartTime, chairPerson, minuteTaker)
             setShowRecorderModal(false)
           }}
         />

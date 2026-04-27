@@ -87,7 +87,7 @@ export default function TopicCard({
   const fetchBuildingData = async () => {
     const { data } = await supabase
       .from('topics')
-      .select('meeting_id, meetings!inner(building_id, buildings!inner(id, company_id))')
+      .select('meeting_id, meetings(building_id, buildings(id, company_id))')
       .eq('id', topic.id)
       .single()
     
@@ -205,8 +205,8 @@ export default function TopicCard({
         .from('topics')
         .select(`
           meeting_id,
-          meetings!inner(
-            buildings!inner(id, name, company_id)
+          meetings(
+            buildings(id, name, company_id)
           )
         `)
         .eq('id', topic.id)

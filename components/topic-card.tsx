@@ -520,10 +520,10 @@ export default function TopicCard({
         .select(`
           title, 
           meeting_id, 
-          meetings!inner(
+          meetings(
             building_id, 
             meeting_type,
-            buildings!inner(
+            buildings(
               id,
               manager_id,
               company_id
@@ -1248,16 +1248,6 @@ export default function TopicCard({
                       className="text-emerald-600 border-emerald-600 hover:bg-emerald-50"
                     >
                       <Plus className="h-4 w-4 mr-2" /> Restore Topic
-                    </Button>
-                  )}
-                  {!topic.is_archived && !isReadOnly && (
-                    <Button
-                      onClick={handleArchive}
-                      variant="outline"
-                      size="sm"
-                      className="text-amber-600 border-amber-600 hover:bg-amber-50"
-                    >
-                      <Download className="h-4 w-4 mr-2" /> Archive Topic
                     </Button>
                   )}
                 </div>
