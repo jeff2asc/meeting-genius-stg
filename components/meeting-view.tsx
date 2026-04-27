@@ -26,6 +26,8 @@ import {
   Download,
   X,
   Paperclip,
+  Archive,
+  Trash2,
 } from "lucide-react"
 
 import { UploadTranscriptModal } from "@/components/transcript/upload-transcript-modal"
@@ -1563,54 +1565,61 @@ export default function MeetingView({
             </Button>
 
             <Button
-              variant="ghost"
+              variant="default"
               size="icon"
               onClick={() => setShowSidebar(!showSidebar)}
-              className={`hover:bg-muted flex-shrink-0 h-8 w-8 ${showSidebar ? 'text-primary' : 'text-muted-foreground'}`}
+              className={`flex-shrink-0 h-9 w-9 rounded-full transition-all ${
+                showSidebar 
+                  ? 'bg-primary text-primary-foreground shadow-md' 
+                  : 'bg-primary text-primary-foreground shadow-lg hover:bg-primary/90'
+              }`}
               title={showSidebar ? "Hide Sidebar" : "Show Sidebar"}
             >
-              <FileText className="h-4 w-4" />
+              <FileText className="h-5 w-5" />
             </Button>
 
             <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
-                <h1 className="text-lg font-bold text-foreground truncate">
-                  {meeting.title}
-                </h1>
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <h1 className="text-lg font-bold text-foreground truncate">
+                    {meeting.title}
+                  </h1>
+                  {meeting.is_incamera && meeting.status === "working_minutes" && (
+                    <Badge
+                      variant="outline"
+                      className="bg-red-100 text-red-700 border-red-300 flex-shrink-0 text-[10px] h-5"
+                    >
+                      <Lock className="h-2.5 w-2.5 mr-1" />
+                      IN-CAMERA
+                    </Badge>
+                  )}
+                </div>
 
-                {meeting.is_incamera && meeting.status === "working_minutes" && (
+                <div className="flex items-center gap-2">
                   <Badge
                     variant="outline"
-                    className="bg-red-100 text-red-700 border-red-300 flex-shrink-0 text-xs h-6"
+                    className={`${getStatusColor(
+                      meeting.status
+                    )} flex-shrink-0 text-[10px] h-5`}
                   >
-                    <Lock className="h-3 w-3 mr-1" />
-                    IN-CAMERA
+                    {getStatusText(meeting.status)}
                   </Badge>
-                )}
 
-                <Badge
-                  variant="outline"
-                  className={`${getStatusColor(
-                    meeting.status
-                  )} flex-shrink-0 text-xs h-6`}
-                >
-                  {getStatusText(meeting.status)}
-                </Badge>
-
-                {userCanEdit && meeting.status === "working_agenda" && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => setShowEditMeetingModal(true)}
-                    className="hover:bg-muted border border-blue-500 h-6 w-6 p-0 flex-shrink-0"
-                    title="Edit Meeting"
-                  >
-                    <Edit2 className="h-3 w-3" />
-                  </Button>
-                )}
+                  {userCanEdit && meeting.status === "working_agenda" && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setShowEditMeetingModal(true)}
+                      className="hover:bg-muted border border-blue-500 h-5 w-5 p-0 flex-shrink-0"
+                      title="Edit Meeting"
+                    >
+                      <Edit2 className="h-2.5 w-2.5" />
+                    </Button>
+                  )}
+                </div>
               </div>
 
-              <p className="text-xs text-muted-foreground truncate">
+              <p className="text-[10px] sm:text-xs text-muted-foreground truncate mt-0.5">
                 {meeting.building}
               </p>
             </div>
@@ -1625,67 +1634,66 @@ export default function MeetingView({
             </div>
           )}
 
-          <div className="flex items-center gap-1.5 overflow-x-auto">
+          <div className="flex flex-wrap items-center gap-1">
 
-            {/* ✅ CHANGE 1: In-Camera only during working_minutes */}
             {userCanEdit && meeting.status === "working_minutes" && (
               <Button
                 size="sm"
                 variant="outline"
                 onClick={handleMeetingIncameraToggle}
-                className={`h-8 px-3 text-xs whitespace-nowrap flex-shrink-0 ${meeting.is_incamera
+                className={`h-7 px-2 text-[10px] sm:text-xs flex-shrink-0 ${meeting.is_incamera
                   ? "bg-red-50 border-red-300 text-red-700"
                   : "border-gray-300"
                   }`}
               >
                 {meeting.is_incamera ? (
                   <>
-                    <Unlock className="h-3 w-3 mr-1" />
-                    Remove In-Camera
+                    <Unlock className="h-3 w-3" />
+                    <span className="hidden sm:inline ml-1">Remove In-Camera</span>
                   </>
                 ) : (
                   <>
-                    <Lock className="h-3 w-3 mr-1" />
-                    In-Camera
+                    <Lock className="h-3 w-3" />
+                    <span className="hidden sm:inline ml-1">In-Camera</span>
                   </>
                 )}
               </Button>
             )}
 
-            {/* ✅ CHANGE 2: Back only during working_minutes */}
-            {/* Back button: working_minutes and minutes */}
+            {/* Back button */}
             {userCanEdit && (meeting.status === "working_minutes" || meeting.status === "minutes") && (
               <Button
                 size="sm"
                 variant="outline"
                 onClick={() => updateMeetingStatus(prevStatus(meeting.status))}
-                className="h-8 px-3 text-xs whitespace-nowrap flex-shrink-0 bg-gray-100 border-gray-400"
+                className="h-7 px-2 text-[10px] sm:text-xs flex-shrink-0 bg-gray-100 border-gray-400"
               >
-                <ChevronLeft className="h-3 w-3 mr-1" />
-                Back
+                <ChevronLeft className="h-3 w-3" />
+                <span className="hidden sm:inline ml-1">Back</span>
               </Button>
             )}
 
-            {/* ✅ CHANGE 3: Start only during working_agenda, End only during working_minutes */}
+            {/* Start button */}
             {userCanEdit && meeting.status === "working_agenda" && (
               <Button
                 size="sm"
                 onClick={() => setShowRecorderModal(true)}
-                className="h-8 px-3 text-xs whitespace-nowrap flex-shrink-0 bg-green-600 text-white hover:bg-green-700"
+                className="h-7 px-2 text-[10px] sm:text-xs flex-shrink-0 bg-green-600 text-white hover:bg-green-700"
               >
-                <Play className="h-3 w-3 mr-1" />
-                Start
+                <Play className="h-3 w-3" />
+                <span className="sm:inline ml-1">Start</span>
               </Button>
             )}
 
+            {/* End button */}
             {userCanEdit && meeting.status === "working_minutes" && (
               <Button
                 size="sm"
                 onClick={() => updateMeetingStatus("minutes")}
-                className="h-8 px-3 text-xs whitespace-nowrap flex-shrink-0 bg-green-600 text-white hover:bg-green-700"
+                className="h-7 px-2 text-[10px] sm:text-xs flex-shrink-0 bg-green-600 text-white hover:bg-green-700"
               >
-                <CheckCircle className="h-3 w-3 mr-1" />
-                End
+                <CheckCircle className="h-3 w-3" />
+                <span className="hidden sm:inline ml-1">End</span>
               </Button>
             )}
 
@@ -1696,10 +1704,10 @@ export default function MeetingView({
                   size="sm"
                   onClick={handleCreateSection}
                   variant="outline"
-                  className="h-8 px-3 text-xs whitespace-nowrap flex-shrink-0 border-primary text-primary"
+                  className="h-7 px-2 text-[10px] sm:text-xs flex-shrink-0 border-primary text-primary"
                 >
-                  <Plus className="h-3 w-3 mr-1" />
-                  Section
+                  <Plus className="h-3 w-3" />
+                  <span className="hidden sm:inline ml-1">Section</span>
                 </Button>
               )}
 
@@ -1710,34 +1718,36 @@ export default function MeetingView({
                   size="sm"
                   onClick={handleSendNotice}
                   variant="outline"
-                  className="h-8 px-3 text-xs whitespace-nowrap flex-shrink-0 border-blue-500 text-blue-600 hover:bg-blue-50"
+                  className="h-7 px-2 text-[10px] sm:text-xs flex-shrink-0 border-blue-500 text-blue-600 hover:bg-blue-50"
                 >
-                  <Mail className="h-3 w-3 mr-1" />
-                  Send Notice
+                  <Mail className="h-3 w-3" />
+                  <span className="hidden sm:inline ml-1">Send Notice</span>
                 </Button>
               )}
 
+            {/* Upload Transcript button */}
             {userCanEdit && meeting.status === "working_minutes" && (
               <Button
                 size="sm"
                 onClick={() => setShowUploadTranscript(true)}
                 variant="outline"
-                className="h-8 px-3 text-xs whitespace-nowrap flex-shrink-0 border-purple-500 text-purple-600 hover:bg-purple-50"
+                className="h-7 px-2 text-[10px] sm:text-xs flex-shrink-0 border-purple-500 text-purple-600 hover:bg-purple-50"
               >
-                <FileUp className="h-3 w-3 mr-1" />
-                Upload Transcript
+                <FileUp className="h-3 w-3" />
+                <span className="hidden sm:inline ml-1">Upload Transcript</span>
               </Button>
             )}
 
+            {/* View Transcripts button */}
             {meeting.status === "working_minutes" && (
               <Button
                 size="sm"
                 onClick={() => setShowViewTranscripts(true)}
                 variant="outline"
-                className="h-8 px-3 text-xs whitespace-nowrap flex-shrink-0 border-gray-500 text-gray-600 hover:bg-gray-50"
+                className="h-7 px-2 text-[10px] sm:text-xs flex-shrink-0 border-gray-500 text-gray-600 hover:bg-gray-50"
               >
-                <FileText className="h-3 w-3 mr-1" />
-                View Transcripts
+                <FileText className="h-3 w-3" />
+                <span className="hidden sm:inline ml-1">View Transcripts</span>
               </Button>
             )}
 
@@ -1756,12 +1766,13 @@ export default function MeetingView({
                 size="sm"
                 variant="outline"
                 onClick={() => setShowArchived(!showArchived)}
-                className={`h-8 px-3 text-xs whitespace-nowrap flex-shrink-0 border-amber-500 text-amber-700 hover:bg-amber-50 ${
+                className={`h-7 px-2 text-[10px] sm:text-xs flex-shrink-0 border-amber-500 text-amber-700 hover:bg-amber-50 rounded-lg ${
                   showArchived ? "bg-amber-100" : ""
                 }`}
               >
-                <Download className="h-3 w-3 mr-1" />
-                Archive ({archivedTopics.length})
+                <Archive className="h-3 w-3" />
+                <span className="hidden sm:inline ml-1">Archive</span>
+                <span className="ml-0.5">({archivedTopics.length})</span>
               </Button>
             )}
 
@@ -1801,97 +1812,87 @@ export default function MeetingView({
               </div>
             )}
 
+            {/* Record/Stop button */}
             {isMounted && userCanEdit && meeting.status === "working_minutes" && (
               <>
                 {uploadingRecording ? (
                   <Button
                     size="sm"
                     disabled
-                    className="h-8 px-3 text-xs whitespace-nowrap flex-shrink-0 bg-blue-500 text-white"
+                    className="h-7 px-2 text-[10px] sm:text-xs flex-shrink-0 bg-blue-500 text-white"
                   >
-                    <span className="h-2 w-2 rounded-full bg-white mr-1.5 animate-pulse"></span>
-                    Uploading...
+                    <span className="h-2 w-2 rounded-full bg-white mr-1 animate-pulse"></span>
+                    <span className="hidden sm:inline">Uploading...</span>
                   </Button>
                 ) : !isRecording ? (
                   <Button
                     size="sm"
                     onClick={handleStartRecording}
-                    className="h-8 px-3 text-xs whitespace-nowrap flex-shrink-0 bg-red-500 hover:bg-red-600 text-white"
+                    className="h-7 px-2 text-[10px] sm:text-xs flex-shrink-0 bg-red-500 hover:bg-red-600 text-white"
                   >
-                    <span className="h-2 w-2 rounded-full bg-white mr-1.5"></span>
-                    Record
+                    <span className="h-2 w-2 rounded-full bg-white mr-1"></span>
+                    <span className="sm:inline">Record</span>
                   </Button>
                 ) : (
                   <Button
                     size="sm"
                     onClick={handleStopRecording}
                     variant="outline"
-                    className="h-8 px-3 text-xs whitespace-nowrap flex-shrink-0 border-red-500 text-red-500"
+                    className="h-7 px-2 text-[10px] sm:text-xs flex-shrink-0 border-red-500 text-red-500"
                   >
-                    <span className="h-2 w-2 rounded-sm bg-red-500 mr-1.5"></span>
-                    Stop
+                    <span className="h-2 w-2 rounded-sm bg-red-500 mr-1"></span>
+                    <span className="sm:inline">Stop</span>
                   </Button>
                 )}
               </>
             )}
           </div>
 
-          <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground mt-2 pt-2 border-t border-border">
-            <div className="flex items-center gap-3 overflow-x-auto">
-              {meeting.meeting_type && (
-                <div className="flex items-center gap-1 whitespace-nowrap">
-                  <FileText className="h-3 w-3" />
-                  <span>{meeting.meeting_type}</span>
-                </div>
-              )}
-              {meeting.meeting_date && (
-                <div className="flex items-center gap-1 whitespace-nowrap">
-                  <Calendar className="h-3 w-3" />
-                  <span>{formatDate(meeting.meeting_date)}</span>
-                </div>
-              )}
-              {meeting.start_time && (
-                <div className="flex items-center gap-1 whitespace-nowrap">
-                  <Clock className="h-3 w-3" />
-                  <span>{formatTime(meeting.start_time)}</span>
-                </div>
-              )}
-              {meeting.location && (
-                <div className="flex items-center gap-1 whitespace-nowrap">
-                  <MapPin className="h-3 w-3" />
-                  <span>{meeting.location}</span>
-                </div>
-              )}
-              {meeting.strata_plan_number && (
-                <div className="flex items-center gap-1 whitespace-nowrap">
-                  <FileText className="h-3 w-3" />
-                  <span>Plan: {meeting.strata_plan_number}</span>
-                </div>
-              )}
-            </div>
-
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground mt-2 pt-2 border-t border-border">
+            {meeting.meeting_type && (
+              <div className="flex items-center gap-1">
+                <FileText className="h-3 w-3" />
+                <span>{meeting.meeting_type}</span>
+              </div>
+            )}
+            {meeting.meeting_date && (
+              <div className="flex items-center gap-1">
+                <Calendar className="h-3 w-3" />
+                <span>{formatDate(meeting.meeting_date)}</span>
+              </div>
+            )}
+            {meeting.start_time && (
+              <div className="flex items-center gap-1">
+                <Clock className="h-3 w-3" />
+                <span>{formatTime(meeting.start_time)}</span>
+              </div>
+            )}
+            {meeting.location && (
+              <div className="flex items-center gap-1">
+                <MapPin className="h-3 w-3" />
+                <span className="truncate max-w-[120px] sm:max-w-none">{meeting.location}</span>
+              </div>
+            )}
+            {meeting.strata_plan_number && (
+              <div className="flex items-center gap-1">
+                <FileText className="h-3 w-3" />
+                <span>Plan: {meeting.strata_plan_number}</span>
+              </div>
+            )}
             {meeting.status === "working_minutes" &&
               (meeting.recorder_name || meeting.chair_person || meeting.minute_taker || meeting.timekeeper_name) && (
-                <div className="flex items-center gap-2 text-xs whitespace-nowrap flex-shrink-0">
+                <div className="flex flex-wrap items-center gap-2 text-xs w-full sm:w-auto">
                   {meeting.chair_person && (
-                    <span>
-                      👑 <strong>{meeting.chair_person}</strong>
-                    </span>
+                    <span>👑 <strong>{meeting.chair_person}</strong></span>
                   )}
                   {meeting.recorder_name && (
-                    <span>
-                      📝 <strong>{meeting.recorder_name}</strong>
-                    </span>
+                    <span>📝 <strong>{meeting.recorder_name}</strong></span>
                   )}
                   {meeting.minute_taker && (
-                    <span>
-                      🖋️ <strong>{meeting.minute_taker}</strong>
-                    </span>
+                    <span>🖋️ <strong>{meeting.minute_taker}</strong></span>
                   )}
                   {meeting.timekeeper_name && (
-                    <span>
-                      ⏱️ <strong>{meeting.timekeeper_name}</strong>
-                    </span>
+                    <span>⏱️ <strong>{meeting.timekeeper_name}</strong></span>
                   )}
                 </div>
               )}
@@ -1900,7 +1901,82 @@ export default function MeetingView({
       </header>
       
       <div className="flex flex-1 overflow-hidden relative">
-        {/* Agenda Outline Sidebar */}
+        {/* ── MOBILE: Slide-in Drawer Overlay ── */}
+        {showSidebar && (
+          <div className="lg:hidden fixed inset-0 z-[999] flex">
+            {/* Backdrop */}
+            <div
+              className="absolute inset-0 bg-black/50"
+              onClick={() => setShowSidebar(false)}
+            />
+            {/* Drawer panel */}
+            <aside className="relative z-10 w-72 max-w-[85vw] bg-white dark:bg-card border-r border-border flex flex-col h-full overflow-y-auto px-4 pt-4 pb-6 shadow-2xl">
+              {/* Drawer header */}
+              <div className="flex items-center justify-between mb-5 border-b border-border pb-3">
+                <h3 className="text-sm font-bold text-primary flex items-center gap-2">
+                  <FileText className="h-4 w-4" />
+                  AGENDA OUTLINE
+                </h3>
+                <button
+                  onClick={() => setShowSidebar(false)}
+                  className="h-7 w-7 flex items-center justify-center rounded-full hover:bg-muted text-muted-foreground text-xl font-light"
+                >
+                  ×
+                </button>
+              </div>
+              {sections.length === 0 ? (
+                <p className="text-xs text-muted-foreground">No sections yet.</p>
+              ) : (
+                <nav className="space-y-1">
+                  {sections.map((section, idx) => (
+                    <div key={section.id} className="space-y-0.5">
+                      <button
+                        onClick={() => {
+                          if (!section.isExpanded) toggleSection(section.id)
+                          const element = document.getElementById(`section-${section.id}`)
+                          element?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                          setShowSidebar(false)
+                        }}
+                        className={`w-full text-left text-xs font-bold px-2 py-2 rounded-lg transition-colors flex items-center gap-2 ${
+                          activeSectionId === section.id
+                            ? "bg-primary/10 text-primary"
+                            : "hover:bg-muted text-foreground"
+                        }`}
+                      >
+                        <span className="text-primary/60 flex-shrink-0">{idx + 1}.</span>
+                        <span className="truncate">{section.title}</span>
+                        <span className="ml-auto text-[10px] text-muted-foreground flex-shrink-0">
+                          {section.topics.length}
+                        </span>
+                      </button>
+                      {section.topics.length > 0 && (
+                        <div className="ml-5 pl-2 border-l-2 border-primary/15 space-y-0.5">
+                          {section.topics.map((topic, tIdx) => (
+                            <button
+                              key={topic.id}
+                              onClick={() => {
+                                if (!section.isExpanded) toggleSection(section.id)
+                                const element = document.getElementById(`topic-${topic.id}`)
+                                element?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                                setShowSidebar(false)
+                              }}
+                              className="w-full text-left text-[11px] px-2 py-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground flex items-center gap-1"
+                            >
+                              <span className="text-primary/40 flex-shrink-0">{idx + 1}.{tIdx + 1}</span>
+                              <span className="truncate">{topic.title}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </nav>
+              )}
+            </aside>
+          </div>
+        )}
+
+        {/* ── DESKTOP: Side Panel ── */}
         {showSidebar && (
           <aside className="hidden lg:flex w-64 border-r border-border bg-background flex-col shrink-0 h-full overflow-y-auto px-4 pt-2 pb-4 transition-all duration-300 shadow-sm">
             <h3 className="text-sm font-bold text-primary flex items-center gap-2 mb-4">
@@ -1917,8 +1993,8 @@ export default function MeetingView({
                       element?.scrollIntoView({ behavior: 'smooth', block: 'start' })
                     }}
                     className={`w-full text-left text-xs font-bold px-2 py-1.5 rounded transition-colors flex items-center gap-2 ${
-                      activeSectionId === section.id 
-                        ? "bg-primary/10 text-primary border-r-2 border-primary" 
+                      activeSectionId === section.id
+                        ? "bg-primary/10 text-primary border-r-2 border-primary"
                         : "hover:bg-primary/5 text-foreground"
                     }`}
                   >
@@ -1946,6 +2022,7 @@ export default function MeetingView({
             </nav>
           </aside>
         )}
+
 
         <div className="flex-1 overflow-y-auto relative">
           {/* Main Content Container */}
@@ -2011,12 +2088,13 @@ export default function MeetingView({
                   {(provided: any) => (
                     <div ref={provided.innerRef} {...provided.draggableProps} id={`section-${section.id}`}>
                       <Card className="border-0 bg-gradient-to-r from-primary/10 to-decision-purple/10 mb-1">
-                        <div className="w-full py-0 px-3 flex items-center justify-between">
-                          <div className="flex items-center gap-3">
+                        <div className="w-full py-1 px-3">
+                          {/* Section title row */}
+                          <div className="flex items-center gap-2 min-w-0">
                             <div
                               {...provided.dragHandleProps}
                               onClick={() => toggleSection(section.id)}
-                              className="cursor-pointer"
+                              className="cursor-pointer flex-shrink-0"
                             >
                               {section.isExpanded ? (
                                 <ChevronDown className="h-5 w-5 text-primary" />
@@ -2030,71 +2108,69 @@ export default function MeetingView({
                                   e.preventDefault()
                                   saveSectionRename()
                                 }}
-                                className="flex items-center gap-2"
+                                className="flex items-center gap-2 flex-1"
                               >
                                 <input
                                   value={sectionRenameValue}
-                                  onChange={(e) =>
-                                    setSectionRenameValue(e.target.value)
-                                  }
-                                  className="text-lg font-bold border px-2 py-1 rounded"
+                                  onChange={(e) => setSectionRenameValue(e.target.value)}
+                                  className="text-base font-bold border px-2 py-1 rounded flex-1"
                                   autoFocus
                                   onBlur={saveSectionRename}
                                 />
                               </form>
                             ) : (
-                              <>
-                                <span className="text-lg font-bold text-primary/70 min-w-[2rem]">
+                              <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                                <span className="text-sm font-bold text-primary/70 flex-shrink-0">
                                   {sectionIndex + 1}.
                                 </span>
-                                <h2 className="text-lg font-bold text-foreground">
+                                <h2 className="text-sm sm:text-base font-bold text-foreground truncate">
                                   {section.title}
                                 </h2>
-                                <span className="text-sm text-muted-foreground">
-                                  ({section.topics.length}{" "}
-                                  {section.topics.length === 1
-                                    ? "topic"
-                                    : "topics"})
+                                <span className="text-xs text-muted-foreground flex-shrink-0 whitespace-nowrap">
+                                  ({section.topics.length} {section.topics.length === 1 ? "topic" : "topics"})
                                 </span>
-                              </>
+                              </div>
                             )}
                           </div>
-                          <div className="flex items-center gap-2">
-                            {!editingLocked &&
-                              editingSection?.id !== section.id && (
-                                <>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => beginSectionRename(section)}
-                                    title="Edit section name"
-                                  >
-                                    <Pencil className="h-4 w-4" />
-                                  </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => askDeleteSection(section)}
-                                    title="Delete section"
-                                  >
-                                    <Trash className="h-4 w-4 text-red-600" />
-                                  </Button>
-                                </>
-                              )}
+
+                          {/* Section action buttons row */}
+                          <div className="flex items-center gap-1 mt-1 pl-7">
+                            {!editingLocked && editingSection?.id !== section.id && (
+                              <>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => beginSectionRename(section)}
+                                  title="Edit section name"
+                                  className="h-7 w-7"
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => askDeleteSection(section)}
+                                  title="Delete section"
+                                  className="h-7 w-7"
+                                >
+                                  <Trash className="h-3.5 w-3.5 text-red-600" />
+                                </Button>
+                              </>
+                            )}
                             {userCanEdit && meeting.status !== "minutes" && (
-                              <div className="flex items-center gap-2">
+                              <>
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  className="h-8 px-2 text-xs text-muted-foreground hover:text-primary"
+                                  className="h-7 px-2 text-[10px] sm:text-xs text-muted-foreground hover:text-primary"
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     const input = document.getElementById(`section-file-${section.id}`) as HTMLInputElement;
                                     input?.click();
                                   }}
                                 >
-                                  <Paperclip className="h-3.5 w-3.5 mr-1" />
-                                  Attach
+                                  <Paperclip className="h-3 w-3 mr-1" />
+                                  <span className="hidden sm:inline">Attach</span>
                                 </Button>
                                 <input
                                   id={`section-file-${section.id}`}
@@ -2102,19 +2178,18 @@ export default function MeetingView({
                                   className="hidden"
                                   onChange={(e) => handleSectionFileUpload(e, section.id)}
                                 />
-
                                 <Button
                                   size="sm"
                                   onClick={(e) => {
                                     e.stopPropagation()
                                     handleAddTopic(section.id, section.title)
                                   }}
-                                  className="bg-primary hover:bg-primary/90 h-8 px-3 text-xs"
+                                  className="bg-primary hover:bg-primary/90 h-7 px-2 sm:px-3 text-[10px] sm:text-xs"
                                 >
-                                  <Plus className="h-4 w-4 mr-2" />
+                                  <Plus className="h-3 w-3 mr-1" />
                                   Add Topic
                                 </Button>
-                              </div>
+                              </>
                             )}
                           </div>
                         </div>
@@ -2430,6 +2505,17 @@ export default function MeetingView({
           }}
           defaultTab={defaultTab}
         />
+      )}
+
+      {/* Floating Agenda Button for Mobile */}
+      {!showSidebar && (
+        <Button
+          onClick={() => setShowSidebar(true)}
+          className="lg:hidden fixed bottom-8 right-6 h-14 w-14 rounded-full shadow-2xl bg-primary text-primary-foreground z-40 flex items-center justify-center border-2 border-white dark:border-gray-800 transition-all hover:scale-105 active:scale-95"
+          size="icon"
+        >
+          <FileText className="h-7 w-7" />
+        </Button>
       )}
       </div>
     </>

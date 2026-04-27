@@ -982,63 +982,63 @@ export default function TopicCard({
               )}
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 sm:gap-2">
               {!isReadOnly && isMeetingStarted && (
                 <button
                   onClick={handleIncameraToggle}
-                  className={`flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded transition-all border-2 ${isIncamera
+                  className={`flex items-center gap-1 px-2 sm:px-3 py-1 sm:py-1.5 text-[10px] sm:text-xs font-medium rounded transition-all border-2 ${isIncamera
                     ? 'bg-red-50 border-red-300 text-red-700 hover:bg-red-100'
                     : 'bg-muted hover:bg-muted/80 border-border hover:border-red-300'
                     }`}
                   title={isIncamera ? "Remove In-Camera status" : "Mark as In-Camera (Confidential)"}
                 >
-                  {isIncamera ? <Lock className="h-4 w-4" /> : <Unlock className="h-4 w-4" />}
-                  {isIncamera ? 'In-Camera' : 'In-Camera'}
+                  {isIncamera ? <Lock className="h-3 w-3 sm:h-4 sm:w-4" /> : <Unlock className="h-3 w-3 sm:h-4 sm:w-4" />}
+                  <span className="hidden xs:inline">{isIncamera ? 'In-Camera' : 'Mark In-Camera'}</span>
                 </button>
               )}
 
               <button
                 onClick={() => setShowAttachments(!showAttachments)}
-                className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium bg-muted hover:bg-muted/80 rounded transition-colors"
+                className="flex items-center gap-1 px-2 sm:px-3 py-1 sm:py-1.5 text-[10px] sm:text-xs font-medium bg-muted hover:bg-muted/80 rounded transition-colors"
                 title="View attachments"
               >
-                <Paperclip className="h-4 w-4" />
+                <Paperclip className="h-3 w-3 sm:h-4 sm:w-4" />
                 {attachments.length}
               </button>
 
               {isReadOnly && onRestore && (
                 <button
                   onClick={handleRestoreTopic}
-                  className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium bg-amber-100/50 text-amber-800 hover:bg-amber-100 rounded transition-colors border border-amber-200/50 shadow-sm"
+                  className="flex items-center gap-1 px-2 sm:px-3 py-1 sm:py-1.5 text-[10px] sm:text-xs font-medium bg-amber-100/50 text-amber-800 hover:bg-amber-100 rounded transition-colors border border-amber-200/50 shadow-sm"
                   title="Restore to active agenda"
                 >
-                  <ArrowUpCircle className="h-4 w-4" />
-                  Restore
+                  <ArrowUpCircle className="h-3 w-3 sm:h-4 sm:w-4" />
+                  <span className="hidden xs:inline">Restore</span>
                 </button>
               )}
 
               {!isEditingTitle && !isReadOnly && (
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-0.5 sm:gap-1">
                   <button
                     onClick={handleEditTitle}
-                    className="flex h-8 w-8 items-center justify-center rounded hover:bg-muted transition-colors text-primary"
+                    className="flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded hover:bg-muted transition-colors text-primary"
                     title="Edit title"
                   >
-                    <Edit2 className="h-4 w-4" />
+                    <Edit2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                   </button>
                   <button
                     onClick={handleArchive}
-                    className="flex h-8 w-8 items-center justify-center rounded hover:bg-muted transition-colors text-amber-600"
+                    className="flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded hover:bg-muted transition-colors text-amber-600"
                     title="Move to Topic Bank (Archive)"
                   >
-                    <Archive className="h-4 w-4" />
+                    <Archive className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                   </button>
                   <button
                     onClick={() => setShowDeleteConfirm(true)}
-                    className="flex h-8 w-8 items-center justify-center rounded hover:bg-muted transition-colors text-destructive"
+                    className="flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded hover:bg-muted transition-colors text-destructive"
                     title="Delete topic"
                   >
-                    <Trash2 className="h-4 w-4" />
+                    <Trash2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                   </button>
                 </div>
               )}
@@ -1047,23 +1047,23 @@ export default function TopicCard({
 
           {!isReadOnly && isMeetingStarted && isIncamera && (
             <div className="mt-2 pt-2 border-t border-border/50">
-              <div className="flex items-center gap-3 text-xs">
-                <div className="flex items-center gap-1">
-                  <label className="text-muted-foreground font-medium">Start:</label>
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3 text-xs">
+                <div className="flex items-center gap-2">
+                  <label className="text-muted-foreground font-semibold w-12 sm:w-auto">Start:</label>
                   <input
                     type="datetime-local"
                     value={formatToLocalDateTimeString(incameraStartTime)}
                     onChange={(e) => handleTimeUpdate('start', e.target.value)}
-                    className="px-2 py-1 rounded border border-border text-xs bg-background"
+                    className="flex-1 px-2 py-1.5 rounded border border-border text-xs bg-background focus:ring-1 focus:ring-primary outline-none"
                   />
                 </div>
-                <div className="flex items-center gap-1">
-                  <label className="text-muted-foreground font-medium">End:</label>
+                <div className="flex items-center gap-2">
+                  <label className="text-muted-foreground font-semibold w-12 sm:w-auto">End:</label>
                   <input
                     type="datetime-local"
                     value={formatToLocalDateTimeString(incameraEndTime)}
                     onChange={(e) => handleTimeUpdate('end', e.target.value)}
-                    className="px-2 py-1 rounded border border-border text-xs bg-background"
+                    className="flex-1 px-2 py-1.5 rounded border border-border text-xs bg-background focus:ring-1 focus:ring-primary outline-none"
                   />
                 </div>
               </div>
@@ -1267,15 +1267,30 @@ export default function TopicCard({
             </div>
 
             {!isReadOnly && (
-              <div className="flex gap-2 border-b border-border bg-muted/30 p-2">
-                <Button size="sm" className="flex-1 bg-note-blue text-white hover:bg-note-blue/90" onClick={onNoteClick}>
-                  <FileText className="h-4 w-4 mr-2" />📝 Note
+              <div className="flex gap-1 sm:gap-2 border-b border-border bg-muted/30 p-1 sm:p-2">
+                <Button 
+                  size="sm" 
+                  className="flex-1 bg-note-blue text-white hover:bg-note-blue/90 text-[10px] sm:text-xs h-8 sm:h-9 px-1 sm:px-3" 
+                  onClick={onNoteClick}
+                >
+                  <FileText className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                  <span className="truncate">Note</span>
                 </Button>
-                <Button size="sm" className="flex-1 bg-task-green text-white hover:bg-task-green/90" onClick={onTaskClick}>
-                  <CheckSquare className="h-4 w-4 mr-2" />✓ Task
+                <Button 
+                  size="sm" 
+                  className="flex-1 bg-task-green text-white hover:bg-task-green/90 text-[10px] sm:text-xs h-8 sm:h-9 px-1 sm:px-3" 
+                  onClick={onTaskClick}
+                >
+                  <CheckSquare className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                  <span className="truncate">Task</span>
                 </Button>
-                <Button size="sm" className="flex-1 bg-decision-purple text-white hover:bg-decision-purple/90" onClick={onDecisionClick}>
-                  <Scale className="h-4 w-4 mr-2" />⚖️ Decision
+                <Button 
+                  size="sm" 
+                  className="flex-1 bg-decision-purple text-white hover:bg-decision-purple/90 text-[10px] sm:text-xs h-8 sm:h-9 px-1 sm:px-3" 
+                  onClick={onDecisionClick}
+                >
+                  <Scale className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                  <span className="truncate">Decision</span>
                 </Button>
               </div>
             )}

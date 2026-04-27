@@ -517,48 +517,51 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
               >
                 <ArrowLeft className="h-5 w-5" />
               </Button>
-              <div>
-                <h1 className="text-xl font-bold text-foreground">Admin Panel</h1>
-                <p className="text-sm text-muted-foreground">
+              <div className="min-w-0">
+                <h1 className="text-lg sm:text-xl font-bold text-foreground truncate">Admin Panel</h1>
+                <p className="text-[10px] sm:text-sm text-muted-foreground truncate sm:whitespace-normal">
                   Manage users, buildings, companies, minutes and agenda templates
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-shrink-0">
               {activeTab === "users" && canCreateUser && (
                 <Button
                   onClick={() => setShowCreateUserModal(true)}
-                  className="bg-gradient-to-r from-primary to-decision-purple text-primary-foreground"
+                  size="sm"
+                  className="bg-gradient-to-r from-primary to-decision-purple text-primary-foreground text-[10px] sm:text-sm px-2 sm:px-4"
                 >
-                  <Plus className="h-4 w-4 mr-2" />
-                  Create User
+                  <Plus className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                  <span className="truncate">Create User</span>
                 </Button>
               )}
               {activeTab === "buildings" && canCreateBuilding && (
                 <Button
                   onClick={() => setShowCreateBuildingModal(true)}
-                  className="bg-gradient-to-r from-primary to-decision-purple text-primary-foreground"
+                  size="sm"
+                  className="bg-gradient-to-r from-primary to-decision-purple text-primary-foreground text-[10px] sm:text-sm px-2 sm:px-4"
                 >
-                  <Plus className="h-4 w-4 mr-2" />
-                  Create Building
+                  <Plus className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                  <span className="truncate">Create Building</span>
                 </Button>
               )}
               {activeTab === "companies" && userCanManageCompanies && (
                 <Button
                   onClick={() => setShowCreateCompanyModal(true)}
-                  className="bg-gradient-to-r from-primary to-decision-purple text-primary-foreground"
+                  size="sm"
+                  className="bg-gradient-to-r from-primary to-decision-purple text-primary-foreground text-[10px] sm:text-sm px-2 sm:px-4"
                 >
-                  <Plus className="h-4 w-4 mr-2" />
-                  Create Company
+                  <Plus className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                  <span className="truncate">Create Company</span>
                 </Button>
               )}
             </div>
           </div>
 
-          <div className="flex gap-4 mt-4">
+          <div className="flex gap-4 mt-4 overflow-x-auto scrollbar-hide pb-1">
             <button
               onClick={() => setActiveTab("users")}
-              className={`pb-2 px-1 font-medium text-sm transition-colors ${
+              className={`pb-2 px-1 font-medium text-xs sm:text-sm transition-colors whitespace-nowrap flex-shrink-0 ${
                 activeTab === "users"
                   ? "text-primary border-b-2 border-primary"
                   : "text-muted-foreground hover:text-foreground"
@@ -568,7 +571,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
             </button>
             <button
               onClick={() => setActiveTab("buildings")}
-              className={`pb-2 px-1 font-medium text-sm transition-colors ${
+              className={`pb-2 px-1 font-medium text-xs sm:text-sm transition-colors whitespace-nowrap flex-shrink-0 ${
                 activeTab === "buildings"
                   ? "text-primary border-b-2 border-primary"
                   : "text-muted-foreground hover:text-foreground"
@@ -579,7 +582,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
             {userCanManageCompanies && (
               <button
                 onClick={() => setActiveTab("companies")}
-                className={`pb-2 px-1 font-medium text-sm transition-colors ${
+                className={`pb-2 px-1 font-medium text-xs sm:text-sm transition-colors whitespace-nowrap flex-shrink-0 ${
                   activeTab === "companies"
                     ? "text-primary border-b-2 border-primary"
                     : "text-muted-foreground hover:text-foreground"
@@ -590,46 +593,46 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
             )}
             <button
               onClick={() => setActiveTab("minutes")}
-              className={`pb-2 px-1 font-medium text-sm transition-colors ${
+              className={`pb-2 px-1 font-medium text-xs sm:text-sm transition-colors whitespace-nowrap flex-shrink-0 ${
                 activeTab === "minutes"
                   ? "text-primary border-b-2 border-primary"
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              📄 Minutes Templates
+              📄 Minutes
             </button>
               <button
               onClick={() => setActiveTab("agenda")}
-              className={`pb-2 px-1 font-medium text-sm transition-colors ${
+              className={`pb-2 px-1 font-medium text-xs sm:text-sm transition-colors whitespace-nowrap flex-shrink-0 ${
                 activeTab === "agenda"
                   ? "text-primary border-b-2 border-primary"
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              📋 Agenda Templates
+              📋 Agenda
             </button>
             {(isMaster || isCorporateAdmin) && (
               <button
                 onClick={() => setActiveTab("audit")}
-                className={`pb-2 px-1 font-medium text-sm transition-colors ${
+                className={`pb-2 px-1 font-medium text-xs sm:text-sm transition-colors whitespace-nowrap flex-shrink-0 ${
                   activeTab === "audit"
                     ? "text-primary border-b-2 border-primary"
                     : "text-muted-foreground hover:text-foreground"
                 }`}
               >
-                🔍 System Audit
+                🔍 Audit
               </button>
             )}
             {isMaster && (
               <button
                 onClick={() => setActiveTab("settings")}
-                className={`pb-2 px-1 font-medium text-sm transition-colors ${
+                className={`pb-2 px-1 font-medium text-xs sm:text-sm transition-colors whitespace-nowrap flex-shrink-0 ${
                   activeTab === "settings"
                     ? "text-primary border-b-2 border-primary"
                     : "text-muted-foreground hover:text-foreground"
                 }`}
               >
-                ⚙️ LLM Settings
+                ⚙️ Settings
               </button>
             )}
           </div>

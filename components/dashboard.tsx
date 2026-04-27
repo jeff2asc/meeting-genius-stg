@@ -441,14 +441,14 @@ export default function Dashboard({
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted">
       {/* HEADER - Only MG Logo */}
-      <header className="border-b border-border bg-card shadow-sm">
-        <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
+      <header className="border-b border-border bg-card shadow-sm sticky top-0 z-40 sm:static">
+        <div className="mx-auto max-w-7xl px-4 py-3 sm:py-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <img
                 src="/MG2 logo.png"
                 alt="Meeting Genius Logo"
-                className="h-10 w-auto object-contain"
+                className="h-8 sm:h-10 w-auto object-contain"
               />
             </div>
           </div>
@@ -456,58 +456,104 @@ export default function Dashboard({
       </header>
 
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-        {/* NEW LAYOUT: Logo LEFT, Title CENTER, Dropdown + Button RIGHT */}
-        <div className="mb-6 flex items-center justify-between">
-          {/* LEFT: Company Logo */}
-          <div className="flex items-center">
+        {/* Mobile Header: Centered title + full-width button */}
+        <div className="md:hidden mb-6">
+          <h2 className="text-2xl font-bold text-center text-foreground mb-3">
+            {selectedBuilding === "All" ? "All Buildings" : selectedBuilding}
+          </h2>
+
+          {/* Building Selector */}
+          <div className="relative mb-3">
+            <Button
+              variant="outline"
+              className="flex items-center gap-2 bg-card w-full justify-between border border-border rounded-xl"
+              onClick={(e) => {
+                e.stopPropagation()
+                setShowBuildingDropdown(!showBuildingDropdown)
+              }}
+            >
+              <span className="truncate text-sm">{selectedBuilding || "Select Building"}</span>
+              <ChevronDown className="h-4 w-4 flex-shrink-0" />
+            </Button>
+            {showBuildingDropdown && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setShowBuildingDropdown(false)} />
+                <div className="absolute left-0 right-0 mt-2 bg-card border border-border rounded-xl shadow-lg z-50 max-h-[60vh] overflow-y-auto">
+                  <button
+                    onClick={() => handleBuildingSelect("All")}
+                    className={`w-full px-4 py-3 text-left hover:bg-muted transition-colors first:rounded-t-xl text-sm ${selectedBuilding === "All" ? "bg-muted font-semibold" : ""}`}
+                  >
+                    All Buildings
+                  </button>
+                  {buildings.map((building) => (
+                    <button
+                      key={building.id}
+                      onClick={() => handleBuildingSelect(building.name)}
+                      className={`w-full px-4 py-3 text-left hover:bg-muted transition-colors last:rounded-b-xl text-sm ${building.name === selectedBuilding ? "bg-muted font-semibold" : ""}`}
+                    >
+                      {building.name}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Full-width New Meeting Button */}
+          {userCanCreateMeeting && (
+            <Button
+              onClick={onCreateMeeting}
+              disabled={buildings.length === 0}
+              className="w-full py-3 text-base font-semibold bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl disabled:opacity-50"
+            >
+              <Plus className="h-5 w-5 mr-2" />
+              New Meeting
+            </Button>
+          )}
+        </div>
+
+        {/* Desktop Header */}
+        <div className="hidden md:flex mb-6 flex-col md:flex-row md:items-center justify-between gap-4 md:gap-6">
+          <div className="flex items-center gap-4">
             {companyLogo && (
               <img
                 src={companyLogo}
                 alt="Company Logo"
-                className="h-16 w-16 rounded-full object-cover border-2 border-border shadow-sm"
+                className="h-14 w-14 md:h-16 md:w-16 rounded-full object-cover border-2 border-border shadow-sm flex-shrink-0"
               />
             )}
+            <div className="flex-1">
+              <h2 className="text-xl md:text-2xl font-bold text-foreground line-clamp-1">
+                {selectedBuilding === "All" ? "All Buildings" : selectedBuilding}
+              </h2>
+              <p className="text-xs md:text-sm text-muted-foreground mt-0.5">
+                {activeTab === "meetings" && `${filteredMeetings.length} meeting${filteredMeetings.length !== 1 ? 's' : ''}`}
+                {activeTab === "tasks" && `${filteredTasks.length} task${filteredTasks.length !== 1 ? 's' : ''}`}
+                {activeTab === "all" && `${filteredMeetings.length} meetings, ${filteredTasks.length} tasks`}
+              </p>
+            </div>
           </div>
 
-          {/* CENTER: Building Name + Count */}
-          <div className="flex-1 text-center">
-            <h2 className="text-2xl font-bold text-foreground">
-              {selectedBuilding === "All" ? "All Buildings" : selectedBuilding}
-            </h2>
-            <p className="text-sm text-muted-foreground mt-1">
-              {activeTab === "meetings" && `${filteredMeetings.length} meeting${filteredMeetings.length !== 1 ? 's' : ''}`}
-              {activeTab === "tasks" && `${filteredTasks.length} task${filteredTasks.length !== 1 ? 's' : ''}`}
-              {activeTab === "all" && `${filteredMeetings.length} meetings, ${filteredTasks.length} tasks`}
-            </p>
-          </div>
-
-          {/* RIGHT: All Dropdown + New Meeting Button (stacked) */}
-          <div className="flex flex-col items-end gap-2">
-            {/* Building Dropdown */}
-            <div className="relative">
+          <div className="flex flex-col sm:flex-row md:flex-col items-stretch sm:items-center md:items-end gap-2 w-full md:w-auto">
+            <div className="relative w-full sm:w-auto">
               <Button
                 variant="outline"
-                className="flex items-center gap-2 bg-card min-w-[180px] justify-center"
+                className="flex items-center gap-2 bg-card w-full sm:min-w-[180px] justify-between sm:justify-center"
                 onClick={(e) => {
                   e.stopPropagation()
-                  console.log('🔽 Building dropdown clicked')
                   setShowBuildingDropdown(!showBuildingDropdown)
                 }}
               >
-                {selectedBuilding || "Select Building"}
-                <ChevronDown className="h-4 w-4" />
+                <span className="truncate">{selectedBuilding || "Select Building"}</span>
+                <ChevronDown className="h-4 w-4 flex-shrink-0" />
               </Button>
               {showBuildingDropdown && (
                 <>
-                  <div
-                    className="fixed inset-0 z-40"
-                    onClick={() => setShowBuildingDropdown(false)}
-                  />
-                  <div className="absolute right-0 mt-2 w-56 bg-card border border-border rounded-lg shadow-lg z-50">
+                  <div className="fixed inset-0 z-40" onClick={() => setShowBuildingDropdown(false)} />
+                  <div className="absolute right-0 mt-2 w-full sm:w-56 bg-card border border-border rounded-lg shadow-lg z-50 max-h-[60vh] overflow-y-auto">
                     <button
                       onClick={() => handleBuildingSelect("All")}
-                      className={`w-full px-4 py-2 text-left hover:bg-muted transition-colors first:rounded-t-lg ${selectedBuilding === "All" ? "bg-muted font-semibold" : ""
-                        }`}
+                      className={`w-full px-4 py-2 text-left hover:bg-muted transition-colors first:rounded-t-lg ${selectedBuilding === "All" ? "bg-muted font-semibold" : ""}`}
                     >
                       All Buildings
                     </button>
@@ -515,8 +561,7 @@ export default function Dashboard({
                       <button
                         key={building.id}
                         onClick={() => handleBuildingSelect(building.name)}
-                        className={`w-full px-4 py-2 text-left hover:bg-muted transition-colors last:rounded-b-lg ${building.name === selectedBuilding ? "bg-muted font-semibold" : ""
-                          }`}
+                        className={`w-full px-4 py-2 text-left hover:bg-muted transition-colors last:rounded-b-lg ${building.name === selectedBuilding ? "bg-muted font-semibold" : ""}`}
                       >
                         {building.name}
                       </button>
@@ -526,12 +571,11 @@ export default function Dashboard({
               )}
             </div>
 
-            {/* New Meeting Button */}
             {userCanCreateMeeting && (
               <Button
                 onClick={onCreateMeeting}
                 disabled={buildings.length === 0}
-                className="bg-gradient-to-r from-primary to-decision-purple text-primary-foreground hover:opacity-90 disabled:opacity-50 min-w-[180px]"
+                className="bg-gradient-to-r from-primary to-decision-purple text-primary-foreground hover:opacity-90 disabled:opacity-50 w-full sm:min-w-[180px]"
               >
                 <Plus className="h-4 w-4 mr-2" />
                 New Meeting
@@ -540,8 +584,8 @@ export default function Dashboard({
           </div>
         </div>
 
-        <div className="mb-6 border-b border-border">
-          <div className="flex gap-4">
+        <div className="mb-6 border-b border-border overflow-x-auto scrollbar-hide">
+          <div className="flex gap-4 min-w-max">
             <button
               onClick={() => setActiveTab("meetings")}
               className={`pb-3 px-1 font-medium text-sm transition-colors ${activeTab === "meetings"
@@ -576,8 +620,8 @@ export default function Dashboard({
         </div>
 
         {/* ✅ FIX: Added items-center to align search bar and assignee dropdown */}
-        <div className="mb-6 flex gap-3 flex-wrap items-center">
-          <div className="relative flex-1 min-w-[220px]">
+        <div className="mb-6 flex flex-col sm:flex-row gap-3 items-stretch sm:items-center">
+          <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <input
               type="text"
@@ -588,66 +632,67 @@ export default function Dashboard({
             />
           </div>
 
-          {(activeTab === "meetings" || activeTab === "all") && availableMeetingTypes.length > 0 && (
-            <div className="relative">
-              <Button
-                variant="outline"
-                className="flex items-center gap-2 bg-card"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setShowMeetingTypeDropdown(!showMeetingTypeDropdown)
-                }}
-              >
-                {selectedMeetingType === "All" ? "All Types" : selectedMeetingType}
-                <ChevronDown className="h-4 w-4" />
-              </Button>
-              {showMeetingTypeDropdown && (
-                <>
-                  <div
-                    className="fixed inset-0 z-40"
-                    onClick={() => setShowMeetingTypeDropdown(false)}
-                  />
-                  <div className="absolute right-0 mt-2 w-56 bg-card border border-border rounded-lg shadow-lg z-50">
-                    <button
-                      onClick={() => handleMeetingTypeSelect("All")}
-                      className={`w-full px-4 py-2 text-left hover:bg-muted transition-colors first:rounded-t-lg ${selectedMeetingType === "All" ? "bg-muted font-semibold" : ""
-                        }`}
-                    >
-                      All Types
-                    </button>
-                    {availableMeetingTypes.map((type) => (
+          <div className="flex gap-3 items-center">
+            {(activeTab === "meetings" || activeTab === "all") && availableMeetingTypes.length > 0 && (
+              <div className="relative flex-1 sm:flex-initial">
+                <Button
+                  variant="outline"
+                  className="flex items-center gap-2 bg-card w-full sm:w-auto justify-between"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setShowMeetingTypeDropdown(!showMeetingTypeDropdown)
+                  }}
+                >
+                  <span className="truncate">{selectedMeetingType === "All" ? "All Types" : selectedMeetingType}</span>
+                  <ChevronDown className="h-4 w-4 flex-shrink-0" />
+                </Button>
+                {showMeetingTypeDropdown && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-40"
+                      onClick={() => setShowMeetingTypeDropdown(false)}
+                    />
+                    <div className="absolute right-0 mt-2 w-full sm:w-56 bg-card border border-border rounded-lg shadow-lg z-50">
                       <button
-                        key={type}
-                        onClick={() => handleMeetingTypeSelect(type)}
-                        className={`w-full px-4 py-2 text-left hover:bg-muted transition-colors last:rounded-b-lg ${type === selectedMeetingType ? "bg-muted font-semibold" : ""
+                        onClick={() => handleMeetingTypeSelect("All")}
+                        className={`w-full px-4 py-2 text-left hover:bg-muted transition-colors first:rounded-t-lg ${selectedMeetingType === "All" ? "bg-muted font-semibold" : ""
                           }`}
                       >
-                        {type}
+                        All Types
                       </button>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
-          )}
+                      {availableMeetingTypes.map((type) => (
+                        <button
+                          key={type}
+                          onClick={() => handleMeetingTypeSelect(type)}
+                          className={`w-full px-4 py-2 text-left hover:bg-muted transition-colors last:rounded-b-lg ${type === selectedMeetingType ? "bg-muted font-semibold" : ""
+                            }`}
+                        >
+                          {type}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
 
-          {/* ✅ FIX: Removed label and flex-col, now just a plain div with the select */}
-          {(activeTab === "tasks" || activeTab === "all") && (
-            <div className="min-w-[220px]">
-              <select
-                className="w-full px-3 py-2 bg-card border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-                value={assigneeFilter}
-                onChange={(e) => setAssigneeFilter(e.target.value)}
-              >
-                <option value="All">All assignees</option>
-                {uniqueAssigneeNames.map((name) => (
-                  <option key={name} value={name}>
-                    {name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
+            {(activeTab === "tasks" || activeTab === "all") && (
+              <div className="flex-1 sm:flex-initial min-w-0">
+                <select
+                  className="w-full px-3 py-2 bg-card border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  value={assigneeFilter}
+                  onChange={(e) => setAssigneeFilter(e.target.value)}
+                >
+                  <option value="All">All assignees</option>
+                  {uniqueAssigneeNames.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
         </div>
 
         {(activeTab === "meetings" || activeTab === "all") && (
@@ -660,7 +705,7 @@ export default function Dashboard({
                 </h3>
               </div>
             )}
-            <div className="overflow-x-auto">
+            <div className="hidden md:block overflow-x-auto">
               <table className="w-full">
                 <thead className="border-b border-border">
                   <tr className="text-left">
@@ -726,6 +771,88 @@ export default function Dashboard({
                 </tbody>
               </table>
             </div>
+
+            {/* Mobile Card View for Meetings */}
+            <div className="md:hidden p-3 space-y-3">
+              {filteredMeetings.length > 0 ? (
+                filteredMeetings.map((meeting) => (
+                  <button
+                    key={meeting.id}
+                    className="w-full text-left bg-white dark:bg-card rounded-2xl shadow-sm border border-border p-4 hover:shadow-md active:scale-[0.99] transition-all"
+                    onClick={() => onStartMeeting(meeting.id)}
+                  >
+                    <div className="flex justify-between items-start gap-3">
+                      <div className="flex items-start gap-3 min-w-0">
+                        <div className="mt-0.5 h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                          <Calendar className="h-4 w-4 text-primary" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-semibold text-foreground text-sm leading-snug line-clamp-2">
+                            {meeting.title}
+                          </p>
+                          {selectedBuilding === "All" && (
+                            <p className="text-xs text-muted-foreground mt-0.5">{meeting.building}</p>
+                          )}
+                        </div>
+                      </div>
+                      <span className={`flex-shrink-0 px-2.5 py-1 rounded-full text-[10px] font-semibold border ${statusStyles[meeting.status as MeetingStatus]}`}>
+                        {meeting.status === 'working_agenda' ? 'Draft' : meeting.status === 'working_minutes' ? 'In Progress' : meeting.status === 'minutes' ? 'Finalized' : meeting.status}
+                      </span>
+                    </div>
+
+                    <div className="mt-3 flex items-center justify-between pl-11">
+                      <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                        <span className="flex items-center gap-1">
+                          <Calendar className="h-3 w-3" />
+                          {meeting.date}
+                        </span>
+                        {meeting.meeting_type && (
+                          <span className="bg-muted px-2 py-0.5 rounded-full font-medium text-foreground">
+                            {meeting.meeting_type}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-1">
+                        {userCanCreateMeeting && meeting.status !== "Finalized" && (
+                          <>
+                            <Button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleEditMeeting(meeting)
+                              }}
+                              size="sm"
+                              variant="ghost"
+                              className="h-8 w-8 p-0 text-muted-foreground hover:text-primary hover:bg-primary/5"
+                              title="Edit Meeting"
+                            >
+                              <Edit2 className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setMeetingToDelete(meeting)
+                              }}
+                              size="sm"
+                              variant="ghost"
+                              className="h-8 w-8 p-0 text-muted-foreground hover:text-red-600 hover:bg-red-50"
+                              title="Delete Meeting"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </button>
+                ))
+              ) : (
+                <div className="py-12 text-center">
+                  <Calendar className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
+                  <p className="text-muted-foreground text-sm">No meetings found</p>
+                </div>
+              )}
+            </div>
           </Card>
         )}
 
@@ -739,7 +866,7 @@ export default function Dashboard({
                 </h3>
               </div>
             )}
-            <div className="overflow-x-auto">
+            <div className="hidden md:block overflow-x-auto">
               <table className="w-full">
                 <thead className="border-b border-border">
                   <tr className="text-left">
@@ -833,6 +960,80 @@ export default function Dashboard({
                 </tbody>
               </table>
             </div>
+
+            {/* Mobile Card View for Tasks */}
+            <div className="md:hidden p-3 space-y-3">
+              {filteredTasks.length > 0 ? (
+                filteredTasks.map((task) => {
+                  const isOverdue = task.due_date &&
+                    new Date(task.due_date) < new Date() &&
+                    task.status !== 'completed';
+
+                  return (
+                    <div
+                      key={task.id}
+                      className={`bg-white dark:bg-card rounded-2xl shadow-sm border p-4 ${isOverdue ? 'border-red-200 bg-red-50/30 dark:bg-red-900/10' : 'border-border'}`}
+                    >
+                      {/* Title row */}
+                      <div className="flex justify-between items-start gap-3 mb-3">
+                        <button
+                          onClick={() => setSelectedTaskId(task.id)}
+                          className="font-semibold text-foreground text-sm text-left leading-snug line-clamp-3 flex-1"
+                        >
+                          {task.description}
+                        </button>
+                        <span className={`flex-shrink-0 px-2.5 py-1 rounded-full text-[10px] font-semibold ${taskStatusStyles[task.status] || 'bg-gray-100 text-gray-800'}`}>
+                          {task.status.replace('_', ' ')}
+                        </span>
+                      </div>
+
+                      {/* Meeting + Topic */}
+                      <p className="text-xs text-muted-foreground mb-2 truncate">
+                        {task.meeting}{task.topic ? ` · ${task.topic}` : ''}
+                      </p>
+
+                      {/* Assignees */}
+                      {(task.assignees?.length > 0 || task.assigned_name) && (
+                        <div className="flex flex-wrap gap-1 mb-3">
+                          {task.assignees && task.assignees.length > 0 ? (
+                            task.assignees.map((assignee: any, idx: number) => (
+                              <span key={idx} className="text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded-full font-medium">
+                                {assignee.name}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded-full font-medium">
+                              {task.assigned_name}
+                            </span>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Due date + delete */}
+                      <div className="flex justify-between items-center">
+                        <span className={`text-xs flex items-center gap-1 ${isOverdue ? 'text-red-600 font-semibold' : 'text-muted-foreground'}`}>
+                          <CheckSquare className="h-3 w-3" />
+                          Due: {task.due_date ? new Date(task.due_date).toLocaleDateString() : 'No date'}
+                        </span>
+                        <Button
+                          onClick={() => setTaskToDelete(task)}
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 w-7 p-0 text-muted-foreground hover:text-red-600 hover:bg-red-50"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                  )
+                })
+              ) : (
+                <div className="py-12 text-center">
+                  <CheckSquare className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
+                  <p className="text-muted-foreground text-sm">No tasks found</p>
+                </div>
+              )}
+            </div>
           </Card>
         )}
       </div>
@@ -863,28 +1064,29 @@ export default function Dashboard({
       )}
 
       {meetingToDelete && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <Card className="w-full max-w-md p-6 m-4">
-            <h3 className="text-lg font-semibold text-foreground mb-2">Delete Meeting</h3>
-            <p className="text-muted-foreground mb-4">
-              Are you sure you want to delete <strong>{meetingToDelete.title}</strong>?
-              This action cannot be undone and will also delete all associated topics, tasks, decisions, and notes.
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <Card className="w-full max-w-md p-6 rounded-2xl shadow-2xl">
+            <h3 className="text-lg font-bold text-foreground mb-2">Delete Meeting</h3>
+            <p className="text-sm text-muted-foreground mb-6 leading-relaxed">
+              Are you sure you want to delete <strong className="text-foreground">{meetingToDelete.title}</strong>?
+              This action cannot be undone.
             </p>
-            <div className="flex gap-3 justify-end">
+            <div className="flex gap-3">
               <Button
                 onClick={() => setMeetingToDelete(null)}
                 variant="outline"
                 disabled={deleting}
+                className="flex-1 rounded-xl"
               >
                 Cancel
               </Button>
               <Button
                 onClick={handleDeleteMeeting}
                 disabled={deleting}
-                className="bg-red-600 hover:bg-red-700 text-white"
+                className="flex-1 rounded-xl bg-red-600 hover:bg-red-700 text-white"
               >
                 <Trash2 className="h-4 w-4 mr-2" />
-                {deleting ? "Deleting..." : "Delete Meeting"}
+                {deleting ? "Deleting..." : "Delete"}
               </Button>
             </div>
           </Card>
@@ -892,28 +1094,29 @@ export default function Dashboard({
       )}
 
       {taskToDelete && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <Card className="w-full max-w-md p-6 m-4">
-            <h3 className="text-lg font-semibold text-foreground mb-2">Delete Task</h3>
-            <p className="text-muted-foreground mb-4">
-              Are you sure you want to delete this task: <strong>{taskToDelete.description}</strong>?
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <Card className="w-full max-w-md p-6 rounded-2xl shadow-2xl">
+            <h3 className="text-lg font-bold text-foreground mb-2">Delete Task</h3>
+            <p className="text-sm text-muted-foreground mb-6 leading-relaxed">
+              Are you sure you want to delete this task: <strong className="text-foreground">{taskToDelete.description}</strong>?
               This action cannot be undone.
             </p>
-            <div className="flex gap-3 justify-end">
+            <div className="flex gap-3">
               <Button
                 onClick={() => setTaskToDelete(null)}
                 variant="outline"
                 disabled={deleting}
+                className="flex-1 rounded-xl"
               >
                 Cancel
               </Button>
               <Button
                 onClick={handleDeleteTask}
                 disabled={deleting}
-                className="bg-red-600 hover:bg-red-700 text-white"
+                className="flex-1 rounded-xl bg-red-600 hover:bg-red-700 text-white"
               >
                 <Trash2 className="h-4 w-4 mr-2" />
-                {deleting ? "Deleting..." : "Delete Task"}
+                {deleting ? "Deleting..." : "Delete"}
               </Button>
             </div>
           </Card>

@@ -250,16 +250,16 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-background">
       {/* Top Navigation */}
-      <div className="fixed top-4 right-4 z-50 flex items-center gap-2">
+      <div className="fixed top-2.5 right-2.5 sm:top-4 sm:right-4 z-50 flex items-center gap-1.5 sm:gap-2">
         {userCanAccessAdmin && currentScreen !== "admin" && (
           <Button
             onClick={handleAdminClick}
             variant="outline"
             size="sm"
-            className="bg-background/80 backdrop-blur"
+            className="bg-background/80 backdrop-blur h-8 sm:h-9 px-2 sm:px-3"
           >
-            <Settings className="h-4 w-4 mr-2" />
-            Admin
+            <Settings className="h-4 w-4 sm:mr-2" />
+            <span className="hidden sm:inline">Admin</span>
           </Button>
         )}
 
@@ -269,19 +269,19 @@ export default function Home() {
             <Button
               variant="outline"
               size="sm"
-              className="bg-background/80 backdrop-blur flex items-center gap-2 px-3 py-2 h-auto"
+              className="bg-background/80 backdrop-blur flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1 sm:py-2 h-8 sm:h-auto"
             >
               {/* Avatar */}
-              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-primary-foreground font-semibold text-xs">
+              <div className="flex h-6 w-6 sm:h-7 sm:w-7 items-center justify-center rounded-full bg-primary text-primary-foreground font-semibold text-[10px] sm:text-xs">
                 {getInitials(currentUser?.name || 'User')}
               </div>
 
               {/* User name */}
-              <span className="text-sm font-medium">
+              <span className="text-xs sm:text-sm font-medium max-w-[80px] sm:max-w-none truncate">
                 {currentUser?.name || 'User'}
               </span>
 
-              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+              <ChevronDown className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
             </Button>
           </DropdownMenuTrigger>
 
