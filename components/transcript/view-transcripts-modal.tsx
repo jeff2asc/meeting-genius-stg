@@ -1,254 +1,338 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { FileText, Download, Edit2, Check, X, Loader2, Save, RefreshCw, Music } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { FileText, Download, Eye, Loader2, AlertCircle } from "lucide-react"
-import { format } from "date-fns"
+import { Card } from "@/components/ui/card"
+import { supabase, getCurrentUser } from "@/lib/supabase"
 import { toast } from "sonner"
 
 interface Transcript {
   id: number
-  meeting_id: number
   filename: string
   file_url: string
-  file_size: number
-  mime_type: string
-  tasks_created_count: number
-  uploaded_by: number | null
   created_at: string
-  users?: {
-    name: string
-  }
+  transcript_content?: string
+}
+
+interface Recording {
+  audio_filename: string
+  audio_file: { url: string; path: string }
+  audio_duration: number
+  recording_ended_at: string
 }
 
 interface ViewTranscriptsModalProps {
   isOpen: boolean
-  onClose: () => void
   meetingId: number
+  onClose: () => void
 }
 
-export function ViewTranscriptsModal({
-  isOpen,
-  onClose,
-  meetingId,
-}: ViewTranscriptsModalProps) {
+export function ViewTranscriptsModal({ isOpen, meetingId, onClose }: ViewTranscriptsModalProps) {
   const [transcripts, setTranscripts] = useState<Transcript[]>([])
-  const [loading, setLoading] = useState(false)
+  const [meetingRecording, setMeetingRecording] = useState<Recording | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [editingId, setEditingId] = useState<number | null>(null)
+  const [editContent, setEditContent] = useState("")
+  const [saving, setSaving] = useState(false)
+  const [transcribing, setTranscribing] = useState(false)
+
+  const currentUser = getCurrentUser()
 
   useEffect(() => {
-    if (isOpen && meetingId) {
-      fetchTranscripts()
+    if (isOpen) {
+      fetchData()
     }
-  }, [isOpen, meetingId])
+  }, [meetingId, isOpen])
 
-  const fetchTranscripts = async () => {
+  if (!isOpen) return null
+
+  const fetchData = async () => {
     setLoading(true)
     try {
-      const response = await fetch(`/api/transcripts/list?meeting_id=${meetingId}`)
-      const result = await response.json()
+      // 1. Fetch meeting info
+      const { data: meetingData, error: mError } = await supabase
+        .from("meetings")
+        .select("audio_filename, audio_file, audio_duration, recording_ended_at, meeting_transcript")
+        .eq("id", meetingId)
+        .single()
 
-      if (!response.ok) {
-        throw new Error(result.error || "Failed to fetch transcripts")
-      }
+      // 2. Fetch transcripts from table
+      const { data: dbTranscripts, error: tError } = await supabase
+        .from("meeting_transcripts")
+        .select("*")
+        .eq("meeting_id", meetingId)
+        .order("created_at", { ascending: false })
 
-      setTranscripts(result.transcripts || [])
-    } catch (error: any) {
-      console.error("Error fetching transcripts:", error)
-      toast.error(error.message || "Failed to load transcripts")
+      if (tError) throw tError
+
+      // Combine with direct transcript from meetings table
+      const allTranscripts = [
+        ...(meetingData?.meeting_transcript ? [{
+           id: 'main',
+           filename: 'Main Transcript',
+           transcript_text: meetingData.meeting_transcript,
+           created_at: meetingData.recording_ended_at || new Date().toISOString()
+        }] : []),
+        ...(dbTranscripts || [])
+      ]
+
+      // Fetch content for each transcript
+      const transcriptsWithContent = await Promise.all(allTranscripts.map(async (t: any) => {
+        // ⭐ NEW: If the text is already in the row, use it!
+        if (t.transcript_text) {
+          return { ...t, transcript_content: t.transcript_text }
+        }
+        
+        // Old way: fetch from file_url
+        if (t.file_url && t.file_url !== 'internal') {
+          try {
+            const res = await fetch(t.file_url)
+            if (res.ok) {
+              const content = await res.text()
+              return { ...t, transcript_content: content }
+            }
+          } catch (e) {
+            console.error("Error fetching content for transcript", t.id, e)
+          }
+        }
+        return t
+      }))
+
+      setTranscripts(transcriptsWithContent)
+    } catch (err: any) {
+      console.error("Error fetching transcripts:", err)
+      toast.error("Failed to load transcripts")
     } finally {
       setLoading(false)
     }
   }
 
-  const [viewingContent, setViewingContent] = useState<{id: number, content: string, filename: string} | null>(null)
-  const [savingContent, setSavingContent] = useState(false)
+  const handleManualTranscribe = async () => {
+    if (!meetingRecording || !meetingRecording.audio_file?.url) {
+      toast.error("No recording found to transcribe")
+      return
+    }
 
-  const handleViewFile = async (transcript: Transcript) => {
-    if (transcript.mime_type === "text/plain") {
-      try {
-        const response = await fetch(transcript.file_url)
-        const text = await response.text()
-        setViewingContent({ id: transcript.id, content: text, filename: transcript.filename })
-      } catch (error) {
-        console.error("Error fetching transcript text:", error)
-        window.open(transcript.file_url, "_blank")
+    setTranscribing(true)
+    const documentedSecret = "meeting-genius-secret-key-2026"
+
+    try {
+      const transRes = await fetch("/api/transcripts/transcribe-recording", {
+        method: "POST",
+        headers: { 
+          "Content-Type": "application/json",
+          "x-api-key": documentedSecret
+        },
+        body: JSON.stringify({
+          meeting_id: String(meetingId),
+          audio_url: meetingRecording.audio_file.url,
+          user_id: currentUser?.id,
+          mime_type: "audio/webm"
+        })
+      })
+
+      const resData = await transRes.json()
+      
+      if (!transRes.ok) {
+        throw new Error(resData.error || "Transcription failed")
       }
-    } else {
-      window.open(transcript.file_url, "_blank")
+
+      toast.success("AI Transcript generated successfully!")
+      fetchData() // Refresh list
+    } catch (err: any) {
+      console.error("Manual transcription error:", err)
+      toast.error(`Transcription failed: ${err.message}`)
+    } finally {
+      setTranscribing(false)
     }
   }
 
-  const handleSaveContent = async () => {
-    if (!viewingContent) return
-    setSavingContent(true)
+  const handleEdit = (transcript: Transcript) => {
+    setEditingId(transcript.id)
+    setEditContent(transcript.transcript_content || "")
+  }
+
+  const handleSave = async (id: number) => {
+    setSaving(true)
     try {
-      // In a real app, we would re-upload to storage or update a 'content' column
-      // For now, we'll just show a success message as a placeholder if we can't update storage easily
-      toast.info("Saving updated transcript content...")
+      const transcript = transcripts.find(t => t.id === id)
+      if (!transcript) return
+
+      const path = `${meetingId}/${transcript.filename}`
+      const { error: uploadError } = await supabase.storage
+        .from("meeting-transcripts")
+        .upload(path, editContent, {
+          contentType: "text/plain",
+          upsert: true
+        })
+
+      if (uploadError) throw uploadError
+
+      setTranscripts(prev => prev.map(t => 
+        t.id === id ? { ...t, transcript_content: editContent } : t
+      ))
       
-      // Update the parsed_json tasks if needed? 
-      // Actually, just updating the file in storage is better but hard via client-side fetch.
-      
-      // Let's assume we just want to show it's editable.
-      setTimeout(() => {
-        toast.success("Transcript updated successfully!")
-        setSavingContent(false)
-        setViewingContent(null)
-      }, 1000)
-    } catch (error) {
-      toast.error("Failed to save transcript changes")
-      setSavingContent(false)
+      setEditingId(null)
+      toast.success("Transcript updated")
+    } catch (err: any) {
+      console.error("Error saving transcript:", err)
+      toast.error("Failed to save changes")
+    } finally {
+      setSaving(false)
     }
   }
 
-  const handleDownload = (fileUrl: string, filename: string) => {
-    const link = document.createElement("a")
-    link.href = fileUrl
-    link.download = filename
-    link.target = "_blank"
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
+  const handleDownload = (transcript: Transcript) => {
+    const element = document.createElement("a")
+    const file = new Blob([transcript.transcript_content || ""], {type: 'text/plain'})
+    element.href = URL.createObjectURL(file)
+    element.download = transcript.filename
+    document.body.appendChild(element)
+    element.click()
+    document.body.removeChild(element)
   }
 
-  const formatFileSize = (bytes: number) => {
-    if (bytes < 1024) return `${bytes} B`
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`
-    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
-  }
-
-  const formatDate = (dateString: string) => {
-    try {
-      return format(new Date(dateString), "MMM d, yyyy h:mm a")
-    } catch {
-      return dateString
-    }
-  }
+  const showRetryButton = meetingRecording && transcripts.length === 0
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <FileText className="h-5 w-5" />
-            Uploaded Transcripts
-          </DialogTitle>
-        </DialogHeader>
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+      <Card className="w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col rounded-3xl shadow-2xl border-border/50 bg-card/95">
+        <div className="p-6 border-b border-border flex items-center justify-between bg-muted/30">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 bg-primary/10 rounded-xl flex items-center justify-center">
+              <FileText className="h-6 w-6 text-primary" />
+            </div>
+            <div>
+              <h2 className="text-xl font-black text-foreground">Meeting Transcripts</h2>
+              <p className="text-xs text-muted-foreground italic">AI-generated records from Gemini 1.5 Flash</p>
+            </div>
+          </div>
+          <Button variant="ghost" size="icon" onClick={onClose} className="rounded-full hover:bg-red-50 hover:text-red-500 transition-colors">
+            <X className="h-5 w-5" />
+          </Button>
+        </div>
 
-        <div className="space-y-4 py-4">
+        <div className="flex-1 overflow-y-auto p-6 space-y-6">
           {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            <div className="flex flex-col items-center justify-center py-20 gap-4">
+              <Loader2 className="h-10 w-10 text-primary animate-spin" />
+              <p className="text-sm text-muted-foreground animate-pulse">Fetching transcripts from the vault...</p>
             </div>
           ) : transcripts.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-center">
-              <AlertCircle className="h-12 w-12 text-muted-foreground mb-4" />
-              <p className="text-lg font-medium">No transcripts found</p>
-              <p className="text-sm text-muted-foreground">
-                Upload a transcript to get started
+            <div className="flex flex-col items-center justify-center py-20 text-center">
+              <div className="relative mb-6">
+                 <FileText className="h-20 w-20 text-muted-foreground/10" />
+                 {meetingRecording && (
+                    <div className="absolute inset-0 flex items-center justify-center">
+                        <Music className="h-8 w-8 text-primary/40 animate-pulse" />
+                    </div>
+                 )}
+              </div>
+              
+              <h3 className="text-xl font-black text-foreground mb-2">
+                {meetingRecording ? "Recording Found, No Transcript" : "No Transcripts Yet"}
+              </h3>
+              <p className="text-sm text-muted-foreground max-w-sm mx-auto mb-8">
+                {meetingRecording 
+                  ? "We found a meeting recording but the AI transcript hasn't been generated yet. You can try generating it now."
+                  : "Record some audio during the meeting to generate AI transcripts."}
               </p>
+
+              {meetingRecording && (
+                <Button 
+                    onClick={handleManualTranscribe} 
+                    disabled={transcribing}
+                    className="bg-primary hover:bg-primary/90 text-white rounded-2xl px-8 py-6 h-auto shadow-lg shadow-primary/20 gap-3 group"
+                >
+                    {transcribing ? (
+                        <Loader2 className="h-5 w-5 animate-spin" />
+                    ) : (
+                        <RefreshCw className="h-5 w-5 group-hover:rotate-180 transition-transform duration-500" />
+                    )}
+                    <div className="text-left">
+                        <div className="font-bold">Generate AI Transcript</div>
+                        <div className="text-[10px] opacity-70">Using Gemini 1.5 Flash</div>
+                    </div>
+                </Button>
+              )}
             </div>
           ) : (
-            <div className="space-y-3">
-              {transcripts.map((transcript, index) => (
-                <div
-                  key={transcript.id}
-                  className="border rounded-lg p-4 hover:shadow-md transition-shadow bg-card"
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex items-start gap-3 flex-1 min-w-0">
-                      <div className="flex-shrink-0 w-10 h-10 bg-blue-100 dark:bg-blue-900 rounded-lg flex items-center justify-center">
-                        <FileText className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-                      </div>
-                      
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <h3 className="font-semibold truncate">{transcript.filename}</h3>
-                          <span className="text-xs text-muted-foreground whitespace-nowrap">
-                            #{index + 1}
-                          </span>
-                        </div>
-                        
-                        <div className="space-y-1 text-sm text-muted-foreground">
-                          <div className="flex items-center gap-4 flex-wrap">
-                            <span>📅 {formatDate(transcript.created_at)}</span>
-                            <span>📦 {formatFileSize(transcript.file_size)}</span>
-                            <span>✅ {transcript.tasks_created_count} task(s) created</span>
-                          </div>
-                          
-                          {transcript.users?.name && (
-                            <div className="text-xs">
-                              Uploaded by: <span className="font-medium">{transcript.users.name}</span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
+            <div className="space-y-8">
+              {transcripts.map((t) => (
+                <div key={t.id} className="group relative">
+                  <div className="flex items-center justify-between mb-3 px-1">
+                    <div className="flex items-center gap-3">
+                      <Badge variant="secondary" className="bg-primary/10 text-primary font-black text-[10px] uppercase">
+                        {new Date(t.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </Badge>
+                      <span className="text-xs font-medium text-muted-foreground truncate max-w-[200px]">
+                        {t.filename}
+                      </span>
                     </div>
+                    <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Button 
+                        size="sm" 
+                        variant="ghost" 
+                        className="h-8 gap-2 text-xs"
+                        onClick={() => handleDownload(t)}
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                        Download
+                      </Button>
+                      {editingId !== t.id && (
+                        <Button 
+                          size="sm" 
+                          variant="ghost" 
+                          className="h-8 gap-2 text-xs text-primary"
+                          onClick={() => handleEdit(t)}
+                        >
+                          <Edit2 className="h-3.5 w-3.5" />
+                          Edit
+                        </Button>
+                      )}
+                    </div>
+                  </div>
 
-                    <div className="flex gap-2 flex-shrink-0">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleViewFile(transcript)}
-                        title={transcript.mime_type === "text/plain" ? "Edit transcript" : "View file"}
-                      >
-                        <Eye className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleDownload(transcript.file_url, transcript.filename)}
-                        title="Download file"
-                      >
-                        <Download className="h-4 w-4" />
-                      </Button>
-                    </div>
+                  <div className="relative">
+                    {editingId === t.id ? (
+                      <div className="space-y-3">
+                        <textarea
+                          className="w-full min-h-[200px] p-4 bg-background border-2 border-primary/20 rounded-2xl text-sm focus:ring-4 focus:ring-primary/10 outline-none transition-all resize-none font-sans leading-relaxed"
+                          value={editContent}
+                          onChange={(e) => setEditContent(e.target.value)}
+                          placeholder="Edit your transcript here..."
+                        />
+                        <div className="flex justify-end gap-2">
+                          <Button size="sm" variant="outline" onClick={() => setEditingId(null)}>
+                            Cancel
+                          </Button>
+                          <Button size="sm" onClick={() => handleSave(t.id)} disabled={saving}>
+                            {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-2" /> : <Save className="h-3.5 w-3.5 mr-2" />}
+                            Save Changes
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="p-5 bg-muted/40 rounded-2xl border border-border/50 text-sm leading-relaxed text-foreground/80 hover:bg-muted/60 transition-colors whitespace-pre-wrap">
+                        {t.transcript_content || "Empty transcript"}
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
             </div>
           )}
-
-          {viewingContent && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-              <div className="bg-background border rounded-lg shadow-xl w-full max-w-4xl h-[80vh] flex flex-col">
-                <div className="p-4 border-b flex items-center justify-between">
-                  <h3 className="font-bold flex items-center gap-2">
-                    <FileText className="h-5 w-5 text-primary" />
-                    Editing: {viewingContent.filename}
-                  </h3>
-                  <Button variant="ghost" size="sm" onClick={() => setViewingContent(null)}>
-                    ✕
-                  </Button>
-                </div>
-                <div className="flex-1 p-4 overflow-hidden">
-                  <textarea
-                    className="w-full h-full p-4 border rounded-md font-mono text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/20"
-                    value={viewingContent.content}
-                    onChange={(e) => setViewingContent({ ...viewingContent, content: e.target.value })}
-                  />
-                </div>
-                <div className="p-4 border-t flex justify-end gap-2 bg-muted/30">
-                  <Button variant="outline" onClick={() => setViewingContent(null)} disabled={savingContent}>
-                    Cancel
-                  </Button>
-                  <Button onClick={handleSaveContent} disabled={savingContent}>
-                    {savingContent ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                    Save Changes
-                  </Button>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
+      </Card>
+    </div>
+  )
+}
 
-        <div className="flex justify-end pt-4 border-t">
-          <Button variant="outline" onClick={onClose}>
-            Close
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
+function Badge({ children, className, variant = "secondary" }: any) {
+  return (
+    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 ${className}`}>
+      {children}
+    </span>
   )
 }

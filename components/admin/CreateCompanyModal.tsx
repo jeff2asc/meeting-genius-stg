@@ -5,6 +5,7 @@ import { X, Plus, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { supabase } from "@/lib/supabase"
+import { triggerJanusResync } from "@/lib/janus"
 
 interface CreateCompanyModalProps {
   isOpen: boolean
@@ -130,6 +131,8 @@ export default function CreateCompanyModal({
 
       setCompanyName("")
       setNewUsers([])
+      // 🔄 Notify Janus of new company + users
+      triggerJanusResync("company_created")
       onSuccess()
       onClose()
     } catch (err) {

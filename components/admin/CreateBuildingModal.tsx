@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { supabase } from "@/lib/supabase"
 import { isMaster as checkIsMaster, isCorporateAdmin as checkIsCorporateAdmin, isPropertyManager as checkIsPropertyManager } from "@/lib/permissions"
+import { triggerJanusResync } from "@/lib/janus"
 
 interface CreateBuildingModalProps {
   isOpen: boolean
@@ -140,6 +141,9 @@ export default function CreateBuildingModal({
       }
 
       console.log('✅ Building created successfully')
+      
+      // 🔄 Notify Janus for real-time sync
+      triggerJanusResync('building_created')
 
       // Reset form
       setBuildingFormData({
@@ -270,7 +274,7 @@ export default function CreateBuildingModal({
           )}
 
           {/* Corporate Admin - Can see PMs from their company */}
-          {isCorporateAdmin && (
+          {isCorporateAdmin && !isMaster && (
             <div>
               <label className="block text-sm font-medium text-foreground mb-2">
                 Property Manager *
@@ -325,13 +329,12 @@ export default function CreateBuildingModal({
               Assign Users (Optional)
             </label>
             <div className="border border-border rounded p-4 space-y-2 max-h-48 overflow-y-auto">
-              {availableUsers.filter(u => u.user_type === 'user').length === 0 ? (
+              {availableUsers.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
                   No users available to assign
                 </p>
               ) : (
                 availableUsers
-                  .filter(u => u.user_type === 'user')
                   .map((user) => (
                     <label
                       key={user.id}

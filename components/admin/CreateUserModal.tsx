@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card"
 import { supabase, Company } from "@/lib/supabase"
 import { hashPassword } from "@/lib/auth"
 import { isMaster as checkIsMaster, isCorporateAdmin as checkIsCorporateAdmin, isPropertyManager as checkIsPropertyManager } from "@/lib/permissions"
+import { triggerJanusResync } from "@/lib/janus"
 
 interface CreateUserModalProps {
   isOpen: boolean
@@ -368,6 +369,10 @@ export default function CreateUserModal({
       }
 
       resetForm()
+      
+      // 🔄 Notify Janus for real-time sync
+      triggerJanusResync(isEditMode ? 'user_updated' : 'user_created')
+      
       onSuccess()
       onClose()
     } catch (err) {

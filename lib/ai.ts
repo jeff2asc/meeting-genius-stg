@@ -1,6 +1,6 @@
-import { extractTasksFromTranscript as googleGeminiExtract } from "./gemini";
-import { extractTasksFromTranscriptOllama as customOllamaExtract } from "./ollama";
-import { extractTasksFromTranscript as openaiExtract } from "./openai";
+import { extractTasksFromTranscript as googleGeminiExtract, transcribeAudio as googleGeminiTranscribe } from "./gemini";
+import { extractTasksFromTranscriptOllama as customOllamaExtract, transcribeAudioOllama } from "./ollama";
+import { extractTasksFromTranscript as openaiExtract, transcribeAudio as openaiTranscribe } from "./openai";
 
 interface Topic {
   id: number;
@@ -206,4 +206,118 @@ export async function extractTasksFromTranscript(
     throw error;
   }
 }
+
+/**
+ * Universal AI wrapper for audio transcription.
+ */
+export async function transcribeAudio(
+  audioBase64: string,
+  mimeType: string,
+  loggingContext?: { userId?: number; companyId?: number }
+): Promise<string> {
+  const startTime = Date.now();
+  
+  let primaryAi = "gemini";
+  let llmApiKey: string | undefined = undefined;
+  let llmModel: string | undefined = undefined;
+  let ollamaHost: string | undefined = undefined;
+
+  try {
+    const { createClient } = await import("./supabase");
+    const supabase = createClient();
+
+    // 1. Resolve Provider (same logic as task extraction)
+    if (loggingContext?.companyId) {
+      const { data: companyData } = await supabase
+        .from("companies")
+        .select("llm_provider, llm_api_key, llm_model")
+        .eq("id", loggingContext.companyId)
+        .single();
+      
+      if (companyData && companyData.llm_provider && companyData.llm_provider !== 'global') {
+        primaryAi = companyData.llm_provider;
+        llmApiKey = companyData.llm_api_key || undefined;
+        llmModel = companyData.llm_model || undefined;
+      } else {
+        const { data: sysData } = await supabase
+          .from("system_settings")
+          .select("key, value")
+          .in("key", ["primary_llm", "global_llm_api_key", "ollama_host", "ollama_api_key"]);
+        
+        if (sysData) {
+          sysData.forEach(s => {
+            if (s.key === 'primary_llm' && s.value) primaryAi = s.value;
+            if (s.key === 'global_llm_api_key' && s.value) llmApiKey = s.value;
+            if (s.key === 'ollama_host' && s.value) ollamaHost = s.value;
+            if (s.key === 'ollama_api_key' && s.value && !llmApiKey) llmApiKey = s.value;
+          });
+        }
+      }
+    } else {
+      // System-wide fallback logic
+      const { data: sysData } = await supabase
+        .from("system_settings")
+        .select("key, value")
+        .in("key", ["primary_llm", "global_llm_api_key", "ollama_host", "ollama_api_key"]);
+      
+      if (sysData) {
+        sysData.forEach(s => {
+          if (s.key === 'primary_llm' && s.value) primaryAi = s.value;
+          if (s.key === 'global_llm_api_key' && s.value) llmApiKey = s.value;
+          if (s.key === 'ollama_host' && s.value) ollamaHost = s.value;
+          if (s.key === 'ollama_api_key' && s.value && !llmApiKey) llmApiKey = s.value;
+        });
+      }
+    }
+  } catch (e) {
+    console.error("Failed to read DB for transcription settings", e);
+  }
+
+  const logUsage = async (status: "success" | "failure", error?: any) => {
+    if (loggingContext?.userId || loggingContext?.companyId) {
+      try {
+        const { logLlmUsage } = await import("./logging");
+        await logLlmUsage({
+          user_id: loggingContext.userId,
+          company_id: loggingContext.companyId,
+          action_type: "llm_transcription",
+          model_name: primaryAi === "openai" ? "openai-whisper-1" : (llmModel || "gemini-1.5-flash"),
+          status,
+          duration_ms: Date.now() - startTime,
+          error_message: error ? (error?.message || String(error)) : undefined,
+        });
+      } catch (logErr) {
+        console.error("Failed to log transcription usage:", logErr);
+      }
+    }
+  };
+
+  try {
+    let result: string;
+
+    if (primaryAi === "openai") {
+      console.log("🌟 Transcribing with OpenAI Whisper...");
+      result = await openaiTranscribe(audioBase64, mimeType, llmApiKey);
+    } else if (primaryAi === "ollama") {
+      console.log("🚀 Attempting Ollama transcription...");
+      try {
+        result = await transcribeAudioOllama(audioBase64, mimeType, { host: ollamaHost, apiKey: llmApiKey });
+      } catch (ollamaErr: any) {
+        console.warn("⚠️ Ollama transcription failed or unsupported, falling back to Gemini:", ollamaErr.message);
+        result = await googleGeminiTranscribe(audioBase64, mimeType, undefined, llmModel);
+      }
+    } else {
+      console.log("✨ Transcribing with Gemini 1.5 Flash...");
+      result = await googleGeminiTranscribe(audioBase64, mimeType, llmApiKey, llmModel);
+    }
+
+    await logUsage("success");
+    return result;
+  } catch (error: any) {
+    console.error(`❌ Transcription failed with ${primaryAi}:`, error.message);
+    await logUsage("failure", error);
+    throw error;
+  }
+}
+
 

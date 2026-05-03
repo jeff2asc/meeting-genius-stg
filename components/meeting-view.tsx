@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect } from "react"
+import React, { useState, useEffect, useRef } from "react"
 import GenerateAgendaButton from "./GenerateAgendaButton"
 import GenerateMinutesButton from "./GenerateMinutesButton"
 import {
@@ -28,11 +28,15 @@ import {
   Paperclip,
   Archive,
   Trash2,
+  Wrench,
+  AlertTriangle,
+  RefreshCw,
 } from "lucide-react"
 
 import { UploadTranscriptModal } from "@/components/transcript/upload-transcript-modal"
 import { PreviewTasksModal } from "@/components/transcript/preview-tasks-modal"
 import { ViewTranscriptsModal } from "@/components/transcript/view-transcripts-modal"
+import RolloverTopicModal from "./rollover-topic-modal"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -140,10 +144,21 @@ export default function MeetingView({
   const [extractedTasks, setExtractedTasks] = useState<any[]>([])
   const [showViewTranscripts, setShowViewTranscripts] = useState(false)
   const [hasTranscript, setHasTranscript] = useState(false)
+  const [browserTranscript, setBrowserTranscript] = useState("") 
+  const [interimTranscript, setInterimTranscript] = useState("") 
+  const transcriptRef = useRef("") // ⭐ The Black Box (Safe from re-renders)
+  const [recognition, setRecognition] = useState<any>(null)
   const [showUnifiedModal, setShowUnifiedModal] = useState(false)
   const [selectedTopicForModal, setSelectedTopicForModal] = useState<number | null>(null)
   const [defaultTab, setDefaultTab] = useState<"task" | "note" | "decision">("task")
   const [activeSectionId, setActiveSectionId] = useState<number | null>(null)
+  const [showRolloverModal, setShowRolloverModal] = useState(false)
+  
+  // ⭐ JANUS INTEGRATION STATES
+  const [isJanusIntegrated, setIsJanusIntegrated] = useState(false)
+  const [sidebarTab, setSidebarTab] = useState<"agenda" | "repairs" | "complaints">("agenda")
+  const [janusData, setJanusData] = useState<{ repairs: any[], complaints: any[] }>({ repairs: [], complaints: [] })
+  const [isResyncing, setIsResyncing] = useState(false)
 
   const currentUser = getCurrentUser()
   const userCanEdit = currentUser ? canEditMeeting(currentUser.user_type) : false
@@ -220,6 +235,56 @@ export default function MeetingView({
       alert("Failed to update in-camera status")
     }
   }
+
+  // ⭐ NEW: Fetch Janus Data
+  const fetchJanusData = async (forceResync = false) => {
+    if (!currentUser) return
+    
+    // Check if integrated
+    const storageKey = `mg_integrations_${currentUser.id}`
+    const installed = typeof window !== 'undefined' ? localStorage.getItem(storageKey) : null
+    const isIntegrated = installed ? JSON.parse(installed).includes("janus") : false
+    setIsJanusIntegrated(isIntegrated)
+    
+    if (!isIntegrated) return
+
+    if (forceResync) setIsResyncing(true)
+    
+    try {
+      const documentedSecret = "meeting-genius-secret-key-2026"
+      const res = await fetch(`${window.location.origin}/api/janus/v1/sync`, {
+        headers: { "x-api-key": documentedSecret }
+      })
+      if (!res.ok) throw new Error("Could not fetch Janus data")
+      
+      const payload = await res.json()
+      
+      // ⭐ FILTER BY BUILDING
+      const buildingId = meeting?.building_id
+      const filteredRepairs = (payload.data.repairs || []).filter((r: any) => !buildingId || r.building_id === buildingId)
+      const filteredComplaints = (payload.data.complaints || []).filter((c: any) => !buildingId || c.building_id === buildingId)
+
+      setJanusData({
+        repairs: filteredRepairs,
+        complaints: filteredComplaints
+      })
+      
+      if (forceResync) {
+        toast.success("Data resynced from Janus", {
+          description: "Latest repairs and complaints have been updated."
+        })
+      }
+    } catch (err) {
+      console.error("Janus fetch error:", err)
+      if (forceResync) toast.error("Failed to resync data from Janus")
+    } finally {
+      setIsResyncing(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchJanusData()
+  }, [currentUser])
 
   const fetchOpenTasksFromPreviousMeetings = async () => {
     if (!meeting) return []
@@ -727,8 +792,47 @@ export default function MeetingView({
       alert("You do not have permission to record meetings.")
       return
     }
+
+    // 🎙️ Setup Browser Speech Recognition Fallback
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+    if (SpeechRecognition) {
+      const rec = new SpeechRecognition()
+      rec.continuous = true
+      rec.interimResults = true
+      rec.lang = 'en-US'
+      rec.maxAlternatives = 1 // ⭐ Simple setting for Brave
+      
+      rec.onresult = (event: any) => {
+        let final = ""
+        let interim = ""
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            final += event.results[i][0].transcript + " "
+          } else {
+            interim += event.results[i][0].transcript
+          }
+        }
+        transcriptRef.current += final // ⭐ Lock it into the Ref
+        setBrowserTranscript(prev => prev + final)
+        setInterimTranscript(interim)
+      }
+
+      rec.onerror = (event: any) => {
+        console.error("Speech Recognition Error:", event.error)
+        if (event.error === 'network') {
+           toast.error("Brave blocked speech recognition. Check brave://settings/shields")
+        }
+      }
+
+      rec.start()
+      setRecognition(rec)
+    }
+
     setIsRecording(true)
     setElapsedTime(0)
+    setBrowserTranscript("")
+    setInterimTranscript("")
+    transcriptRef.current = "" // ⭐ Clear the box for the new meeting
     const interval = setInterval(() => setElapsedTime((prev) => prev + 1), 1000)
     setTimerInterval(interval)
   }
@@ -738,6 +842,10 @@ export default function MeetingView({
     if (timerInterval) {
       clearInterval(timerInterval)
       setTimerInterval(null)
+    }
+    if (recognition) {
+      recognition.stop()
+      setRecognition(null)
     }
   }
 
@@ -772,35 +880,38 @@ export default function MeetingView({
 
       const publicUrl = urlData.publicUrl
 
-      const { data: updateData, error: updateError } = await supabase
+      // 🎙️ Capture the Live Transcript and add the Speaker Name
+      const rawText = (transcriptRef.current + " " + interimTranscript).trim()
+      const speakerName = currentUser?.name || "Attendee"
+      const fullBrowserText = rawText ? `${speakerName}: ${rawText}` : null
+
+      console.log("💾 Saving everything to database...")
+      
+      const { data: updateResult, error: updateError } = await supabase
         .from("meetings")
         .update({
           audio_filename: filename,
           audio_file: { url: publicUrl, path: filePath },
           audio_duration: duration,
           recording_ended_at: new Date().toISOString(),
+          status: "minutes",
+          meeting_transcript: fullBrowserText // ⭐ Now includes speaker name!
         })
         .eq("id", meetingId)
-
-      console.log("🔍 UPDATE RESULT:", { updateData, updateError, meetingId })
-      console.log("🔍 Data sent:", {
-        audio_filename: filename,
-        audio_file: { url: publicUrl, path: filePath },
-        audio_duration: duration,
-      })
+        .select()
+        .single()
 
       if (updateError) {
         console.error("❌ Database update error:", updateError)
-        alert("Recording saved but failed to update meeting. Please contact support.")
+        alert(`Failed to save: ${updateError.message}`)
         return
       }
 
-      console.log("✅ Meeting record updated")
-      alert(
-        `✅ Recording saved successfully! (${Math.floor(duration / 60)}:${String(
-          duration % 60,
-        ).padStart(2, "0")})`,
-      )
+      console.log("✅ Meeting and Transcript saved successfully!")
+      if (fullBrowserText) {
+        toast.success("Transcript captured successfully!")
+        setHasTranscript(true)
+      }
 
       await fetchMeetingData()
     } catch (error) {
@@ -1554,43 +1665,45 @@ export default function MeetingView({
       <div className="flex flex-col h-screen overflow-hidden bg-background">
       <header className="border-b border-border bg-card shadow-sm sticky top-0 z-40 flex-shrink-0">
         <div className="mx-auto max-w-7xl px-4 py-3 sm:px-6 lg:px-8">
-          <div className="flex items-center gap-3 mb-2">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleBackClick}
-              className="hover:bg-muted flex-shrink-0 h-8 w-8"
-            >
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
+          <div className="flex items-center gap-2 mb-2 sm:mb-3">
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleBackClick}
+                className="hover:bg-muted h-8 w-8"
+              >
+                <ArrowLeft className="h-4 w-4" />
+              </Button>
 
-            <Button
-              variant="default"
-              size="icon"
-              onClick={() => setShowSidebar(!showSidebar)}
-              className={`flex-shrink-0 h-9 w-9 rounded-full transition-all ${
-                showSidebar 
-                  ? 'bg-primary text-primary-foreground shadow-md' 
-                  : 'bg-primary text-primary-foreground shadow-lg hover:bg-primary/90'
-              }`}
-              title={showSidebar ? "Hide Sidebar" : "Show Sidebar"}
-            >
-              <FileText className="h-5 w-5" />
-            </Button>
+              <Button
+                variant="default"
+                size="icon"
+                onClick={() => setShowSidebar(!showSidebar)}
+                className={`h-8 w-8 sm:h-9 sm:w-9 rounded-full transition-all ${
+                  showSidebar 
+                    ? 'bg-primary text-primary-foreground shadow-md' 
+                    : 'bg-primary text-primary-foreground shadow-lg hover:bg-primary/90'
+                }`}
+                title={showSidebar ? "Hide Sidebar" : "Show Sidebar"}
+              >
+                <FileText className="h-4 w-4 sm:h-5 sm:w-5" />
+              </Button>
+            </div>
 
             <div className="flex-1 min-w-0">
-              <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+              <div className="flex flex-col gap-0.5">
                 <div className="flex items-center gap-2 min-w-0">
-                  <h1 className="text-lg font-bold text-foreground truncate">
+                  <h1 className="text-sm sm:text-lg font-bold text-foreground truncate">
                     {meeting.title}
                   </h1>
                   {meeting.is_incamera && meeting.status === "working_minutes" && (
                     <Badge
                       variant="outline"
-                      className="bg-red-100 text-red-700 border-red-300 flex-shrink-0 text-[10px] h-5"
+                      className="bg-red-100 text-red-700 border-red-300 flex-shrink-0 text-[9px] sm:text-[10px] h-4 sm:h-5 px-1 sm:px-2"
                     >
-                      <Lock className="h-2.5 w-2.5 mr-1" />
-                      IN-CAMERA
+                      <Lock className="h-2 w-2 sm:h-2.5 sm:w-2.5 mr-0.5 sm:mr-1" />
+                      <span className="hidden xs:inline">IN-CAMERA</span>
                     </Badge>
                   )}
                 </div>
@@ -1600,7 +1713,7 @@ export default function MeetingView({
                     variant="outline"
                     className={`${getStatusColor(
                       meeting.status
-                    )} flex-shrink-0 text-[10px] h-5`}
+                    )} flex-shrink-0 text-[9px] sm:text-[10px] h-4 sm:h-5 px-1 sm:px-2`}
                   >
                     {getStatusText(meeting.status)}
                   </Badge>
@@ -1610,18 +1723,18 @@ export default function MeetingView({
                       size="sm"
                       variant="ghost"
                       onClick={() => setShowEditMeetingModal(true)}
-                      className="hover:bg-muted border border-blue-500 h-5 w-5 p-0 flex-shrink-0"
+                      className="hover:bg-muted border border-blue-500 h-4 w-4 sm:h-5 sm:w-5 p-0 flex-shrink-0"
                       title="Edit Meeting"
                     >
-                      <Edit2 className="h-2.5 w-2.5" />
+                      <Edit2 className="h-2 w-2 sm:h-2.5 sm:w-2.5" />
                     </Button>
                   )}
+                  
+                  <span className="text-[9px] sm:text-xs text-muted-foreground truncate font-medium">
+                    {meeting.building}
+                  </span>
                 </div>
               </div>
-
-              <p className="text-[10px] sm:text-xs text-muted-foreground truncate mt-0.5">
-                {meeting.building}
-              </p>
             </div>
           </div>
 
@@ -1634,27 +1747,26 @@ export default function MeetingView({
             </div>
           )}
 
-          <div className="flex flex-wrap items-center gap-1">
-
+          <div className="flex overflow-x-auto pb-1 -mx-1 px-1 scrollbar-hide gap-1.5 items-center">
             {userCanEdit && meeting.status === "working_minutes" && (
               <Button
                 size="sm"
                 variant="outline"
                 onClick={handleMeetingIncameraToggle}
-                className={`h-7 px-2 text-[10px] sm:text-xs flex-shrink-0 ${meeting.is_incamera
+                className={`h-8 px-2.5 text-xs flex-shrink-0 rounded-lg ${meeting.is_incamera
                   ? "bg-red-50 border-red-300 text-red-700"
-                  : "border-gray-300"
+                  : "bg-white dark:bg-card border-border"
                   }`}
               >
                 {meeting.is_incamera ? (
                   <>
-                    <Unlock className="h-3 w-3" />
-                    <span className="hidden sm:inline ml-1">Remove In-Camera</span>
+                    <Unlock className="h-3.5 w-3.5" />
+                    <span className="ml-1.5">Remove In-Camera</span>
                   </>
                 ) : (
                   <>
-                    <Lock className="h-3 w-3" />
-                    <span className="hidden sm:inline ml-1">In-Camera</span>
+                    <Lock className="h-3.5 w-3.5" />
+                    <span className="ml-1.5">In-Camera</span>
                   </>
                 )}
               </Button>
@@ -1666,10 +1778,10 @@ export default function MeetingView({
                 size="sm"
                 variant="outline"
                 onClick={() => updateMeetingStatus(prevStatus(meeting.status))}
-                className="h-7 px-2 text-[10px] sm:text-xs flex-shrink-0 bg-gray-100 border-gray-400"
+                className="h-8 px-2.5 text-xs flex-shrink-0 bg-gray-50 border-gray-300 dark:bg-muted dark:border-border"
               >
-                <ChevronLeft className="h-3 w-3" />
-                <span className="hidden sm:inline ml-1">Back</span>
+                <ChevronLeft className="h-3.5 w-3.5" />
+                <span className="ml-1">Back</span>
               </Button>
             )}
 
@@ -1678,10 +1790,10 @@ export default function MeetingView({
               <Button
                 size="sm"
                 onClick={() => setShowRecorderModal(true)}
-                className="h-7 px-2 text-[10px] sm:text-xs flex-shrink-0 bg-green-600 text-white hover:bg-green-700"
+                className="h-8 px-3 text-xs flex-shrink-0 bg-green-600 text-white hover:bg-green-700 shadow-sm rounded-lg"
               >
-                <Play className="h-3 w-3" />
-                <span className="sm:inline ml-1">Start</span>
+                <Play className="h-3.5 w-3.5 mr-1.5" />
+                Start
               </Button>
             )}
 
@@ -1690,10 +1802,10 @@ export default function MeetingView({
               <Button
                 size="sm"
                 onClick={() => updateMeetingStatus("minutes")}
-                className="h-7 px-2 text-[10px] sm:text-xs flex-shrink-0 bg-green-600 text-white hover:bg-green-700"
+                className="h-8 px-3 text-xs flex-shrink-0 bg-green-600 text-white hover:bg-green-700 shadow-sm rounded-lg"
               >
-                <CheckCircle className="h-3 w-3" />
-                <span className="hidden sm:inline ml-1">End</span>
+                <CheckCircle className="h-3.5 w-3.5 mr-1.5" />
+                End
               </Button>
             )}
 
@@ -1704,10 +1816,10 @@ export default function MeetingView({
                   size="sm"
                   onClick={handleCreateSection}
                   variant="outline"
-                  className="h-7 px-2 text-[10px] sm:text-xs flex-shrink-0 border-primary text-primary"
+                  className="h-8 px-2.5 text-xs flex-shrink-0 border-primary text-primary bg-primary/5 hover:bg-primary/10 rounded-lg"
                 >
-                  <Plus className="h-3 w-3" />
-                  <span className="hidden sm:inline ml-1">Section</span>
+                  <Plus className="h-3.5 w-3.5 mr-1" />
+                  Section
                 </Button>
               )}
 
@@ -1718,10 +1830,10 @@ export default function MeetingView({
                   size="sm"
                   onClick={handleSendNotice}
                   variant="outline"
-                  className="h-7 px-2 text-[10px] sm:text-xs flex-shrink-0 border-blue-500 text-blue-600 hover:bg-blue-50"
+                  className="h-8 px-2.5 text-xs flex-shrink-0 border-blue-500 text-blue-600 hover:bg-blue-50 rounded-lg"
                 >
-                  <Mail className="h-3 w-3" />
-                  <span className="hidden sm:inline ml-1">Send Notice</span>
+                  <Mail className="h-3.5 w-3.5 mr-1" />
+                  Notice
                 </Button>
               )}
 
@@ -1731,23 +1843,23 @@ export default function MeetingView({
                 size="sm"
                 onClick={() => setShowUploadTranscript(true)}
                 variant="outline"
-                className="h-7 px-2 text-[10px] sm:text-xs flex-shrink-0 border-purple-500 text-purple-600 hover:bg-purple-50"
+                className="h-8 px-2.5 text-xs flex-shrink-0 border-purple-500 text-purple-600 hover:bg-purple-50 rounded-lg"
               >
-                <FileUp className="h-3 w-3" />
-                <span className="hidden sm:inline ml-1">Upload Transcript</span>
+                <FileUp className="h-3.5 w-3.5 mr-1" />
+                Transcript
               </Button>
             )}
 
             {/* View Transcripts button */}
-            {meeting.status === "working_minutes" && (
+            {(meeting.status === "working_minutes" || meeting.status === "minutes") && (
               <Button
                 size="sm"
                 onClick={() => setShowViewTranscripts(true)}
                 variant="outline"
-                className="h-7 px-2 text-[10px] sm:text-xs flex-shrink-0 border-gray-500 text-gray-600 hover:bg-gray-50"
+                className="h-8 px-2.5 text-xs flex-shrink-0 border-primary/50 text-primary hover:bg-primary/5 rounded-lg"
               >
-                <FileText className="h-3 w-3" />
-                <span className="hidden sm:inline ml-1">View Transcripts</span>
+                <FileText className="h-3.5 w-3.5 mr-1" />
+                Transcripts
               </Button>
             )}
 
@@ -1766,13 +1878,12 @@ export default function MeetingView({
                 size="sm"
                 variant="outline"
                 onClick={() => setShowArchived(!showArchived)}
-                className={`h-7 px-2 text-[10px] sm:text-xs flex-shrink-0 border-amber-500 text-amber-700 hover:bg-amber-50 rounded-lg ${
+                className={`h-8 px-2.5 text-xs flex-shrink-0 border-amber-500 text-amber-700 hover:bg-amber-50 rounded-lg ${
                   showArchived ? "bg-amber-100" : ""
                 }`}
               >
-                <Archive className="h-3 w-3" />
-                <span className="hidden sm:inline ml-1">Archive</span>
-                <span className="ml-0.5">({archivedTopics.length})</span>
+                <Archive className="h-3.5 w-3.5 mr-1" />
+                Archive ({archivedTopics.length})
               </Button>
             )}
 
@@ -1792,23 +1903,29 @@ export default function MeetingView({
                       onClick={handleDownloadAudioRecording}
                       variant="outline"
                       disabled={downloadingAudio}
-                      className="h-8 px-3 text-xs whitespace-nowrap flex-shrink-0 border-blue-500 text-blue-600 hover:bg-blue-50 disabled:opacity-50"
+                      className="h-8 px-3 text-xs whitespace-nowrap flex-shrink-0 border-blue-500 text-blue-600 hover:bg-blue-50 disabled:opacity-50 rounded-lg"
                     >
-                      <Download className="h-3 w-3 mr-1" />
-                      {downloadingAudio ? "Downloading..." : "Download Audio"}
+                      <Download className="h-3.5 w-3.5 mr-1" />
+                      {downloadingAudio ? "Wait..." : "Audio"}
                     </Button>
                   )}
               </>
             )}
 
             {isMounted && isRecording && (
-              <div className="flex-shrink-0">
+              <div className="flex items-center gap-3">
                 <Timer
                   elapsedTime={elapsedTime}
                   isRecording={isRecording}
                   meetingId={meetingId}
                   onRecordingComplete={handleRecordingComplete}
                 />
+                <div className="hidden sm:flex flex-col max-w-[200px] border-l border-border pl-3">
+                   <span className="text-[10px] font-bold text-red-500 animate-pulse">LIVE TRANSCRIPT</span>
+                   <span className="text-[10px] text-muted-foreground truncate italic">
+                      {interimTranscript || browserTranscript.slice(-30) || "Listening..."}
+                   </span>
+                </div>
               </div>
             )}
 
@@ -1819,69 +1936,69 @@ export default function MeetingView({
                   <Button
                     size="sm"
                     disabled
-                    className="h-7 px-2 text-[10px] sm:text-xs flex-shrink-0 bg-blue-500 text-white"
+                    className="h-8 px-2.5 text-xs flex-shrink-0 bg-blue-500 text-white rounded-lg"
                   >
-                    <span className="h-2 w-2 rounded-full bg-white mr-1 animate-pulse"></span>
-                    <span className="hidden sm:inline">Uploading...</span>
+                    <span className="h-2 w-2 rounded-full bg-white mr-1.5 animate-pulse"></span>
+                    Up...
                   </Button>
                 ) : !isRecording ? (
                   <Button
                     size="sm"
                     onClick={handleStartRecording}
-                    className="h-7 px-2 text-[10px] sm:text-xs flex-shrink-0 bg-red-500 hover:bg-red-600 text-white"
+                    className="h-8 px-2.5 text-xs flex-shrink-0 bg-red-500 hover:bg-red-600 text-white shadow-sm rounded-lg"
                   >
-                    <span className="h-2 w-2 rounded-full bg-white mr-1"></span>
-                    <span className="sm:inline">Record</span>
+                    <span className="h-2 w-2 rounded-full bg-white mr-1.5"></span>
+                    Record
                   </Button>
                 ) : (
                   <Button
                     size="sm"
                     onClick={handleStopRecording}
                     variant="outline"
-                    className="h-7 px-2 text-[10px] sm:text-xs flex-shrink-0 border-red-500 text-red-500"
+                    className="h-8 px-2.5 text-xs flex-shrink-0 border-red-500 text-red-500 bg-red-50 rounded-lg"
                   >
-                    <span className="h-2 w-2 rounded-sm bg-red-500 mr-1"></span>
-                    <span className="sm:inline">Stop</span>
+                    <span className="h-2 w-2 rounded-sm bg-red-500 mr-1.5"></span>
+                    Stop
                   </Button>
                 )}
               </>
             )}
           </div>
 
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground mt-2 pt-2 border-t border-border">
+          <div className="flex overflow-x-auto scrollbar-hide items-center gap-3 text-[10px] sm:text-xs text-muted-foreground mt-2 pt-2 border-t border-border -mx-1 px-1">
             {meeting.meeting_type && (
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1 flex-shrink-0">
                 <FileText className="h-3 w-3" />
                 <span>{meeting.meeting_type}</span>
               </div>
             )}
             {meeting.meeting_date && (
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1 flex-shrink-0">
                 <Calendar className="h-3 w-3" />
                 <span>{formatDate(meeting.meeting_date)}</span>
               </div>
             )}
             {meeting.start_time && (
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1 flex-shrink-0">
                 <Clock className="h-3 w-3" />
                 <span>{formatTime(meeting.start_time)}</span>
               </div>
             )}
             {meeting.location && (
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1 flex-shrink-0">
                 <MapPin className="h-3 w-3" />
-                <span className="truncate max-w-[120px] sm:max-w-none">{meeting.location}</span>
+                <span className="truncate max-w-[120px]">{meeting.location}</span>
               </div>
             )}
             {meeting.strata_plan_number && (
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1 flex-shrink-0">
                 <FileText className="h-3 w-3" />
                 <span>Plan: {meeting.strata_plan_number}</span>
               </div>
             )}
             {meeting.status === "working_minutes" &&
               (meeting.recorder_name || meeting.chair_person || meeting.minute_taker || meeting.timekeeper_name) && (
-                <div className="flex flex-wrap items-center gap-2 text-xs w-full sm:w-auto">
+                <div className="flex items-center gap-2 flex-shrink-0">
                   {meeting.chair_person && (
                     <span>👑 <strong>{meeting.chair_person}</strong></span>
                   )}
@@ -1912,65 +2029,199 @@ export default function MeetingView({
             {/* Drawer panel */}
             <aside className="relative z-10 w-72 max-w-[85vw] bg-white dark:bg-card border-r border-border flex flex-col h-full overflow-y-auto px-4 pt-4 pb-6 shadow-2xl">
               {/* Drawer header */}
-              <div className="flex items-center justify-between mb-5 border-b border-border pb-3">
-                <h3 className="text-sm font-bold text-primary flex items-center gap-2">
-                  <FileText className="h-4 w-4" />
-                  AGENDA OUTLINE
-                </h3>
-                <button
-                  onClick={() => setShowSidebar(false)}
-                  className="h-7 w-7 flex items-center justify-center rounded-full hover:bg-muted text-muted-foreground text-xl font-light"
-                >
-                  ×
-                </button>
-              </div>
-              {sections.length === 0 ? (
-                <p className="text-xs text-muted-foreground">No sections yet.</p>
-              ) : (
-                <nav className="space-y-1">
-                  {sections.map((section, idx) => (
-                    <div key={section.id} className="space-y-0.5">
-                      <button
-                        onClick={() => {
-                          if (!section.isExpanded) toggleSection(section.id)
-                          const element = document.getElementById(`section-${section.id}`)
-                          element?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-                          setShowSidebar(false)
-                        }}
-                        className={`w-full text-left text-xs font-bold px-2 py-2 rounded-lg transition-colors flex items-center gap-2 ${
-                          activeSectionId === section.id
-                            ? "bg-primary/10 text-primary"
-                            : "hover:bg-muted text-foreground"
-                        }`}
+              <div className="flex flex-col mb-4 border-b border-border pb-2">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-sm font-bold text-primary flex items-center gap-2">
+                    {sidebarTab === "agenda" && <FileText className="h-4 w-4" />}
+                    {sidebarTab === "repairs" && <Wrench className="h-4 w-4" />}
+                    {sidebarTab === "complaints" && <AlertTriangle className="h-4 w-4" />}
+                    {sidebarTab === "agenda" ? "AGENDA OUTLINE" : sidebarTab.toUpperCase()}
+                  </h3>
+                  <div className="flex items-center gap-1">
+                    {sidebarTab === "agenda" && userCanEdit && (meeting.status === "working_agenda" || meeting.status === "working_minutes") && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setShowRolloverModal(true)}
+                        className="h-7 px-2 text-[10px] text-primary hover:bg-primary/5 flex items-center gap-1 font-bold"
                       >
-                        <span className="text-primary/60 flex-shrink-0">{idx + 1}.</span>
-                        <span className="truncate">{section.title}</span>
-                        <span className="ml-auto text-[10px] text-muted-foreground flex-shrink-0">
-                          {section.topics.length}
-                        </span>
-                      </button>
-                      {section.topics.length > 0 && (
-                        <div className="ml-5 pl-2 border-l-2 border-primary/15 space-y-0.5">
-                          {section.topics.map((topic, tIdx) => (
-                            <button
-                              key={topic.id}
-                              onClick={() => {
-                                if (!section.isExpanded) toggleSection(section.id)
-                                const element = document.getElementById(`topic-${topic.id}`)
-                                element?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-                                setShowSidebar(false)
-                              }}
-                              className="w-full text-left text-[11px] px-2 py-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground flex items-center gap-1"
-                            >
-                              <span className="text-primary/40 flex-shrink-0">{idx + 1}.{tIdx + 1}</span>
-                              <span className="truncate">{topic.title}</span>
-                            </button>
-                          ))}
-                        </div>
-                      )}
+                        <RefreshCw className="h-3 w-3" />
+                        Import
+                      </Button>
+                    )}
+                    <button
+                      onClick={() => setShowSidebar(false)}
+                      className="h-7 w-7 flex items-center justify-center rounded-full hover:bg-muted text-muted-foreground text-xl font-light"
+                    >
+                      ×
+                    </button>
+                  </div>
+                </div>
+                
+                {isJanusIntegrated && (
+                  <div className="flex gap-1 p-0.5 bg-muted rounded-lg">
+                    <button
+                      onClick={() => setSidebarTab("agenda")}
+                      className={`flex-1 text-[10px] py-1 rounded-md transition-all ${sidebarTab === "agenda" ? "bg-white shadow-sm font-bold text-primary" : "text-muted-foreground hover:bg-white/50"}`}
+                    >
+                      Agenda
+                    </button>
+                    <button
+                      onClick={() => setSidebarTab("repairs")}
+                      className={`flex-1 text-[10px] py-1 rounded-md transition-all ${sidebarTab === "repairs" ? "bg-white shadow-sm font-bold text-primary" : "text-muted-foreground hover:bg-white/50"}`}
+                    >
+                      Repairs
+                    </button>
+                    <button
+                      onClick={() => setSidebarTab("complaints")}
+                      className={`flex-1 text-[10px] py-1 rounded-md transition-all ${sidebarTab === "complaints" ? "bg-white shadow-sm font-bold text-primary" : "text-muted-foreground hover:bg-white/50"}`}
+                    >
+                      Complaints
+                    </button>
+                  </div>
+                )}
+              </div>
+              
+              {sidebarTab === "agenda" ? (
+                sections.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">No sections yet.</p>
+                ) : (
+                  <nav className="space-y-1">
+                    {sections.map((section, idx) => (
+                      <div key={section.id} className="space-y-0.5">
+                        <button
+                          onClick={() => {
+                            if (!section.isExpanded) toggleSection(section.id)
+                            const element = document.getElementById(`section-${section.id}`)
+                            element?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                            setShowSidebar(false)
+                          }}
+                          className={`w-full text-left text-xs font-bold px-2 py-2 rounded-lg transition-colors flex items-center gap-2 ${
+                            activeSectionId === section.id
+                              ? "bg-primary/10 text-primary"
+                              : "hover:bg-muted text-foreground"
+                          }`}
+                        >
+                          <span className="text-primary/60 flex-shrink-0">{idx + 1}.</span>
+                          <span className="truncate">{section.title}</span>
+                          <span className="ml-auto text-[10px] text-muted-foreground flex-shrink-0">
+                            {section.topics.length}
+                          </span>
+                        </button>
+                        {section.topics.length > 0 && (
+                          <div className="ml-5 pl-2 border-l-2 border-primary/15 space-y-0.5">
+                            {section.topics.map((topic, tIdx) => (
+                              <button
+                                key={topic.id}
+                                onClick={() => {
+                                  if (!section.isExpanded) toggleSection(section.id)
+                                  const element = document.getElementById(`topic-${topic.id}`)
+                                  element?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                                  setShowSidebar(false)
+                                }}
+                                className="w-full text-left text-[11px] px-2 py-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground flex items-center gap-1"
+                              >
+                                <span className="text-primary/40 flex-shrink-0">{idx + 1}.{tIdx + 1}</span>
+                                <span className="truncate">{topic.title}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </nav>
+                )
+              ) : sidebarTab === "repairs" ? (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <div className="h-6 w-6 bg-red-100 rounded-md flex items-center justify-center">
+                        <Wrench className="h-3.5 w-3.5 text-red-600" />
+                      </div>
+                      <span className="text-[10px] font-black text-foreground uppercase tracking-wider">Active Repairs</span>
                     </div>
-                  ))}
-                </nav>
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="h-6 w-6" 
+                      onClick={() => fetchJanusData(true)}
+                      disabled={isResyncing}
+                    >
+                      <RefreshCw className={`h-3 w-3 ${isResyncing ? "animate-spin" : ""}`} />
+                    </Button>
+                  </div>
+                  {janusData.repairs.length === 0 ? (
+                    <div className="text-center py-8 bg-muted/20 rounded-xl border border-dashed border-border">
+                      <Wrench className="h-8 w-8 text-muted-foreground/20 mx-auto mb-2" />
+                      <p className="text-xs text-muted-foreground">No active repairs found.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {janusData.repairs.map(repair => (
+                        <div key={repair.id} className="p-3 bg-white dark:bg-card border-l-4 border-l-red-500 border border-border rounded-lg shadow-sm hover:shadow-md transition-all">
+                          <div className="flex items-start justify-between mb-1.5">
+                            <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded ${
+                              repair.priority === "High" ? "bg-red-100 text-red-700" : 
+                              repair.priority === "Medium" ? "bg-amber-100 text-amber-700" : "bg-blue-100 text-blue-700"
+                            }`}>
+                              {repair.priority}
+                            </span>
+                            <Badge variant="outline" className="text-[8px] h-4 border-muted-foreground/20">{repair.status}</Badge>
+                          </div>
+                          <h4 className="text-xs font-bold leading-tight mb-1 text-foreground">{repair.title}</h4>
+                          <p className="text-[9px] text-muted-foreground flex items-center gap-1">
+                            <Calendar className="h-2.5 w-2.5" />
+                            {new Date(repair.created_at).toLocaleDateString()}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <div className="h-6 w-6 bg-amber-100 rounded-md flex items-center justify-center">
+                        <AlertTriangle className="h-3.5 w-3.5 text-amber-600" />
+                      </div>
+                      <span className="text-[10px] font-black text-foreground uppercase tracking-wider">Open Complaints</span>
+                    </div>
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="h-6 w-6" 
+                      onClick={() => fetchJanusData(true)}
+                      disabled={isResyncing}
+                    >
+                      <RefreshCw className={`h-3 w-3 ${isResyncing ? "animate-spin" : ""}`} />
+                    </Button>
+                  </div>
+                  {janusData.complaints.length === 0 ? (
+                    <div className="text-center py-8 bg-muted/20 rounded-xl border border-dashed border-border">
+                      <AlertTriangle className="h-8 w-8 text-muted-foreground/20 mx-auto mb-2" />
+                      <p className="text-xs text-muted-foreground">No active complaints found.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {janusData.complaints.map(complaint => (
+                        <div key={complaint.id} className="p-3 bg-white dark:bg-card border-l-4 border-l-amber-500 border border-border rounded-lg shadow-sm hover:shadow-md transition-all">
+                          <div className="flex items-start justify-between mb-1.5">
+                            <Badge className="text-[8px] h-4 bg-amber-100 text-amber-700 border-0">
+                              {complaint.status}
+                            </Badge>
+                          </div>
+                          <h4 className="text-xs font-bold leading-tight mb-1 text-foreground">{complaint.title}</h4>
+                          <p className="text-[10px] text-muted-foreground line-clamp-2 italic mb-1 bg-muted/30 p-1.5 rounded">"{complaint.description}"</p>
+                          <p className="text-[9px] text-muted-foreground flex items-center gap-1 mt-1">
+                            <Calendar className="h-2.5 w-2.5" />
+                            {new Date(complaint.created_at).toLocaleDateString()}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               )}
             </aside>
           </div>
@@ -1979,47 +2230,181 @@ export default function MeetingView({
         {/* ── DESKTOP: Side Panel ── */}
         {showSidebar && (
           <aside className="hidden lg:flex w-64 border-r border-border bg-background flex-col shrink-0 h-full overflow-y-auto px-4 pt-2 pb-4 transition-all duration-300 shadow-sm">
-            <h3 className="text-sm font-bold text-primary flex items-center gap-2 mb-4">
-              <FileText className="h-4 w-4" />
-              AGENDA OUTLINE
-            </h3>
-            <nav className="space-y-1">
-              {sections.map((section, idx) => (
-                <div key={section.id} className="space-y-1">
-                  <button
-                    onClick={() => {
-                      if (!section.isExpanded) toggleSection(section.id)
-                      const element = document.getElementById(`section-${section.id}`)
-                      element?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-                    }}
-                    className={`w-full text-left text-xs font-bold px-2 py-1.5 rounded transition-colors flex items-center gap-2 ${
-                      activeSectionId === section.id
-                        ? "bg-primary/10 text-primary border-r-2 border-primary"
-                        : "hover:bg-primary/5 text-foreground"
-                    }`}
+            <div className="flex flex-col mb-4 border-b border-border pb-2">
+              <div className="flex items-center gap-2 mb-3">
+                <h3 className="text-sm font-bold text-primary flex items-center gap-2">
+                  {sidebarTab === "agenda" && <FileText className="h-4 w-4" />}
+                  {sidebarTab === "repairs" && <Wrench className="h-4 w-4" />}
+                  {sidebarTab === "complaints" && <AlertTriangle className="h-4 w-4" />}
+                  {sidebarTab === "agenda" ? "AGENDA OUTLINE" : sidebarTab.toUpperCase()}
+                </h3>
+                {sidebarTab === "agenda" && userCanEdit && (meeting.status === "working_agenda" || meeting.status === "working_minutes") && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setShowRolloverModal(true)}
+                    className="ml-auto h-7 px-2 text-[10px] text-primary hover:bg-primary/5 flex items-center gap-1 font-bold"
                   >
-                    <span className="text-primary/70">{idx + 1}.</span>
-                    <span className="truncate">{section.title}</span>
+                    <RefreshCw className="h-3 w-3" />
+                    Import
+                  </Button>
+                )}
+              </div>
+              
+              {isJanusIntegrated && (
+                <div className="flex gap-1 p-0.5 bg-muted rounded-lg">
+                  <button
+                    onClick={() => setSidebarTab("agenda")}
+                    className={`flex-1 text-[10px] py-1 rounded-md transition-all ${sidebarTab === "agenda" ? "bg-white shadow-sm font-bold text-primary" : "text-muted-foreground hover:bg-white/50"}`}
+                  >
+                    Agenda
                   </button>
-                  <div className="ml-4 space-y-0.5 border-l-2 border-primary/10 pl-2">
-                    {section.topics.map((topic, tIdx) => (
-                      <button
-                        key={topic.id}
-                        onClick={() => {
-                          if (!section.isExpanded) toggleSection(section.id)
-                          const element = document.getElementById(`topic-${topic.id}`)
-                          element?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-                        }}
-                        className="w-full text-left text-[11px] px-2 py-1 rounded hover:bg-primary/5 text-muted-foreground hover:text-foreground truncate"
-                      >
-                        <span className="mr-1">{idx + 1}.{tIdx + 1}</span>
-                        {topic.title}
-                      </button>
+                  <button
+                    onClick={() => setSidebarTab("repairs")}
+                    className={`flex-1 text-[10px] py-1 rounded-md transition-all ${sidebarTab === "repairs" ? "bg-white shadow-sm font-bold text-primary" : "text-muted-foreground hover:bg-white/50"}`}
+                  >
+                    Repairs
+                  </button>
+                  <button
+                    onClick={() => setSidebarTab("complaints")}
+                    className={`flex-1 text-[10px] py-1 rounded-md transition-all ${sidebarTab === "complaints" ? "bg-white shadow-sm font-bold text-primary" : "text-muted-foreground hover:bg-white/50"}`}
+                  >
+                    Complaints
+                  </button>
+                </div>
+              )}
+            </div>
+            
+            {sidebarTab === "agenda" ? (
+              <nav className="space-y-1">
+                {sections.map((section, idx) => (
+                  <div key={section.id} className="space-y-1">
+                    <button
+                      onClick={() => {
+                        if (!section.isExpanded) toggleSection(section.id)
+                        const element = document.getElementById(`section-${section.id}`)
+                        element?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                      }}
+                      className={`w-full text-left text-xs font-bold px-2 py-1.5 rounded transition-colors flex items-center gap-2 ${
+                        activeSectionId === section.id
+                          ? "bg-primary/10 text-primary border-r-2 border-primary"
+                          : "hover:bg-primary/5 text-foreground"
+                      }`}
+                    >
+                      <span className="text-primary/70">{idx + 1}.</span>
+                      <span className="truncate">{section.title}</span>
+                    </button>
+                    <div className="ml-4 space-y-0.5 border-l-2 border-primary/10 pl-2">
+                      {section.topics.map((topic, tIdx) => (
+                        <button
+                          key={topic.id}
+                          onClick={() => {
+                            if (!section.isExpanded) toggleSection(section.id)
+                            const element = document.getElementById(`topic-${topic.id}`)
+                            element?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                          }}
+                          className="w-full text-left text-[11px] px-2 py-1 rounded hover:bg-primary/5 text-muted-foreground hover:text-foreground truncate"
+                        >
+                          <span className="mr-1">{idx + 1}.{tIdx + 1}</span>
+                          {topic.title}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </nav>
+            ) : sidebarTab === "repairs" ? (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <div className="h-6 w-6 bg-red-100 rounded-md flex items-center justify-center">
+                      <Wrench className="h-3.5 w-3.5 text-red-600" />
+                    </div>
+                    <span className="text-[10px] font-black text-foreground uppercase tracking-wider">Active Repairs</span>
+                  </div>
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="h-6 w-6" 
+                    onClick={() => fetchJanusData(true)}
+                    disabled={isResyncing}
+                  >
+                    <RefreshCw className={`h-3 w-3 ${isResyncing ? "animate-spin" : ""}`} />
+                  </Button>
+                </div>
+                {janusData.repairs.length === 0 ? (
+                  <div className="text-center py-8 bg-muted/20 rounded-xl border border-dashed border-border">
+                    <Wrench className="h-8 w-8 text-muted-foreground/20 mx-auto mb-2" />
+                    <p className="text-xs text-muted-foreground">No active repairs found.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {janusData.repairs.map(repair => (
+                      <div key={repair.id} className="p-3 bg-white dark:bg-card border-l-4 border-l-red-500 border border-border rounded-lg shadow-sm hover:shadow-md transition-all">
+                        <div className="flex items-start justify-between mb-1.5">
+                          <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded ${
+                            repair.priority === "High" ? "bg-red-100 text-red-700" : 
+                            repair.priority === "Medium" ? "bg-amber-100 text-amber-700" : "bg-blue-100 text-blue-700"
+                          }`}>
+                            {repair.priority}
+                          </span>
+                          <Badge variant="outline" className="text-[8px] h-4 border-muted-foreground/20">{repair.status}</Badge>
+                        </div>
+                        <h4 className="text-xs font-bold leading-tight mb-1 text-foreground">{repair.title}</h4>
+                        <p className="text-[9px] text-muted-foreground flex items-center gap-1">
+                          <Calendar className="h-2.5 w-2.5" />
+                          {new Date(repair.created_at).toLocaleDateString()}
+                        </p>
+                      </div>
                     ))}
                   </div>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <div className="h-6 w-6 bg-amber-100 rounded-md flex items-center justify-center">
+                      <AlertTriangle className="h-3.5 w-3.5 text-amber-600" />
+                    </div>
+                    <span className="text-[10px] font-black text-foreground uppercase tracking-wider">Open Complaints</span>
+                  </div>
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="h-6 w-6" 
+                    onClick={() => fetchJanusData(true)}
+                    disabled={isResyncing}
+                  >
+                    <RefreshCw className={`h-3 w-3 ${isResyncing ? "animate-spin" : ""}`} />
+                  </Button>
                 </div>
-              ))}
-            </nav>
+                {janusData.complaints.length === 0 ? (
+                  <div className="text-center py-8 bg-muted/20 rounded-xl border border-dashed border-border">
+                    <AlertTriangle className="h-8 w-8 text-muted-foreground/20 mx-auto mb-2" />
+                    <p className="text-xs text-muted-foreground">No active complaints found.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {janusData.complaints.map(complaint => (
+                      <div key={complaint.id} className="p-3 bg-white dark:bg-card border-l-4 border-l-amber-500 border border-border rounded-lg shadow-sm hover:shadow-md transition-all">
+                        <div className="flex items-start justify-between mb-1.5">
+                          <Badge className="text-[8px] h-4 bg-amber-100 text-amber-700 border-0">
+                            {complaint.status}
+                          </Badge>
+                        </div>
+                        <h4 className="text-xs font-bold leading-tight mb-1 text-foreground">{complaint.title}</h4>
+                        <p className="text-[10px] text-muted-foreground line-clamp-2 italic mb-1 bg-muted/30 p-1.5 rounded">"{complaint.description}"</p>
+                        <p className="text-[9px] text-muted-foreground flex items-center gap-1 mt-1">
+                          <Calendar className="h-2.5 w-2.5" />
+                          {new Date(complaint.created_at).toLocaleDateString()}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) }
           </aside>
         )}
 
@@ -2090,87 +2475,106 @@ export default function MeetingView({
                       <Card className="border-0 bg-gradient-to-r from-primary/10 to-decision-purple/10 mb-1">
                         <div className="w-full py-1 px-3">
                           {/* Section title row */}
-                          <div className="flex items-center gap-2 min-w-0">
-                            <div
-                              {...provided.dragHandleProps}
-                              onClick={() => toggleSection(section.id)}
-                              className="cursor-pointer flex-shrink-0"
-                            >
-                              {section.isExpanded ? (
-                                <ChevronDown className="h-5 w-5 text-primary" />
+                          <div className="flex items-center justify-between gap-2 min-w-0">
+                            <div className="flex items-center gap-2 min-w-0 flex-1">
+                              <div
+                                {...provided.dragHandleProps}
+                                onClick={() => toggleSection(section.id)}
+                                className="cursor-pointer flex-shrink-0"
+                              >
+                                {section.isExpanded ? (
+                                  <ChevronDown className="h-5 w-5 text-primary" />
+                                ) : (
+                                  <ChevronRight className="h-5 w-5 text-primary" />
+                                )}
+                              </div>
+                              {editingSection?.id === section.id ? (
+                                <form
+                                  onSubmit={(e) => {
+                                    e.preventDefault()
+                                    saveSectionRename()
+                                  }}
+                                  className="flex items-center gap-2 flex-1"
+                                >
+                                  <input
+                                    value={sectionRenameValue}
+                                    onChange={(e) => setSectionRenameValue(e.target.value)}
+                                    className="text-sm sm:text-base font-bold border px-2 py-1 rounded flex-1"
+                                    autoFocus
+                                    onBlur={saveSectionRename}
+                                  />
+                                </form>
                               ) : (
-                                <ChevronRight className="h-5 w-5 text-primary" />
+                                <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                                  <span className="text-xs sm:text-sm font-bold text-primary/70 flex-shrink-0">
+                                    {sectionIndex + 1}.
+                                  </span>
+                                  <h2 className="text-sm sm:text-base font-bold text-foreground truncate">
+                                    {section.title}
+                                  </h2>
+                                  <span className="text-[10px] sm:text-xs text-muted-foreground flex-shrink-0 whitespace-nowrap">
+                                    ({section.topics.length})
+                                  </span>
+                                </div>
                               )}
                             </div>
-                            {editingSection?.id === section.id ? (
-                              <form
-                                onSubmit={(e) => {
-                                  e.preventDefault()
-                                  saveSectionRename()
-                                }}
-                                className="flex items-center gap-2 flex-1"
-                              >
-                                <input
-                                  value={sectionRenameValue}
-                                  onChange={(e) => setSectionRenameValue(e.target.value)}
-                                  className="text-base font-bold border px-2 py-1 rounded flex-1"
-                                  autoFocus
-                                  onBlur={saveSectionRename}
-                                />
-                              </form>
-                            ) : (
-                              <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                                <span className="text-sm font-bold text-primary/70 flex-shrink-0">
-                                  {sectionIndex + 1}.
-                                </span>
-                                <h2 className="text-sm sm:text-base font-bold text-foreground truncate">
-                                  {section.title}
-                                </h2>
-                                <span className="text-xs text-muted-foreground flex-shrink-0 whitespace-nowrap">
-                                  ({section.topics.length} {section.topics.length === 1 ? "topic" : "topics"})
-                                </span>
-                              </div>
-                            )}
+
+                            {/* Section action buttons - right aligned */}
+                            <div className="flex items-center gap-0.5 sm:gap-1 flex-shrink-0">
+                              {!editingLocked && editingSection?.id !== section.id && (
+                                <>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => beginSectionRename(section)}
+                                    title="Edit section name"
+                                    className="h-7 w-7 sm:h-8 sm:w-8"
+                                  >
+                                    <Pencil className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => askDeleteSection(section)}
+                                    title="Delete section"
+                                    className="h-7 w-7 sm:h-8 sm:w-8"
+                                  >
+                                    <Trash className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-red-600" />
+                                  </Button>
+                                </>
+                              )}
+                              {userCanEdit && meeting.status !== "minutes" && (
+                                <Button
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleAddTopic(section.id, section.title)
+                                  }}
+                                  className="bg-primary hover:bg-primary/90 h-7 sm:h-8 px-2 sm:px-3 text-[10px] sm:text-xs rounded-lg"
+                                >
+                                  <Plus className="h-3 w-3 sm:mr-1" />
+                                  <span className="hidden sm:inline">Add Topic</span>
+                                </Button>
+                              )}
+                            </div>
                           </div>
 
-                          {/* Section action buttons row */}
-                          <div className="flex items-center gap-1 mt-1 pl-7">
-                            {!editingLocked && editingSection?.id !== section.id && (
-                              <>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() => beginSectionRename(section)}
-                                  title="Edit section name"
-                                  className="h-7 w-7"
-                                >
-                                  <Pencil className="h-3.5 w-3.5" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() => askDeleteSection(section)}
-                                  title="Delete section"
-                                  className="h-7 w-7"
-                                >
-                                  <Trash className="h-3.5 w-3.5 text-red-600" />
-                                </Button>
-                              </>
-                            )}
+                          {/* Section secondary row (attachment only now) */}
+                          <div className="flex items-center gap-2 mt-1 pl-7 overflow-x-auto scrollbar-hide">
                             {userCanEdit && meeting.status !== "minutes" && (
                               <>
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  className="h-7 px-2 text-[10px] sm:text-xs text-muted-foreground hover:text-primary"
+                                  className="h-6 sm:h-7 px-2 text-[9px] sm:text-xs text-muted-foreground hover:text-primary border border-dashed border-muted-foreground/30 rounded-lg flex-shrink-0"
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     const input = document.getElementById(`section-file-${section.id}`) as HTMLInputElement;
                                     input?.click();
                                   }}
                                 >
-                                  <Paperclip className="h-3 w-3 mr-1" />
-                                  <span className="hidden sm:inline">Attach</span>
+                                  <Paperclip className="h-2.5 w-2.5 mr-1" />
+                                  Attach File
                                 </Button>
                                 <input
                                   id={`section-file-${section.id}`}
@@ -2178,17 +2582,6 @@ export default function MeetingView({
                                   className="hidden"
                                   onChange={(e) => handleSectionFileUpload(e, section.id)}
                                 />
-                                <Button
-                                  size="sm"
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    handleAddTopic(section.id, section.title)
-                                  }}
-                                  className="bg-primary hover:bg-primary/90 h-7 px-2 sm:px-3 text-[10px] sm:text-xs"
-                                >
-                                  <Plus className="h-3 w-3 mr-1" />
-                                  Add Topic
-                                </Button>
                               </>
                             )}
                           </div>
@@ -2197,7 +2590,7 @@ export default function MeetingView({
                           <div className="px-12 pb-2">
                             {section.attachments && section.attachments.length > 0 && (
                               <div className="flex flex-wrap gap-2 mb-3">
-                                {section.attachments.map((att) => (
+                                {section.attachments.map((att: any) => (
                                   <div
                                     key={att.id}
                                     className="flex items-center gap-2 bg-white/50 border border-primary/20 rounded-full px-3 py-1 text-xs text-primary"
@@ -2232,7 +2625,7 @@ export default function MeetingView({
                                   className="space-y-1 pb-0"
                                 >
                                   {section.topics.length > 0 ? (
-                                    section.topics.map((topic, topicIndex) => (
+                                    section.topics.map((topic: any, topicIndex: number) => (
                                       <Draggable
                                         key={topic.id}
                                         draggableId={`topic-${topic.id}`}
@@ -2300,7 +2693,7 @@ export default function MeetingView({
                                 </div>
                               )}
                             </Droppable>
-                          </div>
+                         </div>
                         )}
                       </Card>
                     </div>
@@ -2344,8 +2737,6 @@ export default function MeetingView({
           </div>
         )}
       </DragDropContext>
-          </div> {/* Close max-w-4xl container */}
-        </div> {/* Close the flex-1 container */}
 
       {/* Archive / Topic Bank Modal/Card */}
       {showArchived && archivedTopics.length > 0 && (
@@ -2483,6 +2874,16 @@ export default function MeetingView({
         onTasksCreated={handleTasksCreated}
       />
 
+      <RolloverTopicModal 
+        isOpen={showRolloverModal}
+        onClose={() => setShowRolloverModal(false)}
+        meetingId={meetingId}
+        buildingId={meeting?.building_id}
+        meetingType={meeting?.meeting_type}
+        sections={sections.map(s => ({ id: s.id, title: s.title }))}
+        onSuccess={fetchSectionsAndTopics}
+      />
+
       <ViewTranscriptsModal
         isOpen={showViewTranscripts}
         onClose={() => setShowViewTranscripts(false)}
@@ -2517,6 +2918,8 @@ export default function MeetingView({
           <FileText className="h-7 w-7" />
         </Button>
       )}
+          </div>
+        </div>
       </div>
     </>
   )

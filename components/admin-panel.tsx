@@ -494,8 +494,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
     if (isPropManager) {
       const filtered = users.filter(
         (u) =>
-          (u.assigned_pm_id === currentUser?.id && u.user_type === "user") ||
-          u.id === currentUser?.id
+          u.assigned_pm_id === currentUser?.id || u.id === currentUser?.id
       )
       return filtered
     }

@@ -18,14 +18,7 @@ interface CompanyCardProps {
   onViewDetails: (company: Company) => void
 }
 
-/**
- * Helper to get tier info based on building count
- */
-function getTierInfo(count: number) {
-  if (count <= 5) return { name: "Starter", color: "bg-slate-100 text-slate-700", price: "$99/mo" };
-  if (count <= 20) return { name: "Growth", color: "bg-blue-100 text-blue-700", price: "$299/mo" };
-  return { name: "Enterprise", color: "bg-purple-100 text-purple-700", price: "$599/mo" };
-}
+
 
 export default function CompanyCard({
   company,
@@ -33,7 +26,7 @@ export default function CompanyCard({
   onDelete,
   onViewDetails
 }: CompanyCardProps) {
-  const tier = getTierInfo(company.building_count || 0);
+
 
   return (
     <Card className="p-4 hover:shadow-md transition-shadow">
@@ -68,10 +61,7 @@ export default function CompanyCard({
                 <span>{company.building_count || 0} buildings</span>
               </div>
               
-              {/* Billing Tier Badge */}
-              <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider shadow-sm ${tier.color}`}>
-                {tier.name} Tier • {tier.price}
-              </div>
+
             </div>
           </div>
         </div>

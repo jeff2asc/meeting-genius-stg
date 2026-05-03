@@ -18,6 +18,7 @@ import LogoTab from "./LogoTab"
 import { Card } from "@/components/ui/card"
 import { supabase, type Company, getCurrentUser } from "@/lib/supabase"
 import { canManageCompanies } from "@/lib/permissions"
+import { triggerJanusResync } from "@/lib/janus"
 
 interface CompanyDetailsModalProps {
   isOpen: boolean
@@ -56,14 +57,7 @@ const ALL_ROLES: { value: string; label: string }[] = [
   { value: "master", label: "Master" },
 ]
 
-/**
- * Helper to get tier info based on building count
- */
-function getTierInfo(count: number) {
-  if (count <= 5) return { name: "Starter", color: "from-slate-50 to-slate-100", textColor: "text-slate-900", iconColor: "bg-slate-500", price: "$99/mo" };
-  if (count <= 20) return { name: "Growth", color: "from-blue-50 to-blue-100", textColor: "text-blue-900", iconColor: "bg-blue-500", price: "$299/mo" };
-  return { name: "Enterprise", color: "from-purple-50 to-purple-100", textColor: "text-purple-900", iconColor: "bg-purple-500", price: "$599/mo" };
-}
+
 
 export default function CompanyDetailsModal({
   isOpen,
@@ -398,6 +392,8 @@ export default function CompanyDetailsModal({
       setNewPMEmail("")
       setNewPMPassword("")
       setShowCreatePM(false)
+      // 🔄 Notify Janus
+      triggerJanusResync("user_created")
     } catch (err) {
       console.error("Unexpected error:", err)
       setError("An unexpected error occurred")
@@ -440,6 +436,8 @@ export default function CompanyDetailsModal({
       setSelectedManagerId(null)
       setShowAddBuilding(false)
       await fetchCompanyData()
+      // 🔄 Notify Janus
+      triggerJanusResync("building_created")
     } catch (err) {
       console.error("Unexpected error:", err)
       setError("An unexpected error occurred")
@@ -507,6 +505,8 @@ export default function CompanyDetailsModal({
       setNewAdminPassword("")
       setShowAddAdmin(false)
       await fetchCompanyData()
+      // 🔄 Notify Janus
+      triggerJanusResync("user_created")
     } catch (err) {
       console.error("Unexpected error:", err)
       setError("An unexpected error occurred")
@@ -599,6 +599,8 @@ export default function CompanyDetailsModal({
       setShowAddUser(false)
       await fetchCompanyData()
       await fetchPropertyManagers()
+      // 🔄 Notify Janus
+      triggerJanusResync("user_created")
     } catch (err) {
       console.error("Unexpected error:", err)
       setError("An unexpected error occurred")
@@ -787,7 +789,7 @@ export default function CompanyDetailsModal({
     (u) => u.user_type === "corporate_administrator",
   )
   const filteredUsers = getFilteredUsers()
-  const tier = getTierInfo(buildings.length)
+
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 animate-in fade-in overflow-y-auto p-4">
@@ -978,7 +980,7 @@ export default function CompanyDetailsModal({
               )}
               {activeTab === "overview" && (
                 <div className="space-y-6">
-                  <div className="grid grid-cols-4 gap-4">
+                  <div className="grid grid-cols-3 gap-4">
                     <Card className="p-4 bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200 shadow-sm">
                       <div className="flex items-center gap-3">
                         <div className="p-3 bg-blue-500 rounded-lg">
@@ -1021,22 +1023,7 @@ export default function CompanyDetailsModal({
                       </div>
                     </Card>
 
-                    <Card className={`p-4 bg-gradient-to-br ${tier.color} border-slate-200 shadow-sm relative overflow-hidden`}>
-                      <div className="flex items-center gap-3">
-                        <div className={`p-3 ${tier.iconColor} rounded-lg`}>
-                          <UserCog className="h-6 w-6 text-white" />
-                        </div>
-                        <div>
-                          <p className={`text-2xl font-bold ${tier.textColor}`}>
-                            {tier.name}
-                          </p>
-                          <p className={`text-sm opacity-80 ${tier.textColor}`}>{tier.price}</p>
-                        </div>
-                      </div>
-                      <div className="absolute top-0 right-0 p-1">
-                        <span className="text-[8px] font-bold uppercase tracking-widest bg-white/50 px-1.5 py-0.5 rounded-bl">Billing Tier</span>
-                      </div>
-                    </Card>
+
                   </div>
 
                   <Card className="p-4 bg-muted/40 border-border">

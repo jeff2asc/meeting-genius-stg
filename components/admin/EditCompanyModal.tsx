@@ -5,6 +5,7 @@ import { X, Plus, Trash2, Edit2, Save } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { supabase } from "@/lib/supabase"
+import { triggerJanusResync } from "@/lib/janus"
 
 interface Company {
   id: number
@@ -152,6 +153,10 @@ export default function EditCompanyModal({
       }
 
       console.log('✅ Company updated successfully')
+      
+      // 🔄 Notify Janus for real-time sync
+      triggerJanusResync('company_updated')
+      
       onSuccess()
       onClose()
     } catch (err) {

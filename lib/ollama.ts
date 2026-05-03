@@ -147,3 +147,50 @@ JSON Response:`;
     throw error;
   }
 }
+
+/**
+ * EXPERIMENTAL: Transcribe audio using Ollama (if Whisper-integrated)
+ */
+export async function transcribeAudioOllama(
+  audioBase64: string,
+  mimeType: string,
+  config?: {
+    host?: string;
+    apiKey?: string;
+  }
+): Promise<string> {
+  const host = config?.host || process.env.OLLAMA_HOST || "http://38.49.216.119:11434";
+  const apiKey = config?.apiKey || process.env.OLLAMA_API_KEY;
+
+  console.log(`🎙️ Attempting transcription with Ollama at ${host}...`);
+
+  try {
+    const response = await fetch(`${host}/api/audio`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(apiKey && { "X-API-Key": apiKey })
+      },
+      body: JSON.stringify({
+        audio: audioBase64,
+        mime_type: mimeType
+      })
+    });
+
+    if (response.status === 404) {
+      throw new Error("This Ollama server does not support audio transcription yet (API endpoint /api/audio not found).");
+    }
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Ollama Transcription Error (${response.status}): ${errorText}`);
+    }
+
+    const data = await response.json();
+    return data.text || "";
+
+  } catch (error: any) {
+    console.error("❌ Ollama Transcription Error:", error.message);
+    throw error;
+  }
+}

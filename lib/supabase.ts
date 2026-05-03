@@ -478,9 +478,66 @@ export type Database = {
           created_at?: string
         }
       }
+      // ⭐ janus_repairs table
+      janus_repairs: {
+        Row: {
+          id: number
+          building_id: number
+          title: string
+          priority: "High" | "Medium" | "Low"
+          status: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          building_id: number
+          title: string
+          priority?: "High" | "Medium" | "Low"
+          status?: string
+        }
+      }
+      // ⭐ janus_complaints table
+      janus_complaints: {
+        Row: {
+          id: number
+          building_id: number
+          title: string
+          description: string | null
+          status: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          building_id: number
+          title: string
+          description?: string | null
+          status?: string
+        }
+      }
     }
   }
 }
+
+export interface JanusRepair {
+  id: number
+  building_id: number
+  title: string
+  priority: "High" | "Medium" | "Low"
+  status: string
+  created_at: string
+  updated_at: string
+}
+
+export interface JanusComplaint {
+  id: number
+  building_id: number
+  title: string
+  description: string | null
+  status: string
+  created_at: string
+  updated_at: string
+}
+
 
 // ============================================
 // ROLLOVER HELPER FUNCTIONS

@@ -41,7 +41,66 @@ export async function GET(req: NextRequest) {
     const residents = users?.filter(u => u.user_type !== 'vendor') || []
     const vendors = users?.filter(u => u.user_type === 'vendor') || []
 
-    // 4. Transform data for Janus consumption with aliases and junction mapping
+    // 4. ⭐ FETCH REAL JANUS DATA FROM DB
+    let [
+      { data: dbRepairs },
+      { data: dbComplaints }
+    ] = await Promise.all([
+      supabase.from("janus_repairs").select("*").order("created_at", { ascending: false }),
+      supabase.from("janus_complaints").select("*").order("created_at", { ascending: false })
+    ])
+
+    // ⭐ FALL-THROUGH: If local database is empty, pull from the Real Janus Database Directly
+    if ((!dbRepairs || dbRepairs.length === 0) && (!dbComplaints || dbComplaints.length === 0)) {
+      try {
+        console.log("🔍 [DEBUG] Local Janus tables are empty. Connecting to Janus Database Directly...");
+        
+        // ⭐ Direct Connection to Janus Supabase Project
+        const janusSupabaseUrl = "https://ihldyefskzluuciaudmr.supabase.co"
+        const janusAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlobGR5ZWZza3psdXVjaWF1ZG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE3NTAwNjksImV4cCI6MjA4NzMyNjA2OX0.Fs6cvdgJSxGA5LvQhn3YK_6WPxGKwBQjf7ezM2Jl8Pc"
+        
+        const janusDb = createClient(janusSupabaseUrl, janusAnonKey);
+        
+        // Fetch from the 'tickets' table used in Janus codebase
+        const { data: rawTickets, error: janusErr } = await janusDb
+          .from('tickets')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (janusErr) throw janusErr;
+
+        if (rawTickets) {
+          console.log(`✅ [DEBUG] Successfully pulled ${rawTickets.length} tickets directly from Janus DB.`);
+
+          const mapTicket = (t: any) => ({
+            id: t.id || t.ticket_id,
+            building_id: t.building_id,
+            building_name: t.building_name || t.building,
+            title: t.subject || t.title || t.issue_type,
+            priority: t.priority || t.urgency || "Medium",
+            status: t.state || t.status || "Open",
+            created_at: t.created_at || new Date().toISOString(),
+            description: t.damage_description || t.description || t.content || ""
+          });
+
+          // ⭐ Split by the 'type' field — "repair" vs "complaint"
+          const repairTickets = rawTickets.filter((t: any) => t.type === "repair");
+          const complaintTickets = rawTickets.filter((t: any) => t.type === "complaint");
+
+          dbRepairs = repairTickets.map(mapTicket);
+          dbComplaints = complaintTickets.map(mapTicket);
+
+          console.log(`🔧 [DEBUG] Split: ${dbRepairs.length} repairs, ${dbComplaints.length} complaints.`);
+        }
+      } catch (e) {
+        console.error("❌ [DEBUG] Failed to reach Janus Database:", e);
+      }
+    }
+
+    const repairs = dbRepairs || []
+    const complaints = dbComplaints || []
+
+    // 5. Transform data for Janus consumption with aliases and junction mapping
     const payload = {
       system: "Meeting Genius",
       version: "2.1",
@@ -51,7 +110,9 @@ export async function GET(req: NextRequest) {
         buildings: buildings?.length || 0,
         residents: residents?.length || 0,
         vendors: vendors?.length || 0,
-        user_buildings: userBuildings?.length || 0
+        user_buildings: userBuildings?.length || 0,
+        repairs: repairs.length,
+        complaints: complaints.length
       },
       data: {
         // Original names
@@ -60,6 +121,8 @@ export async function GET(req: NextRequest) {
         users: residents,
         vendors: vendors,
         user_buildings: userBuildings || [],
+        repairs: repairs,
+        complaints: complaints,
         
         // Aliases for Janus compatibility
         organizations: companies || [],

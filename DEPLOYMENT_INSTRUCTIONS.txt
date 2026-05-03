@@ -27,8 +27,7 @@ STEP 2: SERVER (PuTTY)
 -----------------------------------------------------
 
 SSH into the server using PuTTY (run this in PowerShell):
-putty.exe -i "C:\Users\Jeff Domingo\Videos\newkeymeeting.ppk" root@app.meetinggenius.ca
-
+\
 1. Switch to the application user and directory:
    su - pm2
    cd /opt/meetinggenius/app

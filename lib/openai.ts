@@ -133,3 +133,56 @@ ${transcriptText}
     throw new Error(`AI response was not valid JSON. Started with: ${snippet}`);
   }
 }
+
+/**
+ * Transcribe audio using OpenAI Whisper.
+ */
+export async function transcribeAudio(
+  audioBase64: string,
+  mimeType: string,
+  customApiKey?: string
+): Promise<string> {
+  const apiKey = customApiKey || process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error("Missing OpenAI API Key");
+  }
+
+  try {
+    // 1. Convert base64 to Blob
+    const byteCharacters = atob(audioBase64);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+      byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    const extension = mimeType.split("/")[1] || "webm";
+    const blob = new Blob([byteArray], { type: mimeType });
+
+    // 2. Prepare FormData
+    const formData = new FormData();
+    formData.append("file", blob, `recording.${extension}`);
+    formData.append("model", "whisper-1");
+    formData.append("language", "en");
+
+    // 3. Call OpenAI Transcriptions API
+    const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorData = await response.text();
+      throw new Error(`OpenAI Transcription Error: ${response.status} - ${errorData}`);
+    }
+
+    const data = await response.json();
+    return data.text || "";
+
+  } catch (error: any) {
+    console.error("❌ OpenAI Whisper error:", error.message);
+    throw error;
+  }
+}

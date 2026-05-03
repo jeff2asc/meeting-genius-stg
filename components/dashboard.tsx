@@ -1,15 +1,17 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { ChevronDown, User, Plus, Search, Calendar, FileText, Eye, Play, Edit2, CheckSquare, Trash2 } from "lucide-react"
+import { ChevronDown, User, Plus, Search, Calendar, FileText, Eye, Play, Edit2, CheckSquare, Trash2, Wrench, AlertTriangle, RefreshCw } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { supabase, getCurrentUser } from "@/lib/supabase"
 import { apiClient } from "@/lib/api-client"
 import { formatUtcToLocalShort } from "@/lib/timezone"
+import { toast } from "sonner"
 import EditMeetingModal from "./EditMeetingModal"
 import TaskDetailsModal from "./TaskDetailsModal"
 import { isMaster as checkIsMaster, isCorporateAdmin as checkIsCorporateAdmin, isPropertyManager as checkIsPropertyManager } from "@/lib/permissions"
+import { Badge } from "@/components/ui/badge"
 
 interface DashboardProps {
   onStartMeeting: (meetingId: string) => void
@@ -19,7 +21,7 @@ interface DashboardProps {
   userCanCreateMeeting?: boolean
 }
 
-type Tab = "meetings" | "tasks" | "all"
+type Tab = "meetings" | "tasks" | "all" | "repairs" | "complaints"
 
 export default function Dashboard({
   onStartMeeting,
@@ -51,19 +53,173 @@ export default function Dashboard({
   // NEW: assignee filter state
   const [assigneeFilter, setAssigneeFilter] = useState<string>("All")
 
+  // ⭐ JANUS INTEGRATION STATES
+  const [isJanusIntegrated, setIsJanusIntegrated] = useState(false)
+  const [janusData, setJanusData] = useState<{ repairs: any[], complaints: any[] }>({ repairs: [], complaints: [] })
+  const [isResyncing, setIsResyncing] = useState(false)
+
+  // ⭐ IMPORT TO MEETING STATES
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false)
+  const [selectedTicketToImport, setSelectedTicketToImport] = useState<any>(null)
+  const [targetMeetingId, setTargetMeetingId] = useState<string>("")
+  const [isImporting, setIsImporting] = useState(false)
+
   useEffect(() => {
     console.log('🚀 Dashboard mounted - starting fetchBuildings...')
     fetchBuildings()
     fetchCompanyLogo()
+    fetchJanusData()
   }, [])
+
+  // ⭐ Auto-sync when switching to Janus tab
+  useEffect(() => {
+    if (activeTab === "repairs" || activeTab === "complaints") {
+      fetchJanusData(true)
+    }
+  }, [activeTab])
 
   useEffect(() => {
     if (selectedBuilding) {
       console.log('🔄 Selected building changed:', selectedBuilding)
       fetchMeetings()
       fetchTasks()
+      fetchJanusData()
     }
   }, [selectedBuilding, selectedMeetingType])
+
+  const fetchJanusData = async (forceResync = false) => {
+    const currentUser = getCurrentUser()
+    if (!currentUser) return
+    
+    // Check if integrated
+    const storageKey = `mg_integrations_${currentUser.id}`
+    const installed = typeof window !== 'undefined' ? localStorage.getItem(storageKey) : null
+    const isIntegrated = installed ? JSON.parse(installed).includes("janus") : false
+    setIsJanusIntegrated(isIntegrated)
+    
+    if (!isIntegrated) return
+
+    if (forceResync) setIsResyncing(true)
+    
+    try {
+      const documentedSecret = "meeting-genius-secret-key-2026"
+      
+      // ⭐ Detect environment for Janus connection
+      const isLocal = typeof window !== 'undefined' && window.location.hostname === 'localhost';
+      const JANUS_BASE_URL = isLocal 
+        ? "http://localhost:3001" 
+        : "https://janusapp.meetinggenius.ca";
+      
+      // First, try to fetch from the REAL Janus server API if integrated
+      console.log(`🔌 Attempting to sync with Janus at: ${JANUS_BASE_URL}`);
+      
+      // We'll use our own proxy/sync endpoint but we can also try hitting Janus directly 
+      // if they have a shared endpoint. For now, we'll keep querying our local API 
+      // which I will update to optionally "Pull" from the real Janus.
+      
+      const res = await fetch(`${window.location.origin}/api/janus/v1/sync`, {
+        headers: { "x-api-key": documentedSecret }
+      })
+      if (!res.ok) throw new Error("Could not fetch Janus data")
+      
+      const payload = await res.json()
+      console.log("🔍 [DASHBOARD DEBUG] Raw Janus Payload:", payload);
+      
+      // Filter by building if not "All"
+      let repairs = payload.data?.repairs || []
+      let complaints = payload.data?.complaints || []
+      
+      console.log(`🔍 [DASHBOARD DEBUG] Found ${repairs.length} repairs before filtering.`);
+      
+      if (selectedBuilding !== "All") {
+        const building = buildings.find(b => b.name === selectedBuilding)
+        if (building) {
+          // ⭐ Smart Match: Try to match by ID OR by Building Name string
+          repairs = repairs.filter((r: any) => 
+            r.building_id === building.id || 
+            r.building_name === building.name ||
+            (typeof r.building === 'string' && r.building.includes(building.name))
+          )
+          complaints = complaints.filter((c: any) => 
+            c.building_id === building.id || 
+            c.building_name === building.name ||
+            (typeof c.building === 'string' && c.building.includes(building.name))
+          )
+        }
+      } else {
+        // ⭐ Security Filter: Even for "All", only show tickets that match ONE of our authorized buildings
+        const authorizedBuildingNames = buildings.map(b => b.name);
+        repairs = repairs.filter((r: any) => 
+          authorizedBuildingNames.some(name => 
+            r.building_name === name || (typeof r.building === 'string' && r.building.includes(name))
+          )
+        );
+        complaints = complaints.filter((c: any) => 
+          authorizedBuildingNames.some(name => 
+            c.building_name === name || (typeof c.building === 'string' && c.building.includes(name))
+          )
+        );
+      }
+      
+      setJanusData({ repairs, complaints })
+    } catch (err) {
+      console.error("Janus fetch error:", err)
+    } finally {
+      setIsResyncing(false)
+    }
+  }
+
+  const handleImportToMeeting = async () => {
+    if (!selectedTicketToImport || !targetMeetingId) return
+    setIsImporting(true)
+    
+    try {
+      // 1. Get the sections of the target meeting to find where to put the new topic
+      const { data: sections } = await supabase
+        .from('sections')
+        .select('*')
+        .eq('meeting_id', parseInt(targetMeetingId))
+        .order('order_index', { ascending: false })
+        .limit(1)
+      
+      const sectionId = sections?.[0]?.id || null
+      
+      // 2. Get the last topic order index
+      const { data: topics } = await supabase
+        .from('topics')
+        .select('order_index')
+        .eq('meeting_id', parseInt(targetMeetingId))
+        .order('order_index', { ascending: false })
+        .limit(1)
+      
+      const nextOrder = (topics?.[0]?.order_index || 0) + 1
+      
+      // 3. Create the new topic from the Janus ticket
+      const { error } = await supabase
+        .from('topics')
+        .insert({
+          meeting_id: parseInt(targetMeetingId),
+          section_id: sectionId,
+          title: `[JANUS] ${selectedTicketToImport.title}`,
+          description: selectedTicketToImport.description || `Priority: ${selectedTicketToImport.priority || 'N/A'}. Status: ${selectedTicketToImport.status}. Sync ID: ${selectedTicketToImport.id}`,
+          order_index: nextOrder
+        })
+      
+      if (error) throw error
+      
+      toast.success("Successfully imported to meeting!", {
+        description: "The Janus ticket is now an agenda topic."
+      })
+      setIsImportModalOpen(false)
+      setSelectedTicketToImport(null)
+      setTargetMeetingId("")
+    } catch (err: any) {
+      console.error("Import error:", err)
+      toast.error("Failed to import to meeting", { description: err.message })
+    } finally {
+      setIsImporting(false)
+    }
+  }
 
   const fetchCompanyLogo = async () => {
     try {
@@ -397,18 +553,20 @@ export default function Dashboard({
         break
     }
 
-    const showEdit = userCanCreateMeeting && meeting.status !== "Finalized"
+    const showEdit = userCanCreateMeeting
 
     return (
       <div className="flex items-center gap-2">
-        {primaryButton}
+        <div className="w-[120px] flex-shrink-0">
+          {primaryButton}
+        </div>
         {showEdit && (
-          <>
+          <div className="flex items-center gap-1">
             <Button
               onClick={() => handleEditMeeting(meeting)}
               size="sm"
               variant="ghost"
-              className="hover:bg-muted"
+              className="h-8 w-8 p-0 hover:bg-muted"
               title="Edit Meeting Details"
             >
               <Edit2 className="h-4 w-4" />
@@ -417,12 +575,12 @@ export default function Dashboard({
               onClick={() => setMeetingToDelete(meeting)}
               size="sm"
               variant="ghost"
-              className="hover:bg-red-50 text-red-600 hover:text-red-700"
+              className="h-8 w-8 p-0 hover:bg-red-50 text-red-600 hover:text-red-700"
               title="Delete Meeting"
             >
               <Trash2 className="h-4 w-4" />
             </Button>
-          </>
+          </div>
         )}
       </div>
     )
@@ -616,6 +774,30 @@ export default function Dashboard({
               <FileText className="h-4 w-4 inline mr-2" />
               All
             </button>
+            {isJanusIntegrated && (
+              <>
+                <button
+                  onClick={() => setActiveTab("repairs")}
+                  className={`pb-3 px-1 font-medium text-sm transition-colors ${activeTab === "repairs"
+                      ? "border-b-2 border-primary text-primary"
+                      : "text-muted-foreground hover:text-foreground"
+                    }`}
+                >
+                  <Wrench className="h-4 w-4 inline mr-2" />
+                  Repairs
+                </button>
+                <button
+                  onClick={() => setActiveTab("complaints")}
+                  className={`pb-3 px-1 font-medium text-sm transition-colors ${activeTab === "complaints"
+                      ? "border-b-2 border-primary text-primary"
+                      : "text-muted-foreground hover:text-foreground"
+                    }`}
+                >
+                  <AlertTriangle className="h-4 w-4 inline mr-2" />
+                  Complaints
+                </button>
+              </>
+            )}
           </div>
         </div>
 
@@ -776,10 +958,18 @@ export default function Dashboard({
             <div className="md:hidden p-3 space-y-3">
               {filteredMeetings.length > 0 ? (
                 filteredMeetings.map((meeting) => (
-                  <button
+                  <div
                     key={meeting.id}
-                    className="w-full text-left bg-white dark:bg-card rounded-2xl shadow-sm border border-border p-4 hover:shadow-md active:scale-[0.99] transition-all"
+                    className="w-full text-left bg-white dark:bg-card rounded-2xl shadow-sm border border-border p-4 hover:shadow-md active:scale-[0.99] transition-all cursor-pointer"
                     onClick={() => onStartMeeting(meeting.id)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        onStartMeeting(meeting.id);
+                      }
+                    }}
                   >
                     <div className="flex justify-between items-start gap-3">
                       <div className="flex items-start gap-3 min-w-0">
@@ -814,7 +1004,7 @@ export default function Dashboard({
                       </div>
 
                       <div className="flex items-center gap-1">
-                        {userCanCreateMeeting && meeting.status !== "Finalized" && (
+                        {userCanCreateMeeting && (
                           <>
                             <Button
                               onClick={(e) => {
@@ -844,7 +1034,7 @@ export default function Dashboard({
                         )}
                       </div>
                     </div>
-                  </button>
+                  </div>
                 ))
               ) : (
                 <div className="py-12 text-center">
@@ -1036,6 +1226,128 @@ export default function Dashboard({
             </div>
           </Card>
         )}
+
+        {activeTab === "repairs" && (
+          <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-500">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
+                <Wrench className="h-5 w-5 text-primary" />
+                Repairs
+              </h3>
+              {isResyncing && (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground animate-pulse">
+                  <RefreshCw className="h-3 w-3 animate-spin" />
+                  Syncing with Janus...
+                </div>
+              )}
+            </div>
+            
+            {janusData.repairs.length === 0 ? (
+              <Card className="p-20 text-center border-dashed bg-muted/20 rounded-3xl">
+                <Wrench className="h-12 w-12 text-muted-foreground/20 mx-auto mb-4" />
+                <p className="text-muted-foreground font-medium">No active Janus repair tickets found for this building.</p>
+              </Card>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {janusData.repairs
+                  .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+                  .map((ticket: any) => (
+                    <Card key={`repair-${ticket.id}`} className="group relative overflow-hidden p-5 rounded-2xl border-border/50 hover:border-primary/50 hover:shadow-xl hover:shadow-primary/5 transition-all duration-500 bg-card/50 backdrop-blur-sm flex flex-col h-full min-h-[180px]">
+                      <div className="absolute top-0 left-0 w-1 h-full bg-primary" />
+                      <div className="flex items-center justify-between mb-3">
+                        <Badge variant="secondary" className="text-[10px] uppercase font-black tracking-wider bg-primary/10 text-primary">
+                          {ticket.priority || 'MEDIUM'} PRIORITY
+                        </Badge>
+                        <Badge variant="outline" className="text-[10px] uppercase font-black bg-background/50">
+                          repair
+                        </Badge>
+                      </div>
+                      <h4 className="text-base font-bold text-foreground mb-2 line-clamp-2">{ticket.title}</h4>
+                      {ticket.description && (
+                        <p className="text-xs text-muted-foreground line-clamp-2 italic mb-4">"{ticket.description}"</p>
+                      )}
+                      <div className="flex items-center justify-between mt-auto pt-4 border-t border-border">
+                        <span className="text-[10px] font-mono text-muted-foreground">#REP-{ticket.id}</span>
+                        <Button 
+                          size="sm" 
+                          variant="ghost" 
+                          className="h-7 text-[10px] gap-1 text-primary hover:bg-primary/10"
+                          onClick={() => {
+                            setSelectedTicketToImport({...ticket, _type: 'repair'})
+                            setIsImportModalOpen(true)
+                          }}
+                        >
+                          <Plus className="h-3 w-3" />
+                          Import to Meeting
+                        </Button>
+                      </div>
+                    </Card>
+                  ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === "complaints" && (
+          <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-500">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-amber-500" />
+                Complaints
+              </h3>
+              {isResyncing && (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground animate-pulse">
+                  <RefreshCw className="h-3 w-3 animate-spin" />
+                  Syncing with Janus...
+                </div>
+              )}
+            </div>
+            
+            {janusData.complaints.length === 0 ? (
+              <Card className="p-20 text-center border-dashed bg-muted/20 rounded-3xl">
+                <AlertTriangle className="h-12 w-12 text-muted-foreground/20 mx-auto mb-4" />
+                <p className="text-muted-foreground font-medium">No active Janus complaint tickets found for this building.</p>
+              </Card>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {janusData.complaints
+                  .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+                  .map((ticket: any) => (
+                    <Card key={`complaint-${ticket.id}`} className="group relative overflow-hidden p-5 rounded-2xl border-border/50 hover:border-amber-500/50 hover:shadow-xl hover:shadow-amber-500/5 transition-all duration-500 bg-card/50 backdrop-blur-sm flex flex-col h-full min-h-[180px]">
+                      <div className="absolute top-0 left-0 w-1 h-full bg-amber-500" />
+                      <div className="flex items-center justify-between mb-3">
+                        <Badge variant="secondary" className="text-[10px] uppercase font-black tracking-wider bg-amber-100 text-amber-700">
+                          {ticket.priority || 'MEDIUM'} PRIORITY
+                        </Badge>
+                        <Badge variant="outline" className="text-[10px] uppercase font-black bg-background/50">
+                          complaint
+                        </Badge>
+                      </div>
+                      <h4 className="text-base font-bold text-foreground mb-2 line-clamp-2">{ticket.title}</h4>
+                      {ticket.description && (
+                        <p className="text-xs text-muted-foreground line-clamp-2 italic mb-4">"{ticket.description}"</p>
+                      )}
+                      <div className="flex items-center justify-between mt-auto pt-4 border-t border-border">
+                        <span className="text-[10px] font-mono text-muted-foreground">#COM-{ticket.id}</span>
+                        <Button 
+                          size="sm" 
+                          variant="ghost" 
+                          className="h-7 text-[10px] gap-1 text-amber-600 hover:bg-amber-50"
+                          onClick={() => {
+                            setSelectedTicketToImport({...ticket, _type: 'complaint'})
+                            setIsImportModalOpen(true)
+                          }}
+                        >
+                          <Plus className="h-3 w-3" />
+                          Import to Meeting
+                        </Button>
+                      </div>
+                    </Card>
+                  ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {showEditMeetingModal && selectedMeeting && (
@@ -1061,6 +1373,71 @@ export default function Dashboard({
             strata_plan_number: selectedMeeting.strata_plan_number,
           }}
         />
+      )}
+
+      {isImportModalOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
+          <Card className="w-full max-w-md p-6 rounded-2xl shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="h-10 w-10 bg-primary/10 rounded-full flex items-center justify-center">
+                <Plus className="h-6 w-6 text-primary" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-foreground">Import to Meeting</h3>
+                <p className="text-xs text-muted-foreground">Add this Janus ticket to an agenda.</p>
+              </div>
+            </div>
+
+            <div className="space-y-4 my-6">
+              <div className="p-3 bg-muted rounded-lg border border-border">
+                <p className="text-[10px] font-black uppercase text-muted-foreground mb-1">Ticket Title</p>
+                <p className="text-sm font-bold text-foreground">{selectedTicketToImport?.title}</p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase text-muted-foreground">Select Target Meeting</label>
+                <select 
+                  className="w-full h-10 px-3 bg-background border border-border rounded-lg text-sm outline-none focus:ring-2 focus:ring-primary/20"
+                  value={targetMeetingId}
+                  onChange={(e) => setTargetMeetingId(e.target.value)}
+                >
+                  <option value="">-- Choose an upcoming meeting --</option>
+                  {meetings
+                    .filter(m => m.status !== 'Finalized')
+                    .map(m => (
+                      <option key={m.id} value={m.id}>
+                        {m.title} ({new Date(m.meeting_date).toLocaleDateString()})
+                      </option>
+                    ))}
+                </select>
+                {meetings.filter(m => m.status !== 'Finalized').length === 0 && (
+                  <p className="text-[10px] text-red-500 italic">No upcoming meetings found for this building.</p>
+                )}
+              </div>
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <Button 
+                variant="outline" 
+                className="flex-1" 
+                onClick={() => {
+                  setIsImportModalOpen(false)
+                  setSelectedTicketToImport(null)
+                  setTargetMeetingId("")
+                }}
+              >
+                Cancel
+              </Button>
+              <Button 
+                className="flex-1" 
+                disabled={!targetMeetingId || isImporting}
+                onClick={handleImportToMeeting}
+              >
+                {isImporting ? "Importing..." : "Add to Agenda"}
+              </Button>
+            </div>
+          </Card>
+        </div>
       )}
 
       {meetingToDelete && (

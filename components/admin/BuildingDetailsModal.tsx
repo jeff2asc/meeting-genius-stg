@@ -16,6 +16,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { supabase } from "@/lib/supabase"
+import { triggerJanusResync } from "@/lib/janus"
 import { toast } from "sonner"
 import ImportUsersModal from "./ImportUsersModal"
 
@@ -403,6 +404,10 @@ export default function BuildingDetailsModal({
       }
 
       toast.success("Building settings updated successfully!")
+      
+      // 🔄 Notify Janus for real-time sync
+      triggerJanusResync('building_updated')
+      
       await onSuccess()
       onClose()
     } catch (err) {

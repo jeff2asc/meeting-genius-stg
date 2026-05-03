@@ -5,6 +5,7 @@ import { X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { supabase } from "@/lib/supabase"
+import { triggerJanusResync } from "@/lib/janus"
 
 interface Building {
   id: number
@@ -112,6 +113,9 @@ export default function EditBuildingModal({
       }
 
       console.log('✅ Building updated successfully')
+      
+      // 🔄 Notify Janus for real-time sync
+      triggerJanusResync('building_updated')
 
       onSuccess()
       onClose()
