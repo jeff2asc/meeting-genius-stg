@@ -1,3 +1,4 @@
+import "@/lib/polyfill";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase";
 import { extractTasksFromTranscript } from "@/lib/ai";

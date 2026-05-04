@@ -1,3 +1,4 @@
+import "@/lib/polyfill";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 export async function transcribeAudio(

@@ -1,3 +1,4 @@
+import "@/lib/polyfill";
 import { extractTasksFromTranscript as googleGeminiExtract, transcribeAudio as googleGeminiTranscribe } from "./gemini";
 import { extractTasksFromTranscriptOllama as customOllamaExtract, transcribeAudioOllama } from "./ollama";
 import { extractTasksFromTranscript as openaiExtract, transcribeAudio as openaiTranscribe } from "./openai";
