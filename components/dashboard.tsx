@@ -108,7 +108,7 @@ export default function Dashboard({
       const isLocal = typeof window !== 'undefined' && window.location.hostname === 'localhost';
       const JANUS_BASE_URL = isLocal 
         ? "http://localhost:3001" 
-        : "https://janusapp.meetinggenius.ca";
+        : "https://ca.meetinggenius.ca";
       
       // First, try to fetch from the REAL Janus server API if integrated
       console.log(`🔌 Attempting to sync with Janus at: ${JANUS_BASE_URL}`);
