@@ -467,6 +467,9 @@ export default function CompanyDetailsModal({
         return
       }
 
+      // 🔄 Notify Janus for real-time sync
+      triggerJanusResync('building_deleted')
+
       await fetchCompanyData()
     } catch (err) {
       console.error("Unexpected error:", err)
@@ -700,6 +703,9 @@ export default function CompanyDetailsModal({
         alert("Failed to delete user")
         return
       }
+
+      // 🔄 Notify Janus for real-time sync
+      triggerJanusResync('user_deleted')
 
       await fetchCompanyData()
       await fetchPropertyManagers()

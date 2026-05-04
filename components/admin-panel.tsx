@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { getCurrentUser, Company } from "@/lib/supabase"
 import { supabase } from "@/lib/supabase"
 import { canManageCompanies, shouldFilterByCompany, isMaster as checkIsMaster, isCorporateAdmin as checkIsCorporateAdmin, isPropertyManager as checkIsPropertyManager } from "@/lib/permissions"
+import { triggerJanusResync } from "@/lib/janus"
 
 // Import all the separated components
 import CreateUserModal from "./admin/CreateUserModal"
@@ -147,6 +148,9 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
         alert("Failed to delete user")
         return
       }
+
+      // 🔄 Notify Janus for real-time sync
+      triggerJanusResync('user_deleted')
 
       await fetchUsers()
     } catch (err) {
@@ -406,26 +410,31 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
   const handleCreateUserSuccess = () => {
     fetchUsers()
     fetchPropertyManagers()
+    triggerJanusResync('user_created')
   }
 
   const handleCreateBuildingSuccess = () => {
     fetchBuildings()
     fetchUsers()
+    triggerJanusResync('building_created')
   }
 
   const handleBuildingDetailsSuccess = () => {
     setSelectedBuilding(null)
     fetchBuildings()
     fetchUsers()
+    triggerJanusResync('building_updated')
   }
 
   const handleCreateCompanySuccess = () => {
     fetchCompanies()
+    triggerJanusResync('company_created')
   }
 
   const handleEditCompanySuccess = () => {
     fetchCompanies()
     setSelectedCompany(null)
+    triggerJanusResync('company_updated')
   }
 
   const handleDeleteCompany = async (company: Company) => {
@@ -459,6 +468,9 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
         alert("Failed to delete company")
         return
       }
+
+      // 🔄 Notify Janus for real-time sync
+      triggerJanusResync('company_deleted')
 
       fetchCompanies()
       fetchUsers()

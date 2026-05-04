@@ -18,7 +18,7 @@ const JANUS_SYNC_ENDPOINT = "/api/janus/v1/sync"
 export async function triggerJanusResync(reason = "entity_change"): Promise<void> {
   try {
     // Push a resync signal to Janus
-    await fetch(`${JANUS_API_BASE}${JANUS_SYNC_ENDPOINT}`, {
+    const response = await fetch(`${JANUS_API_BASE}${JANUS_SYNC_ENDPOINT}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -31,7 +31,11 @@ export async function triggerJanusResync(reason = "entity_change"): Promise<void
       }),
     })
 
-    console.log(`✅ [Janus] Resync triggered — reason: ${reason}`)
+    if (response.ok) {
+      const result = await response.json()
+      console.log(`✅ [Janus] Resync triggered — reason: ${reason}`, result.summary)
+      return result.janus_data
+    }
   } catch (err) {
     // Never crash the main flow — just log
     console.warn("⚠️ [Janus] Resync notification failed (non-critical):", err)

@@ -326,6 +326,17 @@ export default function Home() {
               </DropdownMenuItem>
             )}
 
+            <DropdownMenuItem
+              onClick={() => {
+                const JANUS_URL = process.env.NEXT_PUBLIC_JANUS_API_URL || "https://janusapp.meetinggenius.ca";
+                window.open(`${JANUS_URL}/login?email=${encodeURIComponent(currentUser.email)}&bridge_token=meeting-genius-secret-key-2026`, '_blank');
+              }}
+              className="cursor-pointer text-emerald-600 focus:text-emerald-700 focus:bg-emerald-50"
+            >
+              <Key className="mr-2 h-4 w-4" />
+              <span>Login to Janus</span>
+            </DropdownMenuItem>
+
             <DropdownMenuSeparator />
 
             <DropdownMenuItem

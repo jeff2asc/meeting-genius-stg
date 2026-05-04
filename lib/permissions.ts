@@ -94,10 +94,10 @@ export const canAccessAdmin = (user: UserRolesInput): boolean => {
 
 /**
  * Can this user type access the Integrations Page?
- * Restricted to Master and Corporate Administrators
+ * Updated to allow ANY account type as requested.
  */
 export const canAccessIntegrations = (user: UserRolesInput): boolean => {
-  return hasAnyRole(user, ["corporate_administrator"])
+  return true; // Any account can do integration
 }
 
 /**
