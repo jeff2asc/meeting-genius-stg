@@ -5,7 +5,7 @@
  * whenever users, buildings, or companies are created/updated.
  */
 
-const JANUS_API_BASE = process.env.NEXT_PUBLIC_JANUS_API_URL || "https://ca.meetinggenius.ca"
+const JANUS_API_BASE = process.env.NEXT_PUBLIC_JANUS_API_URL || "https://janusapp.meetinggenius.ca"
 const JANUS_API_KEY  = process.env.NEXT_PUBLIC_JANUS_API_KEY  || "meeting-genius-secret-key-2026"
 const JANUS_SYNC_ENDPOINT = "/api/janus/v1/sync"
 

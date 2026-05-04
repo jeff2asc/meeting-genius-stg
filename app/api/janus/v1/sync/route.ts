@@ -147,8 +147,7 @@ export async function GET(req: NextRequest) {
  */
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json().catch(() => ({}));
-    const { action } = body;
+    const { action } = await req.json()
     
     if (action === "handshake") {
       return NextResponse.json({ 
@@ -157,17 +156,9 @@ export async function POST(req: NextRequest) {
         capabilities: ["sync_entities", "email_notifications", "transcript_export"]
       })
     }
-
-    if (action === "sync" || !action) {
-      return NextResponse.json({ 
-        success: true, 
-        message: "Sync request acknowledged." 
-      })
-    }
     
-    return NextResponse.json({ error: "Invalid action", received: action }, { status: 400 })
+    return NextResponse.json({ error: "Invalid action" }, { status: 400 })
   } catch (err) {
-    console.error("POST Sync Error:", err);
     return NextResponse.json({ error: "Bad Request" }, { status: 400 })
   }
 }
