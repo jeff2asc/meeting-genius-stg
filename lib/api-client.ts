@@ -43,11 +43,12 @@ async function fetchApi<T>(
 export const apiClient = {
   v1: {
     buildings: {
-      list: async (filters?: { company_id?: number; manager_id?: number }): Promise<any[]> => {
+      list: async (filters?: { company_id?: number; manager_id?: number; building_ids?: number[] }): Promise<any[]> => {
         let url = '/v1/buildings'
         const params = new URLSearchParams()
         if (filters?.company_id) params.append('company_id', String(filters.company_id))
         if (filters?.manager_id) params.append('manager_id', String(filters.manager_id))
+        if (filters?.building_ids) params.append('building_ids', filters.building_ids.join(','))
         
         const queryString = params.toString()
         if (queryString) url += `?${queryString}`

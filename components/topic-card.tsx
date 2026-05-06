@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
-import { ChevronDown, FileText, CheckSquare, Scale, Paperclip, Edit2, Trash2, X, Check, Sparkles, Loader2, Plus, Upload, Download, CornerDownRight, Lock, Unlock, Globe, Archive, ArrowUpCircle } from "lucide-react"
+import { ChevronDown, FileText, CheckSquare, Scale, Paperclip, Edit2, Trash2, X, Check, Sparkles, Loader2, Plus, Upload, Download, CornerDownRight, Lock, Unlock, Globe, Archive, ArrowUpCircle, Clock } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { supabase, getCurrentUser } from "@/lib/supabase"
@@ -62,9 +62,12 @@ interface Topic {
   is_incamera?: boolean
   incamera_start_time?: string | null
   incamera_end_time?: string | null
+  // ⭐ NEW: Time allocation (minutes) for agenda PDF
+  time_per_topic?: number | null
   created_by_name?: string | null
   updated_by_name?: string | null
   is_archived?: boolean
+  rolled_over_from_topic_id?: number | null
 }
 
 interface HistoryItem {
@@ -158,6 +161,9 @@ export default function TopicCard({
   const [isIncamera, setIsIncamera] = useState(topic.is_incamera || false)
   const [incameraStartTime, setIncameraStartTime] = useState(topic.incamera_start_time || "")
   const [incameraEndTime, setIncameraEndTime] = useState(topic.incamera_end_time || "")
+  // ⭐ NEW: Time allocation per topic (minutes)
+  const [timePerTopic, setTimePerTopic] = useState<number | string>(topic.time_per_topic ?? "")
+  const [savingTime, setSavingTime] = useState(false)
 
   const debouncedDescription = useDebounce(editedDescription, 3000)
 
@@ -197,7 +203,8 @@ export default function TopicCard({
     setIsIncamera(topic.is_incamera || false)
     setIncameraStartTime(topic.incamera_start_time || "")
     setIncameraEndTime(topic.incamera_end_time || "")
-  }, [topic.description, topic.title, topic.is_incamera, topic.incamera_start_time, topic.incamera_end_time])
+    setTimePerTopic(topic.time_per_topic ?? "")
+  }, [topic.description, topic.title, topic.is_incamera, topic.incamera_start_time, topic.incamera_end_time, topic.time_per_topic])
 
   const handleIncameraToggle = async () => {
     if (isReadOnly) {
@@ -220,6 +227,31 @@ export default function TopicCard({
     }
 
     toast.success(newValue ? '🔒 Topic marked as In-Camera' : '🔓 In-Camera removed')
+  }
+
+  // ⭐ NEW: Save time_per_topic to Supabase
+  const handleTimePerTopicSave = async (value: string) => {
+    if (isReadOnly) return
+    const parsed = value === "" ? null : parseInt(value, 10)
+    if (parsed !== null && (isNaN(parsed) || parsed < 0)) return
+    setSavingTime(true)
+    try {
+      const { error } = await supabase
+        .from('topics')
+        .update({ time_per_topic: parsed })
+        .eq('id', topic.id)
+      if (error) {
+        console.error('Error saving time_per_topic:', error)
+        toast.error('Failed to save time allocation')
+      } else {
+        toast.success('Time allocation saved')
+        onUpdate({ time_per_topic: parsed } as any)
+      }
+    } catch (err) {
+      console.error('Unexpected error:', err)
+    } finally {
+      setSavingTime(false)
+    }
   }
 
   const handleTimeUpdate = async (field: 'start' | 'end', value: string) => {
@@ -334,7 +366,7 @@ export default function TopicCard({
       const { data, error } = await supabase
         .from('decisions')
         .select('*')
-        .eq('topic_id', topic.id)
+        .or(`topic_id.eq.${topic.id}${topic.rolled_over_from_topic_id ? `,topic_id.eq.${topic.rolled_over_from_topic_id}` : ''}`)
         .order('recorded_at', { ascending: false })
 
       if (error) {
@@ -543,14 +575,15 @@ export default function TopicCard({
       const building = meetingData?.buildings
       setBuildingData(building)
 
-      // 1. Only fetch items for the current topic since rollover now clones them
+      // 1. Fetch items for current topic and original source topic
       const topicIds = [topic.id]
+      if (topic.rolled_over_from_topic_id) topicIds.push(topic.rolled_over_from_topic_id)
 
       // 2. Fetch notes
       const { data: notes } = await supabase
         .from('notes')
-        .select('id, content, created_at, created_by, visibility, status')
-        .eq('topic_id', topic.id)
+        .select('id, content, created_at, created_by, visibility, status, topic_id')
+        .in('topic_id', topicIds)
         .order('created_at', { ascending: false })
 
       if (notes) {
@@ -566,13 +599,14 @@ export default function TopicCard({
           }
 
           if (canSee) {
+            const isHistorical = note.topic_id === topic.rolled_over_from_topic_id
             historyItems.push({
               id: note.id,
               type: 'note',
-              content: note.content.substring(0, 100) + (note.content.length > 100 ? '...' : ''),
+              content: (isHistorical ? '[HISTORICAL] ' : '') + note.content.substring(0, 100) + (note.content.length > 100 ? '...' : ''),
               timestamp: formatUtcToLocalDateTime(note.created_at),
               visibility: (note.visibility as "public" | "private") || "public",
-              status: note.status || 'open'
+              status: isHistorical ? 'historical' : (note.status || 'open')
             })
           }
         })
@@ -581,21 +615,22 @@ export default function TopicCard({
       // 3. Fetch tasks
       const { data: tasks } = await supabase
         .from('tasks')
-        .select('id, description, assigned_name, assigned_email, status, created_at')
-        .eq('topic_id', topic.id)
+        .select('id, description, assigned_name, assigned_email, status, created_at, topic_id')
+        .in('topic_id', topicIds)
         .in('status', ['open', 'in_progress', 'completed'])
         .order('created_at', { ascending: false })
 
       if (tasks) {
         tasks.forEach(task => {
+          const isHistorical = task.topic_id === topic.rolled_over_from_topic_id
           const assignee = task.assigned_name || task.assigned_email || 'Unassigned'
           historyItems.push({
             id: task.id,
             type: 'task',
-            content: task.description.substring(0, 100) + (task.description.length > 100 ? '...' : ''),
+            content: (isHistorical ? '[HISTORICAL] ' : '') + task.description.substring(0, 100) + (task.description.length > 100 ? '...' : ''),
             timestamp: formatUtcToLocalDateTime(task.created_at),
             details: `Assigned to: ${assignee} · Status: ${task.status}`,
-            status: task.status
+            status: isHistorical ? 'historical' : task.status
           })
         })
       }
@@ -846,7 +881,8 @@ export default function TopicCard({
     setShowDeleteConfirm(false)
   }
 
-  const getHistoryBadgeColor = (type: string) => {
+  const getHistoryBadgeColor = (type: string, status?: string) => {
+    if (status === 'historical') return 'bg-amber-100 text-amber-800 border-amber-200'
     switch (type) {
       case 'note': return 'bg-note-blue/10 text-note-blue border-note-blue/20'
       case 'task': return 'bg-task-green/10 text-task-green border-task-green/20'
@@ -870,8 +906,8 @@ export default function TopicCard({
 
           <div className="flex-1">
             <div className="flex gap-2 items-center mb-1">
-              <span className="text-xs font-medium px-2 py-0.5 rounded border bg-decision-purple/10 text-decision-purple border-decision-purple/20">
-                DECISION {depth > 0 && '(THREADED)'}
+              <span className={`text-xs font-medium px-2 py-0.5 rounded border ${decision.topic_id === topic.rolled_over_from_topic_id ? 'bg-amber-100 text-amber-800 border-amber-200' : 'bg-decision-purple/10 text-decision-purple border-decision-purple/20'}`}>
+                {decision.topic_id === topic.rolled_over_from_topic_id ? 'HISTORICAL DECISION' : 'DECISION'} {depth > 0 && '(THREADED)'}
               </span>
               <span className="text-xs text-muted-foreground">
                 {formatUtcToLocalDateTime(decision.recorded_at)}
@@ -892,7 +928,7 @@ export default function TopicCard({
 
           {/* ⭐ UPDATED: Action Buttons with DELETE */}
           {!isReadOnly && (
-            <div className="grid grid-cols-3 gap-2 mt-2">
+            <div className="flex flex-wrap gap-1.5 mt-2">
               <Button
                 size="sm"
                 variant="outline"
@@ -902,7 +938,7 @@ export default function TopicCard({
                     onEditDecision(decision.id, topic.id)
                   }
                 }}
-                className="text-purple-600 border-purple-600 hover:bg-purple-50"
+                className="h-7 px-2 text-[10px] flex-1 min-w-[60px] text-purple-600 border-purple-600 hover:bg-purple-50"
               >
                 <Edit2 className="h-3 w-3 mr-1" />
                 Edit
@@ -916,7 +952,7 @@ export default function TopicCard({
                     onAddThreadedDecision(decision.id, topic.id)
                   }
                 }}
-                className="text-purple-600 border-purple-600 hover:bg-purple-50"
+                className="h-7 px-2 text-[10px] flex-1 min-w-[70px] text-purple-600 border-purple-600 hover:bg-purple-50"
               >
                 <Plus className="h-3 w-3 mr-1" />
                 Thread
@@ -925,7 +961,7 @@ export default function TopicCard({
                 size="sm"
                 variant="outline"
                 onClick={() => handleDeleteDecision(decision.id)}
-                className="text-red-600 border-red-600 hover:bg-red-50"
+                className="h-7 px-2 text-[10px] flex-1 min-w-[70px] text-red-600 border-red-600 hover:bg-red-50"
               >
                 <Trash2 className="h-3 w-3 mr-1" />
                 Delete
@@ -947,98 +983,127 @@ export default function TopicCard({
     <>
       <Card className="border-0 bg-card shadow-md overflow-hidden mb-1">
         <div className={`border-b border-border p-2 ${isIncamera ? 'bg-gradient-to-r from-red-50 to-orange-50' : 'bg-gradient-to-r from-primary/5 to-decision-purple/5'}`}>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3 flex-1">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0 flex-1">
               <button
                 onClick={() => setIsExpanded(!isExpanded)}
-                className="flex h-8 w-8 items-center justify-center rounded hover:bg-muted transition-colors"
+                className="flex h-7 w-7 items-center justify-center rounded hover:bg-muted transition-colors flex-shrink-0"
               >
-                <ChevronDown className={`h-5 w-5 transition-transform ${isExpanded ? "" : "-rotate-90"}`} />
+                <ChevronDown className={`h-4 w-4 transition-transform ${isExpanded ? "" : "-rotate-90"}`} />
               </button>
-              <span className="text-sm font-semibold text-muted-foreground">Topic {topicNumber}</span>
+              
+              <div className="flex flex-col min-w-0 flex-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[10px] sm:text-xs font-semibold text-muted-foreground whitespace-nowrap">Topic {topicNumber}</span>
+                  {isIncamera && (
+                    <span className="flex items-center gap-1 px-1.5 py-0.5 bg-red-100 text-red-700 border border-red-300 rounded text-[9px] font-semibold">
+                      <Lock className="h-2.5 w-2.5" />
+                      IN-CAMERA
+                    </span>
+                  )}
+                  {/* ⭐ NEW: Time allocation badge/input */}
+                  {!isReadOnly ? (
+                    <span className="flex items-center gap-1">
+                      <Clock className="h-2.5 w-2.5 text-muted-foreground" />
+                      <input
+                        type="number"
+                        min="0"
+                        max="999"
+                        value={timePerTopic}
+                        onChange={(e) => setTimePerTopic(e.target.value)}
+                        onBlur={(e) => handleTimePerTopicSave(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { (e.target as HTMLInputElement).blur() } }}
+                        placeholder="min"
+                        title="Time allocated for this topic (minutes)"
+                        className="w-12 px-1 py-0 text-[10px] border border-border rounded bg-background focus:outline-none focus:ring-1 focus:ring-primary text-center"
+                        disabled={savingTime}
+                      />
+                      <span className="text-[9px] text-muted-foreground">min</span>
+                    </span>
+                  ) : (timePerTopic !== "" && timePerTopic !== null) && (
+                    <span className="flex items-center gap-1 px-1.5 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded text-[9px] font-semibold">
+                      <Clock className="h-2.5 w-2.5" />
+                      {timePerTopic} min
+                    </span>
+                  )}
+                </div>
 
-              {isIncamera && (
-                <span className="flex items-center gap-1 px-2 py-1 bg-red-100 text-red-700 border border-red-300 rounded text-xs font-semibold">
-                  <Lock className="h-3 w-3" />
-                  IN-CAMERA
-                </span>
-              )}
-
-              {isEditingTitle ? (
-                <input
-                  ref={titleInputRef}
-                  value={editedTitle}
-                  onChange={handleTitleChange}
-                  onKeyDown={handleTitleKeyDown}
-                  className="flex-1 bg-background px-2 py-1 rounded border border-primary text-foreground font-semibold focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  placeholder="Topic title..."
-                  autoFocus
-                  disabled={isReadOnly}
-                />
-              ) : (
-                <h3 className="flex-1 font-semibold text-foreground">
-                  {topic.title}
-                </h3>
-              )}
+                {isEditingTitle ? (
+                  <input
+                    ref={titleInputRef}
+                    value={editedTitle}
+                    onChange={handleTitleChange}
+                    onKeyDown={handleTitleKeyDown}
+                    className="w-full bg-background px-2 py-1 rounded border border-primary text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-primary/50"
+                    placeholder="Topic title..."
+                    autoFocus
+                    disabled={isReadOnly}
+                  />
+                ) : (
+                  <h3 className="font-semibold text-foreground text-sm sm:text-base truncate">
+                    {topic.title}
+                  </h3>
+                )}
+              </div>
             </div>
 
-            <div className="flex items-center gap-1 sm:gap-2">
+            <div className="flex items-center gap-1.5 flex-shrink-0 self-end sm:self-center">
               {!isReadOnly && isMeetingStarted && (
                 <button
                   onClick={handleIncameraToggle}
-                  className={`flex items-center gap-1 px-2 sm:px-3 py-1 sm:py-1.5 text-[10px] sm:text-xs font-medium rounded transition-all border-2 ${isIncamera
+                  className={`flex items-center gap-1 px-2 py-1 text-[10px] sm:text-xs font-medium rounded transition-all border-2 ${isIncamera
                     ? 'bg-red-50 border-red-300 text-red-700 hover:bg-red-100'
                     : 'bg-muted hover:bg-muted/80 border-border hover:border-red-300'
                     }`}
                   title={isIncamera ? "Remove In-Camera status" : "Mark as In-Camera (Confidential)"}
                 >
-                  {isIncamera ? <Lock className="h-3 w-3 sm:h-4 sm:w-4" /> : <Unlock className="h-3 w-3 sm:h-4 sm:w-4" />}
+                  {isIncamera ? <Lock className="h-3 w-3" /> : <Unlock className="h-3 w-3" />}
                   <span className="hidden xs:inline">{isIncamera ? 'In-Camera' : 'Mark In-Camera'}</span>
                 </button>
               )}
 
               <button
                 onClick={() => setShowAttachments(!showAttachments)}
-                className="flex items-center gap-1 px-2 sm:px-3 py-1 sm:py-1.5 text-[10px] sm:text-xs font-medium bg-muted hover:bg-muted/80 rounded transition-colors"
+                className="flex items-center gap-1 px-2 py-1 text-[10px] sm:text-xs font-medium bg-muted hover:bg-muted/80 rounded transition-colors"
                 title="View attachments"
               >
-                <Paperclip className="h-3 w-3 sm:h-4 sm:w-4" />
+                <Paperclip className="h-3 w-3" />
                 {attachments.length}
               </button>
 
               {isReadOnly && onRestore && (
                 <button
                   onClick={handleRestoreTopic}
-                  className="flex items-center gap-1 px-2 sm:px-3 py-1 sm:py-1.5 text-[10px] sm:text-xs font-medium bg-amber-100/50 text-amber-800 hover:bg-amber-100 rounded transition-colors border border-amber-200/50 shadow-sm"
+                  className="flex items-center gap-1 px-2 py-1 text-[10px] sm:text-xs font-medium bg-amber-100/50 text-amber-800 hover:bg-amber-100 rounded transition-colors border border-amber-200/50 shadow-sm"
                   title="Restore to active agenda"
                 >
-                  <ArrowUpCircle className="h-3 w-3 sm:h-4 sm:w-4" />
+                  <ArrowUpCircle className="h-3 w-3" />
                   <span className="hidden xs:inline">Restore</span>
                 </button>
               )}
 
               {!isEditingTitle && !isReadOnly && (
-                <div className="flex items-center gap-0.5 sm:gap-1">
+                <div className="flex items-center gap-0.5">
                   <button
                     onClick={handleEditTitle}
-                    className="flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded hover:bg-muted transition-colors text-primary"
+                    className="flex h-7 w-7 items-center justify-center rounded hover:bg-muted transition-colors text-primary"
                     title="Edit title"
                   >
-                    <Edit2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                    <Edit2 className="h-3.5 w-3.5" />
                   </button>
                   <button
                     onClick={handleArchive}
-                    className="flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded hover:bg-muted transition-colors text-amber-600"
+                    className="flex h-7 w-7 items-center justify-center rounded hover:bg-muted transition-colors text-amber-600"
                     title="Move to Topic Bank (Archive)"
                   >
-                    <Archive className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                    <Archive className="h-3.5 w-3.5" />
                   </button>
                   <button
                     onClick={() => setShowDeleteConfirm(true)}
-                    className="flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded hover:bg-muted transition-colors text-destructive"
+                    className="flex h-7 w-7 items-center justify-center rounded hover:bg-muted transition-colors text-destructive"
                     title="Delete topic"
                   >
-                    <Trash2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                    <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 </div>
               )}
@@ -1267,30 +1332,30 @@ export default function TopicCard({
             </div>
 
             {!isReadOnly && (
-              <div className="flex gap-1 sm:gap-2 border-b border-border bg-muted/30 p-1 sm:p-2">
+              <div className="flex flex-wrap gap-1.5 border-b border-border bg-muted/30 p-2">
                 <Button 
                   size="sm" 
-                  className="flex-1 bg-note-blue text-white hover:bg-note-blue/90 text-[10px] sm:text-xs h-8 sm:h-9 px-1 sm:px-3" 
+                  className="flex-1 min-w-[70px] bg-note-blue text-white hover:bg-note-blue/90 text-xs h-8 px-2" 
                   onClick={onNoteClick}
                 >
-                  <FileText className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
-                  <span className="truncate">Note</span>
+                  <FileText className="h-3.5 w-3.5 mr-1.5" />
+                  Note
                 </Button>
                 <Button 
                   size="sm" 
-                  className="flex-1 bg-task-green text-white hover:bg-task-green/90 text-[10px] sm:text-xs h-8 sm:h-9 px-1 sm:px-3" 
+                  className="flex-1 min-w-[70px] bg-task-green text-white hover:bg-task-green/90 text-xs h-8 px-2" 
                   onClick={onTaskClick}
                 >
-                  <CheckSquare className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
-                  <span className="truncate">Task</span>
+                  <CheckSquare className="h-3.5 w-3.5 mr-1.5" />
+                  Task
                 </Button>
                 <Button 
                   size="sm" 
-                  className="flex-1 bg-decision-purple text-white hover:bg-decision-purple/90 text-[10px] sm:text-xs h-8 sm:h-9 px-1 sm:px-3" 
+                  className="flex-1 min-w-[70px] bg-decision-purple text-white hover:bg-decision-purple/90 text-xs h-8 px-2" 
                   onClick={onDecisionClick}
                 >
-                  <Scale className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
-                  <span className="truncate">Decision</span>
+                  <Scale className="h-3.5 w-3.5 mr-1.5" />
+                  Decision
                 </Button>
               </div>
             )}
@@ -1322,11 +1387,11 @@ export default function TopicCard({
                       }}
                     >
                       <div className="flex gap-2 items-center">
-                        <span className={`text-xs font-medium px-2 py-0.5 rounded border inline-flex items-center gap-1.5 ${getHistoryBadgeColor(item.type)}`}>
+                        <span className={`text-xs font-medium px-2 py-0.5 rounded border inline-flex items-center gap-1.5 ${getHistoryBadgeColor(item.type, item.status)}`}>
                           {item.type === 'note' && (
                             item.visibility === 'private' ? <Lock className="h-3 w-3" /> : <Globe className="h-3 w-3" />
                           )}
-                          {item.type.toUpperCase()}
+                          {item.status === 'historical' ? 'HISTORICAL' : item.type.toUpperCase()}
                         </span>
                         <span className="text-xs text-muted-foreground">{item.timestamp}</span>
                       </div>
@@ -1335,7 +1400,7 @@ export default function TopicCard({
                         <p className="text-xs text-muted-foreground">{item.details}</p>
                       )}
                       {item.type === 'task' && !isReadOnly && (
-                        <div className="grid grid-cols-3 gap-2 mt-1">
+                        <div className="flex flex-wrap gap-1.5 mt-1.5">
                           <Button
                             size="sm"
                             variant="outline"
@@ -1343,21 +1408,15 @@ export default function TopicCard({
                               e.stopPropagation()
                               handleToggleTaskStatus(item.id, item.status || 'open')
                             }}
-                            className={item.status === 'completed' 
+                            className={`h-7 px-2 text-[10px] flex-1 min-w-[80px] ${item.status === 'completed' 
                               ? "text-amber-600 border-amber-600 hover:bg-amber-50"
                               : "text-green-600 border-green-600 hover:bg-green-50"
-                            }
+                            }`}
                           >
                             {item.status === 'completed' ? (
-                              <>
-                                <X className="h-3 w-3 mr-1" />
-                                Reopen
-                              </>
+                              <><X className="h-3 w-3 mr-1" />Reopen</>
                             ) : (
-                              <>
-                                <Check className="h-3 w-3 mr-1" />
-                                Complete
-                              </>
+                              <><Check className="h-3 w-3 mr-1" />Complete</>
                             )}
                           </Button>
                           <Button
@@ -1369,7 +1428,7 @@ export default function TopicCard({
                                 onEditTask(item.id, topic.id)
                               }
                             }}
-                            className="text-blue-600 border-blue-600 hover:bg-blue-50"
+                            className="h-7 px-2 text-[10px] flex-1 min-w-[60px] text-blue-600 border-blue-600 hover:bg-blue-50"
                           >
                             <Edit2 className="h-3 w-3 mr-1" />
                             Edit
@@ -1381,7 +1440,7 @@ export default function TopicCard({
                               e.stopPropagation()
                               handleDeleteTask(item.id)
                             }}
-                            className="text-red-600 border-red-600 hover:bg-red-50"
+                            className="h-7 px-2 text-[10px] flex-1 min-w-[60px] text-red-600 border-red-600 hover:bg-red-50"
                           >
                             <Trash2 className="h-3 w-3 mr-1" />
                             Delete
@@ -1389,7 +1448,7 @@ export default function TopicCard({
                         </div>
                       )}
                       {item.type === 'note' && !isReadOnly && (
-                        <div className="grid grid-cols-2 gap-2 mt-1">
+                        <div className="flex flex-wrap gap-1.5 mt-1.5">
                           <Button
                             size="sm"
                             variant="outline"
@@ -1399,7 +1458,7 @@ export default function TopicCard({
                                 onEditNote(item.id, topic.id)
                               }
                             }}
-                            className="text-blue-600 border-blue-600 hover:bg-blue-50"
+                            className="h-7 px-2 text-[10px] flex-1 min-w-[80px] text-blue-600 border-blue-600 hover:bg-blue-50"
                           >
                             <Edit2 className="h-3 w-3 mr-1" />
                             Edit
@@ -1411,7 +1470,7 @@ export default function TopicCard({
                               e.stopPropagation()
                               handleDeleteNote(item.id)
                             }}
-                            className="text-red-600 border-red-600 hover:bg-red-50"
+                            className="h-7 px-2 text-[10px] flex-1 min-w-[80px] text-red-600 border-red-600 hover:bg-red-50"
                           >
                             <Trash2 className="h-3 w-3 mr-1" />
                             Delete

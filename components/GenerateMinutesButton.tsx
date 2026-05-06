@@ -66,27 +66,55 @@ export default function GenerateMinutesButton({
     minuteTaker: "",
   })
 
-  // Load initial values from meeting data
-  const loadInitialInfo = async () => {
-    const { data: meeting } = await supabase
-      .from("meetings")
-      .select("start_time, end_time, chair_person, minute_taker")
-      .eq("id", meetingId)
-      .single()
+  // ⭐ UPDATED: Fetch data and open modal for manual verification
+  const handleClickGenerate = async () => {
+    try {
+      const { data: meeting } = await supabase
+        .from("meetings")
+        .select("start_time, end_time, chair_person, minute_taker, recorder_name, timekeeper_name")
+        .eq("id", meetingId)
+        .single()
 
-    if (meeting) {
+      // Convert ISO or timestamp to HH:mm for the <input type="time">
+      const formatToTimeInput = (iso: string | null) => {
+        if (!iso) return ""
+        
+        // If it looks like HH:mm:ss or HH:mm
+        if (/^\d{2}:\d{2}(:\d{2})?$/.test(iso)) return iso.slice(0, 5)
+
+        try {
+          const date = new Date(iso)
+          if (!isNaN(date.getTime())) {
+            const h = String(date.getHours()).padStart(2, "0")
+            const m = String(date.getMinutes()).padStart(2, "0")
+            return `${h}:${m}`
+          }
+        } catch { /* ignore */ }
+
+        // Fallback: search for HH:mm pattern in the string
+        const match = iso.match(/(\d{1,2}:\d{2})/)
+        if (match) {
+          const [h, m] = match[1].split(":")
+          return `${h.padStart(2, "0")}:${m}`
+        }
+
+        return ""
+      }
+
       setEditableInfo({
-        startTime: meeting.start_time || "",
-        endTime: meeting.end_time || "",
-        chairPerson: meeting.chair_person || "",
-        minuteTaker: meeting.minute_taker || "",
+        startTime: formatToTimeInput(meeting?.start_time),
+        endTime: formatToTimeInput(meeting?.end_time),
+        chairPerson: meeting?.chair_person || meeting?.recorder_name || "",
+        minuteTaker: meeting?.minute_taker || meeting?.timekeeper_name || meeting?.recorder_name || "",
       })
+      setShowEditModal(true)
+    } catch (err) {
+      console.error("Error loading meeting info for PDF:", err)
+      alert("Failed to load meeting info. Please try again.")
     }
-    setShowEditModal(true)
   }
 
   const handleGenerateMinutes = async (finalInfo: EditableMinutesInfo) => {
-    setShowEditModal(false)
     setGenerating(true)
     try {
       // 1) Load per-building minutes template from DB
@@ -261,6 +289,10 @@ export default function GenerateMinutesButton({
         console.error("Error loading topics:", topicsError)
       }
 
+      // Use the manually entered times from the modal
+      const finalStartTime = finalInfo.startTime
+      const finalEndTime = finalInfo.endTime
+
       const topicIds = (topics || []).map((t: any) => t.id)
 
       let decisions: any[] = []
@@ -319,8 +351,8 @@ export default function GenerateMinutesButton({
       // 4) Update meeting data with final edited info for PDF generation
       const meetingForPdf = {
         ...meeting,
-        start_time: finalInfo.startTime,
-        end_time: finalInfo.endTime,
+        start_time: finalStartTime,
+        end_time: finalEndTime,
         chair_person: finalInfo.chairPerson,
         minute_taker: finalInfo.minuteTaker,
       }
@@ -328,14 +360,15 @@ export default function GenerateMinutesButton({
       // 5) Attendees from meeting.attendees JSONB
       const attendees = (meeting.attendees as any[]) || []
 
-      // 6) Build HTML
-      const minutesHtml = buildMinutesHtml({
-        template,
-        meeting: meetingForPdf,
-        sections: sectionsWithTopics,
-        attendees,
-        logoUrl,
-      })
+  // 6) Build HTML
+  const minutesHtml = buildMinutesHtml({
+    template,
+    meeting: meetingForPdf,
+    sections: sectionsWithTopics,
+    attendees,
+    logoUrl,
+    topics: topics || [], // Pass raw topics for timing calculation
+  })
 
       // 6) Render in hidden iframe and capture to PDF
       const iframe = document.createElement("iframe")
@@ -651,7 +684,6 @@ export default function GenerateMinutesButton({
               color: #b91c1c;
             }
 
-            /* Topics & Discussion badge */
             .topics-badge {
               display: inline-block;
               margin: 12px 20px 8px 20px;
@@ -660,6 +692,22 @@ export default function GenerateMinutesButton({
               border-radius: 8px;
               font-size: 12px;
               font-weight: 700;
+            }
+
+            .topic-time-chip {
+              display: inline-flex;
+              align-items: center;
+              gap: 3px;
+              background: #f0f4ff;
+              border: 1px solid #c7d7fa;
+              color: #3b5bdb;
+              padding: 2px 7px;
+              border-radius: 20px;
+              font-size: 9px;
+              font-weight: 700;
+              letter-spacing: 0.3px;
+              margin-top: 5px;
+              white-space: nowrap;
             }
           </style>
         </head>
@@ -863,7 +911,7 @@ export default function GenerateMinutesButton({
   return (
     <>
       <Button
-        onClick={loadInitialInfo}
+        onClick={handleClickGenerate}
         disabled={generating}
         className="bg-gradient-to-r from-primary to-decision-purple text-white"
       >
@@ -880,7 +928,7 @@ export default function GenerateMinutesButton({
         )}
       </Button>
 
-      {/* Edit Info Dialog */}
+      {/* Edit Info Dialog - Restored per User Request */}
       {showEditModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
@@ -942,7 +990,10 @@ export default function GenerateMinutesButton({
                 Cancel
               </button>
               <button
-                onClick={() => handleGenerateMinutes(editableInfo)}
+                onClick={() => {
+                  setShowEditModal(false)
+                  handleGenerateMinutes(editableInfo)
+                }}
                 className="px-6 py-2 bg-primary text-white text-sm font-bold rounded-lg shadow-lg hover:bg-primary/90 transition-all hover:scale-[1.02] active:scale-[0.98]"
               >
                 Generate PDF
@@ -951,6 +1002,8 @@ export default function GenerateMinutesButton({
           </div>
         </div>
       )}
+
+
     </>
   )
 }
@@ -963,17 +1016,58 @@ function buildMinutesHtml({
   sections,
   attendees,
   logoUrl,
+  topics,
 }: {
   template: MinutesTemplate
   meeting: any
   sections: any[]
   attendees: any[]
   logoUrl: string | null
+  topics: any[]
 }): string {
   const isMinutes =
     meeting.status === "minutes" || meeting.status === "working_minutes"
 
   const building = meeting.buildings
+
+  // ⭐ NEW: Timeline calculation (same as Agenda PDF)
+  const orderedSections = [...sections].sort((a, b) => a.order_index - b.order_index)
+  const flatTopicsList: any[] = []
+  orderedSections.forEach((section) => {
+    const sectionTopics = topics
+      .filter((t: any) => t.section_id === section.id)
+      .sort((a, b) => a.order_index - b.order_index)
+    sectionTopics.forEach((t: any) => flatTopicsList.push(t))
+  })
+
+  let runningMinutes: number | null = null
+  if (meeting.start_time) {
+    try {
+      const st = new Date(meeting.start_time)
+      if (!isNaN(st.getTime())) {
+        runningMinutes = st.getHours() * 60 + st.getMinutes()
+      }
+    } catch { /* ignore */ }
+  }
+
+  const topicTimings = new Map<number, { startMin: number; endMin: number }>()
+  if (runningMinutes !== null) {
+    flatTopicsList.forEach((t: any) => {
+      const alloc = typeof t.time_per_topic === 'number' ? t.time_per_topic : null
+      if (alloc !== null && alloc > 0) {
+        topicTimings.set(t.id, { startMin: runningMinutes!, endMin: runningMinutes! + alloc })
+        ;(runningMinutes as number) += alloc
+      }
+    })
+  }
+
+  const fmtMinutes = (totalMin: number): string => {
+    const h = Math.floor(totalMin / 60) % 24
+    const m = totalMin % 60
+    const ampm = h >= 12 ? 'PM' : 'AM'
+    const displayH = h % 12 === 0 ? 12 : h % 12
+    return `${displayH}:${String(m).padStart(2, '0')} ${ampm}`
+  }
 
   let html = ""
 
@@ -1010,7 +1104,7 @@ function buildMinutesHtml({
   `
 
   // SECTIONS
-  html += renderSectionsAndTopics(template, sections, isMinutes)
+  html += renderSectionsAndTopics(template, sections, isMinutes, topicTimings, fmtMinutes)
 
   return html
 }
@@ -1195,7 +1289,9 @@ function renderAttendeesSection(
 function renderSectionsAndTopics(
   template: MinutesTemplate,
   sections: any[],
-  isMinutes: boolean
+  isMinutes: boolean,
+  topicTimings: Map<number, { startMin: number; endMin: number }>,
+  fmtMinutes: (m: number) => string
 ): string {
   let html = ""
 
@@ -1228,6 +1324,14 @@ function renderSectionsAndTopics(
         // NEW: Group the topic header info so it stays together
         html += `<div class="topic-meta">`
         html += `<div class="topic-subtitle">${escapeHtml(`${sectionIndex + 1}.${topicIndex + 1} ${(topic.title || "").trim()}`)}</div>`
+
+        // ⭐ NEW: Add time chip (same as Agenda)
+        const timing = topicTimings.get(topic.id)
+        if (timing) {
+          html += `<div class="topic-time-chip">&#9201; ${fmtMinutes(timing.startMin)} &ndash; ${fmtMinutes(timing.endMin)} &nbsp;(${topic.time_per_topic} min)</div>`
+        } else if (typeof topic.time_per_topic === 'number' && topic.time_per_topic > 0) {
+          html += `<div class="topic-time-chip">&#9201; ${topic.time_per_topic} min</div>`
+        }
 
         if (topic.description && topic.description.trim()) {
           html += `<div class="topic-description">${escapeHtml(topic.description.trim())}</div>`

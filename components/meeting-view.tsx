@@ -31,6 +31,7 @@ import {
   Wrench,
   AlertTriangle,
   RefreshCw,
+  CornerDownRight,
 } from "lucide-react"
 
 import { UploadTranscriptModal } from "@/components/transcript/upload-transcript-modal"
@@ -41,6 +42,14 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import TopicCard from "./topic-card"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import Timer from "./timer"
 import CreateSectionModal from "./create-section-modal"
 import CreateTopicModal from "./create-topic-modal"
@@ -49,7 +58,7 @@ import AttendeeManagement, { Attendee } from "./AttendeeManagement"
 import SelectRecorderModal from "./SelectRecorderModal"
 import { supabase, getCurrentUser } from "@/lib/supabase"
 import { apiClient } from "@/lib/api-client"
-import { canEditMeeting, isReadOnly } from "@/lib/permissions"
+import { canEditMeeting, isReadOnly, isMaster as checkIsMaster } from "@/lib/permissions"
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd"
 import UnifiedItemModal from "./UnifiedItemModal"
 import { formatUtcToLocalLong, formatUtcToLocalShort } from "@/lib/timezone"
@@ -81,6 +90,8 @@ interface Topic {
   is_incamera?: boolean
   incamera_start_time?: string | null
   incamera_end_time?: string | null
+  // ⭐ NEW: Time allocation (minutes) for agenda PDF
+  time_per_topic?: number | null
 }
 
 interface Section {
@@ -151,6 +162,7 @@ export default function MeetingView({
   const [showUnifiedModal, setShowUnifiedModal] = useState(false)
   const [selectedTopicForModal, setSelectedTopicForModal] = useState<number | null>(null)
   const [defaultTab, setDefaultTab] = useState<"task" | "note" | "decision">("task")
+  const [initialDataForModal, setInitialDataForModal] = useState<{ description?: string; status?: string; budget?: string; cost?: string } | undefined>(undefined)
   const [activeSectionId, setActiveSectionId] = useState<number | null>(null)
   const [showRolloverModal, setShowRolloverModal] = useState(false)
   
@@ -259,10 +271,40 @@ export default function MeetingView({
       
       const payload = await res.json()
       
-      // ⭐ FILTER BY BUILDING
+      // ⭐ FILTER BY BUILDING AND STATUS
       const buildingId = meeting?.building_id
-      const filteredRepairs = (payload.data.repairs || []).filter((r: any) => !buildingId || r.building_id === buildingId)
-      const filteredComplaints = (payload.data.complaints || []).filter((c: any) => !buildingId || c.building_id === buildingId)
+      const buildingName = meeting?.buildings?.name?.toLowerCase()
+      const companyId = meeting?.buildings?.company_id
+      const currentUser = getCurrentUser()
+      const isMaster = currentUser ? checkIsMaster(currentUser) : false
+      
+      const filteredRepairs = (payload.data.repairs || []).filter((r: any) => {
+        if (isMaster) return true;
+        
+        // 1. MUST match company if both have it
+        if (companyId && r.company_id && String(r.company_id) !== String(companyId)) return false;
+
+        // 2. Match building
+        const rBuildingName = r.building_name?.toLowerCase() || ""
+        const matchesBuildingId = (buildingId && String(r.building_id) === String(buildingId))
+        const matchesBuildingName = (buildingName && rBuildingName && rBuildingName.includes(buildingName))
+        
+        return matchesBuildingId || matchesBuildingName
+      })
+
+      const filteredComplaints = (payload.data.complaints || []).filter((c: any) => {
+        if (isMaster) return true;
+        
+        // 1. MUST match company if both have it
+        if (companyId && c.company_id && String(c.company_id) !== String(companyId)) return false;
+
+        // 2. Match building
+        const cBuildingName = c.building_name?.toLowerCase() || ""
+        const matchesBuildingId = (buildingId && String(c.building_id) === String(buildingId))
+        const matchesBuildingName = (buildingName && cBuildingName && cBuildingName.includes(buildingName))
+        
+        return matchesBuildingId || matchesBuildingName
+      })
 
       setJanusData({
         repairs: filteredRepairs,
@@ -275,16 +317,31 @@ export default function MeetingView({
         })
       }
     } catch (err) {
-      console.error("Janus fetch error:", err)
-      if (forceResync) toast.error("Failed to resync data from Janus")
+      // Janus is an optional integration — silently ignore errors unless user triggered a manual resync
+      if (forceResync) {
+        console.error("Janus fetch error:", err)
+        toast.error("Failed to resync data from Janus")
+      }
     } finally {
       setIsResyncing(false)
     }
   }
 
+  // ⭐ AUTO-SYNC: Run when building is loaded and then every 30 seconds
   useEffect(() => {
-    fetchJanusData()
-  }, [currentUser])
+    if (meeting?.building_id) {
+      fetchJanusData()
+    }
+    
+    const heartbeat = setInterval(() => {
+      if (meeting?.building_id) {
+        fetchJanusData()
+      }
+    }, 30000)
+
+    return () => clearInterval(heartbeat)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meeting?.building_id])
 
   const fetchOpenTasksFromPreviousMeetings = async () => {
     if (!meeting) return []
@@ -713,8 +770,7 @@ export default function MeetingView({
     recorderName?: string,
     timekeeperName?: string | null,
     actualStartTime?: string | null,
-    chairPerson?: string | null,
-    minuteTaker?: string | null
+    chairPerson?: string | null
   ) => {
     try {
       setLoading(true)
@@ -726,7 +782,6 @@ export default function MeetingView({
         updateData.timekeeper_name = timekeeperName
         updateData.start_time = actualStartTime
         updateData.chair_person = chairPerson
-        updateData.minute_taker = minuteTaker
       }
 
       if (targetStatus === "working_agenda" && meeting?.attendees) {
@@ -1639,6 +1694,96 @@ export default function MeetingView({
     }
   }
 
+  const handlePushToTask = (topicId: number, data: { description: string }) => {
+    setSelectedTopicForModal(topicId)
+    setInitialDataForModal({ description: data.description })
+    setDefaultTab('task')
+    setShowUnifiedModal(true)
+  }
+
+  const handlePushAsTopic = async (item: any, sectionId: number) => {
+    if (!userCanEdit) return
+    
+    try {
+      setLoading(true)
+      // Get the highest order_index for this section
+      const { data: existingTopics } = await supabase
+        .from('topics')
+        .select('order_index')
+        .eq('section_id', sectionId)
+        .order('order_index', { ascending: false })
+        .limit(1)
+
+      const nextOrderIndex = existingTopics && existingTopics.length > 0
+        ? existingTopics[0].order_index + 1
+        : 1
+
+      let description = item.description || ""
+      if (item.budget || item.estimated_cost) {
+        description += "\n\nFinancial Context:"
+        if (item.budget) description += `\n- Budget Allocation: ${item.budget}`
+        if (item.estimated_cost) description += `\n- Estimated Repair Cost: ${item.estimated_cost}`
+        if (item.quoted_amount) description += `\n- Quoted Amount: ${item.quoted_amount}`
+      }
+
+      const { data: newTopic, error: insertError } = await supabase
+        .from('topics')
+        .insert({
+          meeting_id: parseInt(meetingId),
+          section_id: sectionId,
+          title: item.title,
+          description: description || null,
+          order_index: nextOrderIndex,
+          created_by_name: currentUser?.name || "User"
+        })
+        .select()
+        .single()
+
+      if (insertError) throw insertError
+
+      toast.success(`Created new topic: ${item.title}`)
+      await fetchSectionsAndTopics()
+    } catch (err: any) {
+      console.error("Error pushing as topic:", err)
+      toast.error(`Failed to create topic: ${err.message}`)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleAutoImportHighPriority = async () => {
+    if (!userCanEdit || sections.length === 0) return
+    
+    const highPriorityItems = [
+      ...janusData.repairs.filter(r => r.priority === "High"),
+      ...janusData.complaints.filter(c => c.priority === "High")
+    ]
+
+    if (highPriorityItems.length === 0) {
+      toast.info("No high priority items to import.")
+      return
+    }
+
+    if (!confirm(`Import ${highPriorityItems.length} high priority items into the first section?`)) return
+
+    const targetSectionId = sections[0].id
+    
+    try {
+      setLoading(true)
+      for (const item of highPriorityItems) {
+        // Simple sequential import for now to keep order_index correct
+        // In a real app, we might want to batch this
+        await handlePushAsTopic(item, targetSectionId)
+      }
+      toast.success("Successfully imported high priority items.")
+    } catch (err) {
+      console.error("Auto-import error:", err)
+      toast.error("Some items failed to import.")
+    } finally {
+      setLoading(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted flex items-center justify-center">
@@ -2140,6 +2285,17 @@ export default function MeetingView({
                       </div>
                       <span className="text-[10px] font-black text-foreground uppercase tracking-wider">Active Repairs</span>
                     </div>
+                    {userCanEdit && (janusData.repairs.length > 0 || janusData.complaints.length > 0) && (
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="h-6 px-2 text-[8px] font-bold border-red-200 text-red-700 hover:bg-red-50"
+                        onClick={handleAutoImportHighPriority}
+                        title="Auto-import High Priority items to Agenda"
+                      >
+                        Auto-Agenda
+                      </Button>
+                    )}
                     <Button 
                       variant="ghost" 
                       size="icon" 
@@ -2169,10 +2325,57 @@ export default function MeetingView({
                             <Badge variant="outline" className="text-[8px] h-4 border-muted-foreground/20">{repair.status}</Badge>
                           </div>
                           <h4 className="text-xs font-bold leading-tight mb-1 text-foreground">{repair.title}</h4>
-                          <p className="text-[9px] text-muted-foreground flex items-center gap-1">
-                            <Calendar className="h-2.5 w-2.5" />
-                            {new Date(repair.created_at).toLocaleDateString()}
-                          </p>
+                          {(repair.budget || repair.estimated_cost) && (
+                            <div className="flex gap-2 mt-1 mb-1">
+                              {repair.budget && (
+                                <span className="text-[8px] bg-green-50 text-green-700 px-1 py-0.5 rounded border border-green-100">
+                                  Bud: {repair.budget}
+                                </span>
+                              )}
+                              {repair.estimated_cost && (
+                                <span className="text-[8px] bg-blue-50 text-blue-700 px-1 py-0.5 rounded border border-blue-100">
+                                  Est: {repair.estimated_cost}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                          <div className="flex items-center justify-between mt-2">
+                            <p className="text-[9px] text-muted-foreground flex items-center gap-1">
+                              <Calendar className="h-2.5 w-2.5" />
+                              {new Date(repair.created_at).toLocaleDateString()}
+                            </p>
+                            {userCanEdit && sections.length > 0 && (
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="icon" className="h-6 w-6 text-primary hover:bg-primary/10">
+                                    <CornerDownRight className="h-3.5 w-3.5" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end" className="w-56">
+                                  <DropdownMenuLabel>Push to Agenda</DropdownMenuLabel>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuLabel className="text-[10px] font-normal text-muted-foreground">AS NEW TOPIC</DropdownMenuLabel>
+                                  <div className="max-h-40 overflow-y-auto">
+                                    {sections.map(s => (
+                                      <DropdownMenuItem key={s.id} onClick={() => handlePushAsTopic(repair, s.id)}>
+                                        <Plus className="h-3 w-3 mr-2" />
+                                        <span className="truncate">Add to "{s.title}"</span>
+                                      </DropdownMenuItem>
+                                    ))}
+                                  </div>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuLabel className="text-[10px] font-normal text-muted-foreground">AS TASK IN TOPIC</DropdownMenuLabel>
+                                  <div className="max-h-60 overflow-y-auto">
+                                    {sections.flatMap(s => s.topics).map(t => (
+                                      <DropdownMenuItem key={t.id} onClick={() => handlePushToTask(t.id, { description: `Repair: ${repair.title}` })}>
+                                        <span className="truncate">{t.title}</span>
+                                      </DropdownMenuItem>
+                                    ))}
+                                  </div>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            )}
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -2212,11 +2415,60 @@ export default function MeetingView({
                             </Badge>
                           </div>
                           <h4 className="text-xs font-bold leading-tight mb-1 text-foreground">{complaint.title}</h4>
+                          {(complaint.budget || complaint.estimated_cost) && (
+                            <div className="flex gap-2 mt-1 mb-1">
+                              {complaint.budget && (
+                                <span className="text-[8px] bg-green-50 text-green-700 px-1 py-0.5 rounded border border-green-100">
+                                  Bud: {complaint.budget}
+                                </span>
+                              )}
+                              {complaint.estimated_cost && (
+                                <span className="text-[8px] bg-blue-50 text-blue-700 px-1 py-0.5 rounded border border-blue-100">
+                                  Est: {complaint.estimated_cost}
+                                </span>
+                              )}
+                            </div>
+                          )}
                           <p className="text-[10px] text-muted-foreground line-clamp-2 italic mb-1 bg-muted/30 p-1.5 rounded">"{complaint.description}"</p>
-                          <p className="text-[9px] text-muted-foreground flex items-center gap-1 mt-1">
-                            <Calendar className="h-2.5 w-2.5" />
-                            {new Date(complaint.created_at).toLocaleDateString()}
-                          </p>
+                          <div className="flex items-center justify-between mt-2">
+                            <p className="text-[9px] text-muted-foreground flex items-center gap-1 mt-1">
+                              <Calendar className="h-2.5 w-2.5" />
+                              {new Date(complaint.created_at).toLocaleDateString()}
+                            </p>
+                            {userCanEdit && sections.length > 0 && (
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="icon" className="h-6 w-6 text-primary hover:bg-primary/10">
+                                    <CornerDownRight className="h-3.5 w-3.5" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end" className="w-56">
+                                  <DropdownMenuLabel>Push to Agenda</DropdownMenuLabel>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuLabel className="text-[10px] font-normal text-muted-foreground">AS NEW TOPIC</DropdownMenuLabel>
+                                  <div className="max-h-40 overflow-y-auto">
+                                    {sections.map(s => (
+                                      <DropdownMenuItem key={s.id} onClick={() => handlePushAsTopic(complaint, s.id)}>
+                                        <Plus className="h-3 w-3 mr-2" />
+                                        <span className="truncate">Add to "{s.title}"</span>
+                                      </DropdownMenuItem>
+                                    ))}
+                                  </div>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuLabel className="text-[10px] font-normal text-muted-foreground">AS TASK IN TOPIC</DropdownMenuLabel>
+                                  <div className="max-h-60 overflow-y-auto">
+                                    {sections.flatMap(s => s.topics).map(t => (
+                                      <DropdownMenuItem key={t.id} onClick={() => handlePushToTask(t.id, { 
+                                        description: `Complaint: ${complaint.title}\n\n${complaint.description}` 
+                                      })}>
+                                        <span className="truncate">{t.title}</span>
+                                      </DropdownMenuItem>
+                                    ))}
+                                  </div>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            )}
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -2351,10 +2603,32 @@ export default function MeetingView({
                           <Badge variant="outline" className="text-[8px] h-4 border-muted-foreground/20">{repair.status}</Badge>
                         </div>
                         <h4 className="text-xs font-bold leading-tight mb-1 text-foreground">{repair.title}</h4>
-                        <p className="text-[9px] text-muted-foreground flex items-center gap-1">
-                          <Calendar className="h-2.5 w-2.5" />
-                          {new Date(repair.created_at).toLocaleDateString()}
-                        </p>
+                        <div className="flex items-center justify-between mt-2">
+                          <p className="text-[9px] text-muted-foreground flex items-center gap-1">
+                            <Calendar className="h-2.5 w-2.5" />
+                            {new Date(repair.created_at).toLocaleDateString()}
+                          </p>
+                          {userCanEdit && sections.length > 0 && (
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-6 w-6 text-primary hover:bg-primary/10">
+                                  <CornerDownRight className="h-3.5 w-3.5" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="w-56">
+                                <DropdownMenuLabel>Push to Topic Task</DropdownMenuLabel>
+                                <DropdownMenuSeparator />
+                                <div className="max-h-60 overflow-y-auto">
+                                  {sections.flatMap(s => s.topics).map(t => (
+                                    <DropdownMenuItem key={t.id} onClick={() => handlePushToTask(t.id, { description: `Repair: ${repair.title}` })}>
+                                      <span className="truncate">{t.title}</span>
+                                    </DropdownMenuItem>
+                                  ))}
+                                </div>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -2395,10 +2669,32 @@ export default function MeetingView({
                         </div>
                         <h4 className="text-xs font-bold leading-tight mb-1 text-foreground">{complaint.title}</h4>
                         <p className="text-[10px] text-muted-foreground line-clamp-2 italic mb-1 bg-muted/30 p-1.5 rounded">"{complaint.description}"</p>
-                        <p className="text-[9px] text-muted-foreground flex items-center gap-1 mt-1">
-                          <Calendar className="h-2.5 w-2.5" />
-                          {new Date(complaint.created_at).toLocaleDateString()}
-                        </p>
+                        <div className="flex items-center justify-between mt-2">
+                          <p className="text-[9px] text-muted-foreground flex items-center gap-1 mt-1">
+                            <Calendar className="h-2.5 w-2.5" />
+                            {new Date(complaint.created_at).toLocaleDateString()}
+                          </p>
+                          {userCanEdit && sections.length > 0 && (
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-6 w-6 text-primary hover:bg-primary/10">
+                                  <CornerDownRight className="h-3.5 w-3.5" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="w-56">
+                                <DropdownMenuLabel>Push to Topic Task</DropdownMenuLabel>
+                                <DropdownMenuSeparator />
+                                <div className="max-h-60 overflow-y-auto">
+                                  {sections.flatMap(s => s.topics).map(t => (
+                                    <DropdownMenuItem key={t.id} onClick={() => handlePushToTask(t.id, { description: `Complaint: ${complaint.title}\n\n${complaint.description}` })}>
+                                      <span className="truncate">{t.title}</span>
+                                    </DropdownMenuItem>
+                                  ))}
+                                </div>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -2803,9 +3099,8 @@ export default function MeetingView({
           attendees={(meeting.attendees as Attendee[]) || []}
           initialStartTime={meeting.start_time}
           initialChairPerson={meeting.chair_person}
-          initialMinuteTaker={meeting.minute_taker}
-          onConfirm={(recorderName, timekeeperName, actualStartTime, chairPerson, minuteTaker) => {
-            updateMeetingStatus("working_minutes", recorderName, timekeeperName, actualStartTime, chairPerson, minuteTaker)
+          onConfirm={(recorderName, timekeeperName, actualStartTime, chairPerson) => {
+            updateMeetingStatus("working_minutes", recorderName, timekeeperName, actualStartTime, chairPerson)
             setShowRecorderModal(false)
           }}
         />
@@ -2895,6 +3190,7 @@ export default function MeetingView({
           isOpen={showUnifiedModal}
           onClose={() => {
             setShowUnifiedModal(false)
+            setInitialDataForModal(undefined)
           }}
           topicId={selectedTopicForModal}
           meetingId={meetingId}
@@ -2905,6 +3201,7 @@ export default function MeetingView({
             }
           }}
           defaultTab={defaultTab}
+          initialData={initialDataForModal}
         />
       )}
 

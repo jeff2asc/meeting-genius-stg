@@ -99,66 +99,47 @@ export default function Dashboard({
     
     if (!isIntegrated) return
 
-    if (forceResync) setIsResyncing(true)
-    
     try {
       const documentedSecret = "meeting-genius-secret-key-2026"
-      
-      // ⭐ Detect environment for Janus connection
-      const isLocal = typeof window !== 'undefined' && window.location.hostname === 'localhost';
-      const JANUS_BASE_URL = isLocal 
-        ? "http://localhost:3001" 
-        : "https://janusapp.meetinggenius.ca";
-      
-      // First, try to fetch from the REAL Janus server API if integrated
-      console.log(`🔌 Attempting to sync with Janus at: ${JANUS_BASE_URL}`);
-      
-      // We'll use our own proxy/sync endpoint but we can also try hitting Janus directly 
-      // if they have a shared endpoint. For now, we'll keep querying our local API 
-      // which I will update to optionally "Pull" from the real Janus.
-      
       const res = await fetch(`${window.location.origin}/api/janus/v1/sync`, {
         headers: { "x-api-key": documentedSecret }
       })
       if (!res.ok) throw new Error("Could not fetch Janus data")
       
       const payload = await res.json()
-      console.log("🔍 [DASHBOARD DEBUG] Raw Janus Payload:", payload);
       
-      // Filter by building if not "All"
       let repairs = payload.data?.repairs || []
       let complaints = payload.data?.complaints || []
-      
-      console.log(`🔍 [DASHBOARD DEBUG] Found ${repairs.length} repairs before filtering.`);
       
       if (selectedBuilding !== "All") {
         const building = buildings.find(b => b.name === selectedBuilding)
         if (building) {
-          // ⭐ Smart Match: Try to match by ID OR by Building Name string
           repairs = repairs.filter((r: any) => 
-            r.building_id === building.id || 
-            r.building_name === building.name ||
-            (typeof r.building === 'string' && r.building.includes(building.name))
+            String(r.building_id) === String(building.id) || 
+            (r.building_name && r.building_name.toLowerCase().includes(building.name.toLowerCase()))
           )
           complaints = complaints.filter((c: any) => 
-            c.building_id === building.id || 
-            c.building_name === building.name ||
-            (typeof c.building === 'string' && c.building.includes(building.name))
+            String(c.building_id) === String(building.id) || 
+            (c.building_name && c.building_name.toLowerCase().includes(building.name.toLowerCase()))
           )
         }
       } else {
-        // ⭐ Security Filter: Even for "All", only show tickets that match ONE of our authorized buildings
-        const authorizedBuildingNames = buildings.map(b => b.name);
-        repairs = repairs.filter((r: any) => 
-          authorizedBuildingNames.some(name => 
-            r.building_name === name || (typeof r.building === 'string' && r.building.includes(name))
-          )
-        );
-        complaints = complaints.filter((c: any) => 
-          authorizedBuildingNames.some(name => 
-            c.building_name === name || (typeof c.building === 'string' && c.building.includes(name))
-          )
-        );
+        // ⭐ SECURITY FILTER: Only show tickets for buildings this user is authorized to see
+        const isMaster = checkIsMaster(currentUser);
+        
+        if (!isMaster) {
+          const authorizedNames = buildings.map(b => b.name.toLowerCase());
+          const authorizedIds = buildings.map(b => String(b.id));
+
+          repairs = repairs.filter((r: any) => 
+            authorizedIds.includes(String(r.building_id)) || 
+            (r.building_name && authorizedNames.some(name => r.building_name.toLowerCase().includes(name)))
+          );
+          complaints = complaints.filter((c: any) => 
+            authorizedIds.includes(String(c.building_id)) || 
+            (c.building_name && authorizedNames.some(name => c.building_name.toLowerCase().includes(name)))
+          );
+        }
       }
       
       setJanusData({ repairs, complaints })
@@ -1255,9 +1236,29 @@ export default function Dashboard({
                     <Card key={`repair-${ticket.id}`} className="group relative overflow-hidden p-5 rounded-2xl border-border/50 hover:border-primary/50 hover:shadow-xl hover:shadow-primary/5 transition-all duration-500 bg-card/50 backdrop-blur-sm flex flex-col h-full min-h-[180px]">
                       <div className="absolute top-0 left-0 w-1 h-full bg-primary" />
                       <div className="flex items-center justify-between mb-3">
-                        <Badge variant="secondary" className="text-[10px] uppercase font-black tracking-wider bg-primary/10 text-primary">
-                          {ticket.priority || 'MEDIUM'} PRIORITY
-                        </Badge>
+                        <div className="flex items-center gap-2">
+                          <Badge variant="secondary" className={`text-[10px] uppercase font-black tracking-wider ${
+                            ticket.priority?.toUpperCase() === 'HIGH' ? 'bg-red-50 text-red-700 border-red-100' :
+                            ticket.priority?.toUpperCase() === 'MEDIUM' ? 'bg-yellow-50 text-yellow-700 border-yellow-100' :
+                            'bg-primary/10 text-primary'
+                          }`}>
+                            {ticket.priority || 'MEDIUM'} PRIORITY
+                          </Badge>
+                          {(ticket.budget || ticket.estimated_cost) && (
+                            <div className="flex gap-1">
+                              {ticket.budget && (
+                                <span className="text-[9px] bg-green-50 text-green-700 px-1.5 py-0.5 rounded border border-green-100 font-bold">
+                                  ${ticket.budget}
+                                </span>
+                              )}
+                              {ticket.estimated_cost && (
+                                <span className="text-[9px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded border border-blue-100 font-bold">
+                                  Est: ${ticket.estimated_cost}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
                         <Badge variant="outline" className="text-[10px] uppercase font-black bg-background/50">
                           repair
                         </Badge>
@@ -1316,9 +1317,28 @@ export default function Dashboard({
                     <Card key={`complaint-${ticket.id}`} className="group relative overflow-hidden p-5 rounded-2xl border-border/50 hover:border-amber-500/50 hover:shadow-xl hover:shadow-amber-500/5 transition-all duration-500 bg-card/50 backdrop-blur-sm flex flex-col h-full min-h-[180px]">
                       <div className="absolute top-0 left-0 w-1 h-full bg-amber-500" />
                       <div className="flex items-center justify-between mb-3">
-                        <Badge variant="secondary" className="text-[10px] uppercase font-black tracking-wider bg-amber-100 text-amber-700">
-                          {ticket.priority || 'MEDIUM'} PRIORITY
-                        </Badge>
+                        <div className="flex items-center gap-2">
+                          <Badge variant="secondary" className={`text-[10px] uppercase font-black tracking-wider ${
+                            ticket.priority?.toUpperCase() === 'HIGH' ? 'bg-red-50 text-red-700 border-red-100' :
+                            'bg-amber-100 text-amber-700'
+                          }`}>
+                            {ticket.priority || 'MEDIUM'} PRIORITY
+                          </Badge>
+                          {(ticket.budget || ticket.estimated_cost) && (
+                            <div className="flex gap-1">
+                              {ticket.budget && (
+                                <span className="text-[9px] bg-green-50 text-green-700 px-1.5 py-0.5 rounded border border-green-100 font-bold">
+                                  ${ticket.budget}
+                                </span>
+                              )}
+                              {ticket.estimated_cost && (
+                                <span className="text-[9px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded border border-blue-100 font-bold">
+                                  Est: ${ticket.estimated_cost}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
                         <Badge variant="outline" className="text-[10px] uppercase font-black bg-background/50">
                           complaint
                         </Badge>

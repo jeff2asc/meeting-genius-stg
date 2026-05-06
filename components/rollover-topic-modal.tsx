@@ -62,6 +62,7 @@ export default function RolloverTopicModal({
   const [selectedNoteIds, setSelectedNoteIds] = useState<number[]>([])
   const [selectedDecisionIds, setSelectedDecisionIds] = useState<number[]>([])
   
+  const [topicTargetSections, setTopicTargetSections] = useState<Record<number, number>>({})
   const [expandedTopics, setExpandedTopics] = useState<number[]>([])
   const [targetSectionId, setTargetSectionId] = useState<number | null>(null)
 
@@ -73,6 +74,7 @@ export default function RolloverTopicModal({
       setSelectedNoteIds([])
       setSelectedDecisionIds([])
       setTargetSectionId(null)
+      setTopicTargetSections({})
       fetchPreviousMeetingData()
     }
   }, [isOpen])
@@ -125,31 +127,34 @@ export default function RolloverTopicModal({
       return
     }
 
+    // Check if all selected topics have a target section
+    const missingTarget = selectedTopicIds.some(tid => !topicTargetSections[tid])
+    if (missingTarget) {
+      toast.error("Please ensure all selected topics have a target section")
+      return
+    }
+
     setLoading(true)
     try {
       const adminSupabase = createAdminClient()
       const meetingIdNum = parseInt(meetingId)
       
-      // Determine the target section ID
-      if (!targetSectionId) {
-        toast.error("Please select a target section")
-        return
-      }
-      const finalTargetSectionId = targetSectionId
-
-      // Get current max order_index for target section
-      const { data: existingTopics } = await adminSupabase
-        .from('topics')
-        .select('order_index')
-        .eq('section_id', finalTargetSectionId)
-        .order('order_index', { ascending: false })
-        .limit(1)
-      
-      let nextOrderIndex = (existingTopics?.[0]?.order_index || 0) + 1
-
       for (const topicId of selectedTopicIds) {
         const topic = prevTopics.find(t => t.id === topicId)
         if (!topic) continue
+
+        const finalTargetSectionId = topicTargetSections[topicId]
+        if (!finalTargetSectionId) continue
+
+        // Get current max order_index for target section
+        const { data: existingTopics } = await adminSupabase
+          .from('topics')
+          .select('order_index')
+          .eq('section_id', finalTargetSectionId)
+          .order('order_index', { ascending: false })
+          .limit(1)
+        
+        let nextOrderIndex = (existingTopics?.[0]?.order_index || 0) + 1
 
         const { data: newTopic, error: topicError } = await adminSupabase
           .from('topics')
@@ -216,6 +221,8 @@ export default function RolloverTopicModal({
       setSelectedTaskIds(prev => [...prev, ...prevTasks.filter(t => t.topic_id === topicId).map(t => t.id)])
       setSelectedNoteIds(prev => [...prev, ...prevNotes.filter(n => n.topic_id === topicId).map(n => n.id)])
       setSelectedDecisionIds(prev => [...prev, ...prevDecisions.filter(d => d.topic_id === topicId).map(d => d.id)])
+      // Default topic target section to global if global is set
+      // Removed global auto-assign
     } else {
       setSelectedTopicIds(prev => prev.filter(id => id !== topicId))
       // Deselect all items under this topic
@@ -261,186 +268,174 @@ export default function RolloverTopicModal({
           </button>
         </div>
 
-        {/* Content */}
-        <div className="flex-1 overflow-hidden flex flex-col p-6 space-y-6">
-          {fetching ? (
-            <div className="flex-1 flex flex-col items-center justify-center py-20 space-y-4">
-               <Loader2 className="h-10 w-10 animate-spin text-primary" />
-               <p className="text-muted-foreground font-medium">Fetching previous meeting data...</p>
-            </div>
-          ) : !prevMeeting ? (
-            <div className="flex-1 flex flex-col items-center justify-center py-20 text-center space-y-4">
-               <div className="h-16 w-16 bg-muted rounded-full flex items-center justify-center">
-                  <AlertCircle className="h-8 w-8 text-muted-foreground/50" />
-               </div>
-               <div>
-                  <p className="text-lg font-bold text-foreground">No Previous Meeting Found</p>
-                  <p className="text-muted-foreground max-w-xs mx-auto">We couldn't find a previous {meetingType} for this building to roll over from.</p>
-               </div>
-               <Button variant="outline" onClick={onClose} className="rounded-xl">Go Back</Button>
-            </div>
-          ) : (
-            <>
-               {/* Target Selection */}
-               <div className="space-y-3">
-                  <label className="text-sm font-bold text-foreground flex items-center gap-2">
-                     Target Section
-                     <Badge variant="outline" className={`${!targetSectionId ? "bg-red-50 text-red-600 border-red-200" : "bg-green-50 text-green-600 border-green-200"} text-[10px]`}>
-                        {!targetSectionId ? "SELECTION REQUIRED" : "SELECTED"}
-                     </Badge>
-                  </label>
-                  <div className="relative">
-                     <select 
-                        className={`w-full px-4 py-3.5 rounded-xl border-2 bg-background text-sm font-bold focus:ring-4 focus:ring-primary/5 outline-none transition-all appearance-none cursor-pointer ${!targetSectionId ? "border-red-200 text-muted-foreground" : "border-primary text-foreground"}`}
-                        value={targetSectionId || ""}
-                        onChange={(e) => setTargetSectionId(parseInt(e.target.value))}
-                     >
-                        <option value="" disabled>-- Select where these topics should go --</option>
-                        {sections.map(s => (
-                           <option key={s.id} value={s.id}>{s.title}</option>
-                        ))}
-                     </select>
-                     <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground">
-                        <ChevronDown className="h-5 w-5" />
-                     </div>
-                  </div>
-                  {!targetSectionId && (
-                     <p className="text-[10px] text-red-500 font-bold ml-1 flex items-center gap-1">
-                        <AlertCircle className="h-3 w-3" />
-                        You must choose a section before you can import
-                     </p>
-                  )}
-               </div>
+        {/* Content - Robust Scrollable Area */}
+        <div className="flex-1 overflow-y-auto bg-background" style={{ minHeight: '300px', maxHeight: 'calc(90vh - 160px)' }}>
+          <div className="p-6 space-y-6">
+            {fetching ? (
+              <div className="flex-1 flex flex-col items-center justify-center py-20 space-y-4">
+                 <Loader2 className="h-10 w-10 animate-spin text-primary" />
+                 <p className="text-muted-foreground font-medium">Fetching previous meeting data...</p>
+              </div>
+            ) : !prevMeeting ? (
+              <div className="flex-1 flex flex-col items-center justify-center py-20 text-center space-y-4">
+                 <div className="h-16 w-16 bg-muted rounded-full flex items-center justify-center">
+                    <AlertCircle className="h-8 w-8 text-muted-foreground/50" />
+                 </div>
+                 <div>
+                    <p className="text-lg font-bold text-foreground">No Previous Meeting Found</p>
+                    <p className="text-muted-foreground max-w-xs mx-auto">We couldn't find a previous {meetingType} for this building to roll over from.</p>
+                 </div>
+                 <Button variant="outline" onClick={onClose} className="rounded-xl">Go Back</Button>
+              </div>
+            ) : (
+              <>
 
-               {/* Topic List */}
-               <div className="flex-1 min-h-0 flex flex-col space-y-3">
-                  <div className="flex items-center justify-between">
-                     <label className="text-sm font-bold text-foreground flex items-center gap-2">
-                        Select Topics to Roll Over
-                        <Badge variant="outline" className="text-[10px]">{selectedTopicIds.length} Selected</Badge>
-                     </label>
-                  </div>
+                 {/* Topic List */}
+                 <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                       <label className="text-sm font-bold text-foreground flex items-center gap-2">
+                          Select Topics and Target Sections
+                          <Badge variant="outline" className="text-[10px]">{selectedTopicIds.length} Selected</Badge>
+                       </label>
+                    </div>
 
-                  <ScrollArea className="flex-1 border-2 border-border rounded-2xl bg-muted/30">
-                     <div className="p-4 space-y-3">
-                        {prevSections.map(section => {
-                           const sectionTopics = prevTopics.filter(t => t.section_id === section.id)
-                           if (sectionTopics.length === 0) return null
-                           
-                           return (
-                              <div key={section.id} className="space-y-2">
-                                 <h4 className="text-[10px] font-black uppercase text-muted-foreground tracking-widest px-2">{section.title}</h4>
-                                 {sectionTopics.map(topic => (
-                                    <div key={topic.id} className={`bg-white border rounded-xl overflow-hidden transition-all ${selectedTopicIds.includes(topic.id) ? "border-primary shadow-sm" : "border-border"}`}>
-                                       <div className="flex items-center p-3 gap-3">
-                                          <Checkbox 
-                                             checked={selectedTopicIds.includes(topic.id)}
-                                             onCheckedChange={(checked) => toggleTopic(topic.id, !!checked)}
-                                          />
-                                          <div className="flex-1 min-w-0" onClick={() => toggleExpanded(topic.id)}>
-                                             <div className="text-sm font-bold truncate cursor-pointer">{topic.title}</div>
-                                             <div className="flex items-center gap-3 mt-1">
-                                                <span className="text-[10px] font-medium text-muted-foreground flex items-center gap-1">
-                                                   <ListTodo className="h-3 w-3" /> {prevTasks.filter(t => t.topic_id === topic.id).length} Tasks
-                                                </span>
-                                                <span className="text-[10px] font-medium text-muted-foreground flex items-center gap-1">
-                                                   <StickyNote className="h-3 w-3" /> {prevNotes.filter(n => n.topic_id === topic.id).length} Notes
-                                                </span>
-                                                <span className="text-[10px] font-medium text-muted-foreground flex items-center gap-1">
-                                                   <FileCheck className="h-3 w-3" /> {prevDecisions.filter(d => d.topic_id === topic.id).length} Decisions
-                                                </span>
-                                             </div>
-                                          </div>
-                                          <button onClick={() => toggleExpanded(topic.id)} className="p-1 hover:bg-muted rounded-lg transition-colors">
-                                             {expandedTopics.includes(topic.id) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                                          </button>
-                                       </div>
+                    <div className="border-2 border-border rounded-2xl bg-muted/30 p-4 space-y-4">
+                       {prevSections.map(section => {
+                          const sectionTopics = prevTopics.filter(t => t.section_id === section.id)
+                          if (sectionTopics.length === 0) return null
+                          
+                          return (
+                             <div key={section.id} className="space-y-2">
+                                <h4 className="text-[10px] font-black uppercase text-muted-foreground tracking-widest px-2">{section.title}</h4>
+                                {sectionTopics.map(topic => (
+                                   <div key={topic.id} className={`bg-white border rounded-xl overflow-hidden transition-all ${selectedTopicIds.includes(topic.id) ? "border-primary shadow-sm" : "border-border"}`}>
+                                      <div className="flex items-center p-3 gap-3">
+                                         <Checkbox 
+                                            checked={selectedTopicIds.includes(topic.id)}
+                                            onCheckedChange={(checked) => toggleTopic(topic.id, !!checked)}
+                                         />
+                                         
+                                         <div className="flex-1 min-w-0" onClick={() => toggleExpanded(topic.id)}>
+                                            <div className="text-sm font-bold truncate cursor-pointer">{topic.title}</div>
+                                            <div className="flex items-center gap-3 mt-1">
+                                               <span className="text-[10px] font-medium text-muted-foreground flex items-center gap-1">
+                                                  <ListTodo className="h-3 w-3" /> {prevTasks.filter(t => t.topic_id === topic.id).length}
+                                               </span>
+                                               <span className="text-[10px] font-medium text-muted-foreground flex items-center gap-1">
+                                                  <StickyNote className="h-3 w-3" /> {prevNotes.filter(n => n.topic_id === topic.id).length}
+                                               </span>
+                                               <span className="text-[10px] font-medium text-muted-foreground flex items-center gap-1">
+                                                  <FileCheck className="h-3 w-3" /> {prevDecisions.filter(d => d.topic_id === topic.id).length}
+                                               </span>
+                                            </div>
+                                         </div>
 
-                                       {expandedTopics.includes(topic.id) && (
-                                          <div className="bg-muted/30 border-t border-border p-3 space-y-3">
-                                             {/* Tasks Selection */}
-                                             {prevTasks.filter(t => t.topic_id === topic.id).length > 0 && (
-                                                <div className="space-y-1.5">
-                                                   <p className="text-[9px] font-bold text-muted-foreground uppercase flex items-center gap-1">
-                                                      <ListTodo className="h-3 w-3" /> Include Tasks
-                                                   </p>
-                                                   <div className="space-y-1 ml-1">
-                                                      {prevTasks.filter(t => t.topic_id === topic.id).map(task => (
-                                                         <div key={task.id} className="flex items-center gap-2">
-                                                            <Checkbox 
-                                                               checked={selectedTaskIds.includes(task.id)}
-                                                               onCheckedChange={(checked) => {
-                                                                  if (checked) setSelectedTaskIds(prev => [...prev, task.id])
-                                                                  else setSelectedTaskIds(prev => prev.filter(id => id !== task.id))
-                                                               }}
-                                                               className="h-3.5 w-3.5"
-                                                            />
-                                                            <span className="text-[11px] text-foreground truncate">{task.description}</span>
-                                                         </div>
-                                                      ))}
-                                                   </div>
-                                                </div>
-                                             )}
+                                         {/* PER-TOPIC TARGET SELECTION */}
+                                         <div className="flex items-center gap-2">
+                                            <div className="relative">
+                                               <select 
+                                                  className={`text-[11px] font-bold h-9 pl-3 pr-8 rounded-lg border bg-background appearance-none cursor-pointer outline-none transition-all ${!topicTargetSections[topic.id] && selectedTopicIds.includes(topic.id) ? "border-red-200 ring-4 ring-red-50" : "border-border focus:border-primary"}`}
+                                                  value={topicTargetSections[topic.id] || ""}
+                                                  onChange={(e) => setTopicTargetSections(prev => ({ ...prev, [topic.id]: parseInt(e.target.value) }))}
+                                               >
+                                                  <option value="" disabled>Target Section...</option>
+                                                  {sections.map(s => (
+                                                     <option key={s.id} value={s.id}>{s.title}</option>
+                                                  ))}
+                                               </select>
+                                               <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
+                                            </div>
+                                            <button onClick={() => toggleExpanded(topic.id)} className="p-1.5 hover:bg-muted rounded-lg transition-colors">
+                                               {expandedTopics.includes(topic.id) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                                            </button>
+                                         </div>
+                                      </div>
 
-                                             {/* Notes Selection */}
-                                             {prevNotes.filter(n => n.topic_id === topic.id).length > 0 && (
-                                                <div className="space-y-1.5">
-                                                   <p className="text-[9px] font-bold text-muted-foreground uppercase flex items-center gap-1">
-                                                      <StickyNote className="h-3 w-3" /> Include Notes
-                                                   </p>
-                                                   <div className="space-y-1 ml-1">
-                                                      {prevNotes.filter(n => n.topic_id === topic.id).map(note => (
-                                                         <div key={note.id} className="flex items-center gap-2">
-                                                            <Checkbox 
-                                                               checked={selectedNoteIds.includes(note.id)}
-                                                               onCheckedChange={(checked) => {
-                                                                  if (checked) setSelectedNoteIds(prev => [...prev, note.id])
-                                                                  else setSelectedNoteIds(prev => prev.filter(id => id !== note.id))
-                                                               }}
-                                                               className="h-3.5 w-3.5"
-                                                            />
-                                                            <span className="text-[11px] text-foreground line-clamp-1 italic">"{note.content}"</span>
-                                                         </div>
-                                                      ))}
-                                                   </div>
-                                                </div>
-                                             )}
+                                      {expandedTopics.includes(topic.id) && (
+                                         <div className="bg-muted/30 border-t border-border p-3 space-y-3">
+                                            {/* Tasks Selection */}
+                                            {prevTasks.filter(t => t.topic_id === topic.id).length > 0 && (
+                                               <div className="space-y-1.5">
+                                                  <p className="text-[9px] font-bold text-muted-foreground uppercase flex items-center gap-1">
+                                                     <ListTodo className="h-3 w-3" /> Include Tasks
+                                                  </p>
+                                                  <div className="space-y-1 ml-1">
+                                                     {prevTasks.filter(t => t.topic_id === topic.id).map(task => (
+                                                        <div key={task.id} className="flex items-center gap-2">
+                                                           <Checkbox 
+                                                              checked={selectedTaskIds.includes(task.id)}
+                                                              onCheckedChange={(checked) => {
+                                                                 if (checked) setSelectedTaskIds(prev => [...prev, task.id])
+                                                                 else setSelectedTaskIds(prev => prev.filter(id => id !== task.id))
+                                                              }}
+                                                              className="h-3.5 w-3.5"
+                                                           />
+                                                           <span className="text-[11px] text-foreground truncate">{task.description}</span>
+                                                        </div>
+                                                     ))}
+                                                  </div>
+                                               </div>
+                                            )}
 
-                                             {/* Decisions Selection */}
-                                             {prevDecisions.filter(d => d.topic_id === topic.id).length > 0 && (
-                                                <div className="space-y-1.5">
-                                                   <p className="text-[9px] font-bold text-muted-foreground uppercase flex items-center gap-1">
-                                                      <FileCheck className="h-3 w-3" /> Include Decisions
-                                                   </p>
-                                                   <div className="space-y-1 ml-1">
-                                                      {prevDecisions.filter(d => d.topic_id === topic.id).map(dec => (
-                                                         <div key={dec.id} className="flex items-center gap-2">
-                                                            <Checkbox 
-                                                               checked={selectedDecisionIds.includes(dec.id)}
-                                                               onCheckedChange={(checked) => {
-                                                                  if (checked) setSelectedDecisionIds(prev => [...prev, dec.id])
-                                                                  else setSelectedDecisionIds(prev => prev.filter(id => id !== dec.id))
-                                                               }}
-                                                               className="h-3.5 w-3.5"
-                                                            />
-                                                            <span className="text-[11px] font-medium text-foreground truncate">{dec.motion_text}</span>
-                                                         </div>
-                                                      ))}
-                                                   </div>
-                                                </div>
-                                             )}
-                                          </div>
-                                       )}
-                                    </div>
-                                 ))}
-                              </div>
-                           )
-                        })}
-                     </div>
-                  </ScrollArea>
-               </div>
-            </>
-          )}
+                                            {/* Notes Selection */}
+                                            {prevNotes.filter(n => n.topic_id === topic.id).length > 0 && (
+                                               <div className="space-y-1.5">
+                                                  <p className="text-[9px] font-bold text-muted-foreground uppercase flex items-center gap-1">
+                                                     <StickyNote className="h-3 w-3" /> Include Notes
+                                                  </p>
+                                                  <div className="space-y-1 ml-1">
+                                                     {prevNotes.filter(n => n.topic_id === topic.id).map(note => (
+                                                        <div key={note.id} className="flex items-center gap-2">
+                                                           <Checkbox 
+                                                              checked={selectedNoteIds.includes(note.id)}
+                                                              onCheckedChange={(checked) => {
+                                                                 if (checked) setSelectedNoteIds(prev => [...prev, note.id])
+                                                                 else setSelectedNoteIds(prev => prev.filter(id => id !== note.id))
+                                                              }}
+                                                              className="h-3.5 w-3.5"
+                                                           />
+                                                           <span className="text-[11px] text-foreground line-clamp-1 italic">"{note.content}"</span>
+                                                        </div>
+                                                     ))}
+                                                  </div>
+                                               </div>
+                                            )}
+
+                                            {/* Decisions Selection */}
+                                            {prevDecisions.filter(d => d.topic_id === topic.id).length > 0 && (
+                                               <div className="space-y-1.5">
+                                                  <p className="text-[9px] font-bold text-muted-foreground uppercase flex items-center gap-1">
+                                                     <FileCheck className="h-3 w-3" /> Include Decisions
+                                                  </p>
+                                                  <div className="space-y-1 ml-1">
+                                                     {prevDecisions.filter(d => d.topic_id === topic.id).map(dec => (
+                                                        <div key={dec.id} className="flex items-center gap-2">
+                                                           <Checkbox 
+                                                              checked={selectedDecisionIds.includes(dec.id)}
+                                                              onCheckedChange={(checked) => {
+                                                                 if (checked) setSelectedDecisionIds(prev => [...prev, dec.id])
+                                                                 else setSelectedDecisionIds(prev => prev.filter(id => id !== dec.id))
+                                                              }}
+                                                              className="h-3.5 w-3.5"
+                                                           />
+                                                           <span className="text-[11px] font-medium text-foreground truncate">{dec.motion_text}</span>
+                                                        </div>
+                                                     ))}
+                                                  </div>
+                                               </div>
+                                            )}
+                                         </div>
+                                      )}
+                                   </div>
+                                ))}
+                             </div>
+                          )
+                       })}
+                    </div>
+                 </div>
+              </>
+            )}
+          </div>
         </div>
 
         {/* Footer */}
@@ -456,7 +451,7 @@ export default function RolloverTopicModal({
           <Button
             onClick={handleRollover}
             className="flex-1 rounded-xl h-12 font-bold bg-gradient-to-r from-primary to-decision-purple text-white shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:scale-100 disabled:shadow-none"
-            disabled={loading || fetching || !prevMeeting || selectedTopicIds.length === 0 || !targetSectionId}
+            disabled={loading || fetching || !prevMeeting || selectedTopicIds.length === 0}
           >
             {loading ? (
               <>

@@ -1,164 +1,71 @@
-import { NextRequest, NextResponse } from "next/server"
-import { createClient } from "@supabase/supabase-js"
+import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 
-/**
- * JANUS Sync API (v1)
- * Uses Service Role Key (admin) to bypass RLS and return the full dataset.
- * Falls back to anon key if SUPABASE_SERVICE_ROLE_KEY is not configured.
- */
 export async function GET(req: NextRequest) {
-  // Using explicit service_role key as requested to bypass RLS without env files
-  const serviceKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImllaHJsb2dxcHNlYmh1YmJhZnhvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MDg5MzM2MiwiZXhwIjoyMDc2NDY5MzYyfQ.e4aGlDQdBj6c82is40kz2UM684QWfV46QZBiE8GOKHg";
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://iehrlogqpsebhubbafxo.supabase.co";
-  
-  const supabase = createClient(supabaseUrl, serviceKey, {
-    auth: { persistSession: false }
-  });
-  
-  // 1. Authorization Check (Using standardized x-api-key from docs)
-  const apiKey = req.headers.get("x-api-key")
-  const documentedSecret = "meeting-genius-secret-key-2026"
-  
-  if (!apiKey || apiKey !== documentedSecret) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  const apiKey = req.headers.get("x-api-key");
+  const documentedSecret = "meeting-genius-secret-key-2026";
+
+  if (apiKey !== documentedSecret) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  // Local Supabase connection
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!; 
+  const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
   try {
-    // 2. Fetch all relevant data including the junction table for building assignments
-    const [
-      { data: companies },
-      { data: buildings },
-      { data: users },
-      { data: userBuildings }
-    ] = await Promise.all([
-      supabase.from("companies").select("*"),
-      supabase.from("buildings").select("*"),
-      supabase.from("users").select("*"),
-      supabase.from("user_buildings").select("*")
-    ])
+    const forceSync = req.nextUrl.searchParams.get("force") === "true";
 
-    // 3. Process Vendors (Users with user_type = 'vendor')
-    const residents = users?.filter(u => u.user_type !== 'vendor') || []
-    const vendors = users?.filter(u => u.user_type === 'vendor') || []
+    // ⭐ ALWAYS fetch from Janus for now to ensure full metadata (company_id, building_name)
+    // since local DB might be missing these columns.
+    if (true) {
+      const janusSupabaseUrl = "https://ihldyefskzluuciaudmr.supabase.co"
+      const janusAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlobGR5ZWZza3psdXVjaWF1ZG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE3NTAwNjksImV4cCI6MjA4NzMyNjA2OX0.Fs6cvdgJSxGA5LvQhn3YK_6WPxGKwBQjf7ezM2Jl8Pc"
+      const janusDb = createClient(janusSupabaseUrl, janusAnonKey);
+      
+      const { data: rawTickets, error: janusErr } = await janusDb.from('tickets').select('*').order('created_at', { ascending: false });
+      if (janusErr) throw janusErr;
 
-    // 4. ⭐ FETCH REAL JANUS DATA FROM DB
-    let [
-      { data: dbRepairs },
-      { data: dbComplaints }
-    ] = await Promise.all([
-      supabase.from("janus_repairs").select("*").order("created_at", { ascending: false }),
-      supabase.from("janus_complaints").select("*").order("created_at", { ascending: false })
-    ])
+      const mapTicket = (t: any) => ({
+        id: String(t.id || t.ticket_id),
+        building_id: String(t.building_id || ""),
+        building_name: t.building_name || t.building || "",
+        company_id: t.company_id || null,
+        title: t.subject || t.title || t.issue_type || "Untitled",
+        priority: t.priority || t.urgency || "Medium",
+        status: t.state || t.status || "Open",
+        description: t.damage_description || t.description || t.content || "",
+        budget: t.budget || t.estimated_budget || null,
+        estimated_cost: t.estimated_cost || t.estimated_amount || t.estimated_fixed_amount || null,
+        quoted_amount: t.quoted_amount || t.quote_amount || null,
+        created_at: t.created_at || new Date().toISOString(),
+        updated_at: t.updated_at || new Date().toISOString()
+      });
 
-    // ⭐ FALL-THROUGH: If local database is empty, pull from the Real Janus Database Directly
-    if ((!dbRepairs || dbRepairs.length === 0) && (!dbComplaints || dbComplaints.length === 0)) {
-      try {
-        console.log("🔍 [DEBUG] Local Janus tables are empty. Connecting to Janus Database Directly...");
-        
-        // ⭐ Direct Connection to Janus Supabase Project
-        const janusSupabaseUrl = "https://ihldyefskzluuciaudmr.supabase.co"
-        const janusAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlobGR5ZWZza3psdXVjaWF1ZG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE3NTAwNjksImV4cCI6MjA4NzMyNjA2OX0.Fs6cvdgJSxGA5LvQhn3YK_6WPxGKwBQjf7ezM2Jl8Pc"
-        
-        const janusDb = createClient(janusSupabaseUrl, janusAnonKey);
-        
-        // Fetch from the 'tickets' table used in Janus codebase
-        const { data: rawTickets, error: janusErr } = await janusDb
-          .from('tickets')
-          .select('*')
-          .order('created_at', { ascending: false });
+      const repairs = (rawTickets || []).filter((t: any) => t.type?.toLowerCase() === 'repair').map(mapTicket);
+      const complaints = (rawTickets || []).filter((t: any) => t.type?.toLowerCase() === 'complaint').map(mapTicket);
 
-        if (janusErr) throw janusErr;
+      console.log(`🔄 Syncing with Janus: ${repairs.length} repairs, ${complaints.length} complaints found.`);
 
-        if (rawTickets) {
-          console.log(`✅ [DEBUG] Successfully pulled ${rawTickets.length} tickets directly from Janus DB.`);
-
-          const mapTicket = (t: any) => ({
-            id: t.id || t.ticket_id,
-            building_id: t.building_id,
-            building_name: t.building_name || t.building,
-            title: t.subject || t.title || t.issue_type,
-            priority: t.priority || t.urgency || "Medium",
-            status: t.state || t.status || "Open",
-            created_at: t.created_at || new Date().toISOString(),
-            description: t.damage_description || t.description || t.content || ""
-          });
-
-          // ⭐ Split by the 'type' field — "repair" vs "complaint"
-          const repairTickets = rawTickets.filter((t: any) => t.type === "repair");
-          const complaintTickets = rawTickets.filter((t: any) => t.type === "complaint");
-
-          dbRepairs = repairTickets.map(mapTicket);
-          dbComplaints = complaintTickets.map(mapTicket);
-
-          console.log(`🔧 [DEBUG] Split: ${dbRepairs.length} repairs, ${dbComplaints.length} complaints.`);
-        }
-      } catch (e) {
-        console.error("❌ [DEBUG] Failed to reach Janus Database:", e);
+      // 3. Cache locally (UPSERT)
+      if (repairs.length > 0) {
+        const { error: err1 } = await supabase.from("janus_repairs").upsert(repairs);
+        if (err1) console.error("❌ Error upserting repairs:", err1);
       }
-    }
-
-    const repairs = dbRepairs || []
-    const complaints = dbComplaints || []
-
-    // 5. Transform data for Janus consumption with aliases and junction mapping
-    const payload = {
-      system: "Meeting Genius",
-      version: "2.1",
-      timestamp: new Date().toISOString(),
-      counts: {
-        companies: companies?.length || 0,
-        buildings: buildings?.length || 0,
-        residents: residents?.length || 0,
-        vendors: vendors?.length || 0,
-        user_buildings: userBuildings?.length || 0,
-        repairs: repairs.length,
-        complaints: complaints.length
-      },
-      data: {
-        // Original names
-        companies: companies || [],
-        buildings: buildings || [],
-        users: residents,
-        vendors: vendors,
-        user_buildings: userBuildings || [],
-        repairs: repairs,
-        complaints: complaints,
-        
-        // Aliases for Janus compatibility
-        organizations: companies || [],
-        properties: buildings || [],
-        audience: residents,
-        junctions: userBuildings || [] // Some systems expect 'junctions'
+      if (complaints.length > 0) {
+        const { error: err2 } = await supabase.from("janus_complaints").upsert(complaints);
+        if (err2) console.error("❌ Error upserting complaints:", err2);
       }
+
+      return NextResponse.json({ success: true, data: { repairs, complaints } });
     }
 
-    return NextResponse.json(payload)
-  } catch (error: any) {
-    console.error("Critical Sync Error:", error)
-    return NextResponse.json({ 
-      error: "Internal Server Error", 
-      details: error.message 
-    }, { status: 500 })
-  }
-}
+    // Fallback if the Janus fetch block was skipped (it shouldn't be due to if(true))
+    return NextResponse.json({ success: true, data: { repairs: [], complaints: [] } });
 
-/**
- * Handshake endpoint for Janus to verify connection status
- */
-export async function POST(req: NextRequest) {
-  try {
-    const { action } = await req.json()
-    
-    if (action === "handshake") {
-      return NextResponse.json({ 
-        status: "active", 
-        message: "Meeting Genius integration portal is live.",
-        capabilities: ["sync_entities", "email_notifications", "transcript_export"]
-      })
-    }
-    
-    return NextResponse.json({ error: "Invalid action" }, { status: 400 })
-  } catch (err) {
-    return NextResponse.json({ error: "Bad Request" }, { status: 400 })
+  } catch (err: any) {
+    console.error("Janus Sync Error:", err);
+    return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

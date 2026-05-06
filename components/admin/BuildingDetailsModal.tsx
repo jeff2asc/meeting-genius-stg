@@ -27,6 +27,7 @@ interface User {
   user_type: string
   company_id: number | null
   roles?: string[] | null
+  unit_number?: string | null
 }
 
 interface Building {
@@ -37,7 +38,7 @@ interface Building {
   company_id: number | null
   building_type?: string
   created_at: string
-  users?: Array<{ id: number; name: string; email: string; user_type: string }>
+  users?: Array<{ id: number; name: string; email: string; user_type: string; unit_number?: string | null }>
   board_meeting_notice_days?: number
   general_meeting_notice_days?: number
   notification_recipient_type?: string
@@ -78,8 +79,12 @@ export default function BuildingDetailsModal({
   const [newUserEmail, setNewUserEmail] = useState("")
   const [newUserPassword, setNewUserPassword] = useState("")
   const [newUserType, setNewUserType] = useState("user")
+  const [newUserUnit, setNewUserUnit] = useState("")
   const [creatingUser, setCreatingUser] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  
+  const [assignedUsers, setAssignedUsers] = useState<any[]>([])
+  const [assignmentUnit, setAssignmentUnit] = useState("")
 
   const [showImportModal, setShowImportModal] = useState(false)
 
@@ -97,6 +102,7 @@ export default function BuildingDetailsModal({
       setBuildingType(building.building_type || "Strata/Condo")
       setManagerId(building.manager_id)
       setSelectedUsers(building.users?.map((u) => u.id) || [])
+      setAssignedUsers(building.users || [])
       
       setBoardMeetingNoticeDays(building.board_meeting_notice_days || 7)
       setGeneralMeetingNoticeDays(building.general_meeting_notice_days || 7)
@@ -256,6 +262,7 @@ export default function BuildingDetailsModal({
         .insert({
           user_id: selectedExistingUserId,
           building_id: building.id,
+          unit_number: assignmentUnit.trim() || null,
         })
 
       if (insertError) {
@@ -264,8 +271,16 @@ export default function BuildingDetailsModal({
         return
       }
 
-      setSelectedUsers((prev) => [...prev, selectedExistingUserId as number])
+      setAssignedUsers((prev) => [
+        ...prev, 
+        { 
+          id: selectedExistingUserId, 
+          ...availableUsersForAssignment.find(u => u.id === selectedExistingUserId),
+          unit_number: assignmentUnit.trim() || null 
+        }
+      ])
       setSelectedExistingUserId("")
+      setAssignmentUnit("")
       setShowAssignExisting(false)
       
       toast.success("User assigned successfully!")
@@ -316,6 +331,7 @@ export default function BuildingDetailsModal({
         .insert({
           user_id: newUser.id,
           building_id: building.id,
+          unit_number: newUserUnit.trim() || null,
         })
 
       if (assignError) {
@@ -325,10 +341,20 @@ export default function BuildingDetailsModal({
         return
       }
 
-      setSelectedUsers((prev) => [...prev, newUser.id])
+      setAssignedUsers((prev) => [
+        ...prev, 
+        { 
+          id: newUser.id, 
+          name: newUser.name, 
+          email: newUser.email, 
+          user_type: newUser.user_type, 
+          unit_number: newUserUnit.trim() || null 
+        }
+      ])
       setNewUserName("")
       setNewUserEmail("")
       setNewUserPassword("")
+      setNewUserUnit("")
       setNewUserType(buildingType === "Housing Co-op" ? "resident" : buildingType === "Strata/Condo" || buildingType === "Rental" ? "owner" : "user")
       setShowAddUserForm(false)
 
@@ -372,37 +398,9 @@ export default function BuildingDetailsModal({
         return
       }
 
-      const currentUserIds = building.users?.map((u) => u.id) || []
-      const usersToAdd = selectedUsers.filter((id) => !currentUserIds.includes(id))
-      const usersToRemove = currentUserIds.filter((id) => !selectedUsers.includes(id))
-
-      if (usersToRemove.length > 0) {
-        const { error: deleteError } = await supabase
-          .from("user_buildings")
-          .delete()
-          .eq("building_id", building.id)
-          .in("user_id", usersToRemove)
-
-        if (deleteError) {
-          console.error("Error removing users:", deleteError)
-        }
-      }
-
-      if (usersToAdd.length > 0) {
-        const insertData = usersToAdd.map((userId) => ({
-          building_id: building.id,
-          user_id: userId,
-        }))
-
-        const { error: insertError } = await supabase
-          .from("user_buildings")
-          .insert(insertData)
-
-        if (insertError) {
-          console.error("Error adding users:", insertError)
-        }
-      }
-
+      // We no longer need to diff here because assignments are handled individually now.
+      // But we'll keep the building metadata update.
+      
       toast.success("Building settings updated successfully!")
       
       // 🔄 Notify Janus for real-time sync
@@ -422,6 +420,51 @@ export default function BuildingDetailsModal({
     setSelectedUsers((prev) =>
       prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId]
     )
+  }
+
+  const handleRemoveAssignment = async (userId: number, unitNumber: string | null) => {
+    if (!building) return
+    
+    const confirmMsg = unitNumber 
+      ? `Are you sure you want to remove user from Unit ${unitNumber}?`
+      : "Are you sure you want to remove this user from the building?"
+      
+    if (!confirm(confirmMsg)) return
+
+    try {
+      let query = supabase
+        .from("user_buildings")
+        .delete()
+        .eq("building_id", building.id)
+        .eq("user_id", userId)
+      
+      if (unitNumber) {
+        query = query.eq("unit_number", unitNumber)
+      } else {
+        query = query.is("unit_number", null)
+      }
+
+      const { error } = await query
+
+      if (error) {
+        console.error("Error removing assignment:", error)
+        toast.error("Failed to remove assignment")
+        return
+      }
+
+      setAssignedUsers((prev) => 
+        prev.filter((u) => !(u.id === userId && u.unit_number === unitNumber))
+      )
+      toast.success("Assignment removed")
+      
+      // 🔄 Notify Janus
+      triggerJanusResync('user_removed_from_building')
+      
+      await onSuccess()
+    } catch (err) {
+      console.error("Unexpected error:", err)
+      toast.error("Failed to remove assignment")
+    }
   }
 
   // ⭐ NEW: Helper function to format user type display
@@ -589,36 +632,13 @@ export default function BuildingDetailsModal({
           )}
 
           {activeTab === "users" && (
-            <div className="space-y-4">
+            <div className="space-y-6">
               <div className="flex items-center justify-between">
-                <h3 className="font-semibold text-foreground">Manage Building Users</h3>
+                <div>
+                  <h3 className="text-lg font-bold text-foreground">Building Assignments</h3>
+                  <p className="text-sm text-muted-foreground">Users who have access to this building and their unit numbers</p>
+                </div>
                 <div className="flex gap-2">
-                  {currentUser && (
-                    currentUser.user_type === "master" ||
-                    currentUser.user_type === "corporate_administrator" ||
-                    currentUser.user_type === "property_manager" ||
-                    currentUser.roles?.includes("master") ||
-                    currentUser.roles?.includes("corporate_administrator") ||
-                    currentUser.roles?.includes("property_manager")
-                  ) && (
-                    <Button
-                      onClick={() => {
-                        setShowAssignExisting(!showAssignExisting)
-                        if (!showAssignExisting && availableUsersForAssignment.length === 0) {
-                          fetchAvailableUsersForAssignment()
-                        }
-                        if (showAssignExisting) {
-                          setSelectedExistingUserId("")
-                        }
-                      }}
-                      size="sm"
-                      variant="outline"
-                      className="border-blue-500 text-blue-700 hover:bg-blue-50"
-                    >
-                      <Users className="h-4 w-4 mr-2" />
-                      Assign Existing User
-                    </Button>
-                  )}
                   <Button
                     onClick={() => setShowImportModal(true)}
                     size="sm"
@@ -631,214 +651,223 @@ export default function BuildingDetailsModal({
                   <Button
                     onClick={() => setShowAddUserForm(!showAddUserForm)}
                     size="sm"
-                    className="bg-gradient-to-r from-primary to-decision-purple"
+                    variant="outline"
+                    className="border-primary/50 text-primary hover:bg-primary/5"
                   >
                     <Plus className="h-4 w-4 mr-2" />
-                    Add New User
+                    New Resident
                   </Button>
                 </div>
               </div>
 
-              {error && (
-                <p className="text-sm text-red-500">
-                  {error}
-                </p>
-              )}
+              {/* Assignments Table */}
+              <div className="border border-border rounded-xl overflow-hidden bg-card">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-muted/50 border-b border-border">
+                    <tr>
+                      <th className="px-4 py-3 font-semibold">User</th>
+                      <th className="px-4 py-3 font-semibold">Type</th>
+                      <th className="px-4 py-3 font-semibold">Unit #</th>
+                      <th className="px-4 py-3 font-semibold text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {assignedUsers.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="px-4 py-8 text-center text-muted-foreground">
+                          No users assigned to this building yet.
+                        </td>
+                      </tr>
+                    ) : (
+                      assignedUsers.map((user, idx) => {
+                        const userTypeDisplay = getUserTypeDisplay(user.user_type)
+                        return (
+                          <tr key={`${user.id}-${user.unit_number}-${idx}`} className="hover:bg-muted/30 transition-colors">
+                            <td className="px-4 py-3">
+                              <div className="font-medium">{user.name}</div>
+                              <div className="text-xs text-muted-foreground">{user.email}</div>
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${userTypeDisplay.className}`}>
+                                {userTypeDisplay.label}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3">
+                              {user.unit_number ? (
+                                <Badge variant="secondary" className="bg-blue-50 text-blue-700 border-blue-100">
+                                  {user.unit_number}
+                                </Badge>
+                              ) : (
+                                <span className="text-muted-foreground italic">None</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-right">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50"
+                                onClick={() => handleRemoveAssignment(user.id, user.unit_number)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </td>
+                          </tr>
+                        )
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
 
-              {showAssignExisting && (
-                <Card className="p-4 bg-blue-50 border-2 border-blue-300">
-                  <h4 className="font-medium text-sm mb-3 text-blue-900">
-                    Assign Existing User to Building
-                  </h4>
-                  {loadingAvailableUsers ? (
-                    <p className="text-sm text-muted-foreground">Loading users...</p>
-                  ) : availableUsersForAssignment.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">
-                      No available users to assign. All users from this company are already assigned to this building.
-                    </p>
-                  ) : (
-                    <div className="space-y-3">
-                      <div>
-                        <Label htmlFor="existingUser">Select User *</Label>
-                        <Select
-                          value={selectedExistingUserId.toString()}
-                          onValueChange={(value) => setSelectedExistingUserId(value ? Number(value) : "")}
-                        >
-                          <SelectTrigger id="existingUser" className="bg-white">
-                            <SelectValue placeholder="Select a user to assign" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {availableUsersForAssignment.map((user) => (
-                              <SelectItem key={user.id} value={user.id.toString()}>
-                                {user.name} ({user.email}) - {user.user_type}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          {currentUser?.user_type === "master" 
-                            ? "Master can assign users from any company"
-                            : `Showing users from company ID: ${building.company_id || "None"}`
-                          }
-                        </p>
-                      </div>
-
-                      <div className="flex gap-2">
-                        <Button
-                          onClick={handleAssignExistingUser}
-                          size="sm"
-                          className="bg-blue-600 hover:bg-blue-700 text-white flex-1"
-                          disabled={!selectedExistingUserId || loadingAvailableUsers}
-                        >
-                          Assign User
-                        </Button>
-                        <Button
-                          onClick={() => {
-                            setShowAssignExisting(false)
-                            setSelectedExistingUserId("")
-                            setError(null)
+              {/* Assign Existing User Form */}
+              <Card className="p-4 bg-blue-50/50 border border-blue-200">
+                <div className="flex items-center gap-2 mb-4">
+                  <Users className="h-5 w-5 text-blue-600" />
+                  <h4 className="font-bold text-blue-900">Assign Existing User to Building</h4>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+                  <div className="md:col-span-1">
+                    <Label htmlFor="existingUser" className="text-blue-900">Select User *</Label>
+                    <Select
+                      value={selectedExistingUserId.toString()}
+                      onValueChange={(value) => {
+                        setSelectedExistingUserId(value ? Number(value) : "")
+                        if (availableUsersForAssignment.length === 0) fetchAvailableUsersForAssignment()
+                      }}
+                    >
+                      <SelectTrigger id="existingUser" className="bg-white mt-1 border-blue-200">
+                        <SelectValue placeholder="Choose a user" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {loadingAvailableUsers ? (
+                          <div className="p-2 text-center text-xs text-muted-foreground">Loading...</div>
+                        ) : availableUsersForAssignment.length === 0 ? (
+                          <div className="p-2 text-center text-xs text-muted-foreground">No users found</div>
+                        ) : (
+                          availableUsersForAssignment.map((user) => (
+                            <SelectItem key={user.id} value={user.id.toString()}>
+                              {user.name} ({user.email})
+                            </SelectItem>
+                          ))
+                        )}
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          className="w-full text-xs mt-1 border-t rounded-none" 
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            fetchAvailableUsersForAssignment()
                           }}
-                          variant="outline"
-                          size="sm"
-                          className="flex-1"
                         >
-                          Cancel
+                          Refresh List
                         </Button>
-                      </div>
-                    </div>
-                  )}
-                </Card>
-              )}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  
+                  <div>
+                    <Label htmlFor="unitNumber" className="text-blue-900">Unit # (Optional)</Label>
+                    <Input
+                      id="unitNumber"
+                      value={assignmentUnit}
+                      onChange={(e) => setAssignmentUnit(e.target.value)}
+                      placeholder="e.g. 101, PH1"
+                      className="bg-white mt-1 border-blue-200"
+                    />
+                  </div>
+                  
+                  <Button
+                    onClick={handleAssignExistingUser}
+                    className="bg-blue-600 hover:bg-blue-700 text-white"
+                    disabled={!selectedExistingUserId}
+                  >
+                    Assign to Building
+                  </Button>
+                </div>
+                <p className="text-[10px] text-blue-700 mt-2">
+                  Tip: A user can be assigned to multiple units by adding them multiple times with different unit numbers.
+                </p>
+              </Card>
 
               {showAddUserForm && (
-                <Card className="p-4 bg-muted/50 border-2 border-primary/20">
-                  <h4 className="font-medium text-sm mb-3">Create New User</h4>
-                  <div className="space-y-3">
+                <Card className="p-6 border-2 border-primary/20 bg-muted/30">
+                  <div className="flex items-center justify-between mb-4">
+                    <h4 className="font-bold text-foreground">Create & Assign New User</h4>
+                    <Button variant="ghost" size="sm" onClick={() => setShowAddUserForm(false)}>
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <Label htmlFor="newUserName">Name *</Label>
+                      <Label htmlFor="newUserName">Full Name *</Label>
                       <Input
                         id="newUserName"
                         value={newUserName}
                         onChange={(e) => setNewUserName(e.target.value)}
-                        placeholder="Enter user name"
+                        placeholder="John Doe"
+                        className="mt-1"
                       />
                     </div>
                     <div>
-                      <Label htmlFor="newUserEmail">Email *</Label>
+                      <Label htmlFor="newUserEmail">Email Address *</Label>
                       <Input
                         id="newUserEmail"
                         type="email"
                         value={newUserEmail}
                         onChange={(e) => setNewUserEmail(e.target.value)}
-                        placeholder="Enter user email"
+                        placeholder="john@example.com"
+                        className="mt-1"
                       />
                     </div>
                     <div>
-                      <Label htmlFor="newUserPassword">Password *</Label>
+                      <Label htmlFor="newUserPassword">Temporary Password *</Label>
                       <Input
                         id="newUserPassword"
                         type="password"
                         value={newUserPassword}
                         onChange={(e) => setNewUserPassword(e.target.value)}
-                        placeholder="Enter temporary password"
+                        placeholder="e.g. Welcome2026"
+                        className="mt-1"
                       />
                     </div>
-                    
+                    <div>
+                      <Label htmlFor="newUserUnit">Unit #</Label>
+                      <Input
+                        id="newUserUnit"
+                        value={newUserUnit}
+                        onChange={(e) => setNewUserUnit(e.target.value)}
+                        placeholder="e.g. 304"
+                        className="mt-1"
+                      />
+                    </div>
                     <div>
                       <Label htmlFor="newUserType">User Type *</Label>
                       <Select value={newUserType} onValueChange={setNewUserType}>
                         <SelectTrigger id="newUserType" className="mt-1">
-                          <SelectValue placeholder="Select user type" />
+                          <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {buildingType === "Housing Co-op" && (
-                            <SelectItem value="resident">Resident</SelectItem>
-                          )}
-                          {(buildingType === "Strata/Condo" || buildingType === "Rental") && (
-                            <SelectItem value="owner">Owner</SelectItem>
-                          )}
-                          <SelectItem value="user">User</SelectItem>
+                          <SelectItem value="owner">Owner</SelectItem>
+                          <SelectItem value="resident">Resident</SelectItem>
                           <SelectItem value="property_manager">Property Manager</SelectItem>
-                          <SelectItem value="vendor">Vendor</SelectItem>
-                          <SelectItem value="attendee">Attendee</SelectItem>
+                          <SelectItem value="user">Generic User</SelectItem>
                         </SelectContent>
                       </Select>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {buildingType === "Housing Co-op" && "Housing Co-ops use Resident type"}
-                        {buildingType === "Strata/Condo" && "Strata/Condo buildings use Owner type"}
-                        {buildingType === "Rental" && "Rental buildings use Owner type"}
-                      </p>
                     </div>
-
-                    <div className="flex gap-2">
+                    
+                    <div className="md:col-span-2 pt-2">
                       <Button
                         onClick={handleCreateNewUser}
                         disabled={creatingUser}
-                        size="sm"
-                        className="bg-gradient-to-r from-primary to-decision-purple"
+                        className="w-full bg-gradient-to-r from-primary to-decision-purple"
                       >
-                        {creatingUser ? "Creating..." : "Create & Assign User"}
-                      </Button>
-                      <Button
-                        onClick={() => {
-                          setShowAddUserForm(false)
-                          setNewUserName("")
-                          setNewUserEmail("")
-                          setNewUserPassword("")
-                          setNewUserType(buildingType === "Housing Co-op" ? "resident" : "owner")
-                          setError(null)
-                        }}
-                        variant="outline"
-                        size="sm"
-                      >
-                        Cancel
+                        {creatingUser ? "Creating..." : "Create and Assign User"}
                       </Button>
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                      User will be created with company ID: {building.company_id || "None"} and
-                      automatically assigned to this building.
-                    </p>
                   </div>
                 </Card>
-              )}
-
-              {filteredAvailableUsers.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-8">
-                  No users available in this company. Create a new user above.
-                </p>
-              ) : (
-                <>
-                  <p className="text-sm text-muted-foreground">
-                    Select users to assign to this building (showing{" "}
-                    {filteredAvailableUsers.length} users from company{" "}
-                    {building.company_id || "N/A"}):
-                  </p>
-                  <div className="border border-border rounded-lg max-h-[400px] overflow-y-auto">
-                    {filteredAvailableUsers.map((user) => {
-                      const userTypeDisplay = getUserTypeDisplay(user.user_type)
-                      return (
-                        <label
-                          key={user.id}
-                          className="flex items-center gap-3 p-3 hover:bg-muted cursor-pointer border-b border-border last:border-b-0"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={selectedUsers.includes(user.id)}
-                            onChange={() => toggleUserSelection(user.id)}
-                            className="h-4 w-4"
-                          />
-                          <div className="flex-1">
-                            <p className="font-medium text-sm">{user.name}</p>
-                            <p className="text-xs text-muted-foreground">{user.email}</p>
-                          </div>
-                          <span className={`text-xs px-2 py-1 rounded font-medium ${userTypeDisplay.className}`}>
-                            {userTypeDisplay.label}
-                          </span>
-                        </label>
-                      )
-                    })}
-                  </div>
-                </>
               )}
             </div>
           )}

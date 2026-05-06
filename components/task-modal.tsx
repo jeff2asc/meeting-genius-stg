@@ -20,6 +20,10 @@ interface TaskModalProps {
   embedded?: boolean  // ⭐ NEW: For embedded mode in tabs
   isOpen?: boolean    // ⭐ NEW: For modal control
   meetingId?: string  // ⭐ NEW: Optional meetingId prop
+  initialData?: {
+    description?: string
+    status?: string
+  }
 }
 
 interface Assignee {
@@ -43,14 +47,15 @@ export default function TaskModal({
   onSave,
   editMode = false,
   existingTaskId = null,
-  embedded = false,     // ⭐ NEW
-  isOpen = true,        // ⭐ NEW
-  meetingId: propMeetingId  // ⭐ NEW
+  embedded = false,
+  isOpen = true,
+  meetingId: propMeetingId,
+  initialData // ⭐ Added missing prop
 }: TaskModalProps) {
   const [formData, setFormData] = useState({
-    description: "",
+    description: initialData?.description || "",
     dueDate: "",
-    status: "open",
+    status: initialData?.status || "open",
     sendNotification: true,
   })
 
@@ -733,7 +738,7 @@ export default function TaskModal({
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="space-y-2">
             <div className="text-sm font-medium text-foreground">Add Manually</div>
             <input

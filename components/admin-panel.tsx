@@ -41,7 +41,7 @@ interface UserRow {
   created_at: string
   assigned_pm_id: number | null
   company_id: number | null
-  buildings?: string[]
+  buildings?: string[] // This can now be "Building Name (Unit #)"
   roles?: string[] | null
 }
 
@@ -59,7 +59,7 @@ interface Building {
   company_id: number | null
   building_type?: string
   created_at: string
-  users?: Array<{ id: number; name: string; email: string; user_type: string }>
+  users?: Array<{ id: number; name: string; email: string; user_type: string; unit_number?: string | null }>
 }
 
 type TabType = "users" | "buildings" | "companies" | "minutes" | "agenda" | "audit" | "settings"
@@ -208,12 +208,10 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
     const hasDocuments = buildingDocuments[building.id] || false
 
     const formUrl = hasDocuments
-      ? `https://rulesengine.asccreative.com/form/8fe10f3e-bbb7-4ef0-8911-d43c27ad8666?Building Id=${
-          building.id
-        }&Building Name=${encodeURIComponent(building.name)}`
-      : `https://rulesengine.asccreative.com/form/6a4fe687-c1f7-43ea-b6e3-687e5e9a47fa?Building Id=${
-          building.id
-        }&Building Name=${encodeURIComponent(building.name)}`
+      ? `https://rulesengine.asccreative.com/form/8fe10f3e-bbb7-4ef0-8911-d43c27ad8666?Building Id=${building.id
+      }&Building Name=${encodeURIComponent(building.name)}`
+      : `https://rulesengine.asccreative.com/form/6a4fe687-c1f7-43ea-b6e3-687e5e9a47fa?Building Id=${building.id
+      }&Building Name=${encodeURIComponent(building.name)}`
 
     setDocumentFormUrl(formUrl)
     setShowDocumentModal(true)
@@ -252,7 +250,9 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
         .eq("user_type", "property_manager")
         .order("name")
 
-      if (isCorporateAdmin && currentUser?.company_id) {
+      if (isMaster) {
+        // Master sees all PMs
+      } else if (isCorporateAdmin && currentUser?.company_id) {
         query = query.eq("company_id", currentUser.company_id)
       }
 
@@ -278,7 +278,9 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
         .select("id, name, email, user_type, roles, assigned_pm_id, company_id, created_at")
         .order("created_at", { ascending: false })
 
-      if (isCorporateAdmin && currentUser?.company_id) {
+      if (isMaster) {
+        // Master sees all users across all companies
+      } else if (isCorporateAdmin && currentUser?.company_id) {
         usersQuery = usersQuery.eq("company_id", currentUser.company_id)
       }
 
@@ -295,6 +297,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
           `
           user_id,
           building_id,
+          unit_number,
           buildings!inner(id, name)
         `
         )
@@ -302,7 +305,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
       const usersWithBuildings = (usersData || []).map((user) => {
         const userBuildings = (userBuildingsData || [])
           .filter((ub: any) => ub.user_id === user.id)
-          .map((ub: any) => ub.buildings?.name)
+          .map((ub: any) => ub.unit_number ? `${ub.buildings?.name} (${ub.unit_number})` : ub.buildings?.name)
           .filter(Boolean) as string[]
 
         return {
@@ -358,6 +361,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
         .select(
           `
           building_id,
+          unit_number,
           users!inner(id, name, email, user_type)
         `
         )
@@ -365,7 +369,10 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
       const buildingsWithUsers = (buildingsData || []).map((building) => {
         const buildingUsers = (userBuildingsData || [])
           .filter((ub: any) => ub.building_id === building.id)
-          .map((ub: any) => ub.users)
+          .map((ub: any) => ({
+            ...ub.users,
+            unit_number: ub.unit_number
+          }))
           .filter(Boolean)
 
         return {
@@ -450,12 +457,12 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
 
     const confirmed = confirm(
       `⚠️ PERMANENT DELETE: "${company.name}"\n\n` +
-        `This will DELETE FOREVER:\n` +
-        `❌ ${userCount || 0} user(s)\n` +
-        `❌ ${buildingCount || 0} building(s)\n` +
-        `❌ All meetings, notes, tasks, decisions\n\n` +
-        `This CANNOT be undone!\n\n` +
-        `Type the company name to confirm deletion.`
+      `This will DELETE FOREVER:\n` +
+      `❌ ${userCount || 0} user(s)\n` +
+      `❌ ${buildingCount || 0} building(s)\n` +
+      `❌ All meetings, notes, tasks, decisions\n\n` +
+      `This CANNOT be undone!\n\n` +
+      `Type the company name to confirm deletion.`
     )
 
     if (!confirmed) return
@@ -572,64 +579,58 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
           <div className="flex gap-4 mt-4 overflow-x-auto scrollbar-hide pb-1">
             <button
               onClick={() => setActiveTab("users")}
-              className={`pb-2 px-1 font-medium text-xs sm:text-sm transition-colors whitespace-nowrap flex-shrink-0 ${
-                activeTab === "users"
+              className={`pb-2 px-1 font-medium text-xs sm:text-sm transition-colors whitespace-nowrap flex-shrink-0 ${activeTab === "users"
                   ? "text-primary border-b-2 border-primary"
                   : "text-muted-foreground hover:text-foreground"
-              }`}
+                }`}
             >
               👥 Users
             </button>
             <button
               onClick={() => setActiveTab("buildings")}
-              className={`pb-2 px-1 font-medium text-xs sm:text-sm transition-colors whitespace-nowrap flex-shrink-0 ${
-                activeTab === "buildings"
+              className={`pb-2 px-1 font-medium text-xs sm:text-sm transition-colors whitespace-nowrap flex-shrink-0 ${activeTab === "buildings"
                   ? "text-primary border-b-2 border-primary"
                   : "text-muted-foreground hover:text-foreground"
-              }`}
+                }`}
             >
               🏢 Buildings
             </button>
             {userCanManageCompanies && (
               <button
                 onClick={() => setActiveTab("companies")}
-                className={`pb-2 px-1 font-medium text-xs sm:text-sm transition-colors whitespace-nowrap flex-shrink-0 ${
-                  activeTab === "companies"
+                className={`pb-2 px-1 font-medium text-xs sm:text-sm transition-colors whitespace-nowrap flex-shrink-0 ${activeTab === "companies"
                     ? "text-primary border-b-2 border-primary"
                     : "text-muted-foreground hover:text-foreground"
-                }`}
+                  }`}
               >
                 🏛️ Companies
               </button>
             )}
             <button
               onClick={() => setActiveTab("minutes")}
-              className={`pb-2 px-1 font-medium text-xs sm:text-sm transition-colors whitespace-nowrap flex-shrink-0 ${
-                activeTab === "minutes"
+              className={`pb-2 px-1 font-medium text-xs sm:text-sm transition-colors whitespace-nowrap flex-shrink-0 ${activeTab === "minutes"
                   ? "text-primary border-b-2 border-primary"
                   : "text-muted-foreground hover:text-foreground"
-              }`}
+                }`}
             >
               📄 Minutes
             </button>
-              <button
+            <button
               onClick={() => setActiveTab("agenda")}
-              className={`pb-2 px-1 font-medium text-xs sm:text-sm transition-colors whitespace-nowrap flex-shrink-0 ${
-                activeTab === "agenda"
+              className={`pb-2 px-1 font-medium text-xs sm:text-sm transition-colors whitespace-nowrap flex-shrink-0 ${activeTab === "agenda"
                   ? "text-primary border-b-2 border-primary"
                   : "text-muted-foreground hover:text-foreground"
-              }`}
+                }`}
             >
               📋 Agenda
             </button>
             {(isMaster || isCorporateAdmin) && (
               <button
                 onClick={() => setActiveTab("audit")}
-                className={`pb-2 px-1 font-medium text-xs sm:text-sm transition-colors whitespace-nowrap flex-shrink-0 ${
-                  activeTab === "audit"
+                className={`pb-2 px-1 font-medium text-xs sm:text-sm transition-colors whitespace-nowrap flex-shrink-0 ${activeTab === "audit"
                     ? "text-primary border-b-2 border-primary"
                     : "text-muted-foreground hover:text-foreground"
-                }`}
+                  }`}
               >
                 🔍 Audit
               </button>
@@ -637,11 +638,10 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
             {isMaster && (
               <button
                 onClick={() => setActiveTab("settings")}
-                className={`pb-2 px-1 font-medium text-xs sm:text-sm transition-colors whitespace-nowrap flex-shrink-0 ${
-                  activeTab === "settings"
+                className={`pb-2 px-1 font-medium text-xs sm:text-sm transition-colors whitespace-nowrap flex-shrink-0 ${activeTab === "settings"
                     ? "text-primary border-b-2 border-primary"
                     : "text-muted-foreground hover:text-foreground"
-                }`}
+                  }`}
               >
                 ⚙️ Settings
               </button>

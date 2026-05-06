@@ -74,11 +74,11 @@ export default function TaskUpdatePage() {
         .from('tasks')
         .select(`
           *,
-          topics(
+          topic:topics(
             id,
             title,
             meeting_id,
-            meetings(
+            meeting:meetings(
               id,
               title,
               building_id,
@@ -383,7 +383,7 @@ export default function TaskUpdatePage() {
 
   if (!task) return null
 
-  const meeting = (task.topics as any)?.meetings
+  const meeting = (task.topic as any)?.meeting
   const building = meeting?.buildings
 
   return (
@@ -433,7 +433,7 @@ export default function TaskUpdatePage() {
 
             <div className="pb-4 border-b">
               <div className="text-sm text-gray-500 mb-1">Topic</div>
-              <div className="font-semibold text-gray-900">{(task.topics as any)?.title}</div>
+              <div className="font-semibold text-gray-900">{(task.topic as any)?.title}</div>
             </div>
 
             <div className="pb-4 border-b">

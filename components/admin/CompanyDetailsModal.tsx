@@ -364,39 +364,61 @@ export default function CompanyDetailsModal({
     setError(null)
 
     try {
-      const { data: newUser, error: insertError } = await supabase
+      const { data: existingUser } = await supabase
         .from("users")
-        .insert({
-          name: newPMName.trim(),
-          email: newPMEmail.toLowerCase().trim(),
-          password_hash:
-            "$2a$10$rXqvFZnPzAMcLzCP2L4dxu7L6Y3Y5KjGNQQF6xZ4Y5Y5Y5Y5Y5Y5Y5",
-          user_type: "property_manager",
-          roles: ["property_manager"],
-          company_id: company?.id,
-        })
-        .select()
-        .single()
+        .select("id, roles, user_type")
+        .eq("email", newPMEmail.toLowerCase().trim())
+        .maybeSingle()
 
-      if (insertError) {
-        console.error("Error creating PM:", insertError)
-        setError("Failed to create property manager. Email may already exist.")
-        setSavingPM(false)
-        return
+      let pmId: number
+
+      if (existingUser) {
+        const existingRoles = Array.isArray(existingUser.roles) ? existingUser.roles : [existingUser.user_type]
+        const mergedRoles = Array.from(new Set([...existingRoles, "property_manager"]))
+        
+        const { error: updateError } = await supabase
+          .from("users")
+          .update({
+            name: newPMName.trim(),
+            user_type: "property_manager",
+            roles: mergedRoles,
+            company_id: company?.id
+          })
+          .eq("id", existingUser.id)
+
+        if (updateError) throw updateError
+        pmId = existingUser.id
+      } else {
+        const { data: newUser, error: insertError } = await supabase
+          .from("users")
+          .insert({
+            name: newPMName.trim(),
+            email: newPMEmail.toLowerCase().trim(),
+            password_hash:
+              "$2a$10$rXqvFZnPzAMcLzCP2L4dxu7L6Y3Y5KjGNQQF6xZ4Y5Y5Y5Y5Y5Y5Y5",
+            user_type: "property_manager",
+            roles: ["property_manager"],
+            company_id: company?.id,
+          })
+          .select()
+          .single()
+
+        if (insertError) throw insertError
+        pmId = newUser.id
       }
 
       await fetchPropertyManagers()
       await fetchCompanyData()
-      setSelectedManagerId(newUser.id)
+      setSelectedManagerId(pmId)
       setNewPMName("")
       setNewPMEmail("")
       setNewPMPassword("")
       setShowCreatePM(false)
       // 🔄 Notify Janus
       triggerJanusResync("user_created")
-    } catch (err) {
+    } catch (err: any) {
       console.error("Unexpected error:", err)
-      setError("An unexpected error occurred")
+      setError(err.message || "An unexpected error occurred")
     } finally {
       setSavingPM(false)
     }
@@ -486,21 +508,39 @@ export default function CompanyDetailsModal({
     setError(null)
 
     try {
-      const { error: insertError } = await supabase.from("users").insert({
-        name: newAdminName.trim(),
-        email: newAdminEmail.toLowerCase().trim(),
-        password_hash:
-          "$2a$10$rXqvFZnPzAMcLzCP2L4dxu7L6Y3Y5KjGNQQF6xZ4Y5Y5Y5Y5Y5Y5Y5",
-        user_type: "corporate_administrator",
-        roles: ["corporate_administrator"],
-        company_id: company?.id,
-      })
+      const { data: existingUser } = await supabase
+        .from("users")
+        .select("id, roles, user_type")
+        .eq("email", newAdminEmail.toLowerCase().trim())
+        .maybeSingle()
 
-      if (insertError) {
-        console.error("Error adding admin:", insertError)
-        setError("Failed to add administrator. Email may already exist.")
-        setSavingAdmin(false)
-        return
+      if (existingUser) {
+        const existingRoles = Array.isArray(existingUser.roles) ? existingUser.roles : [existingUser.user_type]
+        const mergedRoles = Array.from(new Set([...existingRoles, "corporate_administrator"]))
+        
+        const { error: updateError } = await supabase
+          .from("users")
+          .update({
+            name: newAdminName.trim(),
+            user_type: "corporate_administrator",
+            roles: mergedRoles,
+            company_id: company?.id
+          })
+          .eq("id", existingUser.id)
+
+        if (updateError) throw updateError
+      } else {
+        const { error: insertError } = await supabase.from("users").insert({
+          name: newAdminName.trim(),
+          email: newAdminEmail.toLowerCase().trim(),
+          password_hash:
+            "$2a$10$rXqvFZnPzAMcLzCP2L4dxu7L6Y3Y5KjGNQQF6xZ4Y5Y5Y5Y5Y5Y5Y5",
+          user_type: "corporate_administrator",
+          roles: ["corporate_administrator"],
+          company_id: company?.id,
+        })
+
+        if (insertError) throw insertError
       }
 
       setNewAdminName("")
@@ -510,9 +550,9 @@ export default function CompanyDetailsModal({
       await fetchCompanyData()
       // 🔄 Notify Janus
       triggerJanusResync("user_created")
-    } catch (err) {
+    } catch (err: any) {
       console.error("Unexpected error:", err)
-      setError("An unexpected error occurred")
+      setError(err.message || "An unexpected error occurred")
     } finally {
       setSavingAdmin(false)
     }
@@ -578,21 +618,39 @@ export default function CompanyDetailsModal({
     setError(null)
 
     try {
-      const { error: insertError } = await supabase.from("users").insert({
-        name: newUserName.trim(),
-        email: newUserEmail.toLowerCase().trim(),
-        password_hash:
-          "$2a$10$rXqvFZnPzAMcLzCP2L4dxu7L6Y3Y5KjGNQQF6xZ4Y5Y5Y5Y5Y5Y5Y5",
-        user_type: primaryRole,
-        roles: selectedRoles,
-        company_id: company?.id,
-      })
+      const { data: existingUser } = await supabase
+        .from("users")
+        .select("id, roles, user_type")
+        .eq("email", newUserEmail.toLowerCase().trim())
+        .maybeSingle()
 
-      if (insertError) {
-        console.error("Error adding user:", insertError)
-        setError("Failed to add user. Email may already exist.")
-        setSavingUser(false)
-        return
+      if (existingUser) {
+        const existingRoles = Array.isArray(existingUser.roles) ? existingUser.roles : [existingUser.user_type]
+        const mergedRoles = Array.from(new Set([...existingRoles, ...selectedRoles]))
+        
+        const { error: updateError } = await supabase
+          .from("users")
+          .update({
+            name: newUserName.trim(),
+            user_type: primaryRole,
+            roles: mergedRoles,
+            company_id: company?.id
+          })
+          .eq("id", existingUser.id)
+
+        if (updateError) throw updateError
+      } else {
+        const { error: insertError } = await supabase.from("users").insert({
+          name: newUserName.trim(),
+          email: newUserEmail.toLowerCase().trim(),
+          password_hash:
+            "$2a$10$rXqvFZnPzAMcLzCP2L4dxu7L6Y3Y5KjGNQQF6xZ4Y5Y5Y5Y5Y5Y5Y5",
+          user_type: primaryRole,
+          roles: selectedRoles,
+          company_id: company?.id,
+        })
+
+        if (insertError) throw insertError
       }
 
       setNewUserName("")
@@ -604,9 +662,9 @@ export default function CompanyDetailsModal({
       await fetchPropertyManagers()
       // 🔄 Notify Janus
       triggerJanusResync("user_created")
-    } catch (err) {
+    } catch (err: any) {
       console.error("Unexpected error:", err)
-      setError("An unexpected error occurred")
+      setError(err.message || "An unexpected error occurred")
     } finally {
       setSavingUser(false)
     }

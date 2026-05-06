@@ -41,6 +41,7 @@ export default function CreateTopicModal({
 }: CreateTopicModalProps) {
   const [title, setTitle] = useState("")
   const [description, setDescription] = useState("")
+  const [timePerTopic, setTimePerTopic] = useState<string>("")
   const [saving, setSaving] = useState(false)
   const [currentUser, setCurrentUser] = useState<any>(null)
 
@@ -120,6 +121,7 @@ export default function CreateTopicModal({
           title: title.trim(),
           description: description.trim() || null,
           order_index: nextOrderIndex,
+          time_per_topic: timePerTopic !== "" ? parseInt(timePerTopic, 10) : null,
           created_by_name: currentUser?.name || "User"
         })
         .select()
@@ -208,6 +210,26 @@ export default function CreateTopicModal({
                 Title cannot be changed after creation
               </p>
             )}
+          </div>
+
+          {/* ⭐ NEW: Time allocation field */}
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-2">
+              Time Allocation (minutes, optional)
+            </label>
+            <input
+              type="number"
+              min="0"
+              max="999"
+              value={timePerTopic}
+              onChange={(e) => setTimePerTopic(e.target.value)}
+              placeholder="e.g., 10"
+              disabled={saving || createdTopicId !== null}
+              className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              Used to calculate a running timeline in the agenda PDF
+            </p>
           </div>
 
           {/* ⭐ UPDATED: Description with GeniusWords support */}

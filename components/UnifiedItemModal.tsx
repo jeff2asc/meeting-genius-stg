@@ -15,6 +15,10 @@ interface UnifiedItemModalProps {
   meetingId: string
   onSave: () => void
   defaultTab?: 'task' | 'note' | 'decision'
+  initialData?: {
+    description?: string
+    status?: string
+  }
 }
 
 export default function UnifiedItemModal({
@@ -23,7 +27,8 @@ export default function UnifiedItemModal({
   topicId,
   meetingId,
   onSave,
-  defaultTab = 'task'
+  defaultTab = 'task',
+  initialData
 }: UnifiedItemModalProps) {
   const [activeTab, setActiveTab] = useState<'task' | 'note' | 'decision'>(defaultTab)
 
@@ -54,10 +59,10 @@ export default function UnifiedItemModal({
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b shrink-0">
+        <div className="flex border-b shrink-0 overflow-x-auto scrollbar-hide">
           <button
             onClick={() => setActiveTab('task')}
-            className={`px-6 py-3 font-medium transition-colors ${activeTab === 'task'
+            className={`flex-1 min-w-[80px] px-2 sm:px-6 py-3 text-xs sm:text-sm font-medium transition-colors whitespace-nowrap ${activeTab === 'task'
                 ? 'border-b-2 border-primary text-primary'
                 : 'text-muted-foreground hover:text-foreground'
               }`}
@@ -66,7 +71,7 @@ export default function UnifiedItemModal({
           </button>
           <button
             onClick={() => setActiveTab('note')}
-            className={`px-6 py-3 font-medium transition-colors ${activeTab === 'note'
+            className={`flex-1 min-w-[80px] px-2 sm:px-6 py-3 text-xs sm:text-sm font-medium transition-colors whitespace-nowrap ${activeTab === 'note'
                 ? 'border-b-2 border-primary text-primary'
                 : 'text-muted-foreground hover:text-foreground'
               }`}
@@ -75,7 +80,7 @@ export default function UnifiedItemModal({
           </button>
           <button
             onClick={() => setActiveTab('decision')}
-            className={`px-6 py-3 font-medium transition-colors ${activeTab === 'decision'
+            className={`flex-1 min-w-[80px] px-2 sm:px-6 py-3 text-xs sm:text-sm font-medium transition-colors whitespace-nowrap ${activeTab === 'decision'
                 ? 'border-b-2 border-primary text-primary'
                 : 'text-muted-foreground hover:text-foreground'
               }`}
@@ -94,6 +99,7 @@ export default function UnifiedItemModal({
               topicId={topicId}
               meetingId={meetingId}
               embedded={true}
+              initialData={initialData}
             />
           </div>
 

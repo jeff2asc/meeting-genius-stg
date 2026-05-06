@@ -18,8 +18,7 @@ interface SelectRecorderModalProps {
   attendees: Attendee[]
   initialStartTime?: string | null
   initialChairPerson?: string | null
-  initialMinuteTaker?: string | null
-  onConfirm: (recorderName: string, timekeeperName: string | null, startTime: string | null, chairPerson: string | null, minuteTaker: string | null) => void
+  onConfirm: (recorderName: string, timekeeperName: string | null, startTime: string | null, chairPerson: string | null) => void
 }
 
 export default function SelectRecorderModal({
@@ -28,14 +27,12 @@ export default function SelectRecorderModal({
   attendees,
   initialStartTime,
   initialChairPerson,
-  initialMinuteTaker,
   onConfirm
 }: SelectRecorderModalProps) {
   const [recorderName, setRecorderName] = useState<string>("")
   const [timekeeperName, setTimekeeperName] = useState<string>("")
   const [startTime, setStartTime] = useState<string>(initialStartTime || new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }))
   const [chairPerson, setChairPerson] = useState<string>(initialChairPerson || "")
-  const [minuteTaker, setMinuteTaker] = useState<string>(initialMinuteTaker || "")
   const [error, setError] = useState<string | null>(null)
 
   const handleConfirm = () => {
@@ -44,7 +41,7 @@ export default function SelectRecorderModal({
       return
     }
 
-    onConfirm(recorderName, timekeeperName || null, startTime || null, chairPerson || null, minuteTaker || null)
+    onConfirm(recorderName, timekeeperName || null, startTime || null, chairPerson || null)
     onClose()
   }
 
@@ -123,25 +120,6 @@ export default function SelectRecorderModal({
               className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
             >
               <option value="">Select recorder...</option>
-              {attendees.map((attendee, idx) => (
-                <option key={idx} value={attendee.name}>
-                  {attendee.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Duplicate Note Taker (Optional) */}
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-2">
-              Duplicate Note Taker <span className="text-sm text-muted-foreground">(Optional)</span>
-            </label>
-            <select
-              value={minuteTaker}
-              onChange={(e) => setMinuteTaker(e.target.value)}
-              className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-            >
-              <option value="">No duplicate note taker</option>
               {attendees.map((attendee, idx) => (
                 <option key={idx} value={attendee.name}>
                   {attendee.name}

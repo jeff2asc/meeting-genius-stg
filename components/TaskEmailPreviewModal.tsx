@@ -62,7 +62,7 @@ export default function TaskEmailPreviewModal({
           </div>
         ` : ''}
         <p>You can update the task status using the link below:</p>
-        <a href="${updateLink}" style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin: 10px 0;">${emailData.buttonText}</a>
+        <div style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin: 10px 0; cursor: default;">${emailData.buttonText}</div>
         <p style="color: #6b7280; font-size: 14px; margin-top: 30px;">${emailData.footerText}</p>
       </div>
     `

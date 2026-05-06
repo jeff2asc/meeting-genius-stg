@@ -77,12 +77,18 @@ export default function CreateCompanyModal({
       return
     }
 
-    for (let i = 0; i < newUsers.length; i++) {
-      const user = newUsers[i]
+    const emailMap = new Map<string, string>()
+    for (const user of newUsers) {
+      const email = user.email.toLowerCase().trim()
       if (!user.name.trim() || !user.email.trim() || !user.password.trim()) {
-        setError(`Please fill in all fields for user #${i + 1}`)
+        setError("Please fill in all fields for all users")
         return
       }
+      if (emailMap.has(email) && emailMap.get(email) !== user.name.trim()) {
+        setError(`Consistency error: Different names provided for the same email (${email})`)
+        return
+      }
+      emailMap.set(email, user.name.trim())
     }
 
     setSaving(true)
@@ -107,26 +113,52 @@ export default function CreateCompanyModal({
       }
       console.log('✅ Company created:', newCompany.id)
 
-      // 2. Create users
-      for (const user of newUsers) {
+      // 2. Create users (Deduplicate by email and handle multiple roles)
+      const uniqueUsersMap = new Map<string, { 
+        name: string, 
+        email: string, 
+        password: string, 
+        roles: Set<string> 
+      }>()
+
+      for (const u of newUsers) {
+        const email = u.email.toLowerCase().trim()
+        if (!uniqueUsersMap.has(email)) {
+          uniqueUsersMap.set(email, {
+            name: u.name.trim(),
+            email: email,
+            password: u.password.trim(),
+            roles: new Set([u.role])
+          })
+        } else {
+          uniqueUsersMap.get(email)!.roles.add(u.role)
+        }
+      }
+
+      for (const [email, u] of uniqueUsersMap.entries()) {
+        const rolesArray = Array.from(u.roles)
+        const primaryRole = rolesArray[0]
+        const extraRoles = rolesArray.slice(1)
+
         const { error: userError } = await supabase
           .from('users')
-          .insert({
-            name: user.name.trim(),
-            email: user.email.toLowerCase().trim(),
+          .upsert({
+            name: u.name,
+            email: u.email,
             password_hash: '$2a$10$rXqvFZnPzAMcLzCP2L4dxu7L6Y3Y5KjGNQQF6xZ4Y5Y5Y5Y5Y5Y5Y5', // Replace with secure hash logic
-            user_type: user.role,
+            user_type: primaryRole,
+            roles: extraRoles.length > 0 ? extraRoles : null,
             company_id: newCompany.id
-          })
+          }, { onConflict: 'email' })
 
         if (userError) {
-          console.error('Error creating user:', userError)
-          setError(`Failed to create user: ${user.email}. May already exist.`)
+          console.error('Error creating/updating user:', userError)
+          setError(`Failed to process user: ${email}. ${userError.message}`)
           setSaving(false)
           return
         }
 
-        console.log('✅ User created:', user.email)
+        console.log('✅ User processed:', email)
       }
 
       setCompanyName("")
@@ -360,7 +392,12 @@ export default function CreateCompanyModal({
                 className="flex-1 bg-gradient-to-r from-primary to-decision-purple text-primary-foreground hover:opacity-90"
                 disabled={saving}
               >
-                {saving ? "Creating..." : `Create Company${newUsers.length > 0 ? ` + ${newUsers.length} User${newUsers.length > 1 ? 's' : ''}` : ''}`}
+                {(() => {
+                  const uniqueCount = new Set(newUsers.map(u => u.email.toLowerCase().trim())).size
+                  if (saving) return "Creating..."
+                  if (uniqueCount === 0) return "Create Company"
+                  return `Create Company + ${uniqueCount} User${uniqueCount > 1 ? 's' : ''}`
+                })()}
               </Button>
             </div>
           </div>

@@ -298,6 +298,8 @@ export type Database = {
           is_incamera: boolean
           incamera_start_time: string | null
           incamera_end_time: string | null
+          // ⭐ NEW: Time allocation for agenda PDF timeline
+          time_per_topic: number | null
           created_by_name: string | null
           updated_by_name: string | null
           created_at: string
@@ -313,6 +315,8 @@ export type Database = {
           is_incamera?: boolean
           incamera_start_time?: string | null
           incamera_end_time?: string | null
+          // ⭐ NEW: Time allocation optional on insert
+          time_per_topic?: number | null
           created_by_name?: string | null
           updated_by_name?: string | null
           created_at?: string // ⭐ ADDED: To allow preserving date on rollover
@@ -486,14 +490,21 @@ export type Database = {
           title: string
           priority: "High" | "Medium" | "Low"
           status: string
+          budget: string | null
+          estimated_cost: string | null
+          quoted_amount: string | null
           created_at: string
           updated_at: string
         }
         Insert: {
+          id?: number
           building_id: number
           title: string
           priority?: "High" | "Medium" | "Low"
           status?: string
+          budget?: string | null
+          estimated_cost?: string | null
+          quoted_amount?: string | null
         }
       }
       // ⭐ janus_complaints table
@@ -504,14 +515,21 @@ export type Database = {
           title: string
           description: string | null
           status: string
+          budget: string | null
+          estimated_cost: string | null
+          quoted_amount: string | null
           created_at: string
           updated_at: string
         }
         Insert: {
+          id?: number
           building_id: number
           title: string
           description?: string | null
           status?: string
+          budget?: string | null
+          estimated_cost?: string | null
+          quoted_amount?: string | null
         }
       }
     }
@@ -524,6 +542,9 @@ export interface JanusRepair {
   title: string
   priority: "High" | "Medium" | "Low"
   status: string
+  budget?: string | null
+  estimated_cost?: string | null
+  quoted_amount?: string | null
   created_at: string
   updated_at: string
 }
@@ -534,6 +555,9 @@ export interface JanusComplaint {
   title: string
   description: string | null
   status: string
+  budget?: string | null
+  estimated_cost?: string | null
+  quoted_amount?: string | null
   created_at: string
   updated_at: string
 }

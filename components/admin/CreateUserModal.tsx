@@ -61,7 +61,7 @@ export default function CreateUserModal({
     companyId: 0,
     roles: ["user"],
   })
-  const [selectedUserBuildings, setSelectedUserBuildings] = useState<number[]>([])
+  const [selectedUserBuildings, setSelectedUserBuildings] = useState<Array<{ id: number; unit_number: string }>>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -105,11 +105,14 @@ export default function CreateUserModal({
 
         const { data: userBuildings } = await supabase
           .from("user_buildings")
-          .select("building_id")
+          .select("building_id, unit_number")
           .eq("user_id", userId)
 
         if (userBuildings) {
-          setSelectedUserBuildings(userBuildings.map((ub) => ub.building_id))
+          setSelectedUserBuildings(userBuildings.map((ub) => ({ 
+            id: ub.building_id, 
+            unit_number: ub.unit_number || "" 
+          })))
         }
       }
     } catch (err) {
@@ -154,10 +157,19 @@ export default function CreateUserModal({
   }
 
   const toggleUserBuilding = (buildingId: number) => {
+    setSelectedUserBuildings((prev) => {
+      const exists = prev.find((b) => b.id === buildingId)
+      if (exists) {
+        return prev.filter((b) => b.id !== buildingId)
+      } else {
+        return [...prev, { id: buildingId, unit_number: "" }]
+      }
+    })
+  }
+
+  const updateBuildingUnit = (buildingId: number, unit: string) => {
     setSelectedUserBuildings((prev) =>
-      prev.includes(buildingId)
-        ? prev.filter((id) => id !== buildingId)
-        : [...prev, buildingId],
+      prev.map((b) => (b.id === buildingId ? { ...b, unit_number: unit } : b)),
     )
   }
 
@@ -267,9 +279,10 @@ export default function CreateUserModal({
         await supabase.from("user_buildings").delete().eq("user_id", userId)
 
         if (selectedUserBuildings.length > 0) {
-          const buildingAssignments = selectedUserBuildings.map((buildingId) => ({
+          const buildingAssignments = selectedUserBuildings.map((b) => ({
             user_id: userId,
-            building_id: buildingId,
+            building_id: b.id,
+            unit_number: b.unit_number.trim() || null,
           }))
 
           const { error: buildingsError } = await supabase
@@ -319,52 +332,107 @@ export default function CreateUserModal({
               ? "property_manager"
               : primaryRole
 
-        const { data: newUser, error: userError } = await supabase
+        // ⭐ NEW: Check if user already exists by email
+        const { data: existingUser } = await supabase
           .from("users")
-          .insert({
-            name: userFormData.name.trim(),
-            email: userFormData.email.toLowerCase().trim(),
-            password_hash: hashedPassword, // ✅ Real bcrypt hash
-            user_type: finalUserType,
-            roles: effectiveRoles,
-            company_id: companyIdToAssign,
-            assigned_pm_id:
-              isMaster && (primaryRole === "user" || primaryRole === "owner")
-                ? userFormData.assignedPmId
-                : isPropertyManager && !isCorporateAdmin && !isMaster
-                  ? currentUser.id
-                  : null,
-          })
-          .select()
-          .single()
+          .select("id, roles, user_type, company_id")
+          .eq("email", userFormData.email.toLowerCase().trim())
+          .maybeSingle()
 
-        if (userError) {
-          console.error("❌ Error creating user:", userError)
-          setError("Failed to create user. Email may already exist.")
-          setSaving(false)
-          return
-        }
+        let userIdToAssign: number
 
-        if (selectedUserBuildings.length > 0) {
-          const buildingAssignments = selectedUserBuildings.map((buildingId) => ({
-            user_id: newUser.id,
-            building_id: buildingId,
-          }))
+        if (existingUser) {
+          console.log("ℹ️ User with this email already exists. Updating roles and company.")
+          
+          // Merge roles: existing roles + new roles
+          const existingRoles = Array.isArray(existingUser.roles) ? existingUser.roles : [existingUser.user_type]
+          const mergedRoles = Array.from(new Set([...existingRoles, ...effectiveRoles]))
+          
+          const { data: updatedUser, error: updateError } = await supabase
+            .from("users")
+            .update({
+              name: userFormData.name.trim(),
+              user_type: finalUserType,
+              roles: mergedRoles,
+              company_id: companyIdToAssign || existingUser.company_id, // Keep existing if not providing new
+              assigned_pm_id:
+                isMaster && (primaryRole === "user" || primaryRole === "owner")
+                  ? userFormData.assignedPmId
+                  : isPropertyManager && !isCorporateAdmin && !isMaster
+                    ? currentUser.id
+                    : null,
+            })
+            .eq("id", existingUser.id)
+            .select()
+            .single()
 
-          const { error: buildingsError } = await supabase
-            .from("user_buildings")
-            .insert(buildingAssignments)
-
-          if (buildingsError) {
-            console.error("Error assigning buildings:", buildingsError)
-            setError("User created but failed to assign buildings")
+          if (updateError) {
+            console.error("❌ Error updating existing user:", updateError)
+            setError("Failed to update existing user.")
             setSaving(false)
             return
           }
-        } else if (primaryRole === "property_manager") {
-          console.log(
-            "ℹ️ Property Manager created without buildings - assign later via Admin Panel",
-          )
+          userIdToAssign = existingUser.id
+        } else {
+          // Normal Insert
+          const { data: newUser, error: userError } = await supabase
+            .from("users")
+            .insert({
+              name: userFormData.name.trim(),
+              email: userFormData.email.toLowerCase().trim(),
+              password_hash: hashedPassword, // ✅ Real bcrypt hash
+              user_type: finalUserType,
+              roles: effectiveRoles,
+              company_id: companyIdToAssign,
+              assigned_pm_id:
+                isMaster && (primaryRole === "user" || primaryRole === "owner")
+                  ? userFormData.assignedPmId
+                  : isPropertyManager && !isCorporateAdmin && !isMaster
+                    ? currentUser.id
+                    : null,
+            })
+            .select()
+            .single()
+
+          if (userError) {
+            console.error("❌ Error creating user:", userError)
+            setError("Failed to create user. Email may already exist.")
+            setSaving(false)
+            return
+          }
+          userIdToAssign = newUser.id
+        }
+
+        if (selectedUserBuildings.length > 0) {
+          // For existing users, we might want to append buildings instead of just inserting
+          // But usually we want to assign them to these new ones.
+          // Let's check existing assignments
+          const { data: existingAssignments } = await supabase
+            .from("user_buildings")
+            .select("building_id, unit_number")
+            .eq("user_id", userIdToAssign)
+          
+          const existingKeys = (existingAssignments || []).map(a => `${a.building_id}-${a.unit_number || ''}`)
+          const newAssignments = selectedUserBuildings.filter(b => !existingKeys.includes(`${b.id}-${b.unit_number}`))
+
+          if (newAssignments.length > 0) {
+            const buildingAssignments = newAssignments.map((b) => ({
+              user_id: userIdToAssign,
+              building_id: b.id,
+              unit_number: b.unit_number.trim() || null,
+            }))
+
+            const { error: buildingsError } = await supabase
+              .from("user_buildings")
+              .insert(buildingAssignments)
+
+            if (buildingsError) {
+              console.error("Error assigning buildings:", buildingsError)
+              setError("User created but failed to assign buildings")
+              setSaving(false)
+              return
+            }
+          }
         }
       }
 
@@ -614,23 +682,36 @@ export default function CreateUserModal({
                         : "No buildings available"}
                     </p>
                   ) : (
-                    buildings.map((building) => (
-                      <label
-                        key={building.id}
-                        className="flex items-center gap-2 cursor-pointer hover:bg-muted p-2 rounded"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selectedUserBuildings.includes(building.id)}
-                          onChange={() => toggleUserBuilding(building.id)}
-                          disabled={saving}
-                          className="h-4 w-4 rounded border-border cursor-pointer"
-                        />
-                        <span className="text-sm text-foreground">
-                          {building.name}
-                        </span>
-                      </label>
-                    ))
+                    buildings.map((building) => {
+                      const selection = selectedUserBuildings.find(b => b.id === building.id)
+                      const isSelected = !!selection
+                      return (
+                        <div key={building.id} className="flex items-center justify-between gap-3 p-2 hover:bg-muted rounded border border-transparent hover:border-border">
+                          <label className="flex items-center gap-2 cursor-pointer flex-1">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => toggleUserBuilding(building.id)}
+                              disabled={saving}
+                              className="h-4 w-4 rounded border-border cursor-pointer"
+                            />
+                            <span className="text-sm text-foreground font-medium">
+                              {building.name}
+                            </span>
+                          </label>
+                          {isSelected && (
+                            <input
+                              type="text"
+                              value={selection.unit_number}
+                              onChange={(e) => updateBuildingUnit(building.id, e.target.value)}
+                              placeholder="Unit #"
+                              className="w-20 px-2 py-1 text-xs bg-background border border-border rounded focus:ring-1 focus:ring-primary outline-none"
+                              disabled={saving}
+                            />
+                          )}
+                        </div>
+                      )
+                    })
                   )}
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">

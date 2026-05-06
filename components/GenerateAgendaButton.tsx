@@ -159,7 +159,7 @@ export default function GenerateAgendaButton({
 
       const { data: topics, error: topicsError } = await supabase
         .from("topics")
-        .select("*")
+        .select("id, title, description, section_id, order_index, is_incamera, time_per_topic")
         .eq("meeting_id", meetingId)
         .order("order_index")
 
@@ -171,6 +171,7 @@ export default function GenerateAgendaButton({
         sections: sections || [],
         topics: topics || [],
         logoUrl,
+        meetingStartTime: meeting.start_time || null,
       })
 
       const iframe = document.createElement("iframe")
@@ -325,6 +326,21 @@ export default function GenerateAgendaButton({
               line-height: 1;
               padding-top: 10px;
               box-sizing: border-box;
+            }
+            .topic-time-chip {
+              display: inline-flex;
+              align-items: center;
+              gap: 3px;
+              background: #f0f4ff;
+              border: 1px solid #c7d7fa;
+              color: #3b5bdb;
+              padding: 2px 7px;
+              border-radius: 20px;
+              font-size: 9px;
+              font-weight: 700;
+              letter-spacing: 0.3px;
+              margin-top: 5px;
+              white-space: nowrap;
             }
             .incamera-badge {
               display: inline-block;
@@ -524,12 +540,14 @@ function buildAgendaHtml({
   sections,
   topics,
   logoUrl,
+  meetingStartTime,
 }: {
   template: AgendaTemplate
   meeting: any
   sections: any[]
   topics: any[]
   logoUrl: string | null
+  meetingStartTime: string | null
 }): string {
   const formatDate = (dateStr: string) => {
     return formatUtcToLocalLong(dateStr)
@@ -562,6 +580,50 @@ function buildAgendaHtml({
   }
 
   const building = meeting.buildings
+
+  // ⭐ NEW: Build a flat ordered list of topics (section-ordered, topic-ordered)
+  // so we can compute a running timeline across all topics.
+  const orderedSections = [...sections].sort((a, b) => a.order_index - b.order_index)
+  const flatTopics: Array<{ sectionId: number; topic: any }> = []
+  orderedSections.forEach((section) => {
+    const sectionTopics = topics
+      .filter((t) => t.section_id === section.id)
+      .sort((a, b) => a.order_index - b.order_index)
+    sectionTopics.forEach((t) => flatTopics.push({ sectionId: section.id, topic: t }))
+  })
+
+  // Parse meeting start time into a Date we can advance
+  let runningMinutes: number | null = null
+  if (meetingStartTime) {
+    try {
+      // start_time is stored as an ISO string
+      const st = new Date(meetingStartTime)
+      if (!isNaN(st.getTime())) {
+        runningMinutes = st.getHours() * 60 + st.getMinutes()
+      }
+    } catch { /* ignore */ }
+  }
+
+  // Build a map: topicId -> { startMin, endMin } for display
+  const topicTimings = new Map<number, { startMin: number; endMin: number }>()
+  if (runningMinutes !== null) {
+    flatTopics.forEach(({ topic: t }) => {
+      const alloc = typeof t.time_per_topic === 'number' ? t.time_per_topic : null
+      if (alloc !== null && alloc > 0) {
+        topicTimings.set(t.id, { startMin: runningMinutes!, endMin: runningMinutes! + alloc })
+        runningMinutes! // TS narrowing
+        ;(runningMinutes as number) += alloc
+      }
+    })
+  }
+
+  const fmtMinutes = (totalMin: number): string => {
+    const h = Math.floor(totalMin / 60) % 24
+    const m = totalMin % 60
+    const ampm = h >= 12 ? 'PM' : 'AM'
+    const displayH = h % 12 === 0 ? 12 : h % 12
+    return `${displayH}:${String(m).padStart(2, '0')} ${ampm}`
+  }
 
   let coverHtml = `<div class="cover" style="background-color: ${template.coverPageColor};">`
 
@@ -664,13 +726,28 @@ function buildAgendaHtml({
       sectionTopics.forEach((topic, topicIdx) => {
         const borderColor = topic.is_incamera ? "#dc2626" : template.agendaItemsColor
         const bgColor = topic.is_incamera ? "#fef2f2" : "#ffffff"
-
         const topicColor = topic.is_incamera ? "#dc2626" : template.agendaItemsColor
+
+        // ⭐ NEW: Compute time chip HTML
+        let timeChipHtml = ""
+        const timing = topicTimings.get(topic.id)
+        if (timing) {
+          const alloc = topic.time_per_topic as number
+          timeChipHtml = `<div class="topic-time-chip">&#9201; ${fmtMinutes(timing.startMin)} &ndash; ${fmtMinutes(timing.endMin)} &nbsp;(${alloc} min)</div>`
+        } else if (typeof topic.time_per_topic === 'number' && topic.time_per_topic > 0) {
+          // Has time but no start_time on meeting → show duration only
+          timeChipHtml = `<div class="topic-time-chip">&#9201; ${topic.time_per_topic} min</div>`
+        }
+
         agendaHtml += `<div class="topic-box" style="border-left-color: ${borderColor}; background-color: ${bgColor};">
           <div>
             ${makeCircle(`${sectionIdx + 1}.${topicIdx + 1}`, topicColor)}
             <span class="topic-title">${topic.title}${topic.is_incamera ? '<span class="incamera-badge">[CONFIDENTIAL]</span>' : ""}</span>
           </div>`
+
+        if (timeChipHtml) {
+          agendaHtml += timeChipHtml
+        }
 
         if (topic.description && !topic.is_incamera) {
           agendaHtml += `<div class="topic-description">${escapeHtml(topic.description)}</div>`
