@@ -1,10 +1,10 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { X } from "lucide-react"
+import { X, Check, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { supabase, Company } from "@/lib/supabase"
+import { supabase, Company, getVotingParameters } from "@/lib/supabase"
 import { hashPassword } from "@/lib/auth"
 import { isMaster as checkIsMaster, isCorporateAdmin as checkIsCorporateAdmin, isPropertyManager as checkIsPropertyManager } from "@/lib/permissions"
 import { triggerJanusResync } from "@/lib/janus"
@@ -20,7 +20,8 @@ interface CreateUserModalProps {
     email: string
     company_id?: number | null
   }>
-  buildings: Array<{ id: number; name: string }>
+  buildings: Array<{ id: number; name: string; company_id?: number | null }>
+  onCreateBuilding?: (managerId: number, companyId: number) => void
   companies: Company[]
   userId?: number | null
 }
@@ -33,6 +34,7 @@ type UserType =
   | "attendee"
   | "corporate_administrator"
   | "owner"
+  | "resident"
 
 export default function CreateUserModal({
   isOpen,
@@ -42,6 +44,7 @@ export default function CreateUserModal({
   propertyManagers,
   buildings,
   companies,
+  onCreateBuilding,
   userId = null,
 }: CreateUserModalProps) {
   const [userFormData, setUserFormData] = useState<{
@@ -52,6 +55,7 @@ export default function CreateUserModal({
     assignedPmId: number
     companyId: number
     roles: string[]
+    voting_weight: number
   }>({
     name: "",
     email: "",
@@ -59,11 +63,24 @@ export default function CreateUserModal({
     userType: "user",
     assignedPmId: 0,
     companyId: 0,
-    roles: ["user"],
+    roles: ["user"] as string[],
+    voting_weight: 1.0,
   })
-  const [selectedUserBuildings, setSelectedUserBuildings] = useState<Array<{ id: number; unit_number: string }>>([])
+  const [selectedUserBuildings, setSelectedUserBuildings] = useState<Array<{ id: number; unit_number: string; voting_weight: string }>>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [userTypes, setUserTypes] = useState<string[]>([])
+
+  useEffect(() => {
+    if (isOpen) {
+      fetchUserTypes()
+    }
+  }, [isOpen])
+
+  const fetchUserTypes = async () => {
+    const params = await getVotingParameters(currentUser?.company_id)
+    setUserTypes(params.filter(p => p.parameter_type === 'user_type').map(p => p.value))
+  }
 
   const isMaster = checkIsMaster(currentUser)
   const isCorporateAdmin = checkIsCorporateAdmin(currentUser)
@@ -83,35 +100,41 @@ export default function CreateUserModal({
       const { data: userData, error: userError } = await supabase
         .from("users")
         .select("*, roles")
-        .eq("id", userId)
+        .eq("id", userId!)
         .single()
 
       if (userError) throw userError
 
       if (userData) {
-        const rolesFromDb: string[] =
-          (userData.roles as string[]) ||
-          (userData.user_type ? [userData.user_type] : ["user"])
+        const rolesFromDb: string[] = Array.from(
+          new Set(
+            [userData.user_type, ...(userData.roles || [])].filter(Boolean),
+          ),
+        ) as string[]
+
+        if (rolesFromDb.length === 0) rolesFromDb.push("user")
 
         setUserFormData({
           name: userData.name || "",
           email: userData.email || "",
           password: "",
-          userType: (userData.user_type || "user") as UserType,
+          userType: (rolesFromDb[0] || "user") as UserType,
           assignedPmId: userData.assigned_pm_id || 0,
           companyId: userData.company_id || 0,
           roles: rolesFromDb,
+          voting_weight: userData.voting_weight || 1.0,
         })
 
         const { data: userBuildings } = await supabase
           .from("user_buildings")
-          .select("building_id, unit_number")
-          .eq("user_id", userId)
+          .select("building_id, unit_number, voting_weight")
+          .eq("user_id", userId!)
 
         if (userBuildings) {
           setSelectedUserBuildings(userBuildings.map((ub) => ({ 
             id: ub.building_id, 
-            unit_number: ub.unit_number || "" 
+            unit_number: ub.unit_number || "",
+            voting_weight: (ub.voting_weight || 1.00).toString()
           })))
         }
       }
@@ -130,6 +153,7 @@ export default function CreateUserModal({
       assignedPmId: 0,
       companyId: 0,
       roles: ["user"],
+      voting_weight: 1.0,
     })
     setSelectedUserBuildings([])
     setError(null)
@@ -162,7 +186,7 @@ export default function CreateUserModal({
       if (exists) {
         return prev.filter((b) => b.id !== buildingId)
       } else {
-        return [...prev, { id: buildingId, unit_number: "" }]
+        return [...prev, { id: buildingId, unit_number: "", voting_weight: "1.00" }]
       }
     })
   }
@@ -170,6 +194,12 @@ export default function CreateUserModal({
   const updateBuildingUnit = (buildingId: number, unit: string) => {
     setSelectedUserBuildings((prev) =>
       prev.map((b) => (b.id === buildingId ? { ...b, unit_number: unit } : b)),
+    )
+  }
+
+  const updateBuildingWeight = (buildingId: number, weight: string) => {
+    setSelectedUserBuildings((prev) =>
+      prev.map((b) => (b.id === buildingId ? { ...b, voting_weight: weight } : b)),
     )
   }
 
@@ -242,6 +272,10 @@ export default function CreateUserModal({
     }
 
     setSaving(true)
+    
+    let userIdToAssign: number | null = userId
+    let finalUserType: UserType = primaryRole
+    let companyIdToAssign: number | null = null
 
     try {
       // ✅ Hash the password properly using bcrypt
@@ -257,7 +291,10 @@ export default function CreateUserModal({
           roles: effectiveRoles,
           company_id: userFormData.companyId || null,
           assigned_pm_id: userFormData.assignedPmId || null,
+          voting_weight: userFormData.voting_weight || 1.0,
         }
+        
+        companyIdToAssign = userFormData.companyId || null
 
         // ✅ Only update password_hash if a new password was provided
         if (hashedPassword) {
@@ -283,6 +320,8 @@ export default function CreateUserModal({
             user_id: userId,
             building_id: b.id,
             unit_number: b.unit_number.trim() || null,
+            voting_weight: parseFloat(b.voting_weight) || 1.00,
+            user_building_type: userFormData.userType
           }))
 
           const { error: buildingsError } = await supabase
@@ -294,8 +333,6 @@ export default function CreateUserModal({
           }
         }
       } else {
-        let companyIdToAssign: number | null = null
-
         if (isMaster) {
           if (
             primaryRole === "corporate_administrator" ||
@@ -325,7 +362,7 @@ export default function CreateUserModal({
           }
         }
 
-        const finalUserType: UserType =
+        finalUserType =
           isMaster && primaryRole
             ? primaryRole
             : isCorporateAdmin && primaryRole === "property_manager"
@@ -338,8 +375,6 @@ export default function CreateUserModal({
           .select("id, roles, user_type, company_id")
           .eq("email", userFormData.email.toLowerCase().trim())
           .maybeSingle()
-
-        let userIdToAssign: number
 
         if (existingUser) {
           console.log("ℹ️ User with this email already exists. Updating roles and company.")
@@ -380,7 +415,7 @@ export default function CreateUserModal({
             .insert({
               name: userFormData.name.trim(),
               email: userFormData.email.toLowerCase().trim(),
-              password_hash: hashedPassword, // ✅ Real bcrypt hash
+              password_hash: hashedPassword as string, // ✅ Real bcrypt hash
               user_type: finalUserType,
               roles: effectiveRoles,
               company_id: companyIdToAssign,
@@ -417,9 +452,11 @@ export default function CreateUserModal({
 
           if (newAssignments.length > 0) {
             const buildingAssignments = newAssignments.map((b) => ({
-              user_id: userIdToAssign,
+              user_id: userIdToAssign as number,
               building_id: b.id,
               unit_number: b.unit_number.trim() || null,
+              voting_weight: parseFloat(b.voting_weight) || 1.00,
+              user_building_type: userFormData.userType as string
             }))
 
             const { error: buildingsError } = await supabase
@@ -434,12 +471,33 @@ export default function CreateUserModal({
             }
           }
         }
+        
+        finalUserType = finalUserType // Already set in creation logic
+        companyIdToAssign = companyIdToAssign // Already set in creation logic
       }
 
       resetForm()
       
-      // 🔄 Notify Janus for real-time sync
-      triggerJanusResync(isEditMode ? 'user_updated' : 'user_created')
+      // 🔄 Notify Janus for real-time sync with actual data
+      const syncData = {
+        id: userIdToAssign,
+        name: userFormData.name.trim(),
+        email: userFormData.email.toLowerCase().trim(),
+        user_type: finalUserType,
+        roles: effectiveRoles,
+        company_id: companyIdToAssign,
+        assigned_pm_id: isMaster && (primaryRole === "user" || primaryRole === "owner")
+          ? userFormData.assignedPmId
+          : isPropertyManager && !isCorporateAdmin && !isMaster
+            ? currentUser.id
+            : null,
+        units: selectedUserBuildings.map(b => ({
+          building_id: b.id,
+          unit_number: b.unit_number,
+          company_id: companyIdToAssign // Janus will fallback to this if not set per unit
+        }))
+      }
+      triggerJanusResync(isEditMode ? 'user_updated' : 'user_created', syncData, 'user')
       
       onSuccess()
       onClose()
@@ -457,298 +515,269 @@ export default function CreateUserModal({
     { value: "user", label: "User" },
     { value: "owner", label: "Owner" },
     { value: "property_manager", label: "Property Manager" },
-    ...(isMaster
-      ? [
-        { value: "vendor", label: "Vendor" },
-        { value: "attendee", label: "Attendee" },
-        { value: "corporate_administrator", label: "Corporate Administrator" },
-      ]
-      : []),
+    { value: "vendor", label: "Vendor" },
+    { value: "attendee", label: "Attendee" },
+    { value: "corporate_administrator", label: "Corporate Manager" },
+    { value: "resident", label: "Resident" },
   ]
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 animate-in fade-in overflow-y-auto p-4">
-      <Card className="w-full max-w-2xl border-0 rounded-2xl shadow-2xl my-8">
-        <div className="flex items-center justify-between border-b border-border bg-gradient-to-r from-primary/5 to-decision-purple/5 p-6">
-          <div>
-            <h2 className="text-xl font-bold text-foreground">
-              {isEditMode ? "Edit User" : "Create New User"}
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              {isEditMode
-                ? "Update user information and permissions"
-                : isMaster
-                  ? "Create any user type"
-                  : isCorporateAdmin
-                    ? "Create a Property Manager or User"
-                    : "Create a User for your team"}
-            </p>
+      <Card className="w-full max-w-2xl border-0 rounded-2xl shadow-2xl my-8 overflow-hidden">
+        <div className="bg-gradient-to-r from-primary/10 to-decision-purple/10 p-8 border-b border-border/50">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-2xl font-bold text-foreground tracking-tight">
+                {isEditMode ? "Edit User" : "Create New User"}
+              </h2>
+              <p className="text-sm text-muted-foreground mt-1 font-medium">
+                {isEditMode ? "Update information and permissions" : "Add a new member to your team"}
+              </p>
+            </div>
+            <button
+              onClick={onClose}
+              className="h-10 w-10 flex items-center justify-center rounded-xl hover:bg-background/80 hover:shadow-sm transition-all duration-200"
+              disabled={saving}
+            >
+              <X className="h-5 w-5" />
+            </button>
           </div>
-          <button
-            onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center rounded hover:bg-muted transition-colors"
-            disabled={saving}
-          >
-            <X className="h-5 w-5" />
-          </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="p-8 space-y-6 max-h-[70vh] overflow-y-auto custom-scrollbar">
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded text-sm">
+            <div className="bg-destructive/10 border border-destructive/20 text-destructive px-4 py-3 rounded-xl text-sm font-medium flex items-center gap-3">
+              <span className="h-2 w-2 rounded-full bg-destructive animate-pulse" />
               {error}
             </div>
           )}
 
-          {(isMaster || isCorporateAdmin) && (
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-2">
-                Roles (first selected is primary) *
-              </label>
-              <div className="border border-border rounded p-3 space-y-1">
-                {allRoleOptions.map((role) => (
-                  <label
-                    key={role.value}
-                    className="flex items-center gap-2 cursor-pointer text-sm"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={userFormData.roles.includes(role.value)}
-                      onChange={() => toggleRole(role.value)}
-                      disabled={saving}
-                      className="h-4 w-4"
-                    />
-                    <span>{role.label}</span>
-                  </label>
-                ))}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                Primary user type is saved from the first selected role.
-              </p>
+          {/* Core Information Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div className="space-y-2">
+              <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground ml-1">Full Name *</label>
+              <input
+                type="text"
+                name="name"
+                value={userFormData.name}
+                onChange={handleInputChange}
+                placeholder="John Doe"
+                required
+                disabled={saving}
+                className="w-full h-11 px-4 bg-muted/30 border border-border rounded-xl focus:ring-2 focus:ring-primary/20 outline-none transition-all placeholder:text-muted-foreground/50"
+              />
             </div>
-          )}
 
-          {!isMaster && !isCorporateAdmin && (
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-2">
-                User Type
+            <div className="space-y-2">
+              <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground ml-1">Email Address *</label>
+              <input
+                type="email"
+                name="email"
+                value={userFormData.email}
+                onChange={handleInputChange}
+                placeholder="john@example.com"
+                required
+                disabled={saving}
+                className="w-full h-11 px-4 bg-muted/30 border border-border rounded-xl focus:ring-2 focus:ring-primary/20 outline-none transition-all placeholder:text-muted-foreground/50"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div className="space-y-2">
+              <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground ml-1">
+                {isEditMode ? "Change Password" : "Temporary Password *"}
               </label>
               <input
                 type="text"
-                value="User"
-                disabled
-                className="w-full px-3 py-2 bg-muted text-muted-foreground rounded border border-border"
+                name="password"
+                value={userFormData.password}
+                onChange={handleInputChange}
+                placeholder={isEditMode ? "Leave blank to keep" : "e.g., welcome123"}
+                required={!isEditMode}
+                disabled={saving}
+                className="w-full h-11 px-4 bg-muted/30 border border-border rounded-xl focus:ring-2 focus:ring-primary/20 outline-none transition-all placeholder:text-muted-foreground/50"
               />
-              <p className="text-xs text-muted-foreground mt-1">
-                This user will be assigned to you and your company
-              </p>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground ml-1">Voting Weight</label>
+              <div className="flex gap-2">
+                <select
+                  value={userFormData.voting_weight}
+                  onChange={(e) => setUserFormData(prev => ({ ...prev, voting_weight: parseFloat(e.target.value) || 1.0 }))}
+                  disabled={saving}
+                  className="flex-1 h-11 px-3 bg-muted/30 border border-border rounded-xl focus:ring-2 focus:ring-primary/20 outline-none transition-all"
+                >
+                  <option value={1.0}>1.0 (Standard)</option>
+                  <option value={1.5}>1.5 (Management)</option>
+                  <option value={2.0}>2.0 (Double)</option>
+                  <option value={2.5}>2.5 (Executive)</option>
+                  <option value={0.5}>0.5 (Reduced)</option>
+                </select>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={userFormData.voting_weight}
+                  onChange={(e) => setUserFormData(prev => ({ ...prev, voting_weight: parseFloat(e.target.value) || 1.0 }))}
+                  className="w-20 h-11 px-3 bg-muted/30 border border-border rounded-xl text-center font-bold"
+                  disabled={saving}
+                />
+              </div>
+            </div>
+          </div>
+
+          {(isMaster || isCorporateAdmin) && (
+            <div className="space-y-3 pt-2">
+              <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground ml-1">Assign Roles (Primary first)</label>
+              <div className="bg-muted/10 border border-border rounded-2xl p-4 grid grid-cols-2 gap-3">
+                {allRoleOptions.map((role) => (
+                  <label key={role.value} className="flex items-center gap-3 cursor-pointer p-2 rounded-lg hover:bg-muted/50 transition-colors group">
+                    <div className={`h-5 w-5 rounded border flex items-center justify-center transition-all ${userFormData.roles.includes(role.value) ? 'bg-primary border-primary' : 'border-border group-hover:border-primary/50'}`}>
+                      {userFormData.roles.includes(role.value) && <Check className="h-3 w-3 text-white" />}
+                      <input
+                        type="checkbox"
+                        checked={userFormData.roles.includes(role.value)}
+                        onChange={() => toggleRole(role.value)}
+                        disabled={saving}
+                        className="hidden"
+                      />
+                    </div>
+                    <span className="text-sm font-medium">{role.label}</span>
+                  </label>
+                ))}
+                {userTypes
+                  .filter(t => !allRoleOptions.some(r => r.value === t))
+                  .map(t => (
+                    <label key={t} className="flex items-center gap-3 cursor-pointer p-2 rounded-lg hover:bg-muted/50 transition-colors group">
+                      <div className={`h-5 w-5 rounded border flex items-center justify-center transition-all ${userFormData.roles.includes(t) ? 'bg-primary border-primary' : 'border-border group-hover:border-primary/50'}`}>
+                        {userFormData.roles.includes(t) && <Check className="h-3 w-3 text-white" />}
+                        <input
+                          type="checkbox"
+                          checked={userFormData.roles.includes(t)}
+                          onChange={() => toggleRole(t)}
+                          disabled={saving}
+                          className="hidden"
+                        />
+                      </div>
+                      <span className="text-sm font-medium text-primary">{t}</span>
+                    </label>
+                  ))
+                }
+              </div>
             </div>
           )}
 
           {isMaster && (
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-2">
-                Company *
-              </label>
+            <div className="space-y-2">
+              <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground ml-1">Company Association</label>
               <select
                 name="companyId"
                 value={userFormData.companyId}
                 onChange={handleInputChange}
                 disabled={saving}
-                required
-                className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
+                className="w-full h-11 px-4 bg-muted/30 border border-border rounded-xl focus:ring-2 focus:ring-primary/20 outline-none transition-all"
               >
                 <option value={0}>Select Company</option>
                 {companies.map((company) => (
-                  <option key={company.id} value={company.id}>
-                    {company.name}
-                  </option>
+                  <option key={company.id} value={company.id}>{company.name}</option>
                 ))}
               </select>
-              <p className="text-xs text-muted-foreground mt-1">
-                This user will belong to the selected company
-              </p>
             </div>
           )}
 
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-2">
-              Full Name *
-            </label>
-            <input
-              type="text"
-              name="name"
-              value={userFormData.name}
-              onChange={handleInputChange}
-              placeholder="John Doe"
-              required
-              disabled={saving}
-              className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-2">
-              Email Address *
-            </label>
-            <input
-              type="email"
-              name="email"
-              value={userFormData.email}
-              onChange={handleInputChange}
-              placeholder="john@example.com"
-              required
-              disabled={saving}
-              className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-2">
-              {isEditMode
-                ? "New Password (leave blank to keep current)"
-                : "Temporary Password *"}
-            </label>
-            <input
-              type="text"
-              name="password"
-              value={userFormData.password}
-              onChange={handleInputChange}
-              placeholder={
-                isEditMode
-                  ? "Leave blank to keep current password"
-                  : "e.g., welcome123"
-              }
-              required={!isEditMode}
-              disabled={saving}
-              className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
-            />
-            <p className="text-xs text-muted-foreground mt-1">
-              {isEditMode
-                ? "Only enter a password if you want to change it"
-                : "User will use this password to login"}
-            </p>
-          </div>
-
-          {isMaster &&
-            (userFormData.userType === "user" ||
-              userFormData.userType === "owner") && (
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">
-                  Assign to Property Manager *
-                </label>
-                <select
-                  name="assignedPmId"
-                  value={userFormData.assignedPmId}
-                  onChange={handleInputChange}
-                  disabled={saving}
-                  required
-                  className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
-                >
-                  <option value={0}>Select Property Manager</option>
-                  {propertyManagers.map((pm) => (
-                    <option key={pm.id} value={pm.id}>
-                      {pm.name} ({pm.email})
-                    </option>
-                  ))}
-                </select>
-                <p className="text-xs text-muted-foreground mt-1">
-                  This Property Manager will manage this user (company will be
-                  inherited from PM)
-                </p>
-              </div>
-            )}
-
-          {(userFormData.userType === "property_manager" ||
-            userFormData.userType === "owner" ||
+          {(userFormData.roles.includes("property_manager") || 
+            userFormData.roles.includes("owner") || 
+            userFormData.roles.includes("resident") || 
+            userFormData.roles.includes("attendee") ||
             (!isMaster && !isCorporateAdmin)) && (
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">
-                  Assign Buildings{" "}
-                  {isMaster &&
-                    userFormData.userType === "property_manager" &&
-                    !isEditMode &&
-                    "*"}
-                  {isCorporateAdmin &&
-                    userFormData.userType === "property_manager" &&
-                    " (Optional)"}
-                </label>
-                <div className="border border-border rounded p-4 space-y-2 max-h-48 overflow-y-auto">
-                  {buildings.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">
-                      {isCorporateAdmin &&
-                        userFormData.userType === "property_manager"
-                        ? "No buildings yet. Create a building first, then assign it to this Property Manager via the Admin Panel."
-                        : "No buildings available"}
-                    </p>
-                  ) : (
-                    buildings.map((building) => {
-                      const selection = selectedUserBuildings.find(b => b.id === building.id)
-                      const isSelected = !!selection
-                      return (
-                        <div key={building.id} className="flex items-center justify-between gap-3 p-2 hover:bg-muted rounded border border-transparent hover:border-border">
-                          <label className="flex items-center gap-2 cursor-pointer flex-1">
+            <div className="space-y-3 pt-2">
+              <div className="flex items-center justify-between ml-1">
+                <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Building Assignments</label>
+                {userFormData.roles.includes("property_manager") && (
+                  <Button 
+                    type="button" 
+                    variant="ghost" 
+                    size="sm" 
+                    onClick={() => onCreateBuilding?.(userId || 0, userFormData.companyId)}
+                    className="h-7 px-2 text-[10px] font-bold text-primary hover:bg-primary/5 uppercase"
+                  >
+                    <Plus className="h-3 w-3 mr-1" />
+                    Create New Building
+                  </Button>
+                )}
+              </div>
+              <div className="bg-muted/10 border border-border rounded-2xl p-2 max-h-56 overflow-y-auto space-y-1">
+                {(() => {
+                  const filteredBuildings = buildings.filter(b => 
+                    !userFormData.companyId || userFormData.companyId === 0 || b.company_id === userFormData.companyId
+                  )
+                  
+                  if (filteredBuildings.length === 0) {
+                    return <p className="p-4 text-sm text-center text-muted-foreground italic">No buildings available for this company.</p>
+                  }
+                  
+                  return filteredBuildings.map((building) => {
+                    const selection = selectedUserBuildings.find(b => b.id === building.id)
+                    const isSelected = !!selection
+                    return (
+                      <div key={building.id} className={`flex items-center justify-between p-3 rounded-xl transition-all ${isSelected ? 'bg-background shadow-sm border border-border' : 'hover:bg-muted/30 border border-transparent'}`}>
+                        <label className="flex items-center gap-3 cursor-pointer flex-1">
+                          <div className={`h-5 w-5 rounded border flex items-center justify-center transition-all ${isSelected ? 'bg-primary border-primary' : 'border-border'}`}>
+                            {isSelected && <Check className="h-3 w-3 text-white" />}
                             <input
                               type="checkbox"
                               checked={isSelected}
                               onChange={() => toggleUserBuilding(building.id)}
                               disabled={saving}
-                              className="h-4 w-4 rounded border-border cursor-pointer"
+                              className="hidden"
                             />
-                            <span className="text-sm text-foreground font-medium">
-                              {building.name}
-                            </span>
-                          </label>
-                          {isSelected && (
+                          </div>
+                          <span className="text-sm font-semibold">{building.name}</span>
+                        </label>
+                        {isSelected && (
+                          <div className="flex items-center gap-2">
                             <input
                               type="text"
                               value={selection.unit_number}
                               onChange={(e) => updateBuildingUnit(building.id, e.target.value)}
-                              placeholder="Unit #"
-                              className="w-20 px-2 py-1 text-xs bg-background border border-border rounded focus:ring-1 focus:ring-primary outline-none"
-                              disabled={saving}
+                              placeholder="Unit"
+                              className="w-16 h-8 text-xs bg-muted/50 border border-border rounded-lg px-2 focus:ring-1 focus:ring-primary outline-none"
                             />
-                          )}
-                        </div>
-                      )
-                    })
-                  )}
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {isMaster &&
-                    userFormData.userType === "property_manager" &&
-                    !isEditMode
-                    ? "Property Managers need at least one building"
-                    : isCorporateAdmin &&
-                      userFormData.userType === "property_manager"
-                      ? "✅ You can create the Property Manager now and assign buildings later via Admin Panel → Buildings tab"
-                      : "Optional - You can assign buildings later"}
-                </p>
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={selection.voting_weight}
+                              onChange={(e) => updateBuildingWeight(building.id, e.target.value)}
+                              placeholder="Weight"
+                              className="w-14 h-8 text-xs bg-muted/50 border border-border rounded-lg px-2 focus:ring-1 focus:ring-primary outline-none"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })
+                })()}
               </div>
-            )}
+            </div>
+          )}
 
-          <div className="flex gap-3 pt-4">
+          <div className="flex gap-4 pt-4 sticky bottom-0 bg-background pb-2">
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
               onClick={onClose}
-              className="flex-1"
+              className="flex-1 h-12 rounded-xl font-bold hover:bg-muted"
               disabled={saving}
             >
               Cancel
             </Button>
             <Button
               type="submit"
-              className="flex-1 bg-gradient-to-r from-primary to-decision-purple text-primary-foreground hover:opacity-90"
+              className="flex-[2] h-12 rounded-xl bg-gradient-to-r from-primary to-decision-purple text-white font-bold shadow-lg shadow-primary/20 hover:opacity-90 transition-all active:scale-[0.98]"
               disabled={saving}
             >
-              {saving
-                ? isEditMode
-                  ? "Updating..."
-                  : "Creating..."
-                : isEditMode
-                  ? "Update User"
-                  : "Create User"}
+              {saving ? "Processing..." : isEditMode ? "Save Changes" : "Create User Account"}
             </Button>
           </div>
         </form>

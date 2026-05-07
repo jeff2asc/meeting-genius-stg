@@ -4,9 +4,10 @@ import { useState } from "react"
 import { X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { supabase } from "@/lib/supabase"
+import { supabase, getVotingParameters } from "@/lib/supabase"
 import { isMaster as checkIsMaster, isCorporateAdmin as checkIsCorporateAdmin, isPropertyManager as checkIsPropertyManager } from "@/lib/permissions"
 import { triggerJanusResync } from "@/lib/janus"
+import { useEffect } from "react"
 
 interface CreateBuildingModalProps {
   isOpen: boolean
@@ -18,8 +19,10 @@ interface CreateBuildingModalProps {
     name: string
     email: string
     user_type: string
-    company_id?: number | null  // ✅ Add this - changed to accept null
+    company_id?: number | null
   }>
+  preselectedManagerId?: number
+  preselectedCompanyId?: number
 }
 
 
@@ -28,17 +31,31 @@ export default function CreateBuildingModal({
   onClose,
   onSuccess,
   currentUser,
-  availableUsers
+  availableUsers,
+  preselectedManagerId,
+  preselectedCompanyId
 }: CreateBuildingModalProps) {
   const [buildingFormData, setBuildingFormData] = useState({
     name: "",
     address: "",
-    managerId: checkIsPropertyManager(currentUser) && !checkIsCorporateAdmin(currentUser) && !checkIsMaster(currentUser) ? currentUser.id : 0,
+    managerId: preselectedManagerId !== undefined ? preselectedManagerId : (checkIsPropertyManager(currentUser) && !checkIsCorporateAdmin(currentUser) && !checkIsMaster(currentUser) ? currentUser.id : 0),
   })
   const [buildingType, setBuildingType] = useState<'Strata/Condo' | 'Rental' | 'Housing Co-op'>('Strata/Condo')
   const [selectedBuildingUsers, setSelectedBuildingUsers] = useState<number[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [buildingTypes, setBuildingTypes] = useState<string[]>([])
+
+  useEffect(() => {
+    if (isOpen) {
+      fetchBuildingTypes()
+    }
+  }, [isOpen])
+
+  const fetchBuildingTypes = async () => {
+    const params = await getVotingParameters(currentUser?.company_id)
+    setBuildingTypes(params.filter(p => p.parameter_type === 'building_type').map(p => p.value))
+  }
 
   const isMaster = checkIsMaster(currentUser)
   const isCorporateAdmin = checkIsCorporateAdmin(currentUser)
@@ -142,14 +159,14 @@ export default function CreateBuildingModal({
 
       console.log('✅ Building created successfully')
       
-      // 🔄 Notify Janus for real-time sync
-      triggerJanusResync('building_created')
+      // 🔄 Notify Janus for real-time sync with actual data
+      triggerJanusResync('building_created', newBuilding, 'building')
 
       // Reset form
       setBuildingFormData({
         name: "",
         address: "",
-        managerId: checkIsPropertyManager(currentUser) && !checkIsCorporateAdmin(currentUser) && !checkIsMaster(currentUser) ? currentUser.id : 0,
+        managerId: preselectedManagerId !== undefined ? preselectedManagerId : (checkIsPropertyManager(currentUser) && !checkIsCorporateAdmin(currentUser) && !checkIsMaster(currentUser) ? currentUser.id : 0),
       })
       setBuildingType('Strata/Condo')
       setSelectedBuildingUsers([])
@@ -164,14 +181,17 @@ export default function CreateBuildingModal({
     }
   }
 
+  if (!isOpen) return null
+
   // Filter available property managers based on user type
   const availablePropertyManagers = isMaster 
-    ? availableUsers.filter(user => user.user_type === 'property_manager')
+    ? availableUsers.filter((user: any) => user.user_type === 'property_manager' || (Array.isArray(user.roles) && user.roles.includes('property_manager')))
     : isCorporateAdmin
-    ? availableUsers.filter(user => user.user_type === 'property_manager' && user.company_id === currentUser.company_id)
+    ? availableUsers.filter((user: any) => 
+        (user.user_type === 'property_manager' || (Array.isArray(user.roles) && user.roles.includes('property_manager'))) && 
+        user.company_id === currentUser.company_id
+      )
     : []
-
-  if (!isOpen) return null
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 animate-in fade-in overflow-y-auto p-4">
@@ -215,19 +235,21 @@ export default function CreateBuildingModal({
             />
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-2">
-              Address
-            </label>
-            <input
-              type="text"
-              name="address"
-              value={buildingFormData.address}
-              onChange={handleInputChange}
-              placeholder="e.g., 123 Main St, Vancouver, BC"
-              disabled={saving}
-              className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
-            />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-foreground mb-2">
+                Street Address
+              </label>
+              <input
+                type="text"
+                name="address"
+                value={buildingFormData.address}
+                onChange={handleInputChange}
+                placeholder="e.g., 123 Main St"
+                disabled={saving}
+                className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
+              />
+            </div>
           </div>
 
           <div>
@@ -236,13 +258,24 @@ export default function CreateBuildingModal({
             </label>
             <select
               value={buildingType}
-              onChange={(e) => setBuildingType(e.target.value as 'Strata/Condo' | 'Rental' | 'Housing Co-op')}
+              onChange={(e) => setBuildingType(e.target.value as any)}
               disabled={saving}
               className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
             >
-              <option value="Strata/Condo">Strata/Condo</option>
-              <option value="Rental">Rental Building</option>
-              <option value="Housing Co-op">Housing Co-op</option>
+              {buildingTypes.length > 0 ? (
+                buildingTypes.map(t => <option key={t} value={t}>{t}</option>)
+              ) : (
+                <>
+                  <option value="Strata Corporation">Strata Corporation</option>
+                  <option value="Condominium Corporation">Condominium Corporation</option>
+                  <option value="Equity Co-op">Equity Co-op</option>
+                  <option value="Non-Profit Co-op">Non-Profit Co-op</option>
+                  <option value="Tenant Association">Tenant Association</option>
+                  <option value="Non-Profit Society">Non-Profit Society</option>
+                  <option value="Trade Association">Trade Association</option>
+                  <option value="Professional Association">Professional Association</option>
+                </>
+              )}
             </select>
             <p className="text-xs text-muted-foreground mt-1">
               Select the type of building for proper legislation handling
@@ -264,7 +297,7 @@ export default function CreateBuildingModal({
                 className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
               >
                 <option value={0}>Select Property Manager</option>
-                {availablePropertyManagers.map(pm => (
+                {availablePropertyManagers.map((pm: any) => (
                   <option key={pm.id} value={pm.id}>
                     {pm.name} ({pm.email})
                   </option>
@@ -291,7 +324,7 @@ export default function CreateBuildingModal({
                 {availablePropertyManagers.length === 0 ? (
                   <option disabled>No Property Managers available - Create one first</option>
                 ) : (
-                  availablePropertyManagers.map(pm => (
+                  availablePropertyManagers.map((pm: any) => (
                     <option key={pm.id} value={pm.id}>
                       {pm.name} ({pm.email})
                     </option>
@@ -335,7 +368,7 @@ export default function CreateBuildingModal({
                 </p>
               ) : (
                 availableUsers
-                  .map((user) => (
+                  .map((user: any) => (
                     <label
                       key={user.id}
                       className="flex items-center gap-2 cursor-pointer hover:bg-muted p-2 rounded"

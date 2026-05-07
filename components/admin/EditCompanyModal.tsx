@@ -4,17 +4,9 @@ import { useState, useEffect } from "react"
 import { X, Plus, Trash2, Edit2, Save } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { supabase } from "@/lib/supabase"
+import { supabase, Company } from "@/lib/supabase"
 import { triggerJanusResync } from "@/lib/janus"
 
-interface Company {
-  id: number
-  name: string
-  created_at: string
-  default_meeting_sections?: string[]
-  default_meeting_types?: string[]
-  default_decision_results?: string[]  // ← NEW
-}
 
 interface EditCompanyModalProps {
   isOpen: boolean
@@ -154,8 +146,15 @@ export default function EditCompanyModal({
 
       console.log('✅ Company updated successfully')
       
-      // 🔄 Notify Janus for real-time sync
-      triggerJanusResync('company_updated')
+      // 🔄 Notify Janus for real-time sync with actual data
+      const companyData = {
+        id: company.id,
+        name: companyName.trim(),
+        default_meeting_sections: meetingSections,
+        default_meeting_types: meetingTypes,
+        default_decision_results: decisionResults,
+      }
+      triggerJanusResync('company_updated', companyData, 'company')
       
       onSuccess()
       onClose()

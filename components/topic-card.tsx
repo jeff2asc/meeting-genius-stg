@@ -89,6 +89,7 @@ interface Decision {
   votes_for: number | null
   votes_against: number | null
   votes_abstain: number | null
+  voting_type?: string | null
   parent_decision_id: number | null
   recorded_at: string
   edited_at: string | null
@@ -917,9 +918,10 @@ export default function TopicCard({
               )}
             </div>
             <p className={`text-sm mb-1 ${decision.status === 'completed' ? 'line-through text-muted-foreground italic' : 'text-foreground'}`}>{decision.motion_text}</p>
-            {(decision.result || decision.votes_for !== null || decision.votes_against !== null) && (
+            {(decision.result || decision.voting_type || decision.votes_for !== null || decision.votes_against !== null) && (
               <p className="text-xs text-muted-foreground">
                 {decision.result && `Result: ${decision.result}`}
+                {decision.voting_type && ` · Mechanism: ${decision.voting_type}`}
                 {(decision.votes_for !== null || decision.votes_against !== null) && ` · Votes: ${decision.votes_for || 0} for, ${decision.votes_against || 0} against`}
                 {decision.votes_abstain !== null && decision.votes_abstain > 0 && `, ${decision.votes_abstain} abstain`}
               </p>

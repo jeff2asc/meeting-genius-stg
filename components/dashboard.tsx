@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { ChevronDown, User, Plus, Search, Calendar, FileText, Eye, Play, Edit2, CheckSquare, Trash2, Wrench, AlertTriangle, RefreshCw } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { supabase, getCurrentUser } from "@/lib/supabase"
+import { supabase, getCurrentUser, createAdminClient } from "@/lib/supabase"
 import { apiClient } from "@/lib/api-client"
 import { formatUtcToLocalShort } from "@/lib/timezone"
 import { toast } from "sonner"
@@ -83,7 +83,10 @@ export default function Dashboard({
       console.log('🔄 Selected building changed:', selectedBuilding)
       fetchMeetings()
       fetchTasks()
-      fetchJanusData()
+      // Only re-fetch Janus data if already known to be integrated
+      if (isJanusIntegrated) {
+        fetchJanusData()
+      }
     }
   }, [selectedBuilding, selectedMeetingType])
 
@@ -91,10 +94,26 @@ export default function Dashboard({
     const currentUser = getCurrentUser()
     if (!currentUser) return
     
-    // Check if integrated
-    const storageKey = `mg_integrations_${currentUser.id}`
-    const installed = typeof window !== 'undefined' ? localStorage.getItem(storageKey) : null
-    const isIntegrated = installed ? JSON.parse(installed).includes("janus") : false
+    // ✅ Check Database: Is Janus integrated for this company?
+    let isIntegrated = false
+    if (currentUser.company_id) {
+      const adminClient = createAdminClient()
+      const { data: company } = await adminClient
+        .from('companies')
+        .select('janus_integrated')
+        .eq('id', currentUser.company_id)
+        .single()
+      
+      isIntegrated = !!company?.janus_integrated
+    }
+
+    // Fallback to localStorage for legacy or personal overrides
+    if (!isIntegrated) {
+      const storageKey = `mg_integrations_${currentUser.id}`
+      const installed = typeof window !== 'undefined' ? localStorage.getItem(storageKey) : null
+      isIntegrated = installed ? JSON.parse(installed).includes("janus") : false
+    }
+
     setIsJanusIntegrated(isIntegrated)
     
     if (!isIntegrated) return
@@ -155,8 +174,9 @@ export default function Dashboard({
     setIsImporting(true)
     
     try {
+      const adminClient = createAdminClient()
       // 1. Get the sections of the target meeting to find where to put the new topic
-      const { data: sections } = await supabase
+      const { data: sections } = await adminClient
         .from('sections')
         .select('*')
         .eq('meeting_id', parseInt(targetMeetingId))
@@ -166,7 +186,7 @@ export default function Dashboard({
       const sectionId = sections?.[0]?.id || null
       
       // 2. Get the last topic order index
-      const { data: topics } = await supabase
+      const { data: topics } = await adminClient
         .from('topics')
         .select('order_index')
         .eq('meeting_id', parseInt(targetMeetingId))
@@ -176,7 +196,7 @@ export default function Dashboard({
       const nextOrder = (topics?.[0]?.order_index || 0) + 1
       
       // 3. Create the new topic from the Janus ticket
-      const { error } = await supabase
+      const { error } = await adminClient
         .from('topics')
         .insert({
           meeting_id: parseInt(targetMeetingId),
@@ -244,7 +264,8 @@ export default function Dashboard({
       } else if (checkIsPropertyManager(currentUser)) {
         data = await apiClient.v1.buildings.list({ manager_id: currentUser.id })
       } else {
-        const { data: userBuildings } = await supabase
+        const adminClient = createAdminClient()
+        const { data: userBuildings } = await adminClient
           .from('user_buildings')
           .select('building_id')
           .eq('user_id', currentUser.id)

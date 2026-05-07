@@ -44,6 +44,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { supabase, getCurrentUser } from "@/lib/supabase"
 import { canAccessIntegrations, isMaster as checkIsMaster, isCorporateAdmin as checkIsCorporateAdmin, isPropertyManager as checkIsPropertyManager } from "@/lib/permissions"
 import { toast } from "sonner"
+import { triggerJanusResync } from "@/lib/janus"
 
 interface Integration {
   id: string
@@ -258,16 +259,16 @@ export default function IntegrationsPage({ onBack }: { onBack: () => void }) {
         junctions
       })
 
+      // ⭐ DEFAULT TO ALL: Select all visible buildings and users by default for a seamless "One-Click" install
+      setSelectedBuildingIds(buildings.map((b: any) => b.id))
+      setSelectedUserIds([...users, ...vendors].map((u: any) => u.id))
+      
       setMgSummary({
         companies: companies.length,
         buildings: buildings.length,
         users: users.length,
         vendors: vendors.length
       })
-
-      // Default selections (all visible items for limited roles)
-      setSelectedBuildingIds(buildings.map((b: any) => b.id))
-      setSelectedUserIds([...users, ...vendors].map((u: any) => u.id))
       
       // Select the first company by default if "all" isn't allowed or preferred
       if (companies.length > 0) {
@@ -367,14 +368,18 @@ export default function IntegrationsPage({ onBack }: { onBack: () => void }) {
         `→ Sending selected data to Janus (${isLocal ? 'Local' : 'Production'})...`,
       ])
 
-      // Step 3: Push to Janus
+      // Step 3: Push to Janus (Wrapped in 'data' for Janus API compatibility)
       const janusRes = await fetch(JANUS_SYNC_URL, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "x-api-key": API_KEY
         },
-        body: JSON.stringify(payload)
+        body: JSON.stringify({
+          source: "meeting-genius",
+          reason: "bulk_sync_install",
+          data: payload 
+        })
       })
 
       const janusResult = await janusRes.json()
@@ -400,8 +405,25 @@ export default function IntegrationsPage({ onBack }: { onBack: () => void }) {
       })
     }
 
+    // ✅ Save to Database: Mark company as integrated for real-time sync
+    if (user && selectedCompanyId) {
+      const targetCompanyId = selectedCompanyId === "all" ? user.company_id : parseInt(selectedCompanyId)
+      if (targetCompanyId) {
+        supabase
+          .from('companies')
+          .update({ 
+            janus_integrated: true,
+            janus_api_key: API_KEY 
+          })
+          .eq('id', targetCompanyId)
+          .then(({ error }) => {
+            if (error) console.error("Error updating company integration status:", error)
+            else console.log("✅ Company integration status saved to database")
+          })
+      }
+    }
+
     // Always mark as installed locally per account
-    const user = getCurrentUser()
     if (user) {
       const storageKey = `mg_integrations_${user.id}`
       const installed = JSON.parse(localStorage.getItem(storageKey) || "[]")
@@ -440,22 +462,61 @@ export default function IntegrationsPage({ onBack }: { onBack: () => void }) {
     window.open(autoLoginUrl, "_blank")
   }
 
-  const handleUninstallJanus = () => {
+  const handleUninstallJanus = async () => {
     const user = getCurrentUser()
     if (!user) return
 
-    const storageKey = `mg_integrations_${user.id}`
-    const installed = JSON.parse(localStorage.getItem(storageKey) || "[]")
-    const newInstalled = installed.filter((id: string) => id !== "janus")
-    localStorage.setItem(storageKey, JSON.stringify(newInstalled))
-    localStorage.removeItem(`mg_janus_token_${user.id}`)
-    
-    setIntegrations(prev => prev.map(int => 
-      int.id === "janus" ? { ...int, installed: false } : int
-    ))
-    toast.info("Integration disconnected", {
-      description: "You can now re-run the synchronization."
-    })
+    toast.loading("Disconnecting and locking Janus accounts...", { id: "uninstall-janus" })
+
+    try {
+      // 1. Fetch all users for this company to lock them out in Janus
+      if (user.company_id) {
+        const { data: companyUsers } = await supabase
+          .from('users')
+          .select('*')
+          .eq('company_id', user.company_id)
+
+        if (companyUsers && companyUsers.length > 0) {
+          // Send surgical "uninstalled" push for each user
+          for (const u of companyUsers) {
+            await triggerJanusResync("user_uninstalled", {
+              ...u,
+              status: "uninstalled"
+            }, "user")
+          }
+        }
+
+        // Send final company uninstalled push
+        await triggerJanusResync("company_uninstalled", {
+          id: user.company_id,
+          status: "uninstalled"
+        }, "company")
+
+        // 2. Save to Database: Mark company as disconnected in MG
+        await supabase
+          .from('companies')
+          .update({ janus_integrated: false })
+          .eq('id', user.company_id)
+      }
+
+      const storageKey = `mg_integrations_${user.id}`
+      const installed = JSON.parse(localStorage.getItem(storageKey) || "[]")
+      const newInstalled = installed.filter((id: string) => id !== "janus")
+      localStorage.setItem(storageKey, JSON.stringify(newInstalled))
+      localStorage.removeItem(`mg_janus_token_${user.id}`)
+      
+      setIntegrations(prev => prev.map(int => 
+        int.id === "janus" ? { ...int, installed: false } : int
+      ))
+
+      toast.success("Integration disconnected", {
+        id: "uninstall-janus",
+        description: "All associated Janus accounts have been locked."
+      })
+    } catch (err) {
+      console.error("Uninstall error:", err)
+      toast.error("Failed to fully disconnect", { id: "uninstall-janus" })
+    }
   }
 
   return (

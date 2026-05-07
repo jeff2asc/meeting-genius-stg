@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { supabase } from '@/lib/supabase'
 
-// Supabase client
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-const supabase = createClient(supabaseUrl, supabaseAnonKey)
+// Use centralized Supabase client from @/lib/supabase
+// to handle hardcoded fallbacks and singletons.
 
 // API Key validation
 const VALID_API_KEY = process.env.NEXT_PUBLIC_API_KEY || ''

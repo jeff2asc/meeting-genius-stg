@@ -20,7 +20,7 @@ interface TaskNote {
   id: number
   content: string
   created_at: string
-  created_by: string | null
+  created_by: number | null
 }
 
 export default function TaskUpdatePage() {

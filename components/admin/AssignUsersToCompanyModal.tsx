@@ -18,6 +18,7 @@ interface User {
   email: string
   user_type: string
   company_id: number | null
+  roles?: string[] | null
 }
 
 interface AssignUsersToCompanyModalProps {
@@ -53,7 +54,7 @@ export default function AssignUsersToCompanyModal({
       // Fetch all users that can be assigned to companies
       const { data: usersData, error: usersError } = await supabase
         .from('users')
-        .select('id, name, email, user_type, company_id')
+        .select('id, name, email, user_type, roles, company_id')
         .neq('user_type', 'master') // Everyone except masters
         .order('name')
 
@@ -135,13 +136,13 @@ export default function AssignUsersToCompanyModal({
   const getUserTypeBadge = (userType: string) => {
     switch (userType) {
       case 'corporate_administrator':
-        return <span className="text-xs px-2 py-1 rounded bg-purple-100 text-purple-800">Corp Admin</span>
+        return <span className="text-[10px] px-2 py-0.5 rounded bg-purple-100 text-purple-800 border border-purple-200">Corp Admin</span>
       case 'property_manager':
-        return <span className="text-xs px-2 py-1 rounded bg-blue-100 text-blue-800">PM</span>
+        return <span className="text-[10px] px-2 py-0.5 rounded bg-blue-100 text-blue-800 border border-blue-200">PM</span>
       case 'vendor':
-        return <span className="text-xs px-2 py-1 rounded bg-orange-100 text-orange-800">Vendor</span>
+        return <span className="text-[10px] px-2 py-0.5 rounded bg-orange-100 text-orange-800 border border-orange-200">Vendor</span>
       default:
-        return <span className="text-xs px-2 py-1 rounded bg-gray-100 text-gray-800">{userType}</span>
+        return <span className="text-[10px] px-2 py-0.5 rounded bg-gray-100 text-gray-800 border border-gray-200">{userType.replace('_', ' ')}</span>
     }
   }
 
@@ -190,9 +191,11 @@ export default function AssignUsersToCompanyModal({
                       <Card key={user.id} className="p-3 hover:shadow-sm transition-shadow">
                         <div className="flex items-center justify-between">
                           <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-1">
+                            <div className="flex flex-wrap items-center gap-1 mb-1">
                               <p className="font-medium text-foreground text-sm">{user.name}</p>
-                              {getUserTypeBadge(user.user_type)}
+                              {Array.from(new Set([user.user_type, ...(user.roles || [])])).map((role) => (
+                                <span key={role}>{getUserTypeBadge(role)}</span>
+                              ))}
                             </div>
                             <p className="text-xs text-muted-foreground">{user.email}</p>
                           </div>
@@ -229,9 +232,11 @@ export default function AssignUsersToCompanyModal({
                       <Card key={user.id} className="p-3 hover:shadow-sm transition-shadow">
                         <div className="flex items-center justify-between">
                           <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-1">
+                            <div className="flex flex-wrap items-center gap-1 mb-1">
                               <p className="font-medium text-foreground text-sm">{user.name}</p>
-                              {getUserTypeBadge(user.user_type)}
+                              {Array.from(new Set([user.user_type, ...(user.roles || [])])).map((role) => (
+                                <span key={role}>{getUserTypeBadge(role)}</span>
+                              ))}
                               {user.company_id && (
                                 <span className="text-xs px-2 py-1 rounded bg-yellow-100 text-yellow-800">
                                   In other company

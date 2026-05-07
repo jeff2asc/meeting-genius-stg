@@ -24,7 +24,7 @@ interface TaskNote {
   id: number
   content: string
   created_at: string
-  created_by: number
+  created_by: number | null
   creator_name?: string
 }
 
@@ -32,13 +32,13 @@ interface TaskData {
   id: number
   topic_id: number
   description: string
-  assignees: Assignee[]
-  assigned_name: string
-  assigned_email: string
+  assignees: Assignee[] | null
+  assigned_name: string | null
+  assigned_email: string | null
   status: string
   due_date: string | null
   created_at: string
-  created_by: number
+  created_by: number | null
   creator_name?: string
 }
 
@@ -93,8 +93,8 @@ export default function TaskDetailsModal({ taskId, onClose, onUpdate }: TaskDeta
       console.log('Task data:', data)
       setTask({
         ...data,
-        creator_name: data.creator?.name || 'Unknown'
-      })
+        creator_name: (data as any).creator?.name || 'Unknown'
+      } as unknown as TaskData)
       setSelectedStatus(data.status || 'open')
     } catch (err) {
       console.error('Unexpected error:', err)
@@ -119,7 +119,7 @@ export default function TaskDetailsModal({ taskId, onClose, onUpdate }: TaskDeta
         return
       }
 
-      setNotes(data.map(note => ({
+      setNotes((data as any[]).map(note => ({
         ...note,
         creator_name: note.creator?.name || 'Unknown'
       })))

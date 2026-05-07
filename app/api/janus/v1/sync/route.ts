@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { supabase } from "@/lib/supabase";
 
 export async function GET(req: NextRequest) {
   const apiKey = req.headers.get("x-api-key");
@@ -9,10 +10,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Local Supabase connection
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!; 
-  const supabase = createClient(supabaseUrl, supabaseAnonKey);
+  // Use centralized Supabase connection from @/lib/supabase
+  // which handles environment variables and fallbacks correctly.
 
   try {
     const forceSync = req.nextUrl.searchParams.get("force") === "true";
@@ -25,11 +24,14 @@ export async function GET(req: NextRequest) {
       const janusDb = createClient(janusSupabaseUrl, janusAnonKey);
       
       const { data: rawTickets, error: janusErr } = await janusDb.from('tickets').select('*').order('created_at', { ascending: false });
-      if (janusErr) throw janusErr;
+      if (janusErr) {
+        console.warn("⚠️ Could not reach Janus DB:", janusErr.message);
+        return NextResponse.json({ success: true, data: { repairs: [], complaints: [] }, warning: janusErr.message });
+      }
 
       const mapTicket = (t: any) => ({
-        id: String(t.id || t.ticket_id),
-        building_id: String(t.building_id || ""),
+        id: Number(t.id || t.ticket_id),
+        building_id: Number(t.building_id || 0),
         building_name: t.building_name || t.building || "",
         company_id: t.company_id || null,
         title: t.subject || t.title || t.issue_type || "Untitled",

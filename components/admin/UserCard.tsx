@@ -12,6 +12,7 @@ interface UserCardProps {
     created_at: string
     buildings?: string[]
     roles?: string[] | null
+    voting_weight?: number
   }
   onEdit?: (userId: number) => void
   onDelete?: (userId: number) => void
@@ -67,7 +68,7 @@ const formatRole = (role: string) => {
 
 export default function UserCard({ user, onEdit, onDelete }: UserCardProps) {
   // Use roles array if available, otherwise fall back to single user_type
-  const roles = user.roles && user.roles.length > 0 ? user.roles : [user.user_type]
+  const roles = Array.from(new Set([user.user_type, ...(user.roles || [])]))
   const primaryRole = roles[0]
 
   return (
@@ -96,6 +97,14 @@ export default function UserCard({ user, onEdit, onDelete }: UserCardProps) {
               <div className="mt-2">
                 <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded">
                   No buildings assigned
+                </span>
+              </div>
+            )}
+            
+            {user.voting_weight !== undefined && user.voting_weight !== 1.0 && (
+              <div className="mt-2">
+                <span className="text-[10px] font-bold bg-blue-50 text-blue-700 px-2 py-0.5 rounded border border-blue-100">
+                  Global Weight: {user.voting_weight}
                 </span>
               </div>
             )}

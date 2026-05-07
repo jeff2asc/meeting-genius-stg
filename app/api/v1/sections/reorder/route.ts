@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase'
+import { createAdminClient } from '@/lib/supabase'
 
 const VALID_API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'meeting-genius-secret-key-2026'
 
@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing or invalid sections array' }, { status: 400 })
     }
 
-    const supabase = createClient()
+    const supabase = createAdminClient()
     
     const results = await Promise.all(
       sections.map((section: { id: number; order_index: number }) =>

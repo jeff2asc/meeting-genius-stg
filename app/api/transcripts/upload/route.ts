@@ -102,7 +102,7 @@ export async function POST(request: NextRequest) {
           title
         )
       `)
-      .eq("meeting_id", meetingId)
+      .eq("meeting_id", parseInt(meetingId, 10))
       .order("order_index", { ascending: true });
 
     if (sectionsError) {
@@ -160,7 +160,7 @@ export async function POST(request: NextRequest) {
         file_url: fileUrl,
         file_size: file.size,
         mime_type: file.type,
-        parsed_json: { tasks: extractedTasks },
+        parsed_json: { tasks: extractedTasks } as any,
         tasks_created_count: 0, // Will be updated when user approves
         uploaded_by: parseInt(userId),
       })

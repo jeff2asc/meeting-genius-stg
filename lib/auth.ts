@@ -1,5 +1,5 @@
 import bcrypt from 'bcryptjs'
-import { supabase, setCurrentUser, User } from './supabase'
+import { supabase, setCurrentUser, User, UserRole } from './supabase'
 
 // Login function
 export async function login(
@@ -41,7 +41,7 @@ export async function login(
         | 'owner',
       company_id: user.company_id,
       assigned_pm_id: user.assigned_pm_id ?? null,
-      roles: user.roles ?? [user.user_type],
+      roles: (user.roles as UserRole[]) ?? [user.user_type as UserRole],
     }
 
     console.log('✅ Login successful:', loggedInUser)

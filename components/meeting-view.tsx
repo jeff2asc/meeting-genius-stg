@@ -56,7 +56,7 @@ import CreateTopicModal from "./create-topic-modal"
 import EditMeetingModal from "./EditMeetingModal"
 import AttendeeManagement, { Attendee } from "./AttendeeManagement"
 import SelectRecorderModal from "./SelectRecorderModal"
-import { supabase, getCurrentUser } from "@/lib/supabase"
+import { supabase, getCurrentUser, createAdminClient } from "@/lib/supabase"
 import { apiClient } from "@/lib/api-client"
 import { canEditMeeting, isReadOnly, isMaster as checkIsMaster } from "@/lib/permissions"
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd"
@@ -252,10 +252,28 @@ export default function MeetingView({
   const fetchJanusData = async (forceResync = false) => {
     if (!currentUser) return
     
-    // Check if integrated
-    const storageKey = `mg_integrations_${currentUser.id}`
-    const installed = typeof window !== 'undefined' ? localStorage.getItem(storageKey) : null
-    const isIntegrated = installed ? JSON.parse(installed).includes("janus") : false
+    // ✅ Check Database: Is Janus integrated for this company?
+    let isIntegrated = false
+    const companyId = meeting?.buildings?.company_id || currentUser.company_id
+    
+    if (companyId) {
+      const adminClient = createAdminClient()
+      const { data: company } = await adminClient
+        .from('companies')
+        .select('janus_integrated')
+        .eq('id', companyId)
+        .single()
+      
+      isIntegrated = !!company?.janus_integrated
+    }
+
+    // Fallback to localStorage
+    if (!isIntegrated) {
+      const storageKey = `mg_integrations_${currentUser.id}`
+      const installed = typeof window !== 'undefined' ? localStorage.getItem(storageKey) : null
+      isIntegrated = installed ? JSON.parse(installed).includes("janus") : false
+    }
+
     setIsJanusIntegrated(isIntegrated)
     
     if (!isIntegrated) return
@@ -347,7 +365,8 @@ export default function MeetingView({
     if (!meeting) return []
 
     try {
-      const { data: allMeetings, error: meetingsError } = await supabase
+      const adminClient = createAdminClient()
+      const { data: allMeetings, error: meetingsError } = await adminClient
         .from("meetings")
         .select("id, meeting_date, title")
         .eq("building_id", meeting.building_id)
@@ -361,7 +380,7 @@ export default function MeetingView({
 
       const meetingIds = allMeetings.map((m) => m.id)
 
-      const { data: allTopics, error: topicsError } = await supabase
+      const { data: allTopics, error: topicsError } = await adminClient
         .from("topics")
         .select("id, title, meeting_id")
         .in("meeting_id", meetingIds)
@@ -373,7 +392,7 @@ export default function MeetingView({
 
       const topicIds = allTopics.map((t) => t.id)
 
-      const { data: openTasks, error: tasksError } = await supabase
+      const { data: openTasks, error: tasksError } = await adminClient
         .from("tasks")
         .select("*, topics(id, title, meeting_id)")
         .in("topic_id", topicIds)
@@ -409,13 +428,14 @@ export default function MeetingView({
 
       if (topicsData && topicsData.length > 0) {
         const topicIds = topicsData.map((t: any) => t.id)
+        const adminClient = createAdminClient()
         
-        const { data: tc } = await supabase
+        const { data: tc } = await adminClient
           .from('tasks')
           .select('topic_id')
           .in('topic_id', topicIds)
         
-        const { data: ac } = await supabase
+        const { data: ac } = await adminClient
           .from('topic_attachments')
           .select('topic_id')
           .in('topic_id', topicIds)
@@ -428,7 +448,8 @@ export default function MeetingView({
       let sectionAttachments: any[] = []
       if (sectionsData && sectionsData.length > 0) {
         const sectionIds = sectionsData.map((s: any) => s.id)
-        const { data: sa } = await supabase
+        const adminClient = createAdminClient()
+        const { data: sa } = await adminClient
           .from('section_attachments')
           .select('*')
           .in('section_id', sectionIds)
@@ -458,10 +479,11 @@ export default function MeetingView({
 
   const checkForTranscripts = async () => {
     try {
-      const { data, error } = await supabase
+      const adminClient = createAdminClient()
+      const { data, error } = await adminClient
         .from("meeting_transcripts")
         .select("id")
-        .eq("meeting_id", meetingId)
+        .eq("meeting_id", parseInt(meetingId))
         .limit(1)
 
       if (!error && data && data.length > 0) {
@@ -480,6 +502,7 @@ export default function MeetingView({
     if (!file || !meeting) return
 
     try {
+      const adminClient = createAdminClient()
       setLoading(true)
       const fileExt = file.name.split('.').pop()
       const fileName = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.]/g, '_')}`
@@ -495,10 +518,10 @@ export default function MeetingView({
         .from('topic-attachments')
         .getPublicUrl(filePath)
 
-      const { data: userData } = await supabase.auth.getUser()
+      const { data: userData } = await adminClient.auth.getUser()
       const userId = userData.user?.id
 
-      const { error: dbError } = await supabase
+      const { error: dbError } = await adminClient
         .from('section_attachments')
         .insert({
           section_id: sectionId,
@@ -525,7 +548,8 @@ export default function MeetingView({
     if (!confirm("Are you sure you want to remove this attachment?")) return
 
     try {
-      const { error } = await supabase
+      const adminClient = createAdminClient()
+      const { error } = await adminClient
         .from('section_attachments')
         .delete()
         .eq('id', attachmentId)
@@ -952,7 +976,7 @@ export default function MeetingView({
           status: "minutes",
           meeting_transcript: fullBrowserText // ⭐ Now includes speaker name!
         })
-        .eq("id", meetingId)
+        .eq("id", parseInt(meetingId))
         .select()
         .single()
 
@@ -2741,8 +2765,8 @@ export default function MeetingView({
                 onUpdate={async (updatedAttendees) => {
                   await supabase
                     .from("meetings")
-                    .update({ attendees: updatedAttendees })
-                    .eq("id", meetingId)
+                    .update({ attendees: updatedAttendees as any })
+                    .eq("id", parseInt(meetingId))
                   await fetchMeetingData()
                 }}
                 onClose={() => setAttendeesExpanded(false)}

@@ -27,7 +27,8 @@ import {
   supabase, 
   getPreviousMeetingOfSameType,
   getTopicsFromMeeting,
-  createAdminClient
+  createAdminClient,
+  getVotingParameters
 } from "@/lib/supabase"
 
 interface CreateMeetingModalProps {
@@ -65,7 +66,7 @@ export default function CreateMeetingModal({ onClose, onSuccess, buildings }: Cr
   const [selectedTaskIds, setSelectedTaskIds] = useState<number[]>([])
   const [selectedNoteIds, setSelectedNoteIds] = useState<number[]>([])
   const [selectedDecisionIds, setSelectedDecisionIds] = useState<number[]>([])
-  const [selectedAttendeeIds, setSelectedAttendeeIds] = useState<number[]>([])
+  const [selectedAttendeeIds, setSelectedAttendeeIds] = useState<any[]>([])
 
   // Collapsed state for topics in selection view
   const [expandedTopics, setExpandedTopics] = useState<number[]>([])
@@ -78,10 +79,17 @@ export default function CreateMeetingModal({ onClose, onSuccess, buildings }: Cr
   useEffect(() => {
     async function fetchCompanyDefaults() {
       const selectedBuilding = buildings.find(b => b.id === formData.buildingId)
+      
+      // Fetch meeting types from voting_parameters
+      const votingParams = await getVotingParameters(selectedBuilding?.company_id)
+      const dynamicMeetingTypes = votingParams
+        .filter(p => p.parameter_type === 'meeting_type')
+        .map(p => p.value)
+
       if (!selectedBuilding || !selectedBuilding.company_id) {
-        setMeetingTypes(["Council Meeting", "AGM", "SGM", "Special Meeting", "Emergency Meeting"])
+        setMeetingTypes(dynamicMeetingTypes.length > 0 ? dynamicMeetingTypes : ["Council Meeting", "AGM", "SGM", "Special Meeting", "Emergency Meeting"])
         setMeetingSections(["Call to Order", "Approval of Agenda", "Old Business / Business Arising", "New Business", "Financial Report", "Maintenance & Operations", "Correspondence", "Council Roundtable", "Adjournment"])
-        setFormData(f => ({ ...f, meetingType: "Council Meeting" }))
+        setFormData(f => ({ ...f, meetingType: dynamicMeetingTypes[0] || "Council Meeting" }))
         return
       }
 
@@ -91,9 +99,12 @@ export default function CreateMeetingModal({ onClose, onSuccess, buildings }: Cr
         .eq("id", selectedBuilding.company_id)
         .single()
 
-      setMeetingTypes(company?.default_meeting_types || ["Council Meeting", "AGM", "SGM", "Special Meeting", "Emergency Meeting"])
+      // Merge company-specific types with dynamic types if necessary, or just use dynamic
+      const finalMeetingTypes = dynamicMeetingTypes.length > 0 ? dynamicMeetingTypes : (company?.default_meeting_types || ["Council Meeting", "AGM", "SGM", "Special Meeting", "Emergency Meeting"])
+      
+      setMeetingTypes(finalMeetingTypes)
       setMeetingSections(company?.default_meeting_sections || ["Call to Order", "Approval of Agenda", "Old Business / Business Arising", "New Business", "Financial Report", "Maintenance & Operations", "Correspondence", "Council Roundtable", "Adjournment"])
-      setFormData(f => ({ ...f, meetingType: company?.default_meeting_types?.[0] || "Council Meeting" }))
+      setFormData(f => ({ ...f, meetingType: finalMeetingTypes[0] || "Council Meeting" }))
     }
 
     fetchCompanyDefaults()
@@ -134,7 +145,7 @@ export default function CreateMeetingModal({ onClose, onSuccess, buildings }: Cr
         setPrevTasks(tasksRes.data || [])
         setPrevNotes(notesRes.data || [])
         setPrevDecisions(decisionsRes.data || [])
-        setPrevAttendees(previous.attendees || [])
+        setPrevAttendees((previous.attendees as any[]) || [])
         setPrevSections(sectionsRes.data || [])
 
         // Default selections (Attendees and New Business items selected by default)
@@ -150,7 +161,7 @@ export default function CreateMeetingModal({ onClose, onSuccess, buildings }: Cr
         setSelectedDecisionIds((decisionsRes.data || []).filter((d: any) => newBusinessTopicIds.includes(d.topic_id)).map((d: any) => d.id))
         
         // For attendees, use name fallback string as an identifier since some might be custom guests
-        setSelectedAttendeeIds((previous.attendees || []).map((a: any) => a.user_id?.toString() || a.name || a.email))
+        setSelectedAttendeeIds(((previous.attendees as any[]) || []).map((a: any) => a.user_id?.toString() || a.name || a.email))
 
         // Pre-expand topics that have tasks, notes, or decisions
         const topicsWithItems = (topics || []).filter(t => 

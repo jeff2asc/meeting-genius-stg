@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
-import { supabase, getCurrentUser } from "@/lib/supabase"
+import { supabase, getCurrentUser, getVotingParameters } from "@/lib/supabase"
 import { toast } from "sonner"
+import { CheckCircle2, XCircle, AlertCircle } from "lucide-react"
 
 interface DecisionFormProps {
   topicId: number
@@ -11,10 +12,12 @@ interface DecisionFormProps {
   onSave?: () => void
 }
 
-interface Attendee {
+interface CompanyUser {
+  id: number
   name: string
-  email?: string
-  present: boolean
+  email: string
+  user_type: string
+  roles: string[] | null
 }
 
 interface GeniusWord {
@@ -26,17 +29,21 @@ interface GeniusWord {
 export default function DecisionForm({ topicId, meetingId, onSave }: DecisionFormProps) {
   const [motionText, setMotionText] = useState("")
   const [result, setResult] = useState("")
-  const [votesFor, setVotesFor] = useState<number | "">("")
-  const [votesAgainst, setVotesAgainst] = useState<number | "">("")
-  const [votesAbstain, setVotesAbstain] = useState<number | "">("")
+  const [votesFor, setVotesFor] = useState<string[]>([])
+  const [votesAgainst, setVotesAgainst] = useState<string[]>([])
+  const [votesAbstain, setVotesAbstain] = useState<string[]>([])
+  const [openDropdown, setOpenDropdown] = useState<"for" | "against" | "abstain" | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [decisionResults, setDecisionResults] = useState<string[]>([])
-  const [attendees, setAttendees] = useState<Attendee[]>([])
+  const [companyUsers, setCompanyUsers] = useState<CompanyUser[]>([])
+  const [votingTypes, setVotingTypes] = useState<string[]>([])
+  const [selectedVotingType, setSelectedVotingType] = useState("")
+  const [customThreshold, setCustomThreshold] = useState<number>(50)
   
   // @ Mention Autocomplete State
   const [showSuggestions, setShowSuggestions] = useState(false)
-  const [suggestions, setSuggestions] = useState<Attendee[]>([])
+  const [suggestions, setSuggestions] = useState<CompanyUser[]>([])
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0)
   const [cursorPosition, setCursorPosition] = useState(0)
   const [mentionStartIndex, setMentionStartIndex] = useState(-1)
@@ -56,9 +63,43 @@ export default function DecisionForm({ topicId, meetingId, onSave }: DecisionFor
 
   useEffect(() => {
     fetchDecisionResults()
-    fetchAttendees()
+    fetchCompanyUsers()
     fetchGeniusWords()
+    fetchVotingTypes()
   }, [meetingId])
+
+  const fetchVotingTypes = async () => {
+    try {
+      const { data: meetingData } = await supabase
+        .from("meetings")
+        .select("building_id")
+        .eq("id", meetingId)
+        .single()
+
+      if (meetingData) {
+        const { data: buildingData } = await supabase
+          .from("buildings")
+          .select("company_id")
+          .eq("id", meetingData.building_id)
+          .single()
+
+        const params = await getVotingParameters(buildingData?.company_id)
+        const vTypes = params
+          .filter(p => p.parameter_type === 'voting_type')
+          .map(p => p.value)
+        
+        const baseTypes = vTypes.length > 0 ? vTypes : ["Majority Vote (50%+1)", "Three-Quarter Vote (75%)", "Unanimous Vote (100%)"]
+        const finalTypes = [...baseTypes]
+        if (!finalTypes.includes("Custom Percentage (%)")) {
+          finalTypes.push("Custom Percentage (%)")
+        }
+        setVotingTypes(finalTypes)
+        setSelectedVotingType(finalTypes[0])
+      }
+    } catch (err) {
+      console.error("Error fetching voting types:", err)
+    }
+  }
 
   const fetchDecisionResults = async () => {
     try {
@@ -106,24 +147,42 @@ export default function DecisionForm({ topicId, meetingId, onSave }: DecisionFor
     }
   }
 
-  const fetchAttendees = async () => {
+  const fetchCompanyUsers = async () => {
     try {
-      const { data: meetingData, error } = await supabase
+      // Step 1: get building_id from meeting
+      const { data: meetingData, error: meetingError } = await supabase
         .from("meetings")
-        .select("attendees")
+        .select("building_id")
         .eq("id", meetingId)
         .single()
 
-      if (error) {
-        console.error("Error fetching attendees:", error)
+      if (meetingError || !meetingData) return
+
+      // Step 2: get company_id from building
+      const { data: buildingData, error: buildingError } = await supabase
+        .from("buildings")
+        .select("company_id")
+        .eq("id", meetingData.building_id)
+        .single()
+
+      if (buildingError || !buildingData?.company_id) return
+
+      // Step 3: fetch all users in this company with the eligible roles
+      const { data: usersData, error: usersError } = await supabase
+        .from("users")
+        .select("id, name, email, user_type, roles")
+        .eq("company_id", buildingData.company_id)
+        .in("user_type", ["user", "owner", "property_manager", "corporate_administrator"])
+        .order("name", { ascending: true })
+
+      if (usersError) {
+        console.error("Error fetching company users:", usersError)
         return
       }
 
-      if (meetingData?.attendees) {
-        setAttendees(meetingData.attendees as Attendee[])
-      }
+      setCompanyUsers(usersData ?? [])
     } catch (err) {
-      console.error("Error fetching attendees:", err)
+      console.error("Error fetching company users:", err)
     }
   }
 
@@ -164,8 +223,8 @@ export default function DecisionForm({ topicId, meetingId, onSave }: DecisionFor
       if (!textAfterAt.includes(" ") && !textAfterAt.includes("\n")) {
         setMentionStartIndex(atIndex)
         
-        const filtered = attendees.filter(attendee =>
-          attendee.name.toLowerCase().includes(textAfterAt.toLowerCase())
+        const filtered = companyUsers.filter(u =>
+          u.name.toLowerCase().includes(textAfterAt.toLowerCase())
         )
         
         setSuggestions(filtered)
@@ -201,12 +260,12 @@ export default function DecisionForm({ topicId, meetingId, onSave }: DecisionFor
     }
   }
 
-  const insertMention = (attendee: Attendee) => {
+  const insertMention = (user: CompanyUser) => {
     if (mentionStartIndex === -1) return
 
     const beforeMention = motionText.substring(0, mentionStartIndex)
     const afterCursor = motionText.substring(cursorPosition)
-    const newText = beforeMention + attendee.name + " " + afterCursor
+    const newText = beforeMention + user.name + " " + afterCursor
     
     setMotionText(newText)
     setShowSuggestions(false)
@@ -214,7 +273,7 @@ export default function DecisionForm({ topicId, meetingId, onSave }: DecisionFor
 
     setTimeout(() => {
       if (textareaRef.current) {
-        const newCursorPos = mentionStartIndex + attendee.name.length + 1
+        const newCursorPos = mentionStartIndex + user.name.length + 1
         textareaRef.current.setSelectionRange(newCursorPos, newCursorPos)
         textareaRef.current.focus()
       }
@@ -297,9 +356,12 @@ export default function DecisionForm({ topicId, meetingId, onSave }: DecisionFor
           topic_id: topicId,
           motion_text: motionText,
           result: result || null,
-          votes_for: votesFor === "" ? null : votesFor,
-          votes_against: votesAgainst === "" ? null : votesAgainst,
-          votes_abstain: votesAbstain === "" ? null : votesAbstain,
+          voting_type: selectedVotingType === "Custom Percentage (%)" 
+            ? `Custom (${customThreshold}%)` 
+            : (selectedVotingType || null),
+          votes_for: votesFor.length === 0 ? null : votesFor.length,
+          votes_against: votesAgainst.length === 0 ? null : votesAgainst.length,
+          votes_abstain: votesAbstain.length === 0 ? null : votesAbstain.length,
           parent_decision_id: null
         })
 
@@ -316,9 +378,10 @@ export default function DecisionForm({ topicId, meetingId, onSave }: DecisionFor
       // ⭐ Clear form after success
       setMotionText("")
       setResult("")
-      setVotesFor("")
-      setVotesAgainst("")
-      setVotesAbstain("")
+      setVotesFor([])
+      setVotesAgainst([])
+      setVotesAbstain([])
+      setOpenDropdown(null)
       setError(null)
 
       // ⭐ Trigger refresh
@@ -332,6 +395,87 @@ export default function DecisionForm({ topicId, meetingId, onSave }: DecisionFor
       setError("An unexpected error occurred")
       setSaving(false)
     }
+  }
+
+  const toggleVote = (type: "for" | "against" | "abstain", name: string) => {
+    if (type === "for") {
+      setVotesFor(prev => prev.includes(name) ? prev.filter(n => n !== name) : [...prev, name])
+      setVotesAgainst(prev => prev.filter(n => n !== name))
+      setVotesAbstain(prev => prev.filter(n => n !== name))
+    } else if (type === "against") {
+      setVotesAgainst(prev => prev.includes(name) ? prev.filter(n => n !== name) : [...prev, name])
+      setVotesFor(prev => prev.filter(n => n !== name))
+      setVotesAbstain(prev => prev.filter(n => n !== name))
+    } else {
+      setVotesAbstain(prev => prev.includes(name) ? prev.filter(n => n !== name) : [...prev, name])
+      setVotesFor(prev => prev.filter(n => n !== name))
+      setVotesAgainst(prev => prev.filter(n => n !== name))
+    }
+  }
+
+  const getRoleBadge = (user: CompanyUser) => {
+    const t = user.user_type
+    if (t === "corporate_administrator") return { label: "Corp Admin", color: "bg-purple-100 text-purple-700" }
+    if (t === "property_manager") return { label: "PM", color: "bg-blue-100 text-blue-700" }
+    if (t === "owner") return { label: "Owner", color: "bg-amber-100 text-amber-700" }
+    return { label: "Resident", color: "bg-green-100 text-green-700" }
+  }
+
+  const renderDropdown = (label: string, type: "for" | "against" | "abstain", selected: string[]) => {
+    const isOpen = openDropdown === type;
+    return (
+      <div className="relative">
+        <label className="block text-sm font-medium text-foreground mb-2">
+          {label}
+        </label>
+        <button
+          type="button"
+          onClick={() => setOpenDropdown(isOpen ? null : type)}
+          disabled={saving}
+          className="w-full px-3 py-2 bg-background border border-border rounded-lg text-left flex justify-between items-center focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <span className="truncate text-sm">
+            {selected.length > 0 ? `${selected.length} selected` : "0"}
+          </span>
+          <span className="text-xs text-muted-foreground ml-2">{isOpen ? "▲" : "▼"}</span>
+        </button>
+        
+        {isOpen && (
+          <div className="absolute z-50 w-64 mt-1 bg-card border border-border rounded-lg shadow-xl max-h-56 overflow-y-auto">
+            {companyUsers.length === 0 && (
+              <div className="p-3 text-sm text-muted-foreground text-center">No users found for this company</div>
+            )}
+            {companyUsers.map((user) => {
+              const badge = getRoleBadge(user)
+              const isChecked = selected.includes(user.name)
+              return (
+                <div
+                  key={user.id}
+                  className={`flex items-center gap-3 px-3 py-2.5 cursor-pointer transition-colors ${
+                    isChecked ? "bg-primary/8" : "hover:bg-muted"
+                  }`}
+                  onClick={() => toggleVote(type, user.name)}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isChecked}
+                    readOnly
+                    className="h-4 w-4 rounded border-border text-primary focus:ring-primary cursor-pointer pointer-events-none shrink-0"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-foreground truncate">{user.name}</div>
+                    <div className="text-xs text-muted-foreground truncate">{user.email}</div>
+                  </div>
+                  <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full shrink-0 ${badge.color}`}>
+                    {badge.label}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    )
   }
 
   return (
@@ -364,18 +508,16 @@ export default function DecisionForm({ topicId, meetingId, onSave }: DecisionFor
             ref={suggestionsRef}
             className="absolute z-10 w-full mt-1 bg-card border border-border rounded-lg shadow-lg max-h-48 overflow-y-auto"
           >
-            {suggestions.map((attendee, index) => (
+            {suggestions.map((user, index) => (
               <button
-                key={index}
-                onClick={() => insertMention(attendee)}
+                key={user.id}
+                onClick={() => insertMention(user)}
                 className={`w-full text-left px-4 py-2 hover:bg-muted transition-colors ${
                   index === selectedSuggestionIndex ? 'bg-muted' : ''
                 }`}
               >
-                <div className="font-medium text-foreground">{attendee.name}</div>
-                {attendee.email && (
-                  <div className="text-xs text-muted-foreground">{attendee.email}</div>
-                )}
+                <div className="font-medium text-foreground">{user.name}</div>
+                <div className="text-xs text-muted-foreground">{user.email}</div>
               </button>
             ))}
           </div>
@@ -408,69 +550,170 @@ export default function DecisionForm({ topicId, meetingId, onSave }: DecisionFor
         )}
       </div>
 
-      <div>
-        <label className="block text-sm font-medium text-foreground mb-2">
-          Result
-        </label>
-        <select
-          value={result}
-          onChange={(e) => setResult(e.target.value)}
-          className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-          disabled={saving}
-        >
-          <option value="">Select result...</option>
-          {decisionResults.map((res) => (
-            <option key={res} value={res}>
-              {res}
-            </option>
-          ))}
-        </select>
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-foreground mb-2">
+            Result
+          </label>
+          <select
+            value={result}
+            onChange={(e) => setResult(e.target.value)}
+            className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+            disabled={saving}
+          >
+            <option value="">Select result...</option>
+            {decisionResults.map((res) => (
+              <option key={res} value={res}>
+                {res}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-foreground mb-2">
+            Voting Mechanism
+          </label>
+          <select
+            value={selectedVotingType}
+            onChange={(e) => setSelectedVotingType(e.target.value)}
+            className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+            disabled={saving}
+          >
+            {votingTypes.map((type) => (
+              <option key={type} value={type}>
+                {type}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
+      {selectedVotingType === "Custom Percentage (%)" && (
+        <div className="bg-primary/5 p-4 rounded-lg border border-primary/20 animate-in slide-in-from-top-2 duration-300">
+          <label className="block text-xs font-bold uppercase tracking-wider text-primary mb-2">
+            Set Threshold Percentage (51-100)
+          </label>
+          <div className="flex items-center gap-4">
+            <input
+              type="range"
+              min="51"
+              max="100"
+              value={customThreshold}
+              onChange={(e) => setCustomThreshold(parseInt(e.target.value))}
+              className="flex-1 accent-primary"
+            />
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min="51"
+                max="100"
+                value={customThreshold}
+                onChange={(e) => setCustomThreshold(Math.min(100, Math.max(51, parseInt(e.target.value) || 51)))}
+                className="w-16 px-2 py-1 bg-background border border-border rounded text-center font-bold"
+              />
+              <span className="font-bold text-primary">%</span>
+            </div>
+          </div>
+          <p className="text-[10px] text-muted-foreground mt-2">
+            The motion will require at least {customThreshold}% of active votes to pass.
+          </p>
+        </div>
+      )}
+
       <div className="grid grid-cols-3 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-foreground mb-2">
-            Votes For
-          </label>
-          <input
-            type="number"
-            min="0"
-            value={votesFor}
-            onChange={(e) => setVotesFor(e.target.value === "" ? "" : parseInt(e.target.value))}
-            placeholder="0"
-            className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-            disabled={saving}
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-foreground mb-2">
-            Votes Against
-          </label>
-          <input
-            type="number"
-            min="0"
-            value={votesAgainst}
-            onChange={(e) => setVotesAgainst(e.target.value === "" ? "" : parseInt(e.target.value))}
-            placeholder="0"
-            className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-            disabled={saving}
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-foreground mb-2">
-            Abstentions
-          </label>
-          <input
-            type="number"
-            min="0"
-            value={votesAbstain}
-            onChange={(e) => setVotesAbstain(e.target.value === "" ? "" : parseInt(e.target.value))}
-            placeholder="0"
-            className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-            disabled={saving}
-          />
-        </div>
+        {renderDropdown("Votes For", "for", votesFor)}
+        {renderDropdown("Votes Against", "against", votesAgainst)}
+        {renderDropdown("Abstentions", "abstain", votesAbstain)}
       </div>
+
+      {/* Logic Calculation Preview */}
+      {(votesFor.length > 0 || votesAgainst.length > 0) && (
+        <div className="bg-muted/30 p-4 rounded-xl border border-border/50 animate-in fade-in zoom-in-95 duration-300">
+          <div className="flex items-center justify-between mb-3">
+             <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                <AlertCircle className="h-3.5 w-3.5" />
+                Voting Logic Preview
+             </h4>
+             <span className="text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded-full font-medium">
+                {selectedVotingType}
+             </span>
+          </div>
+          
+          {(() => {
+            const vFor = votesFor.length;
+            const vAgainst = votesAgainst.length;
+            const total = vFor + vAgainst;
+            const percentage = total > 0 ? (vFor / total) * 100 : 0;
+            
+            let passed = false;
+            let threshold = 50;
+            
+            if (selectedVotingType.toLowerCase().includes("75") || 
+                selectedVotingType.toLowerCase().includes("three-quarter") ||
+                selectedVotingType.toLowerCase().includes("special resolution")) {
+              passed = percentage >= 75;
+              threshold = 75;
+            } else if (selectedVotingType.toLowerCase().includes("100") || 
+                       selectedVotingType.toLowerCase().includes("unanimous")) {
+              passed = percentage >= 100 && vFor > 0;
+              threshold = 100;
+            } else if (selectedVotingType.toLowerCase().includes("80")) {
+              passed = percentage >= 80;
+              threshold = 80;
+            } else if (selectedVotingType === "Custom Percentage (%)") {
+              passed = percentage >= customThreshold;
+              threshold = customThreshold;
+            } else if (selectedVotingType.toLowerCase().includes("advisory")) {
+              passed = true; // Advisory votes are always "carried" in terms of recording
+              threshold = 0;
+            } else {
+              // Default to 50%+1 (Majority / Ordinary Resolution)
+              passed = percentage > 50;
+              threshold = 50;
+            }
+
+            return (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    {passed ? (
+                      <CheckCircle2 className="h-5 w-5 text-green-500" />
+                    ) : (
+                      <XCircle className="h-5 w-5 text-red-500" />
+                    )}
+                    <span className={`text-sm font-bold ${passed ? "text-green-700" : "text-red-700"}`}>
+                      {passed ? "Motion Carried" : "Motion Defeated"}
+                    </span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-xl font-black text-foreground">{percentage.toFixed(1)}%</span>
+                    <span className="text-[10px] text-muted-foreground block">of {total} active votes</span>
+                  </div>
+                </div>
+                
+                <div className="h-2 w-full bg-muted rounded-full overflow-hidden flex">
+                  <div 
+                    className={`h-full transition-all duration-500 ${passed ? "bg-green-500" : "bg-red-500"}`} 
+                    style={{ width: `${percentage}%` }} 
+                  />
+                  {threshold < 100 && (
+                    <div 
+                      className="absolute h-4 w-0.5 bg-foreground/20 -mt-1" 
+                      style={{ left: `${threshold}%` }}
+                      title={`Threshold: ${threshold}%`}
+                    />
+                  )}
+                </div>
+                
+                <p className="text-[10px] text-muted-foreground italic text-center">
+                  * Calculations exclude abstentions as per standard voting protocol.
+                </p>
+              </div>
+            );
+          })()}
+        </div>
+      )}
 
       <div className="flex gap-3 pt-4">
         <Button

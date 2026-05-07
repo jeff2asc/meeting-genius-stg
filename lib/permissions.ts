@@ -16,7 +16,7 @@ export type UserRolesInput =
   | UserType
   | string
   | Array<UserType | string>
-  | { user_type?: string; roles?: string[] }
+  | { user_type?: string; roles?: string[] | null }
   | null
   | undefined
 

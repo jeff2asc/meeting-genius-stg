@@ -74,6 +74,10 @@ export default function CompanyDetailsModal({
   const [showAddBuilding, setShowAddBuilding] = useState(false)
   const [newBuildingName, setNewBuildingName] = useState("")
   const [newBuildingAddress, setNewBuildingAddress] = useState("")
+  const [newBuildingCity, setNewBuildingCity] = useState("")
+  const [newBuildingProvince, setNewBuildingProvince] = useState("")
+  const [newBuildingPostalCode, setNewBuildingPostalCode] = useState("")
+  const [newBuildingCountry, setNewBuildingCountry] = useState("Canada")
   const [selectedManagerId, setSelectedManagerId] = useState<number | null>(null)
   const [savingBuilding, setSavingBuilding] = useState(false)
 
@@ -414,8 +418,9 @@ export default function CompanyDetailsModal({
       setNewPMEmail("")
       setNewPMPassword("")
       setShowCreatePM(false)
-      // 🔄 Notify Janus
-      triggerJanusResync("user_created")
+      // 🔄 Notify Janus with full user data
+      const pmData = { id: pmId, name: newPMName.trim(), email: newPMEmail.toLowerCase().trim(), user_type: "property_manager", company_id: company?.id }
+      triggerJanusResync("user_created", pmData, "user")
     } catch (err: any) {
       console.error("Unexpected error:", err)
       setError(err.message || "An unexpected error occurred")
@@ -442,6 +447,10 @@ export default function CompanyDetailsModal({
       const { error: insertError } = await supabase.from("buildings").insert({
         name: newBuildingName.trim(),
         address: newBuildingAddress.trim() || null,
+        city: newBuildingCity.trim() || null,
+        province: newBuildingProvince.trim() || null,
+        postal_code: newBuildingPostalCode.trim() || null,
+        country: newBuildingCountry.trim() || null,
         company_id: company?.id,
         manager_id: selectedManagerId,
       })
@@ -455,11 +464,24 @@ export default function CompanyDetailsModal({
 
       setNewBuildingName("")
       setNewBuildingAddress("")
+      setNewBuildingCity("")
+      setNewBuildingProvince("")
+      setNewBuildingPostalCode("")
+      setNewBuildingCountry("Canada")
       setSelectedManagerId(null)
       setShowAddBuilding(false)
       await fetchCompanyData()
-      // 🔄 Notify Janus
-      triggerJanusResync("building_created")
+      // 🔄 Notify Janus with full building data
+      triggerJanusResync("building_created", { 
+        name: newBuildingName.trim(), 
+        address: newBuildingAddress.trim(), 
+        city: newBuildingCity.trim(),
+        province: newBuildingProvince.trim(),
+        postal_code: newBuildingPostalCode.trim(),
+        country: newBuildingCountry.trim(),
+        company_id: company?.id, 
+        manager_id: selectedManagerId 
+      }, "building")
     } catch (err) {
       console.error("Unexpected error:", err)
       setError("An unexpected error occurred")
@@ -660,8 +682,14 @@ export default function CompanyDetailsModal({
       setShowAddUser(false)
       await fetchCompanyData()
       await fetchPropertyManagers()
-      // 🔄 Notify Janus
-      triggerJanusResync("user_created")
+      // 🔄 Notify Janus with full user data
+      triggerJanusResync("user_created", {
+        name: newUserName.trim(),
+        email: newUserEmail.toLowerCase().trim(),
+        user_type: primaryRole,
+        roles: selectedRoles,
+        company_id: company?.id
+      }, "user")
     } catch (err: any) {
       console.error("Unexpected error:", err)
       setError(err.message || "An unexpected error occurred")
@@ -806,7 +834,11 @@ export default function CompanyDetailsModal({
 
   const getFilteredUsers = () => {
     if (userTypeFilter === "all") return users
-    return users.filter((u) => u.user_type === userTypeFilter)
+    return users.filter(
+      (u) =>
+        u.user_type === userTypeFilter ||
+        (Array.isArray(u.roles) && u.roles.includes(userTypeFilter)),
+    )
   }
 
   const handleAttachExistingBuilding = async () => {
@@ -850,7 +882,9 @@ export default function CompanyDetailsModal({
   if (!isOpen || !company) return null
 
   const corporateAdmins = users.filter(
-    (u) => u.user_type === "corporate_administrator",
+    (u) =>
+      u.user_type === "corporate_administrator" ||
+      (Array.isArray(u.roles) && u.roles.includes("corporate_administrator")),
   )
   const filteredUsers = getFilteredUsers()
 
@@ -1239,13 +1273,13 @@ export default function CompanyDetailsModal({
                                 </p>
                               </div>
                               <div className="flex flex-wrap gap-2">
-                                {(user.roles && user.roles.length > 0
-                                  ? user.roles
-                                  : [user.user_type]
+                                {Array.from(
+                                  new Set([
+                                    user.user_type,
+                                    ...(Array.isArray(user.roles) ? user.roles : []),
+                                  ]),
                                 ).map((role) => (
-                                  <span key={role}>
-                                    {getUserTypeBadge(role)}
-                                  </span>
+                                  <span key={role}>{getUserTypeBadge(role)}</span>
                                 ))}
                               </div>
                             </div>
@@ -1393,9 +1427,39 @@ export default function CompanyDetailsModal({
                           type="text"
                           value={newBuildingAddress}
                           onChange={(e) => setNewBuildingAddress(e.target.value)}
-                          placeholder="Address (optional)"
+                          placeholder="Street Address"
                           className="w-full px-3 py-2 bg-white border border-border rounded"
                         />
+                        <div className="grid grid-cols-2 gap-2">
+                          <input
+                            type="text"
+                            value={newBuildingCity}
+                            onChange={(e) => setNewBuildingCity(e.target.value)}
+                            placeholder="City"
+                            className="w-full px-3 py-2 bg-white border border-border rounded"
+                          />
+                          <input
+                            type="text"
+                            value={newBuildingProvince}
+                            onChange={(e) => setNewBuildingProvince(e.target.value)}
+                            placeholder="Province/State"
+                            className="w-full px-3 py-2 bg-white border border-border rounded"
+                          />
+                          <input
+                            type="text"
+                            value={newBuildingPostalCode}
+                            onChange={(e) => setNewBuildingPostalCode(e.target.value)}
+                            placeholder="Postal/Zip Code"
+                            className="w-full px-3 py-2 bg-white border border-border rounded"
+                          />
+                          <input
+                            type="text"
+                            value={newBuildingCountry}
+                            onChange={(e) => setNewBuildingCountry(e.target.value)}
+                            placeholder="Country"
+                            className="w-full px-3 py-2 bg-white border border-border rounded"
+                          />
+                        </div>
 
                         <div className="space-y-2">
                           <select
@@ -1765,9 +1829,11 @@ export default function CompanyDetailsModal({
                             </div>
                             <div className="flex items-center gap-2">
                               <div className="flex flex-wrap gap-1">
-                                {(user.roles && user.roles.length > 0
-                                  ? user.roles
-                                  : [user.user_type]
+                                {Array.from(
+                                  new Set([
+                                    user.user_type,
+                                    ...(Array.isArray(user.roles) ? user.roles : []),
+                                  ]),
                                 ).map((role) => (
                                   <span key={role}>{getUserTypeBadge(role)}</span>
                                 ))}
@@ -1952,9 +2018,11 @@ export default function CompanyDetailsModal({
                             </div>
                             <div className="flex items-center gap-2">
                               <div className="flex flex-wrap gap-1">
-                                {(admin.roles && admin.roles.length > 0
-                                  ? admin.roles
-                                  : [admin.user_type]
+                                {Array.from(
+                                  new Set([
+                                    admin.user_type,
+                                    ...(Array.isArray(admin.roles) ? admin.roles : []),
+                                  ]),
                                 ).map((role) => (
                                   <span key={role}>{getUserTypeBadge(role)}</span>
                                 ))}

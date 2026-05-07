@@ -72,6 +72,8 @@ export default function GenerateAgendaButton({
         .eq("id", meetingId)
         .single()
 
+      const meetingData = meeting as any
+
       if (meetingError || !meeting) {
         console.error("Failed to load meeting data:", meetingError)
         alert("Failed to load meeting data")
@@ -79,7 +81,7 @@ export default function GenerateAgendaButton({
         return
       }
 
-      const buildingId = meeting.buildings?.id
+      const buildingId = meetingData?.buildings?.id
       if (!buildingId) {
         alert("Building information not found")
         setGenerating(false)
@@ -136,16 +138,16 @@ export default function GenerateAgendaButton({
           coverPageHeight: COVER_PAGE_HEIGHT,
           coverPageElements:
             Array.isArray(templateRow.coverpage_elements) && templateRow.coverpage_elements.length > 0
-              ? (templateRow.coverpage_elements as CoverPageElement[])
+              ? (templateRow.coverpage_elements as unknown as CoverPageElement[])
               : defaultTemplate.coverPageElements,
           infoCardFields:
             Array.isArray(templateRow.infocard_fields) && templateRow.infocard_fields.length > 0
-              ? (templateRow.infocard_fields as TemplateField[])
+              ? (templateRow.infocard_fields as unknown as TemplateField[])
               : defaultTemplate.infoCardFields,
         }
       }
 
-      const building = meeting.buildings
+      const building = meetingData?.buildings
       const company = building?.companies
       const logoUrl: string | null = building?.logo_url || company?.logo_url || null
 
@@ -167,11 +169,11 @@ export default function GenerateAgendaButton({
 
       const agendaHtml = buildAgendaHtml({
         template,
-        meeting,
+        meeting: meetingData,
         sections: sections || [],
         topics: topics || [],
         logoUrl,
-        meetingStartTime: meeting.start_time || null,
+        meetingStartTime: meetingData?.start_time || null,
       })
 
       const iframe = document.createElement("iframe")
@@ -497,7 +499,7 @@ export default function GenerateAgendaButton({
         pageIndex++
       }
 
-      const safeTitle = (meeting.title || "Meeting")
+      const safeTitle = (meetingData?.title || "Meeting")
         .replace(/[^a-z0-9]/gi, "_")
         .substring(0, 80)
 

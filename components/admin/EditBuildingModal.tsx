@@ -11,6 +11,10 @@ interface Building {
   id: number
   name: string
   address: string | null
+  city: string | null
+  province: string | null
+  postal_code: string | null
+  country: string | null
   manager_id: number
   building_type?: string
   created_at: string
@@ -34,7 +38,11 @@ export default function EditBuildingModal({
 }: EditBuildingModalProps) {
   const [buildingFormData, setBuildingFormData] = useState({
     name: "",
-    address: ""
+    address: "",
+    city: "",
+    province: "",
+    postalCode: "",
+    country: ""
   })
   const [buildingType, setBuildingType] = useState<'Strata/Condo' | 'Rental' | 'Housing Co-op'>('Strata/Condo')
   const [selectedBuildingUsers, setSelectedBuildingUsers] = useState<number[]>([])
@@ -45,7 +53,11 @@ export default function EditBuildingModal({
     if (building) {
       setBuildingFormData({
         name: building.name,
-        address: building.address || ""
+        address: building.address || "",
+        city: building.city || "",
+        province: building.province || "",
+        postalCode: building.postal_code || "",
+        country: building.country || "Canada"
       })
       setBuildingType((building.building_type as 'Strata/Condo' | 'Rental' | 'Housing Co-op') || 'Strata/Condo')
       setSelectedBuildingUsers(building.users?.map(u => u.id) || [])
@@ -78,6 +90,10 @@ export default function EditBuildingModal({
         .update({
           name: buildingFormData.name.trim(),
           address: buildingFormData.address.trim() || null,
+          city: buildingFormData.city.trim() || null,
+          province: buildingFormData.province.trim() || null,
+          postal_code: buildingFormData.postalCode.trim() || null,
+          country: buildingFormData.country.trim() || null,
           building_type: buildingType
         })
         .eq('id', building.id)
@@ -114,8 +130,18 @@ export default function EditBuildingModal({
 
       console.log('✅ Building updated successfully')
       
-      // 🔄 Notify Janus for real-time sync
-      triggerJanusResync('building_updated')
+      // 🔄 Notify Janus for real-time sync with actual data
+      triggerJanusResync('building_updated', {
+        id: building.id,
+        name: buildingFormData.name.trim(),
+        address: buildingFormData.address.trim(),
+        city: buildingFormData.city.trim(),
+        province: buildingFormData.province.trim(),
+        postal_code: buildingFormData.postalCode.trim(),
+        country: buildingFormData.country.trim(),
+        building_type: buildingType,
+        manager_id: building.manager_id
+      }, 'building')
 
       onSuccess()
       onClose()
@@ -172,19 +198,77 @@ export default function EditBuildingModal({
             />
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-2">
-              Address
-            </label>
-            <textarea
-              name="address"
-              value={buildingFormData.address}
-              onChange={handleInputChange}
-              placeholder="123 Main St, City, State, ZIP"
-              disabled={saving}
-              rows={2}
-              className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none disabled:opacity-50"
-            />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-foreground mb-2">
+                Street Address
+              </label>
+              <input
+                type="text"
+                name="address"
+                value={buildingFormData.address}
+                onChange={handleInputChange}
+                placeholder="e.g., 123 Main St"
+                disabled={saving}
+                className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-2">
+                City
+              </label>
+              <input
+                type="text"
+                name="city"
+                value={buildingFormData.city}
+                onChange={handleInputChange}
+                placeholder="City"
+                disabled={saving}
+                className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-2">
+                Province/State
+              </label>
+              <input
+                type="text"
+                name="province"
+                value={buildingFormData.province}
+                onChange={handleInputChange}
+                placeholder="Province/State"
+                disabled={saving}
+                className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-2">
+                Postal/Zip Code
+              </label>
+              <input
+                type="text"
+                name="postalCode"
+                value={buildingFormData.postalCode}
+                onChange={handleInputChange}
+                placeholder="Postal Code"
+                disabled={saving}
+                className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-2">
+                Country
+              </label>
+              <input
+                type="text"
+                name="country"
+                value={buildingFormData.country}
+                onChange={handleInputChange}
+                placeholder="Country"
+                disabled={saving}
+                className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
+              />
+            </div>
           </div>
 
           <div>

@@ -54,9 +54,13 @@ export default function BuildingsTab({
 
   const fetchCompanyData = async () => {
     try {
-      const companyIds = [...new Set(buildings.map(b => b.company_id).filter(Boolean))]
+      const companyIds = buildings
+        .map(b => b.company_id)
+        .filter((id): id is number => id !== null && id !== undefined)
       
-      if (companyIds.length === 0) {
+      const uniqueCompanyIds = [...new Set(companyIds)]
+      
+      if (uniqueCompanyIds.length === 0) {
         setBuildingsWithCompany(buildings)
         return
       }
@@ -64,7 +68,7 @@ export default function BuildingsTab({
       const { data: companiesData } = await supabase
         .from('companies')
         .select('id, name')
-        .in('id', companyIds)
+        .in('id', uniqueCompanyIds)
 
       setCompanies(companiesData || [])
 

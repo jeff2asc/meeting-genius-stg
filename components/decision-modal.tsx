@@ -4,8 +4,9 @@ import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { X, Trash2 } from "lucide-react"
-import { supabase, getCurrentUser } from "@/lib/supabase"
+import { supabase, getCurrentUser, getVotingParameters } from "@/lib/supabase"
 import { toast } from "sonner"
+import { CheckCircle2, XCircle, AlertCircle } from "lucide-react"
 
 interface DecisionModalProps {
   isOpen: boolean
@@ -66,11 +67,19 @@ export default function DecisionModal({
   const [error, setError] = useState<string | null>(null)
   const [decisionResults, setDecisionResults] = useState<string[]>([])
   const [attendees, setAttendees] = useState<Attendee[]>([])
+  const [companyUsers, setCompanyUsers] = useState<any[]>([])
+  const [votersFor, setVotersFor] = useState<string[]>([])
+  const [votersAgainst, setVotersAgainst] = useState<string[]>([])
+  const [votersAbstain, setVotersAbstain] = useState<string[]>([])
+  const [openDropdown, setOpenDropdown] = useState<"for" | "against" | "abstain" | null>(null)
+  const [votingTypes, setVotingTypes] = useState<string[]>([])
+  const [selectedVotingType, setSelectedVotingType] = useState("")
+  const [userTypeWeights, setUserTypeWeights] = useState<Record<string, number>>({})
 
   const [parentDecision, setParentDecision] = useState<Decision | null>(null)
 
   const [showSuggestions, setShowSuggestions] = useState(false)
-  const [suggestions, setSuggestions] = useState<Attendee[]>([])
+  const [suggestions, setSuggestions] = useState<any[]>([])
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0)
   const [cursorPosition, setCursorPosition] = useState(0)
   const [mentionStartIndex, setMentionStartIndex] = useState(-1)
@@ -94,6 +103,7 @@ export default function DecisionModal({
     if (isOpen) {
       fetchDecisionResults()
       fetchAttendees()
+      fetchCompanyUsers()
       fetchGeniusWords()
 
       if (editMode && existingDecisionId) {
@@ -103,8 +113,51 @@ export default function DecisionModal({
       if (parentDecisionId) {
         loadParentDecision(parentDecisionId)
       }
+      fetchVotingTypes()
     }
   }, [isOpen, meetingId, editMode, existingDecisionId, parentDecisionId])
+
+  const fetchVotingTypes = async () => {
+    try {
+      const meetingIdNum = typeof meetingId === 'string' ? parseInt(meetingId) : meetingId
+      const { data: meetingData } = await supabase
+        .from("meetings")
+        .select("building_id")
+        .eq("id", meetingIdNum)
+        .single()
+
+      if (meetingData) {
+        const { data: buildingData } = await supabase
+          .from("buildings")
+          .select("company_id")
+          .eq("id", meetingData.building_id)
+          .single()
+
+        const params = await getVotingParameters(buildingData?.company_id)
+        const vTypes = params
+          .filter(p => p.parameter_type === 'voting_type')
+          .map(p => p.value)
+        
+        setVotingTypes(vTypes.length > 0 ? vTypes : ["Majority Vote (50%+1)", "Three-Quarter Vote (75%)", "Unanimous Vote (100%)"])
+        if (!editMode) {
+          setSelectedVotingType(vTypes[0] || "Majority Vote (50%+1)")
+        }
+
+        const weights = params
+          .filter(p => p.parameter_type === 'user_type')
+          .reduce((acc, p) => {
+            // Company-specific weights (p.company_id !== null) should always override system defaults
+            if (!acc[p.value] || p.company_id !== null) {
+              acc[p.value] = (p as any).weight || 1.0;
+            }
+            return acc;
+          }, {} as Record<string, number>)
+        setUserTypeWeights(weights)
+      }
+    } catch (err) {
+      console.error("Error fetching voting types:", err)
+    }
+  }
 
   const loadExistingDecision = async (decisionId: number) => {
     try {
@@ -126,7 +179,8 @@ export default function DecisionModal({
         setVotesFor(data.votes_for ?? '')
         setVotesAgainst(data.votes_against ?? '')
         setVotesAbstain(data.votes_abstain ?? '')
-        setStatus(data.status || 'open')
+        setStatus((data.status as "open" | "completed") || 'open')
+        setSelectedVotingType(data.voting_type || '')
       }
     } catch (err) {
       console.error('Unexpected error loading decision:', err)
@@ -203,6 +257,44 @@ export default function DecisionModal({
     }
   }
 
+  const fetchCompanyUsers = async () => {
+    try {
+      const meetingIdNum = typeof meetingId === 'string' ? parseInt(meetingId) : meetingId
+
+      const { data: meetingData } = await supabase
+        .from("meetings")
+        .select("building_id")
+        .eq("id", meetingIdNum)
+        .single()
+
+      if (!meetingData) return
+
+      const { data: buildingData } = await supabase
+        .from("buildings")
+        .select("company_id")
+        .eq("id", meetingData.building_id)
+        .single()
+
+      if (!buildingData?.company_id) return
+
+      const { data: usersData, error: usersError } = await supabase
+        .from("users")
+        .select("id, name, email, user_type, roles, voting_weight")
+        .eq("company_id", buildingData.company_id)
+        .in("user_type", ["user", "owner", "property_manager", "corporate_administrator", "resident"])
+        .order("name", { ascending: true })
+
+      if (usersError) {
+        console.error("Error fetching company users:", usersError)
+        return
+      }
+
+      setCompanyUsers(usersData ?? [])
+    } catch (err) {
+      console.error("Error fetching company users:", err)
+    }
+  }
+
   const fetchAttendees = async () => {
     try {
       const meetingIdNum = typeof meetingId === 'string' ? parseInt(meetingId) : meetingId
@@ -219,7 +311,7 @@ export default function DecisionModal({
       }
 
       if (meetingData?.attendees) {
-        setAttendees(meetingData.attendees as Attendee[])
+        setAttendees(meetingData.attendees as unknown as Attendee[])
       }
     } catch (err) {
       console.error("Error fetching attendees:", err)
@@ -263,8 +355,8 @@ export default function DecisionModal({
       if (!textAfterAt.includes(" ") && !textAfterAt.includes("\n")) {
         setMentionStartIndex(atIndex)
 
-        const filtered = attendees.filter(attendee =>
-          attendee.name.toLowerCase().includes(textAfterAt.toLowerCase())
+        const filtered = companyUsers.filter(user =>
+          user.name.toLowerCase().includes(textAfterAt.toLowerCase())
         )
 
         setSuggestions(filtered)
@@ -300,12 +392,12 @@ export default function DecisionModal({
     }
   }
 
-  const insertMention = (attendee: Attendee) => {
+  const insertMention = (user: any) => {
     if (mentionStartIndex === -1) return
 
     const beforeMention = motionText.substring(0, mentionStartIndex)
     const afterCursor = motionText.substring(cursorPosition)
-    const newText = beforeMention + attendee.name + " " + afterCursor
+    const newText = beforeMention + user.name + " " + afterCursor
 
     setMotionText(newText)
     setShowSuggestions(false)
@@ -313,7 +405,7 @@ export default function DecisionModal({
 
     setTimeout(() => {
       if (textareaRef.current) {
-        const newCursorPos = mentionStartIndex + attendee.name.length + 1
+        const newCursorPos = mentionStartIndex + user.name.length + 1
         textareaRef.current.setSelectionRange(newCursorPos, newCursorPos)
         textareaRef.current.focus()
       }
@@ -431,10 +523,11 @@ export default function DecisionModal({
           .update({
             motion_text: motionText,
             result: result || null,
-            votes_for: votesFor === "" ? null : votesFor,
-            votes_against: votesAgainst === "" ? null : votesAgainst,
-            votes_abstain: votesAbstain === "" ? null : votesAbstain,
-            status,
+            votes_for: votersFor.length || (votesFor === "" ? null : votesFor),
+            votes_against: votersAgainst.length || (votesAgainst === "" ? null : votesAgainst),
+            votes_abstain: votersAbstain.length || (votesAbstain === "" ? null : votesAbstain),
+            voting_type: selectedVotingType || null,
+            status: status as string,
             edited_at: new Date().toISOString()
           })
           .eq('id', existingDecisionId)
@@ -454,11 +547,12 @@ export default function DecisionModal({
             topic_id: topicId,
             motion_text: motionText,
             result: result || null,
-            votes_for: votesFor === "" ? null : votesFor,
-            votes_against: votesAgainst === "" ? null : votesAgainst,
-            votes_abstain: votesAbstain === "" ? null : votesAbstain,
+            votes_for: votersFor.length || (votesFor === "" ? null : votesFor),
+            votes_against: votersAgainst.length || (votesAgainst === "" ? null : votesAgainst),
+            votes_abstain: votersAbstain.length || (votesAbstain === "" ? null : votesAbstain),
+            voting_type: selectedVotingType || null,
             parent_decision_id: parentDecisionId,
-            status,
+            status: status as string,
             recorded_at: new Date().toISOString()
           })
 
@@ -512,6 +606,90 @@ export default function DecisionModal({
     }
   }
 
+  const toggleVote = (type: "for" | "against" | "abstain", name: string) => {
+    if (type === "for") {
+      setVotersFor(prev => prev.includes(name) ? prev.filter(n => n !== name) : [...prev, name])
+      setVotersAgainst(prev => prev.filter(n => n !== name))
+      setVotersAbstain(prev => prev.filter(n => n !== name))
+    } else if (type === "against") {
+      setVotersAgainst(prev => prev.includes(name) ? prev.filter(n => n !== name) : [...prev, name])
+      setVotersFor(prev => prev.filter(n => n !== name))
+      setVotersAbstain(prev => prev.filter(n => n !== name))
+    } else {
+      setVotersAbstain(prev => prev.includes(name) ? prev.filter(n => n !== name) : [...prev, name])
+      setVotersFor(prev => prev.filter(n => n !== name))
+      setVotersAgainst(prev => prev.filter(n => n !== name))
+    }
+  }
+
+  const getRoleBadge = (user: any) => {
+    const t = user.user_type
+    if (t === "corporate_administrator") return { label: "Corp Admin", color: "bg-purple-100 text-purple-700" }
+    if (t === "property_manager") return { label: "PM", color: "bg-blue-100 text-blue-700" }
+    if (t === "owner") return { label: "Owner", color: "bg-amber-100 text-amber-700" }
+    return { label: "Resident", color: "bg-green-100 text-green-700" }
+  }
+
+  const renderVotingDropdown = (label: string, type: "for" | "against" | "abstain", selected: string[]) => {
+    const isOpen = openDropdown === type;
+    return (
+      <div className="relative">
+        <label className="block text-sm font-medium text-foreground mb-2">
+          {label}
+        </label>
+        <button
+          type="button"
+          onClick={() => setOpenDropdown(isOpen ? null : type)}
+          disabled={saving || deleting}
+          className="w-full px-3 py-2 bg-background border border-border rounded-lg text-left flex justify-between items-center focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <span className="truncate text-sm">
+            {selected.length > 0 
+              ? `${selected.length} selected` 
+              : (type === 'for' ? votesFor : type === 'against' ? votesAgainst : votesAbstain) || "0"
+            }
+          </span>
+          <span className="text-xs text-muted-foreground ml-2">{isOpen ? "▲" : "▼"}</span>
+        </button>
+        
+        {isOpen && (
+          <div className="absolute z-50 w-64 mt-1 bg-card border border-border rounded-lg shadow-xl max-h-56 overflow-y-auto">
+            {companyUsers.length === 0 && (
+              <div className="p-3 text-sm text-muted-foreground text-center">No users found for this company</div>
+            )}
+            {companyUsers.map((user) => {
+              const badge = getRoleBadge(user)
+              const isChecked = selected.includes(user.name)
+              return (
+                <div
+                  key={user.id}
+                  className={`flex items-center gap-3 px-3 py-2.5 cursor-pointer transition-colors ${
+                    isChecked ? "bg-primary/5" : "hover:bg-muted"
+                  }`}
+                  onClick={() => toggleVote(type, user.name)}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isChecked}
+                    readOnly
+                    className="h-4 w-4 rounded border-border text-primary focus:ring-primary cursor-pointer pointer-events-none shrink-0"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-foreground truncate">{user.name}</div>
+                    <div className="text-xs text-muted-foreground truncate">{user.email}</div>
+                  </div>
+                  <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full shrink-0 ${badge.color}`}>
+                    {badge.label}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    )
+  }
+
   const handleClose = () => {
     setMotionText("")
     setResult("")
@@ -526,6 +704,10 @@ export default function DecisionModal({
     setShowGeniusSuggestions(false)
     setGeniusSuggestions([])
     setGeniusStartIndex(-1)
+    setVotersFor([])
+    setVotersAgainst([])
+    setVotersAbstain([])
+    setOpenDropdown(null)
     setParentDecision(null)
     onClose()
   }
@@ -576,19 +758,29 @@ export default function DecisionModal({
               ref={suggestionsRef}
               className="absolute z-10 w-full mt-1 bg-card border border-border rounded-lg shadow-lg max-h-48 overflow-y-auto"
             >
-              {suggestions.map((attendee, index) => (
-                <button
-                  key={index}
-                  onClick={() => insertMention(attendee)}
-                  className={`w-full text-left px-4 py-2 hover:bg-muted transition-colors ${index === selectedSuggestionIndex ? 'bg-muted' : ''
-                    }`}
-                >
-                  <div className="font-medium text-foreground">{attendee.name}</div>
-                  {attendee.email && (
-                    <div className="text-xs text-muted-foreground">{attendee.email}</div>
-                  )}
-                </button>
-              ))}
+              {suggestions.map((user, index) => {
+                const badge = getRoleBadge(user)
+                return (
+                  <button
+                    key={index}
+                    onClick={() => insertMention(user)}
+                    className={`w-full text-left px-4 py-2 hover:bg-muted transition-colors ${index === selectedSuggestionIndex ? 'bg-muted' : ''
+                      }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="font-medium text-foreground">{user.name}</div>
+                        {user.email && (
+                          <div className="text-xs text-muted-foreground">{user.email}</div>
+                        )}
+                      </div>
+                      <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full shrink-0 ${badge.color}`}>
+                        {badge.label}
+                      </span>
+                    </div>
+                  </button>
+                )
+              })}
             </div>
           )}
 
@@ -618,69 +810,155 @@ export default function DecisionModal({
           )}
         </div>
 
-        <div>
-          <label className="block text-sm font-medium text-foreground mb-2">
-            Result
-          </label>
-          <select
-            value={result}
-            onChange={(e) => setResult(e.target.value)}
-            className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-            disabled={saving || deleting}
-          >
-            <option value="">Select result...</option>
-            {decisionResults.map((res) => (
-              <option key={res} value={res}>
-                {res}
-              </option>
-            ))}
-          </select>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-2">
+              Result
+            </label>
+            <select
+              value={result}
+              onChange={(e) => setResult(e.target.value)}
+              className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+              disabled={saving || deleting}
+            >
+              <option value="">Select result...</option>
+              {decisionResults.map((res) => (
+                <option key={res} value={res}>
+                  {res}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-2">
+              Voting Mechanism
+            </label>
+            <select
+              value={selectedVotingType}
+              onChange={(e) => setSelectedVotingType(e.target.value)}
+              className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+              disabled={saving || deleting}
+            >
+              <option value="">Select mechanism...</option>
+              {votingTypes.map((type) => (
+                <option key={type} value={type}>
+                  {type}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-2">
-              Votes For
-            </label>
-            <input
-              type="number"
-              min="0"
-              value={votesFor}
-              onChange={(e) => setVotesFor(e.target.value === "" ? "" : parseInt(e.target.value))}
-              placeholder="0"
-              className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-              disabled={saving || deleting}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-2">
-              Votes Against
-            </label>
-            <input
-              type="number"
-              min="0"
-              value={votesAgainst}
-              onChange={(e) => setVotesAgainst(e.target.value === "" ? "" : parseInt(e.target.value))}
-              placeholder="0"
-              className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-              disabled={saving || deleting}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-2">
-              Abstentions
-            </label>
-            <input
-              type="number"
-              min="0"
-              value={votesAbstain}
-              onChange={(e) => setVotesAbstain(e.target.value === "" ? "" : parseInt(e.target.value))}
-              placeholder="0"
-              className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-              disabled={saving || deleting}
-            />
-          </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {renderVotingDropdown("Votes For", "for", votersFor)}
+          {renderVotingDropdown("Votes Against", "against", votersAgainst)}
+          {renderVotingDropdown("Abstentions", "abstain", votersAbstain)}
         </div>
+
+        {/* Logic Calculation Preview */}
+        {(votersFor.length > 0 || votersAgainst.length > 0 || votesFor !== "" || votesAgainst !== "") && (
+          <div className="bg-muted/30 p-4 rounded-xl border border-border/50 animate-in fade-in zoom-in-95 duration-300">
+            <div className="flex items-center justify-between mb-3">
+               <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                  <AlertCircle className="h-3.5 w-3.5" />
+                  Voting Logic Preview
+               </h4>
+               {selectedVotingType && (
+                 <span className="text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded-full font-medium">
+                    {selectedVotingType}
+                 </span>
+               )}
+            </div>
+            
+            {(() => {
+              const vForRaw = votersFor.length || Number(votesFor) || 0;
+              const vAgainstRaw = votersAgainst.length || Number(votesAgainst) || 0;
+              
+              // Calculate weighted totals
+              const vFor = votersFor.length > 0 
+                ? votersFor.reduce((sum, name) => {
+                    const u = companyUsers.find(user => user.name === name);
+                    const roleLabel = u ? getRoleBadge(u).label : "";
+                    const roleWeight = userTypeWeights[u?.user_type || ""] || userTypeWeights[roleLabel] || 1.0;
+                    // Use individual weight if set and not 1.0, otherwise use role weight
+                    const weight = (u?.voting_weight && u.voting_weight !== 1.0) ? u.voting_weight : roleWeight;
+                    return sum + weight;
+                  }, 0)
+                : Number(votesFor) || 0;
+                
+              const vAgainst = votersAgainst.length > 0 
+                ? votersAgainst.reduce((sum, name) => {
+                    const u = companyUsers.find(user => user.name === name);
+                    const roleLabel = u ? getRoleBadge(u).label : "";
+                    const roleWeight = userTypeWeights[u?.user_type || ""] || userTypeWeights[roleLabel] || 1.0;
+                    // Use individual weight if set and not 1.0, otherwise use role weight
+                    const weight = (u?.voting_weight && u.voting_weight !== 1.0) ? u.voting_weight : roleWeight;
+                    return sum + weight;
+                  }, 0)
+                : Number(votesAgainst) || 0;
+
+              const total = vFor + vAgainst;
+              const totalRaw = vForRaw + vAgainstRaw;
+              const percentage = total > 0 ? (vFor / total) * 100 : 0;
+              
+              let passed = false;
+              let threshold = 50;
+              
+              if (selectedVotingType.includes("75") || selectedVotingType.includes("Three-Quarter")) {
+                passed = percentage >= 75;
+                threshold = 75;
+              } else if (selectedVotingType.includes("100") || selectedVotingType.includes("Unanimous")) {
+                passed = percentage >= 100 && vFor > 0;
+                threshold = 100;
+              } else {
+                passed = percentage > 50;
+                threshold = 50;
+              }
+
+              return (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      {passed ? (
+                        <CheckCircle2 className="h-5 w-5 text-green-500" />
+                      ) : (
+                        <XCircle className="h-5 w-5 text-red-500" />
+                      )}
+                      <span className={`text-sm font-bold ${passed ? "text-green-700" : "text-red-700"}`}>
+                        {passed ? "Motion Carried" : "Motion Defeated"}
+                      </span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-xl font-black text-foreground">{percentage.toFixed(1)}%</span>
+                      <span className="text-[10px] text-muted-foreground block">
+                        {total.toFixed(1)} weighted votes ({totalRaw} people)
+                      </span>
+                    </div>
+                  </div>
+                  
+                  <div className="h-2 w-full bg-muted rounded-full overflow-hidden relative">
+                    <div 
+                      className={`h-full transition-all duration-500 ${passed ? "bg-green-500" : "bg-red-500"}`} 
+                      style={{ width: `${percentage}%` }} 
+                    />
+                    {threshold < 100 && (
+                      <div 
+                        className="absolute h-4 w-0.5 bg-foreground/20 -mt-1 top-0" 
+                        style={{ left: `${threshold}%` }}
+                        title={`Threshold: ${threshold}%`}
+                      />
+                    )}
+                  </div>
+                  
+                  <p className="text-[10px] text-muted-foreground italic text-center">
+                    * Calculations exclude abstentions as per standard voting protocol.
+                  </p>
+                </div>
+              );
+            })()}
+          </div>
+        )}
 
         {editMode && (
           <div>
@@ -724,9 +1002,10 @@ export default function DecisionModal({
           Cancel
         </Button>
         <Button
+          type="button"
           onClick={handleSave}
           className="flex-1 bg-decision-purple hover:bg-decision-purple/90 text-white"
-          disabled={saving || deleting}
+          disabled={saving || deleting || !motionText.trim()}
         >
           {saving ? "Saving..." : editMode ? "Update Decision" : "Save Decision"}
         </Button>

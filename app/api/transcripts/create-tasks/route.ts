@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
 
     // Prepare tasks for insertion
     const tasksToInsert = tasks.map((task: TaskToCreate) => ({
-      topic_id: task.topic_id,
+      topic_id: task.topic_id as number,
       description: task.description,
       assigned_name: task.assigned_name || null,
       assigned_email: task.assigned_email || null,

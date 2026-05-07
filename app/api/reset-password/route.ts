@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import nodemailer from 'nodemailer'
-import { createClient } from '@supabase/supabase-js'
+import { createAdminClient } from '@/lib/supabase'
 import bcrypt from 'bcryptjs'
 import crypto from 'crypto'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-
-const supabase = createClient(supabaseUrl, supabaseKey)
+// Use administrative Supabase client from @/lib/supabase
+// to handle hardcoded fallbacks and singletons.
+const supabase = createAdminClient()
 
 export async function POST(request: NextRequest) {
     try {
@@ -95,19 +94,19 @@ export async function POST(request: NextRequest) {
                     }
 
                     const transporter = nodemailer.createTransport({
-                        host: smtpConfig.smtp_host,
-                        port: smtpConfig.smtp_port || 587,
+                        host: smtpConfig.smtp_host as string,
+                        port: (smtpConfig.smtp_port as number) || 587,
                         secure: smtpConfig.smtp_port === 465,
-                        auth: { user: smtpConfig.smtp_user, pass: smtpConfig.smtp_password },
+                        auth: { user: smtpConfig.smtp_user as string, pass: smtpConfig.smtp_password as string },
                         tls: { rejectUnauthorized: smtpConfig.smtp_use_tls !== false },
-                    })
+                    } as any)
 
                     const fromHeader = smtpConfig.smtp_from_name
                         ? `"${smtpConfig.smtp_from_name}" <${smtpConfig.smtp_from_email || smtpConfig.smtp_user}>`
                         : smtpConfig.smtp_from_email || smtpConfig.smtp_user
 
                     await transporter.sendMail({
-                        from: fromHeader,
+                        from: fromHeader as string,
                         to: user.email,
                         subject: 'Reset Your Meeting Genius Password',
                         html: `

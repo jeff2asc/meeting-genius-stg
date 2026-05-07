@@ -94,7 +94,7 @@ export default function TaskModal({
       const { data: taskData, error: taskError } = await supabase
         .from('tasks')
         .select('*')
-        .eq('id', existingTaskId)
+        .eq('id', existingTaskId!)
         .single()
 
       if (taskError || !taskData) {
@@ -111,13 +111,13 @@ export default function TaskModal({
       })
 
       if (taskData.assignees && Array.isArray(taskData.assignees)) {
-        setAssignees(taskData.assignees)
+        setAssignees(taskData.assignees as unknown as Assignee[])
       }
 
       const { data: attachmentsData } = await supabase
         .from('task_attachments')
         .select('*')
-        .eq('task_id', existingTaskId)
+        .eq('task_id', existingTaskId!)
         .order('created_at', { ascending: false })
 
       if (attachmentsData) {
@@ -382,7 +382,7 @@ export default function TaskModal({
       const { error: updateError } = await supabase
         .from('tasks')
         .update(taskData)
-        .eq('id', existingTaskId)
+        .eq('id', existingTaskId!)
 
       if (updateError) {
         console.error('❌ Error updating task:', updateError)
@@ -532,7 +532,7 @@ export default function TaskModal({
       const { data: meetingData, error: meetingError } = await supabase
         .from('meetings')
         .select('buildings!inner(company_id)')
-        .eq('id', meetingId)
+        .eq('id', meetingId!)
         .single()
 
       console.log('📧 meetingData =', meetingData, 'meetingError =', meetingError)

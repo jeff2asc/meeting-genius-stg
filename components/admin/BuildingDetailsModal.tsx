@@ -15,7 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { supabase } from "@/lib/supabase"
+import { supabase, getVotingParameters } from "@/lib/supabase"
 import { triggerJanusResync } from "@/lib/janus"
 import { toast } from "sonner"
 import ImportUsersModal from "./ImportUsersModal"
@@ -38,7 +38,7 @@ interface Building {
   company_id: number | null
   building_type?: string
   created_at: string
-  users?: Array<{ id: number; name: string; email: string; user_type: string; unit_number?: string | null }>
+  users?: Array<{ id: number; name: string; email: string; user_type: string; roles?: string[] | null; unit_number?: string | null }>
   board_meeting_notice_days?: number
   general_meeting_notice_days?: number
   notification_recipient_type?: string
@@ -94,6 +94,11 @@ export default function BuildingDetailsModal({
   const [loadingAvailableUsers, setLoadingAvailableUsers] = useState(false)
   const [selectedExistingUserId, setSelectedExistingUserId] = useState<number | "">("")
   const [currentUser, setCurrentUser] = useState<User | null>(null)
+  
+  const [buildingTypes, setBuildingTypes] = useState<string[]>([])
+  const [userBuildingTypes, setUserBuildingTypes] = useState<string[]>([])
+  const [votingWeight, setVotingWeight] = useState("1.00")
+  const [newUserVotingWeight, setNewUserVotingWeight] = useState("1.00")
 
   useEffect(() => {
     if (isOpen && building && currentUser) {
@@ -111,10 +116,17 @@ export default function BuildingDetailsModal({
         getDefaultRecipientType(building.building_type || "Strata/Condo")
       )
   
-      setActiveTab("details")
       fetchPropertyManagers()
+      fetchDynamicParams()
     }
-  }, [isOpen, building, currentUser])  
+  }, [isOpen, building?.id, currentUser])
+
+  const fetchDynamicParams = async () => {
+    const params = await getVotingParameters(building?.company_id)
+    
+    setBuildingTypes(params.filter(p => p.parameter_type === 'building_type').map(p => p.value))
+    setUserBuildingTypes(params.filter(p => p.parameter_type === 'user_type').map(p => p.value))
+  }  
 
   // ⭐ NEW: Get current user on mount
   useEffect(() => {
@@ -263,6 +275,8 @@ export default function BuildingDetailsModal({
           user_id: selectedExistingUserId,
           building_id: building.id,
           unit_number: assignmentUnit.trim() || null,
+          voting_weight: parseFloat(votingWeight) || 1.00,
+          user_building_type: availableUsersForAssignment.find(u => u.id === selectedExistingUserId)?.user_type || null
         })
 
       if (insertError) {
@@ -284,6 +298,15 @@ export default function BuildingDetailsModal({
       setShowAssignExisting(false)
       
       toast.success("User assigned successfully!")
+      
+      // 🔄 Notify Janus with full user data including unit
+      const u = availableUsersForAssignment.find(u => u.id === selectedExistingUserId)
+      if (u) {
+        triggerJanusResync("user_assigned_to_building", {
+          ...u,
+          units: [{ building_id: building.id, unit_number: assignmentUnit.trim() }]
+        }, "user")
+      }
       
       await fetchAvailableUsersForAssignment()
       await onSuccess()
@@ -332,6 +355,8 @@ export default function BuildingDetailsModal({
           user_id: newUser.id,
           building_id: building.id,
           unit_number: newUserUnit.trim() || null,
+          voting_weight: parseFloat(newUserVotingWeight) || 1.00,
+          user_building_type: newUserType
         })
 
       if (assignError) {
@@ -360,6 +385,12 @@ export default function BuildingDetailsModal({
 
       const userTypeLabel = newUserType === 'resident' ? 'Resident' : newUserType === 'owner' ? 'Owner' : 'User'
       toast.success(`${userTypeLabel} created successfully!`)
+
+      // 🔄 Notify Janus with full user data including unit
+      triggerJanusResync("user_created", {
+        ...newUser,
+        units: [{ building_id: building.id, unit_number: newUserUnit.trim() }]
+      }, "user")
 
       await onSuccess()
     } catch (err) {
@@ -403,8 +434,15 @@ export default function BuildingDetailsModal({
       
       toast.success("Building settings updated successfully!")
       
-      // 🔄 Notify Janus for real-time sync
-      triggerJanusResync('building_updated')
+      // 🔄 Notify Janus for real-time sync with full data
+      triggerJanusResync('building_updated', {
+        id: building.id,
+        name: buildingName.trim(),
+        address: buildingAddress.trim(),
+        building_type: buildingType,
+        manager_id: managerId,
+        company_id: building.company_id
+      }, 'building')
       
       await onSuccess()
       onClose()
@@ -586,9 +624,22 @@ export default function BuildingDetailsModal({
                     <SelectValue placeholder="Select building type" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Strata/Condo">Strata/Condo</SelectItem>
-                    <SelectItem value="Rental">Rental Building</SelectItem>
-                    <SelectItem value="Housing Co-op">Housing Co-op</SelectItem>
+                    {buildingTypes.length > 0 ? (
+                      buildingTypes.map(t => (
+                        <SelectItem key={t} value={t}>{t}</SelectItem>
+                      ))
+                    ) : (
+                      <>
+                        <SelectItem value="Strata Corporation">Strata Corporation</SelectItem>
+                        <SelectItem value="Condominium Corporation">Condominium Corporation</SelectItem>
+                        <SelectItem value="Equity Co-op">Equity Co-op</SelectItem>
+                        <SelectItem value="Non-Profit Co-op">Non-Profit Co-op</SelectItem>
+                        <SelectItem value="Tenant Association">Tenant Association</SelectItem>
+                        <SelectItem value="Non-Profit Society">Non-Profit Society</SelectItem>
+                        <SelectItem value="Trade Association">Trade Association</SelectItem>
+                        <SelectItem value="Professional Association">Professional Association</SelectItem>
+                      </>
+                    )}
                   </SelectContent>
                 </Select>
               </div>
@@ -688,9 +739,24 @@ export default function BuildingDetailsModal({
                               <div className="text-xs text-muted-foreground">{user.email}</div>
                             </td>
                             <td className="px-4 py-3">
-                              <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${userTypeDisplay.className}`}>
-                                {userTypeDisplay.label}
-                              </span>
+                              <div className="flex flex-wrap gap-1">
+                                {Array.from(
+                                  new Set([
+                                    user.user_type,
+                                    ...(Array.isArray(user.roles) ? user.roles : []),
+                                  ]),
+                                ).map((role) => {
+                                  const userTypeDisplay = getUserTypeDisplay(role)
+                                  return (
+                                    <span
+                                      key={role}
+                                      className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${userTypeDisplay.className}`}
+                                    >
+                                      {userTypeDisplay.label}
+                                    </span>
+                                  )
+                                })}
+                              </div>
                             </td>
                             <td className="px-4 py-3">
                               {user.unit_number ? (
@@ -777,12 +843,25 @@ export default function BuildingDetailsModal({
                     />
                   </div>
                   
+                  <div>
+                    <Label htmlFor="votingWeight" className="text-blue-900">Voting Weight</Label>
+                    <Input
+                      id="votingWeight"
+                      type="number"
+                      step="0.01"
+                      value={votingWeight}
+                      onChange={(e) => setVotingWeight(e.target.value)}
+                      placeholder="1.00"
+                      className="bg-white mt-1 border-blue-200"
+                    />
+                  </div>
+                  
                   <Button
                     onClick={handleAssignExistingUser}
                     className="bg-blue-600 hover:bg-blue-700 text-white"
                     disabled={!selectedExistingUserId}
                   >
-                    Assign to Building
+                    Assign
                   </Button>
                 </div>
                 <p className="text-[10px] text-blue-700 mt-2">
@@ -833,28 +912,47 @@ export default function BuildingDetailsModal({
                       />
                     </div>
                     <div>
-                      <Label htmlFor="newUserUnit">Unit #</Label>
+                      <Label htmlFor="newUserType">User Type *</Label>
+                      <Select value={newUserType} onValueChange={setNewUserType}>
+                        <SelectTrigger className="bg-background mt-1">
+                          <SelectValue placeholder="Select user type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {userBuildingTypes.length > 0 ? (
+                            userBuildingTypes.map(t => (
+                              <SelectItem key={t} value={t}>{t}</SelectItem>
+                            ))
+                          ) : (
+                            <>
+                              <SelectItem value="owner">Owner</SelectItem>
+                              <SelectItem value="resident">Resident</SelectItem>
+                              <SelectItem value="user">Standard User</SelectItem>
+                            </>
+                          )}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label htmlFor="newUserUnit">Unit Number</Label>
                       <Input
                         id="newUserUnit"
                         value={newUserUnit}
                         onChange={(e) => setNewUserUnit(e.target.value)}
-                        placeholder="e.g. 304"
-                        className="mt-1"
+                        placeholder="e.g. 101"
+                        className="bg-background mt-1"
                       />
                     </div>
                     <div>
-                      <Label htmlFor="newUserType">User Type *</Label>
-                      <Select value={newUserType} onValueChange={setNewUserType}>
-                        <SelectTrigger id="newUserType" className="mt-1">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="owner">Owner</SelectItem>
-                          <SelectItem value="resident">Resident</SelectItem>
-                          <SelectItem value="property_manager">Property Manager</SelectItem>
-                          <SelectItem value="user">Generic User</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <Label htmlFor="newUserWeight">Voting Weight</Label>
+                      <Input
+                        id="newUserWeight"
+                        type="number"
+                        step="0.01"
+                        value={newUserVotingWeight}
+                        onChange={(e) => setNewUserVotingWeight(e.target.value)}
+                        placeholder="1.00"
+                        className="bg-background mt-1"
+                      />
                     </div>
                     
                     <div className="md:col-span-2 pt-2">
@@ -873,7 +971,7 @@ export default function BuildingDetailsModal({
           )}
 
           {activeTab === "documents" && (
-            <DocumentsTab building={building} onSuccess={onSuccess} />
+            <DocumentsTab key={building.id} building={building} onSuccess={onSuccess} />
           )}
 
           {activeTab === "notifications" && (
@@ -1189,7 +1287,7 @@ function DocumentsTab({ building, onSuccess }: DocumentsTabProps) {
       const { error } = await supabase
         .from("building_document_urls")
         .insert({
-          building_id: building.id,
+          building_id: Number(building.id),
           document_type: urlType,
           url: urlLink.trim(),
           title: urlTitle.trim(),
@@ -1209,7 +1307,7 @@ function DocumentsTab({ building, onSuccess }: DocumentsTabProps) {
       setUrlDescription("")
       setShowUrlForm(false)
       await fetchDocumentUrls()
-      await onSuccess()
+      // Removed onSuccess call to keep modal open
     } catch (err) {
       console.error("Unexpected error:", err)
       toast.error("Failed to save URL")
@@ -1234,7 +1332,7 @@ function DocumentsTab({ building, onSuccess }: DocumentsTabProps) {
 
       toast.success("Reference URL deleted")
       await fetchDocumentUrls()
-      await onSuccess()
+      // Removed onSuccess call to keep modal open
     } catch (err) {
       console.error("Delete error:", err)
       toast.error("Failed to delete URL")
@@ -1310,7 +1408,7 @@ function DocumentsTab({ building, onSuccess }: DocumentsTabProps) {
       alert("Document uploaded successfully!")
       setSelectedFile(null)
       await fetchDocuments()
-      await onSuccess()
+      // Removed onSuccess call to keep modal open
     } catch (error: any) {
       console.error("Upload error:", error)
       alert(error.message || "Upload failed")
@@ -1339,7 +1437,7 @@ function DocumentsTab({ building, onSuccess }: DocumentsTabProps) {
 
       alert("Document deleted successfully")
       await fetchDocuments()
-      await onSuccess()
+      // Removed onSuccess call to keep modal open
     } catch (error: any) {
       console.error("Delete error:", error)
       alert(error.message || "Delete failed")

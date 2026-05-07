@@ -27,6 +27,7 @@ import AssignUsersToCompanyModal from "./admin/AssignUsersToCompanyModal"
 import MinutesTemplatesTab from "./MinutesTemplatesTab"
 import SystemAuditTab from "./admin/SystemAuditTab"
 import LlmSettingsTab from "./admin/LlmSettingsTab"
+import VotingTab from "./admin/VotingTab"
 
 
 interface AdminPanelProps {
@@ -60,9 +61,10 @@ interface Building {
   building_type?: string
   created_at: string
   users?: Array<{ id: number; name: string; email: string; user_type: string; unit_number?: string | null }>
+  company?: { id: number; name: string } | null
 }
 
-type TabType = "users" | "buildings" | "companies" | "minutes" | "agenda" | "audit" | "settings"
+type TabType = "users" | "buildings" | "companies" | "minutes" | "agenda" | "voting" | "audit" | "settings"
 
 export default function AdminPanel({ onBack }: AdminPanelProps) {
   const [activeTab, setActiveTab] = useState<TabType>("users")
@@ -98,6 +100,12 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
   const [viewingDocument, setViewingDocument] = useState<{
     building: Building
     content: string
+  } | null>(null)
+
+  // Context for creating a building from other modals (e.g. CreateUserModal)
+  const [buildingCreationContext, setBuildingCreationContext] = useState<{
+    managerId?: number
+    companyId?: number
   } | null>(null)
 
   // Filters
@@ -246,7 +254,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
     try {
       let query = supabase
         .from("users")
-        .select("id, name, email, company_id")
+        .select("id, name, email, company_id, roles")
         .eq("user_type", "property_manager")
         .order("name")
 
@@ -342,8 +350,8 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
         // master sees all buildings
       } else if (isCorporateAdmin && currentUser?.company_id) {
         buildingsQuery = buildingsQuery.eq("company_id", currentUser.company_id)
-      } else if (isPropManager) {
-        buildingsQuery = buildingsQuery.eq("manager_id", currentUser?.id)
+      } else if (isPropManager && currentUser?.id) {
+        buildingsQuery = buildingsQuery.eq("manager_id", currentUser.id)
       } else {
         setBuildings([])
         return
@@ -362,7 +370,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
           `
           building_id,
           unit_number,
-          users!inner(id, name, email, user_type)
+          users!inner(id, name, email, user_type, roles)
         `
         )
 
@@ -391,7 +399,11 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
     let filtered = [...users]
 
     if (filterUserType !== "all") {
-      filtered = filtered.filter((user) => user.user_type === filterUserType)
+      filtered = filtered.filter(
+        (user) =>
+          user.user_type === filterUserType ||
+          (Array.isArray(user.roles) && user.roles.includes(filterUserType)),
+      )
     }
 
     if (filterBuilding !== "all") {
@@ -421,6 +433,8 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
   }
 
   const handleCreateBuildingSuccess = () => {
+    setShowCreateBuildingModal(false)
+    setBuildingCreationContext(null)
     fetchBuildings()
     fetchUsers()
     triggerJanusResync('building_created')
@@ -544,14 +558,27 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
               {activeTab === "users" && canCreateUser && (
-                <Button
-                  onClick={() => setShowCreateUserModal(true)}
-                  size="sm"
-                  className="bg-gradient-to-r from-primary to-decision-purple text-primary-foreground text-[10px] sm:text-sm px-2 sm:px-4"
-                >
-                  <Plus className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
-                  <span className="truncate">Create User</span>
-                </Button>
+                <div className="flex gap-2">
+                  {isMaster && (
+                    <Button
+                      onClick={() => setShowCreateBuildingModal(true)}
+                      size="sm"
+                      variant="outline"
+                      className="text-[10px] sm:text-sm px-2 sm:px-4 border-primary/20 hover:border-primary/50"
+                    >
+                      <Plus className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                      <span className="truncate">Create Building</span>
+                    </Button>
+                  )}
+                  <Button
+                    onClick={() => setShowCreateUserModal(true)}
+                    size="sm"
+                    className="bg-gradient-to-r from-primary to-decision-purple text-primary-foreground text-[10px] sm:text-sm px-2 sm:px-4"
+                  >
+                    <Plus className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                    <span className="truncate">Create User</span>
+                  </Button>
+                </div>
               )}
               {activeTab === "buildings" && canCreateBuilding && (
                 <Button
@@ -624,6 +651,15 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
             >
               📋 Agenda
             </button>
+            <button
+              onClick={() => setActiveTab("voting")}
+              className={`pb-2 px-1 font-medium text-xs sm:text-sm transition-colors whitespace-nowrap flex-shrink-0 ${activeTab === "voting"
+                  ? "text-primary border-b-2 border-primary"
+                  : "text-muted-foreground hover:text-foreground"
+                }`}
+            >
+              ⚖️ Voting
+            </button>
             {(isMaster || isCorporateAdmin) && (
               <button
                 onClick={() => setActiveTab("audit")}
@@ -669,6 +705,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
             onFilterBuildingChange={setFilterBuilding}
             onEditUser={handleEditUser}
             onDeleteUser={handleDeleteUser}
+            onCreateBuilding={() => setShowCreateBuildingModal(true)}
           />
         )}
 
@@ -704,6 +741,10 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
         {activeTab === "agenda" && (
           <AgendaTemplatesTab buildings={getBuildingsList()} loading={loading} />
         )}
+
+        {activeTab === "voting" && (
+          <VotingTab />
+        )}
       </div>
 
       <CreateUserModal
@@ -713,6 +754,10 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
         currentUser={currentUser}
         propertyManagers={propertyManagers}
         buildings={getBuildingsList()}
+        onCreateBuilding={(managerId, companyId) => {
+          setBuildingCreationContext({ managerId, companyId })
+          setShowCreateBuildingModal(true)
+        }}
         companies={companies}
       />
 
@@ -731,6 +776,10 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
           currentUser={currentUser}
           propertyManagers={propertyManagers}
           buildings={getBuildingsList()}
+          onCreateBuilding={(managerId, companyId) => {
+            setBuildingCreationContext({ managerId, companyId })
+            setShowCreateBuildingModal(true)
+          }}
           companies={companies}
           userId={editingUserId}
         />
@@ -738,10 +787,15 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
 
       <CreateBuildingModal
         isOpen={showCreateBuildingModal}
-        onClose={() => setShowCreateBuildingModal(false)}
+        onClose={() => {
+          setShowCreateBuildingModal(false)
+          setBuildingCreationContext(null)
+        }}
         onSuccess={handleCreateBuildingSuccess}
         currentUser={currentUser}
         availableUsers={getAvailableUsers()}
+        preselectedManagerId={buildingCreationContext?.managerId}
+        preselectedCompanyId={buildingCreationContext?.companyId}
       />
 
       <BuildingDetailsModal
@@ -812,4 +866,5 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
       />
     </div>
   )
+
 }

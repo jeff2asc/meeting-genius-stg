@@ -74,6 +74,8 @@ export default function GenerateMinutesButton({
         .select("start_time, end_time, chair_person, minute_taker, recorder_name, timekeeper_name")
         .eq("id", meetingId)
         .single()
+      
+      const meetingData = meeting as any
 
       // Convert ISO or timestamp to HH:mm for the <input type="time">
       const formatToTimeInput = (iso: string | null) => {
@@ -102,10 +104,10 @@ export default function GenerateMinutesButton({
       }
 
       setEditableInfo({
-        startTime: formatToTimeInput(meeting?.start_time),
-        endTime: formatToTimeInput(meeting?.end_time),
-        chairPerson: meeting?.chair_person || meeting?.recorder_name || "",
-        minuteTaker: meeting?.minute_taker || meeting?.timekeeper_name || meeting?.recorder_name || "",
+        startTime: formatToTimeInput(meetingData?.start_time),
+        endTime: formatToTimeInput(meetingData?.end_time),
+        chairPerson: meetingData?.chair_person || meetingData?.recorder_name || "",
+        minuteTaker: meetingData?.minute_taker || meetingData?.timekeeper_name || meetingData?.recorder_name || "",
       })
       setShowEditModal(true)
     } catch (err) {
@@ -223,12 +225,12 @@ export default function GenerateMinutesButton({
           coverPageElements:
             Array.isArray(templateRow.coverpage_elements) &&
               templateRow.coverpage_elements.length > 0
-              ? (templateRow.coverpage_elements as CoverPageElement[])
+              ? (templateRow.coverpage_elements as unknown as CoverPageElement[])
               : defaultTemplate.coverPageElements,
           infoCardFields:
             Array.isArray(templateRow.infocard_fields) &&
               templateRow.infocard_fields.length > 0
-              ? (templateRow.infocard_fields as TemplateField[])
+              ? (templateRow.infocard_fields as unknown as TemplateField[])
               : defaultTemplate.infoCardFields,
         }
       }
@@ -283,6 +285,7 @@ export default function GenerateMinutesButton({
         .from("topics")
         .select("*")
         .eq("meeting_id", meetingId)
+        .eq("is_archived", false)
         .order("order_index")
 
       if (topicsError) {
@@ -339,7 +342,8 @@ export default function GenerateMinutesButton({
       const sectionsWithTopics = (sections || []).map((section: any) => ({
         ...section,
         topics: (topics || [])
-          .filter((t: any) => t.section_id === section.id)
+          .filter((t: any) => Number(t.section_id) === Number(section.id) && !t.is_archived)
+          .sort((a: any, b: any) => (a.order_index || 0) - (b.order_index || 0))
           .map((topic: any) => ({
             ...topic,
             decisions: decisions.filter((d: any) => d.topic_id === topic.id),
@@ -367,7 +371,7 @@ export default function GenerateMinutesButton({
     sections: sectionsWithTopics,
     attendees,
     logoUrl,
-    topics: topics || [], // Pass raw topics for timing calculation
+    topics: (topics || []).filter((t: any) => !t.is_archived), // Pass filtered topics for timing calculation
   })
 
       // 6) Render in hidden iframe and capture to PDF
@@ -1367,6 +1371,7 @@ function renderSectionsAndTopics(
                 : ""
               }
                 <div class="votes-bar" style="background:${template.voteResultsColor};">
+                  <span><strong>MECHANISM:</strong> ${escapeHtml(decision.voting_type || "Standard")}</span>
                   <span><strong>FOR:</strong> ${votesFor}</span>
                   <span><strong>AGAINST:</strong> ${votesAgainst}</span>
                   <span><strong>ABSTAIN:</strong> ${votesAbstain}</span>

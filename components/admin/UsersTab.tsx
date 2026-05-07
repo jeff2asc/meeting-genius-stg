@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useMemo } from "react"
-import { Filter, Search, X } from "lucide-react"
+import { Filter, Search, X, Plus } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -16,6 +16,7 @@ interface UserRow {
   assigned_pm_id: number | null
   buildings?: string[]
   roles?: string[] | null
+  voting_weight?: number
 }
 
 interface Building {
@@ -35,6 +36,7 @@ interface UsersTabProps {
   onFilterBuildingChange: (value: string) => void
   onEditUser: (userId: number) => void
   onDeleteUser: (userId: number) => void
+  onCreateBuilding?: () => void
 }
 
 export default function UsersTab({
@@ -49,6 +51,7 @@ export default function UsersTab({
   onFilterBuildingChange,
   onEditUser,
   onDeleteUser,
+  onCreateBuilding,
 }: UsersTabProps) {
   const [searchQuery, setSearchQuery] = useState("")
 
@@ -80,13 +83,26 @@ export default function UsersTab({
 
   return (
     <>
-      <div className="mb-6">
-        <h2 className="text-2xl font-bold text-foreground mb-2">User Management</h2>
-        <p className="text-muted-foreground">
-          {isMaster
-            ? "You have full access to manage all users"
-            : "Manage users assigned to you"}
-        </p>
+      <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-foreground mb-2">User Management</h2>
+          <p className="text-muted-foreground">
+            {isMaster
+              ? "You have full access to manage all users"
+              : "Manage users assigned to you"}
+          </p>
+        </div>
+        {isMaster && onCreateBuilding && (
+          <Button 
+            onClick={onCreateBuilding}
+            variant="outline"
+            size="sm"
+            className="flex items-center gap-2 border-primary/20 hover:border-primary/50 hover:bg-primary/5"
+          >
+            <Plus className="h-4 w-4 text-primary" />
+            <span>Create Building</span>
+          </Button>
+        )}
       </div>
 
       {/* Search Field */}

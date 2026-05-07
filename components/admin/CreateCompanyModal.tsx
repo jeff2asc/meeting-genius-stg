@@ -147,7 +147,7 @@ export default function CreateCompanyModal({
             email: u.email,
             password_hash: '$2a$10$rXqvFZnPzAMcLzCP2L4dxu7L6Y3Y5KjGNQQF6xZ4Y5Y5Y5Y5Y5Y5Y5', // Replace with secure hash logic
             user_type: primaryRole,
-            roles: extraRoles.length > 0 ? extraRoles : null,
+            roles: rolesArray,
             company_id: newCompany.id
           }, { onConflict: 'email' })
 
@@ -163,8 +163,18 @@ export default function CreateCompanyModal({
 
       setCompanyName("")
       setNewUsers([])
-      // 🔄 Notify Janus of new company + users
-      triggerJanusResync("company_created")
+      // 🔄 Notify Janus of new company + initial users
+      const usersToSync = Array.from(uniqueUsersMap.values()).map(u => ({
+        name: u.name,
+        email: u.email,
+        roles: Array.from(u.roles),
+        company_id: newCompany.id
+      }))
+
+      triggerJanusResync("company_created", {
+        ...newCompany,
+        users: usersToSync
+      }, "company")
       onSuccess()
       onClose()
     } catch (err) {

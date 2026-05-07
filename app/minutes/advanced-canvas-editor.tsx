@@ -40,7 +40,7 @@ export default function AdvancedCanvasEditorPage({ searchParams }: PageProps) {
         .select(
           "id, title, description, scope, company_id, building_id, canvas_content"
         )
-        .eq("id", templateId)
+        .eq("id", parseInt(templateId, 10))
         .single();
 
       if (error) {
@@ -52,7 +52,7 @@ export default function AdvancedCanvasEditorPage({ searchParams }: PageProps) {
         return;
       }
 
-      const tpl = data as MinutesTemplate;
+      const tpl = data as unknown as MinutesTemplate;
       setTitle(tpl.title);
       setDescription(tpl.description ?? "");
       setScope(tpl.scope);
@@ -125,13 +125,13 @@ export default function AdvancedCanvasEditorPage({ searchParams }: PageProps) {
     const building_id = scopeValue === "building" ? buildingId : null;
 
     const payload = {
-      id: templateId || undefined, // upsert when editing, insert when new
+      id: templateId ? parseInt(templateId, 10) : undefined,
       title: title.trim(),
       description: description.trim() || null,
       scope: scopeValue,
       company_id,
-      building_id,
-      canvas_content: canvasBlocks,
+      building_id: building_id ? parseInt(building_id, 10) : null,
+      canvas_content: canvasBlocks as any,
     };
 
     const { data, error } = await supabase
