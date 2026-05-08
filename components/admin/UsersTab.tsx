@@ -32,6 +32,9 @@ interface UsersTabProps {
   filterBuilding: string
   loading: boolean
   isMaster: boolean
+  isPropManager: boolean
+  isCorporateAdmin: boolean
+  currentUser: any
   onFilterUserTypeChange: (value: string) => void
   onFilterBuildingChange: (value: string) => void
   onEditUser: (userId: number) => void
@@ -47,6 +50,9 @@ export default function UsersTab({
   filterBuilding,
   loading,
   isMaster,
+  isPropManager,
+  isCorporateAdmin,
+  currentUser,
   onFilterUserTypeChange,
   onFilterBuildingChange,
   onEditUser,
@@ -55,9 +61,16 @@ export default function UsersTab({
 }: UsersTabProps) {
   const [searchQuery, setSearchQuery] = useState("")
 
-  const canManageUser = (user: UserRow) => {
-    if (isMaster) return true
-    return true
+  const canManageUser = (targetUser: UserRow) => {
+    if (isMaster || isCorporateAdmin || isPropManager) return true
+    
+    // Lower roles can only edit their OWN account
+    return targetUser.id === currentUser?.id
+  }
+
+  const canDeleteUser = (targetUser: UserRow) => {
+    // Only high roles can delete
+    return isMaster || isCorporateAdmin
   }
 
   // Apply search filter on top of existing filters
@@ -89,7 +102,7 @@ export default function UsersTab({
           <p className="text-muted-foreground">
             {isMaster
               ? "You have full access to manage all users"
-              : "Manage users assigned to you"}
+              : "Manage users assigned to you or in your buildings"}
           </p>
         </div>
 
@@ -193,8 +206,8 @@ export default function UsersTab({
               <UserCard
                 key={user.id}
                 user={user}
-                onEdit={canManage ? () => onEditUser(user.id) : undefined}
-                onDelete={canManage ? () => onDeleteUser(user.id) : undefined}
+                onEdit={canManageUser(user) ? () => onEditUser(user.id) : undefined}
+                onDelete={canDeleteUser(user) ? () => onDeleteUser(user.id) : undefined}
               />
             )
           })}

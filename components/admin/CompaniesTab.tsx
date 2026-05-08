@@ -17,6 +17,7 @@ interface CompaniesTabProps {
   onViewDetails: (company: Company) => void
   onAssignUsers: (company: Company) => void  // ✅ ADD THIS LINE
   onRefresh: () => void
+  canManage?: boolean
 }
 
 
@@ -26,7 +27,8 @@ export default function CompaniesTab({
   onEdit,
   onDelete,
   onViewDetails,
-  onRefresh
+  onRefresh,
+  canManage = false
 }: CompaniesTabProps) {
   const [companiesWithCounts, setCompaniesWithCounts] = useState<CompanyWithCounts[]>([])
 
@@ -93,6 +95,7 @@ export default function CompaniesTab({
               onEdit={onEdit}
               onDelete={handleDelete}
               onViewDetails={onViewDetails}
+              canManage={canManage}
             />
           ))}
         </div>

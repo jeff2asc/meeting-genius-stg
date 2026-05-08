@@ -40,3 +40,35 @@ export async function fetchJanusTicketsDirect(companyId?: number | null) {
   
   return data;
 }
+
+/**
+ * Helper to fetch a user from Janus by email with their properties
+ */
+export async function fetchJanusUserByEmail(email: string) {
+  if (!email) return null;
+
+  try {
+    // 1. Fetch user
+    const { data: user, error: userError } = await janusClient
+      .from('users')
+      .select('*')
+      .eq('email', email.toLowerCase().trim())
+      .maybeSingle();
+
+    if (userError || !user) return null;
+
+    // 2. Fetch their property associations
+    const { data: properties, error: propError } = await janusClient
+      .from('user_properties')
+      .select('building_id, unit_number, company_id')
+      .eq('user_id', user.id);
+
+    return {
+      ...user,
+      properties: properties || []
+    };
+  } catch (err) {
+    console.error("❌ Failed to fetch user from Janus:", err);
+    return null;
+  }
+}

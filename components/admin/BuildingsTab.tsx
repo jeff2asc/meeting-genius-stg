@@ -33,6 +33,7 @@ interface BuildingsTabProps {
   onViewDocument: (building: Building) => void
   onManageDocuments: (building: Building) => void
   currentUser?: any
+  canManage?: boolean
 }
 
 export default function BuildingsTab({
@@ -43,7 +44,8 @@ export default function BuildingsTab({
   onViewDetails,
   onViewDocument,
   onManageDocuments,
-  currentUser
+  currentUser,
+  canManage = false
 }: BuildingsTabProps) {
   const [typeFilter, setTypeFilter] = useState<string>('all')
   const [companyFilter, setCompanyFilter] = useState<string>('all')

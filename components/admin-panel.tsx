@@ -5,7 +5,7 @@ import { ArrowLeft, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { getCurrentUser, Company } from "@/lib/supabase"
 import { supabase } from "@/lib/supabase"
-import { canManageCompanies, shouldFilterByCompany, isMaster as checkIsMaster, isCorporateAdmin as checkIsCorporateAdmin, isPropertyManager as checkIsPropertyManager } from "@/lib/permissions"
+import { canManageCompanies, canViewCompanies, canManageBuildings, shouldFilterByCompany, isMaster as checkIsMaster, isCorporateAdmin as checkIsCorporateAdmin, isPropertyManager as checkIsPropertyManager } from "@/lib/permissions"
 import { triggerJanusResync } from "@/lib/janus"
 
 // Import all the separated components
@@ -115,22 +115,55 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
   const [filterUserType, setFilterUserType] = useState<string>("all")
   const [filterBuilding, setFilterBuilding] = useState<string>("all")
 
-  const isMaster = checkIsMaster(currentUser)
-  const isCorporateAdmin = checkIsCorporateAdmin(currentUser)
-  const isPropManager = checkIsPropertyManager(currentUser)
+  const [dbUser, setDbUser] = useState<any>(null)
+  const [isIdentityLoaded, setIsIdentityLoaded] = useState(false)
+
+  const isMaster = checkIsMaster(dbUser || currentUser)
+  const isCorporateAdmin = checkIsCorporateAdmin(dbUser || currentUser)
+  const isPropManager = checkIsPropertyManager(dbUser || currentUser)
   const canCreateUser =
     isMaster || isPropManager || isCorporateAdmin
   const canCreateBuilding =
-    isMaster || isPropManager || isCorporateAdmin
-  const userCanManageCompanies = canManageCompanies(currentUser)
-  const userShouldFilterByCompany = shouldFilterByCompany(currentUser)
+    isMaster || isCorporateAdmin
+  const userCanManageCompanies = canManageCompanies(dbUser || currentUser)
+  const userCanViewCompanies = canViewCompanies(dbUser || currentUser)
+  const userCanManageBuildings = canManageBuildings(dbUser || currentUser)
+  const userShouldFilterByCompany = shouldFilterByCompany(dbUser || currentUser)
 
+  // 1. REFRESH IDENTITY FROM DB
   useEffect(() => {
+    const refreshIdentity = async () => {
+      if (!currentUser?.id) return
+      
+      try {
+        const { data, error } = await supabase
+          .from("users")
+          .select("id, name, email, user_type, roles, company_id")
+          .eq("id", currentUser.id)
+          .single()
+        
+        if (data) {
+          setDbUser(data)
+        }
+      } catch (err) {
+        console.error("Identity refresh error:", err)
+      } finally {
+        setIsIdentityLoaded(true)
+      }
+    }
+    
+    refreshIdentity()
+  }, [])
+
+  // 2. TRIGGER FETCHES ONLY AFTER IDENTITY IS LOADED
+  useEffect(() => {
+    if (!isIdentityLoaded) return
+
     fetchCompanies()
     fetchPropertyManagers()
     fetchUsers()
     fetchBuildings()
-  }, [])
+  }, [isIdentityLoaded, dbUser?.company_id])
 
   useEffect(() => {
     applyFilters()
@@ -174,10 +207,18 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
     try {
       let companiesQuery = supabase.from("companies").select("*").order("name")
 
+      const activeUser = dbUser || currentUser
       if (isMaster) {
-        // Master sees all companies
-      } else if (isCorporateAdmin && currentUser?.company_id) {
-        companiesQuery = companiesQuery.eq("id", currentUser.company_id)
+        // Master sees all
+      } else {
+        // All other roles see only their own company
+        if (activeUser?.company_id) {
+          companiesQuery = companiesQuery.eq("id", activeUser.company_id)
+        } else {
+          setCompanies([])
+          setLoading(false)
+          return
+        }
       }
 
       const { data, error } = await companiesQuery
@@ -289,10 +330,27 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
         .select("id, name, email, user_type, roles, assigned_pm_id, company_id, created_at")
         .order("created_at", { ascending: false })
 
+      const activeUser = dbUser || currentUser
       if (isMaster) {
-        // Master sees all users across all companies
-      } else if (isCorporateAdmin && currentUser?.company_id) {
-        usersQuery = usersQuery.eq("company_id", currentUser.company_id)
+        // Master sees all
+      } else if (isCorporateAdmin) {
+        if (activeUser?.company_id) {
+          usersQuery = usersQuery.eq("company_id", activeUser.company_id)
+        } else {
+          setUsers([])
+          setLoading(false)
+          return
+        }
+      } else if (isPropManager) {
+        // Property Manager sees users in their company OR users with no company (yet)
+        // Filtering by managed buildings happens later in the JS logic
+        if (activeUser?.company_id) {
+          usersQuery = usersQuery.or(`company_id.eq.${activeUser.company_id},company_id.is.null`)
+        } else {
+          setUsers([])
+          setLoading(false)
+          return
+        }
       }
 
       const { data: usersData, error: usersError } = await usersQuery
@@ -302,36 +360,61 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
         return
       }
 
-      const { data: userBuildingsData } = await supabase
+      let ubQuery = supabase
         .from("user_buildings")
-        .select(
-          `
+        .select(`
           user_id,
           building_id,
           unit_number,
-          buildings!inner(id, name)
-        `
-        )
+          buildings!inner(id, name, company_id, manager_id)
+        `)
+
+      if (!isMaster && currentUser?.company_id) {
+        ubQuery = ubQuery.eq("buildings.company_id", currentUser.company_id)
+      }
+
+      const { data: userBuildingsData } = await ubQuery
 
       const usersWithBuildings = (usersData || []).map((user) => {
-        const userBuildings = (userBuildingsData || [])
+        const userJunctions = (userBuildingsData || [])
           .filter((ub: any) => ub.user_id === user.id)
+        
+        const userBuildings = userJunctions
           .map((ub: any) => ub.unit_number ? `${ub.buildings?.name} (${ub.unit_number})` : ub.buildings?.name)
           .filter(Boolean) as string[]
+
+        const isUserInManagedBuilding = userJunctions.some((ub: any) => ub.buildings?.manager_id === currentUser?.id)
 
         return {
           ...user,
           buildings: userBuildings,
+          isUserInManagedBuilding,
+          buildingIds: userJunctions.map((ub: any) => ub.building_id)
         }
       })
 
-      if (!isMaster && !isCorporateAdmin && isPropManager) {
+      const myBuildingIds = (userBuildingsData || [])
+        .filter((ub: any) => ub.user_id === currentUser?.id)
+        .map((ub: any) => ub.building_id)
+
+      if (isMaster || isCorporateAdmin) {
+        setUsers(usersWithBuildings)
+      } else if (isPropManager) {
         const filteredUsers = usersWithBuildings.filter(
-          (user) => user.assigned_pm_id === currentUser?.id || user.id === currentUser?.id
+          (user) => 
+            user.assigned_pm_id === currentUser?.id || 
+            user.id === currentUser?.id || 
+            user.isUserInManagedBuilding ||
+            user.buildingIds.some(id => myBuildingIds.includes(id))
         )
         setUsers(filteredUsers)
       } else {
-        setUsers(usersWithBuildings)
+        // Lower roles see users in THEIR buildings only
+        const filteredUsers = usersWithBuildings.filter((user) => {
+           if (user.id === currentUser?.id) return true
+           return user.buildingIds.some(id => myBuildingIds.includes(id))
+        })
+        setUsers(filteredUsers)
       }
     } catch (err) {
       console.error("Unexpected error:", err)
@@ -349,14 +432,41 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
         )
         .order("name")
 
+      const activeUser = dbUser || currentUser
       if (isMaster) {
-        // master sees all buildings
-      } else if (isCorporateAdmin && currentUser?.company_id) {
-        buildingsQuery = buildingsQuery.eq("company_id", currentUser.company_id)
+        // Master sees all
+      } else if (isCorporateAdmin) {
+        if (activeUser?.company_id) {
+          buildingsQuery = buildingsQuery.eq("company_id", activeUser.company_id)
+        } else {
+          setBuildings([])
+          setLoading(false)
+          return
+        }
       } else if (isPropManager && currentUser?.id) {
-        buildingsQuery = buildingsQuery.eq("manager_id", currentUser.id)
+        // PMs see buildings in their company OR where they are manager_id OR where they are assigned in user_buildings
+        const { data: myBuildings } = await supabase.from("user_buildings").select("building_id").eq("user_id", currentUser.id)
+        const myIds = myBuildings?.map(b => b.building_id) || []
+        
+        if (activeUser?.company_id) {
+          buildingsQuery = buildingsQuery.or(`company_id.eq.${activeUser.company_id},manager_id.eq.${currentUser.id}${myIds.length > 0 ? `,id.in.(${myIds.join(',')})` : ''}`)
+        } else {
+          buildingsQuery = buildingsQuery.or(`manager_id.eq.${currentUser.id}${myIds.length > 0 ? `,id.in.(${myIds.join(',')})` : ''}`)
+        }
+      } else if (currentUser?.id) {
+        // For other roles, they only see buildings they are assigned to in user_buildings
+        const { data: myBuildings } = await supabase.from("user_buildings").select("building_id").eq("user_id", currentUser.id)
+        const myIds = myBuildings?.map(b => b.building_id) || []
+        if (myIds.length > 0) {
+          buildingsQuery = buildingsQuery.in("id", myIds)
+        } else {
+          setBuildings([])
+          setLoading(false)
+          return
+        }
       } else {
         setBuildings([])
+        setLoading(false)
         return
       }
 
@@ -367,15 +477,19 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
         return
       }
 
-      const { data: userBuildingsData } = await supabase
+      let ubQueryBuildings = supabase
         .from("user_buildings")
-        .select(
-          `
+        .select(`
           building_id,
           unit_number,
-          users!inner(id, name, email, user_type, roles)
-        `
-        )
+          users!inner(id, name, email, user_type, roles, company_id)
+        `)
+
+      if (!isMaster && currentUser?.company_id) {
+        ubQueryBuildings = ubQueryBuildings.eq("users.company_id", currentUser.company_id)
+      }
+
+      const { data: userBuildingsData } = await ubQueryBuildings
 
       const buildingsWithUsers = (buildingsData || []).map((building) => {
         const buildingUsers = (userBuildingsData || [])
@@ -593,7 +707,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
                   <span className="truncate">Create Building</span>
                 </Button>
               )}
-              {activeTab === "companies" && userCanManageCompanies && (
+              {activeTab === "companies" && isMaster && (
                 <Button
                   onClick={() => setShowCreateCompanyModal(true)}
                   size="sm"
@@ -625,7 +739,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
             >
               🏢 Buildings
             </button>
-            {userCanManageCompanies && (
+            {userCanViewCompanies && (
               <button
                 onClick={() => setActiveTab("companies")}
                 className={`pb-2 px-1 font-medium text-xs sm:text-sm transition-colors whitespace-nowrap flex-shrink-0 ${activeTab === "companies"
@@ -704,6 +818,9 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
             filterBuilding={filterBuilding}
             loading={loading}
             isMaster={isMaster}
+            isPropManager={isPropManager}
+            isCorporateAdmin={isCorporateAdmin}
+            currentUser={dbUser || currentUser}
             onFilterUserTypeChange={setFilterUserType}
             onFilterBuildingChange={setFilterBuilding}
             onEditUser={handleEditUser}
@@ -722,10 +839,11 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
             onViewDocument={handleViewDocument}
             onManageDocuments={handleManageDocuments}
             currentUser={currentUser}
+            canManage={userCanManageBuildings}
           />
         )}
 
-        {activeTab === "companies" && userCanManageCompanies && (
+        {activeTab === "companies" && userCanViewCompanies && (
           <CompaniesTab
             companies={companies}
             loading={loading}
@@ -734,6 +852,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
             onViewDetails={handleViewCompanyDetails}
             onAssignUsers={handleAssignUsers}
             onRefresh={fetchCompanies}
+            canManage={userCanManageCompanies}
           />
         )}
 
@@ -755,7 +874,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
         isOpen={showCreateUserModal}
         onClose={() => setShowCreateUserModal(false)}
         onSuccess={handleCreateUserSuccess}
-        currentUser={currentUser}
+        currentUser={dbUser || currentUser}
         propertyManagers={propertyManagers}
         buildings={getBuildingsList()}
         onCreateBuilding={(managerId, companyId) => {
@@ -777,7 +896,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
             setEditingUserId(null)
             handleCreateUserSuccess()
           }}
-          currentUser={currentUser}
+          currentUser={dbUser || currentUser}
           propertyManagers={propertyManagers}
           buildings={getBuildingsList()}
           onCreateBuilding={(managerId, companyId) => {
@@ -796,7 +915,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
           setBuildingCreationContext(null)
         }}
         onSuccess={handleCreateBuildingSuccess}
-        currentUser={currentUser}
+        currentUser={dbUser || currentUser}
         availableUsers={getAvailableUsers()}
         preselectedManagerId={buildingCreationContext?.managerId}
         preselectedCompanyId={buildingCreationContext?.companyId}
@@ -811,7 +930,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
         onSuccess={handleBuildingDetailsSuccess}
         building={selectedBuilding}
         availableUsers={getAvailableUsers()}
-        currentUser={currentUser}
+        currentUser={dbUser || currentUser}
       />
 
       <CreateCompanyModal

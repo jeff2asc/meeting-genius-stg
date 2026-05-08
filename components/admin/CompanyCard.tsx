@@ -16,6 +16,7 @@ interface CompanyCardProps {
   onEdit: (company: Company) => void
   onDelete: (company: Company) => void
   onViewDetails: (company: Company) => void
+  canManage?: boolean
 }
 
 
@@ -24,7 +25,8 @@ export default function CompanyCard({
   company,
   onEdit,
   onDelete,
-  onViewDetails
+  onViewDetails,
+  canManage = false
 }: CompanyCardProps) {
 
 
@@ -77,24 +79,28 @@ export default function CompanyCard({
             Details
           </Button>
 
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => onEdit(company)}
-            title="Edit Company"
-          >
-            <Edit2 className="h-4 w-4" />
-          </Button>
+          {canManage && (
+            <>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => onEdit(company)}
+                title="Edit Company"
+              >
+                <Edit2 className="h-4 w-4" />
+              </Button>
 
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => onDelete(company)}
-            title="Delete Company"
-            className="text-red-600 hover:bg-red-50"
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => onDelete(company)}
+                title="Delete Company"
+                className="text-red-600 hover:bg-red-50"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </>
+          )}
 
           <p className="text-sm text-muted-foreground whitespace-nowrap ml-2">
             {new Date(company.created_at).toLocaleDateString()}

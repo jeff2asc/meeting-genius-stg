@@ -75,21 +75,21 @@ export const isMaster = (user: UserRolesInput): boolean => {
  * Help: Is this user a corporate administrator?
  */
 export const isCorporateAdmin = (user: UserRolesInput): boolean => {
-  return hasAnyRole(user, ["corporate_administrator"])
+  return hasAnyRole(user, ["corporate_administrator", "corporate_admin", "admin"])
 }
 
 /**
  * Help: Is this user a property manager?
  */
 export const isPropertyManager = (user: UserRolesInput): boolean => {
-  return hasAnyRole(user, ["property_manager"])
+  return hasAnyRole(user, ["property_manager", "pm", "manager"])
 }
 
 /**
  * Can this user type access the Admin Panel?
  */
 export const canAccessAdmin = (user: UserRolesInput): boolean => {
-  return hasAnyRole(user, ["master", "property_manager", "corporate_administrator"])
+  return hasAnyRole(user, ["master", "property_manager", "corporate_administrator", "owner", "resident", "user", "vendor"])
 }
 
 /**
@@ -105,7 +105,14 @@ export const canAccessIntegrations = (user: UserRolesInput): boolean => {
  * Master and Corporate Administrators can create/edit/delete companies
  */
 export const canManageCompanies = (user: UserRolesInput): boolean => {
-  return hasAnyRole(user, ["master", "corporate_administrator"])
+  return hasAnyRole(user, ["master", "corporate_administrator", "corporate_admin", "admin"])
+}
+
+/**
+ * Can this user type view the company tab?
+ */
+export const canViewCompanies = (user: UserRolesInput): boolean => {
+  return hasAnyRole(user, ["master", "property_manager", "corporate_administrator", "corporate_admin", "admin", "owner", "resident", "user"])
 }
 
 /**
@@ -119,7 +126,14 @@ export const canCreateUser = (user: UserRolesInput): boolean => {
  * Can this user type create new buildings?
  */
 export const canCreateBuilding = (user: UserRolesInput): boolean => {
-  return hasAnyRole(user, ["master", "property_manager", "corporate_administrator"])
+  return hasAnyRole(user, ["master", "corporate_administrator"])
+}
+
+/**
+ * Can this user type edit buildings?
+ */
+export const canManageBuildings = (user: UserRolesInput): boolean => {
+  return hasAnyRole(user, ["master", "corporate_administrator", "property_manager"])
 }
 
 /**
@@ -271,5 +285,5 @@ export const isSameCompany = (
 export const shouldFilterByCompany = (user: UserRolesInput): boolean => {
   // Masters see everything -> no filter
   if (hasAnyRole(user, ["master"])) return false
-  return hasAnyRole(user, ["corporate_administrator", "property_manager"])
+  return true // Everyone else filters by their company
 }

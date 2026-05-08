@@ -15,8 +15,6 @@ import {
   Briefcase,
   ArrowLeft,
   Trash2,
-  Search,
-  Home as HomeIcon
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -29,7 +27,6 @@ import {
   DialogFooter, 
   DialogHeader, 
   DialogTitle, 
-  DialogTrigger 
 } from "@/components/ui/dialog"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
@@ -42,7 +39,7 @@ import {
 } from "@/components/ui/select"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { supabase, getCurrentUser } from "@/lib/supabase"
-import { canAccessIntegrations, isMaster as checkIsMaster, isCorporateAdmin as checkIsCorporateAdmin, isPropertyManager as checkIsPropertyManager } from "@/lib/permissions"
+import { canAccessIntegrations, isMaster as checkIsMaster, isCorporateAdmin as checkIsCorporateAdmin } from "@/lib/permissions"
 import { toast } from "sonner"
 import { triggerJanusResync } from "@/lib/janus"
 
@@ -140,63 +137,27 @@ export default function IntegrationsPage({ onBack }: { onBack: () => void }) {
     }
   }, [])
 
-  const fetchMgDataSummary = async () => {
-    setIsLoadingData(true)
-    try {
-      const user = getCurrentUser()
-      if (!user) return
-
-      // Summary counts from tables
-      const { count: companyCount } = await supabase
-        .from("companies")
-        .select("*", { count: "exact", head: true })
-
-      const { count: buildingCount } = await supabase
-        .from("buildings")
-        .select("*", { count: "exact", head: true })
-
-      const { count: userCount } = await supabase
-        .from("users")
-        .select("*", { count: "exact", head: true })
-        .neq("user_type", "vendor" as any)
-
-      const { count: vendorCount } = await supabase
-        .from("users")
-        .select("*", { count: "exact", head: true })
-        .eq("user_type", "vendor" as any)
-
-      setMgSummary({
-        companies: companyCount || 0,
-        buildings: buildingCount || 0,
-        users: userCount || 0,
-        vendors: vendorCount || 0
-      })
-    } catch (error) {
-      console.error("Error fetching MG data summary:", error)
-    } finally {
-      setIsLoadingData(false)
-    }
-  }
-
   const handleInstallJanus = async () => {
     setIsJanusModalOpen(true)
     setConfigStep("prepare")
     setIsLoadingData(true)
     
-    // Fetch everything needed for configuration
     try {
       const documentedSecret = "meeting-genius-secret-key-2026"
-      const res = await fetch(`${window.location.origin}/api/janus/v1/sync`, {
+      const isMasterUser = checkIsMaster(user)
+      const isCorpAdmin = checkIsCorporateAdmin(user)
+      const userCompanyId = user?.company_id
+
+      // For Corporate Admins, we MUST force the company_id filter
+      const companyParam = (userCompanyId && !isMasterUser) ? `?company_id=${userCompanyId}` : ""
+      
+      const res = await fetch(`${window.location.origin}/api/janus/v1/sync${companyParam}`, {
         headers: { "x-api-key": documentedSecret }
       })
-      if (!res.ok) throw new Error("Could not fetch MG data")
+      if (!res.ok) throw new Error(`Could not fetch MG data (${res.status})`)
       
       const payload = await res.json()
       const data = payload.data
-      
-      const user = getCurrentUser()
-      const isMaster = checkIsMaster(user)
-      const isCorpAdmin = checkIsCorporateAdmin(user)
       
       // Filter available data based on role permissions
       let companies = data.companies || []
@@ -205,52 +166,14 @@ export default function IntegrationsPage({ onBack }: { onBack: () => void }) {
       let vendors = data.vendors || []
       let junctions = data.user_buildings || []
 
-      // 1. Cross-Company Filtering (Master vs others)
-      if (!isMaster) {
-        if (user?.company_id) {
-          companies = companies.filter((c: any) => c.id === user.company_id)
-          buildings = buildings.filter((b: any) => b.company_id === user.company_id)
-          users = users.filter((u: any) => u.company_id === user.company_id)
-          vendors = vendors.filter((v: any) => v.company_id === user.company_id)
-          junctions = junctions.filter((j: any) => {
-            const b = buildings.find((b: any) => b.id === j.building_id)
-            return !!b
-          })
-        } else {
-          // No company ID and not master? Minimal access.
-          companies = []
-          buildings = []
-          users = users.filter((u: any) => u.id === user?.id)
-          vendors = []
-        }
+      // CRITICAL: If Corporate Admin, filter out ANY data that doesn't belong to their company
+      if (isCorpAdmin && userCompanyId) {
+        companies = companies.filter((c: any) => c.id === userCompanyId)
+        buildings = buildings.filter((b: any) => b.company_id === userCompanyId)
+        users = users.filter((u: any) => u.company_id === userCompanyId)
+        vendors = vendors.filter((v: any) => v.company_id === userCompanyId)
       }
 
-      // 2. Intra-Company Filtering (Admin vs PM vs Resident)
-      if (!isMaster && !isCorpAdmin) {
-        if (checkIsPropertyManager(user)) {
-          // PMs see buildings they manage OR buildings they are assigned to
-          buildings = buildings.filter((b: any) => b.manager_id === user?.id)
-          const buildingIds = buildings.map((b: any) => b.id)
-          
-          const allowedUserIds = junctions
-            .filter((j: any) => buildingIds.includes(j.building_id))
-            .map((j: any) => j.user_id)
-          
-          users = users.filter((u: any) => allowedUserIds.includes(u.id) || u.id === user?.id)
-        } 
-        else {
-          // Check for regular user/owner via user_type since we don't have helpers for those yet or just check directly
-          const isRegularUser = user?.user_type === "user" || user?.user_type === "owner" || (user?.roles || []).includes("user") || (user?.roles || []).includes("owner")
-          
-          if (isRegularUser) {
-            const userBuildingIds = junctions.filter((j: any) => j.user_id === user?.id).map((j: any) => j.building_id)
-            buildings = buildings.filter((b: any) => userBuildingIds.includes(b.id))
-            users = users.filter((u: any) => u.id === user?.id)
-            vendors = []
-          }
-        }
-      }
-      
       setAvailableData({
         companies,
         buildings,
@@ -259,18 +182,19 @@ export default function IntegrationsPage({ onBack }: { onBack: () => void }) {
         junctions
       })
 
-      // ⭐ DEFAULT TO ALL: Select all visible buildings and users by default for a seamless "One-Click" install
+      // NEW: Auto-fill existing unit numbers from junctions
+      const initialUnits: Record<number, string> = {}
+      junctions.forEach((j: any) => {
+        if (j.user_id && j.unit_number) {
+          initialUnits[j.user_id] = j.unit_number
+        }
+      })
+      setUserUnits(initialUnits)
+
+      // Default selections
       setSelectedBuildingIds(buildings.map((b: any) => b.id))
       setSelectedUserIds([...users, ...vendors].map((u: any) => u.id))
       
-      setMgSummary({
-        companies: companies.length,
-        buildings: buildings.length,
-        users: users.length,
-        vendors: vendors.length
-      })
-      
-      // Select the first company by default if "all" isn't allowed or preferred
       if (companies.length > 0) {
         setSelectedCompanyId(companies[0].id.toString())
       }
@@ -291,13 +215,8 @@ export default function IntegrationsPage({ onBack }: { onBack: () => void }) {
     setSyncStep(1)
     setSyncLog(["⏳ Filtering data based on your selections..."])
     
-    // Universal URL Logic: Detect if we are running locally or on a server
-    const isLocal = typeof window !== 'undefined' && window.location.hostname === 'localhost';
-    const JANUS_SYNC_URL = isLocal 
-      ? "http://localhost:3001/api/janus/v1/sync"
-      : (process.env.NEXT_PUBLIC_JANUS_URL || "https://janusapp.meetinggenius.ca/api/janus/v1/sync");
-
     const API_KEY = "meeting-genius-secret-key-2026"
+    const currentUser = user
 
     try {
       // 1. Filter selection
@@ -312,138 +231,87 @@ export default function IntegrationsPage({ onBack }: { onBack: () => void }) {
         selectedBuildingIds.includes(j.building_id) && selectedUserIds.includes(j.user_id)
       )
 
-      setSyncLog(prev => [
-        ...prev,
+      setSyncLog([
         `✅ Filtered to ${filteredCompanies.length} companies`,
         `✅ Filtered to ${filteredBuildings.length} buildings`,
         `✅ Filtered to ${filteredUsers.length} users`,
         ``,
-        `⏳ Preparing payload for Janus...`
+        `⏳ Sending organizational data to Janus...`,
       ])
       setSyncStep(2)
 
-      // Step 2: Merge user_buildings into each user for Janus direct mapping
-      const userBuildingsMap: Record<number, number> = {}
-      for (const ub of filteredJunctions) {
-        userBuildingsMap[ub.user_id] = ub.building_id
-      }
+      // 2. Enrich users with role mapping and UNIT NUMBERS
+      const ubMap: Record<number, number> = {}
+      for (const ub of filteredJunctions) ubMap[ub.user_id] = ub.building_id
 
       const enrichedUsers = filteredUsers.map((u: any) => {
-        // Find the most privileged role for Janus since it only accepts a single role constraint
-        let allRoles = [];
-        if (u.user_type) allRoles.push(u.user_type);
-        if (u.role) allRoles.push(u.role);
-        if (Array.isArray(u.roles)) allRoles.push(...u.roles);
+        const roles = [u.user_type, ...(Array.isArray(u.roles) ? u.roles : [])].join(' ').toLowerCase()
+        let role = "resident"
+        if (roles.includes("master") || roles.includes("corporate_admin")) role = "corporate_administrator"
+        else if (roles.includes("property_manager") || roles.includes("manager")) role = "property_manager"
+        else if (roles.includes("owner")) role = "owner"
+        else if (roles.includes("vendor")) role = "vendor"
         
-        const rolesStr = allRoles.join(' ').toLowerCase();
-        let highestRole = "resident";
-        if (rolesStr.includes("master") || rolesStr.includes("corporate_admin") || rolesStr.includes("admin")) {
-          highestRole = "corporate_administrator";
-        } else if (rolesStr.includes("property_manager") || rolesStr.includes("manager") || rolesStr.includes("pm")) {
-          highestRole = "property_manager";
-        } else if (rolesStr.includes("owner")) {
-          highestRole = "owner";
-        } else if (rolesStr.includes("vendor")) {
-          highestRole = "vendor";
-        }
-
-        return {
-          ...u,
-          building_id: userBuildingsMap[u.id] || u.building_id || null,
-          role: highestRole,
-          user_type: highestRole,
-          suite_number: userUnits[u.id] || u.suite_number || ""
+        return { 
+          ...u, 
+          building_id: ubMap[u.id] || u.building_id || null, 
+          role, 
+          user_type: role,
+          suite_number: userUnits[u.id] || u.suite_number || "" // This is the Unit # field you fill up
         }
       })
 
-      const payload = {
-        companies: filteredCompanies,
-        buildings: filteredBuildings,
-        users: enrichedUsers,
-        user_buildings: filteredJunctions
-      }
+      // 3. Push to Janus
+      const isLocal = window.location.hostname === "localhost"
+      const JANUS_SYNC_URL = isLocal
+        ? "http://localhost:3001/api/janus/v1/sync"
+        : (process.env.NEXT_PUBLIC_JANUS_URL || "https://janusapp.meetinggenius.ca/api/janus/v1/sync")
 
-      setSyncLog(prev => [
-        ...prev,
-        `→ Sending selected data to Janus (${isLocal ? 'Local' : 'Production'})...`,
-      ])
-
-      // Step 3: Push to Janus (Wrapped in 'data' for Janus API compatibility)
       const janusRes = await fetch(JANUS_SYNC_URL, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": API_KEY
-        },
+        headers: { "Content-Type": "application/json", "x-api-key": API_KEY },
         body: JSON.stringify({
           source: "meeting-genius",
           reason: "bulk_sync_install",
-          data: payload 
+          installer: currentUser,
+          data: { companies: filteredCompanies, buildings: filteredBuildings, users: enrichedUsers, user_buildings: filteredJunctions }
         })
       })
 
-      const janusResult = await janusRes.json()
+      const janusResult = await janusRes.json().catch(() => ({}))
+      const s = janusResult?.summary
 
-      if (janusResult?.summary) {
-        const s = janusResult.summary
-        setSyncLog(prev => [
-          ...prev,
-          ``,
-          `✅ ${s.companies?.success ?? 0}/${s.companies?.found ?? 0} companies synced`,
-          `✅ ${s.buildings?.success ?? 0}/${s.buildings?.found ?? 0} buildings synced`,
-          `✅ ${s.users?.success ?? 0}/${s.users?.found ?? 0} users synced`,
-        ])
-        toast.success("Sync Complete!", {
-          description: `Successfully synced ${s.buildings?.success || 0} buildings to Janus`
-        })
-      }
+      setSyncLog(prev => [
+        ...prev,
+        ``,
+        s ? `✅ ${s.companies?.success ?? filteredCompanies.length}/${filteredCompanies.length} companies synced` : `✅ companies sent`,
+        s ? `✅ ${s.buildings?.success ?? filteredBuildings.length}/${filteredBuildings.length} buildings synced` : `✅ buildings sent`,
+        s ? `✅ ${s.users?.success ?? enrichedUsers.length}/${enrichedUsers.length} users synced` : `✅ users sent`,
+        ``,
+        `🎉 Integration complete!`,
+      ])
+
+      toast.success("Janus Integration Installed!")
+
     } catch (error: any) {
       console.error("Janus sync error:", error)
       setSyncLog(prev => [...prev, `❌ Error: ${error.message}`])
-      toast.warning("Sync attempted", {
-        description: "Could not reach Janus. Integration saved locally — retry sync after Janus is running."
-      })
     }
 
-    // ✅ Save to Database: Mark company as integrated for real-time sync
-    if (user && selectedCompanyId) {
-      const targetCompanyId = selectedCompanyId === "all" ? user.company_id : parseInt(selectedCompanyId)
-      if (targetCompanyId) {
-        supabase
-          .from('companies')
-          .update({ 
-            janus_integrated: true,
-            janus_api_key: API_KEY 
-          })
-          .eq('id', targetCompanyId)
-          .then(({ error }) => {
-            if (error) console.error("Error updating company integration status:", error)
-            else console.log("✅ Company integration status saved to database")
-          })
-      }
+    // 4. Mark as installed
+    const targetCompanyId = !checkIsMaster(currentUser) ? currentUser.company_id : (selectedCompanyId === "all" ? null : parseInt(selectedCompanyId))
+    if (targetCompanyId) {
+      supabase.from('companies').update({ janus_integrated: true, janus_api_key: API_KEY }).eq('id', targetCompanyId).then()
     }
-
-    // Always mark as installed locally per account
-    if (user) {
-      const storageKey = `mg_integrations_${user.id}`
-      const installed = JSON.parse(localStorage.getItem(storageKey) || "[]")
-      if (!installed.includes("janus")) {
-        installed.push("janus")
-        localStorage.setItem(storageKey, JSON.stringify(installed))
-        localStorage.setItem(`mg_janus_token_${user.id}`, API_KEY)
-      }
+    const storageKey = `mg_integrations_${currentUser.id}`
+    const installed = JSON.parse(localStorage.getItem(storageKey) || "[]")
+    if (!installed.includes("janus")) {
+      installed.push("janus")
+      localStorage.setItem(storageKey, JSON.stringify(installed))
+      localStorage.setItem(`mg_janus_token_${currentUser.id}`, API_KEY)
     }
-    
-    setIntegrations(prev => prev.map(int => 
-      int.id === "janus" ? { ...int, installed: true } : int
-    ))
-
-    setSyncStep(3) // Step 3: Done
-    await new Promise(r => setTimeout(r, 1000)) // Show done briefly
-    setIsJanusModalOpen(false)
-    setIsLoadingData(false)
-    setIsSyncing(false)
-    setSyncStep(0)
+    setIntegrations(prev => prev.map(int => int.id === "janus" ? { ...int, installed: true } : int))
+    setSyncStep(3)
   }
 
   const handleOpenJanus = () => {
@@ -599,7 +467,7 @@ export default function IntegrationsPage({ onBack }: { onBack: () => void }) {
                 int.installed ? (
                   <>
                     <Button onClick={handleOpenJanus} className="flex-1 bg-indigo-600 hover:bg-indigo-700 min-w-[80px]">
-                      <Eye className="h-4 w-4 mr-2" />
+                      <ExternalLink className="h-4 w-4 mr-2" />
                       View
                     </Button>
                     <Button onClick={handleInstallJanus} variant="outline" className="flex-1 min-w-[120px] border-indigo-200 text-indigo-700 hover:bg-indigo-50">
@@ -626,8 +494,8 @@ export default function IntegrationsPage({ onBack }: { onBack: () => void }) {
         ))}
       </div>
 
-      <Dialog open={isJanusModalOpen} onOpenChange={setIsJanusModalOpen}>
-        <DialogContent className="sm:max-w-[950px] p-0 overflow-hidden border-none shadow-2xl">
+      <Dialog open={isJanusModalOpen} onOpenChange={(open) => { if (!open && syncStep === 3) { setSyncStep(0); setSyncLog([]) } setIsJanusModalOpen(open) }}>
+        <DialogContent className="sm:max-w-[560px] p-0 overflow-hidden border-none shadow-2xl">
           <div className="bg-indigo-600 p-8 text-white relative">
             <div className="absolute top-0 right-0 p-8 opacity-10">
               <Zap className="h-32 w-32" />
@@ -708,29 +576,31 @@ export default function IntegrationsPage({ onBack }: { onBack: () => void }) {
                       </div>
                     </div>
                     <div className="border rounded-xl bg-muted/5 p-1">
-                      <div className="grid grid-cols-1 gap-0.5">
-                        {availableData.buildings
-                          .filter(b => selectedCompanyId === "all" || b.company_id?.toString() === selectedCompanyId)
-                          .map(b => (
-                          <div 
-                            key={b.id} 
-                            onClick={() => {
-                              const checked = !selectedBuildingIds.includes(b.id)
-                              if (checked) setSelectedBuildingIds([...selectedBuildingIds, b.id])
-                              else setSelectedBuildingIds(selectedBuildingIds.filter(id => id !== b.id))
-                            }}
-                            className={`flex items-center space-x-3 p-2 rounded-lg cursor-pointer transition-all ${
-                              selectedBuildingIds.includes(b.id) ? "bg-white shadow-sm ring-1 ring-indigo-50" : "hover:bg-white/30"
-                            }`}
-                          >
-                            <Checkbox id={`b-${b.id}`} checked={selectedBuildingIds.includes(b.id)} onCheckedChange={() => {}} />
-                            <div className="flex flex-col min-w-0">
-                              <span className="text-xs font-bold truncate">{b.name}</span>
-                              <span className="text-[9px] text-muted-foreground truncate">{b.address || 'No address'}</span>
+                      <ScrollArea className="h-32">
+                        <div className="grid grid-cols-1 gap-0.5">
+                          {availableData.buildings
+                            .filter(b => selectedCompanyId === "all" || b.company_id?.toString() === selectedCompanyId)
+                            .map(b => (
+                            <div 
+                              key={b.id} 
+                              onClick={() => {
+                                const checked = !selectedBuildingIds.includes(b.id)
+                                if (checked) setSelectedBuildingIds([...selectedBuildingIds, b.id])
+                                else setSelectedBuildingIds(selectedBuildingIds.filter(id => id !== b.id))
+                              }}
+                              className={`flex items-center space-x-3 p-2 rounded-lg cursor-pointer transition-all ${
+                                selectedBuildingIds.includes(b.id) ? "bg-white shadow-sm ring-1 ring-indigo-50" : "hover:bg-white/30"
+                              }`}
+                            >
+                              <Checkbox id={`b-${b.id}`} checked={selectedBuildingIds.includes(b.id)} onCheckedChange={() => {}} />
+                              <div className="flex flex-col min-w-0">
+                                <span className="text-xs font-bold truncate">{b.name}</span>
+                                <span className="text-[9px] text-muted-foreground truncate">{b.address || 'No address'}</span>
+                              </div>
                             </div>
-                          </div>
-                        ))}
-                      </div>
+                          ))}
+                        </div>
+                      </ScrollArea>
                     </div>
                   </div>
 
@@ -738,7 +608,7 @@ export default function IntegrationsPage({ onBack }: { onBack: () => void }) {
                     <div className="flex items-center justify-between">
                       <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
                         <Users className="h-3 w-3 text-indigo-600" />
-                        Residents & Staff
+                        Residents & Staff (Fill up Unit #)
                       </Label>
                       <div className="flex items-center gap-3">
                         <div className="flex items-center gap-1 border-r pr-2 border-border">
@@ -760,42 +630,44 @@ export default function IntegrationsPage({ onBack }: { onBack: () => void }) {
                       </div>
                     </div>
                     <div className="border rounded-xl bg-muted/5 p-1">
-                      <div className="grid grid-cols-1 gap-0.5">
-                        {[...availableData.users, ...availableData.vendors]
-                          .filter(u => selectedCompanyId === "all" || u.company_id?.toString() === selectedCompanyId)
-                          .map(u => (
-                          <div 
-                            key={u.id} 
-                            onClick={() => {
-                              const checked = !selectedUserIds.includes(u.id)
-                              if (checked) setSelectedUserIds([...selectedUserIds, u.id])
-                              else setSelectedUserIds(selectedUserIds.filter(id => id !== u.id))
-                            }}
-                            className={`flex items-center space-x-3 p-2.5 rounded-lg cursor-pointer transition-all ${
-                              selectedUserIds.includes(u.id) ? "bg-white shadow-sm ring-1 ring-indigo-50" : "hover:bg-white/30"
-                            }`}
-                          >
-                            <Checkbox id={`u-${u.id}`} checked={selectedUserIds.includes(u.id)} onCheckedChange={() => {}} />
-                            <div className="flex flex-col min-w-0 flex-1">
-                              <span className="text-xs font-bold truncate text-foreground">{u.name || (u.email?.split('@')[0])}</span>
-                              <div className="flex items-center gap-1.5 min-w-0">
-                                <span className="text-[9px] text-muted-foreground truncate">{u.email}</span>
-                                <Badge variant="outline" className="text-[7px] h-2.5 px-0.5 border-indigo-200 text-indigo-600 shrink-0">{u.user_type}</Badge>
+                      <ScrollArea className="h-44">
+                        <div className="grid grid-cols-1 gap-0.5">
+                          {[...availableData.users, ...availableData.vendors]
+                            .filter(u => selectedCompanyId === "all" || u.company_id?.toString() === selectedCompanyId)
+                            .map(u => (
+                            <div 
+                              key={u.id} 
+                              onClick={() => {
+                                const checked = !selectedUserIds.includes(u.id)
+                                if (checked) setSelectedUserIds([...selectedUserIds, u.id])
+                                else setSelectedUserIds(selectedUserIds.filter(id => id !== u.id))
+                              }}
+                              className={`flex items-center space-x-3 p-2.5 rounded-lg cursor-pointer transition-all ${
+                                selectedUserIds.includes(u.id) ? "bg-white shadow-sm ring-1 ring-indigo-50" : "hover:bg-white/30"
+                              }`}
+                            >
+                              <Checkbox id={`u-${u.id}`} checked={selectedUserIds.includes(u.id)} onCheckedChange={() => {}} />
+                              <div className="flex flex-col min-w-0 flex-1">
+                                <span className="text-xs font-bold truncate text-foreground">{u.name || (u.email?.split('@')[0])}</span>
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  <span className="text-[9px] text-muted-foreground truncate">{u.email}</span>
+                                  <Badge variant="outline" className="text-[7px] h-2.5 px-0.5 border-indigo-200 text-indigo-600 shrink-0">{u.user_type}</Badge>
+                                </div>
+                              </div>
+                              
+                              <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                                <Input 
+                                  id={`unit-${u.id}`}
+                                  placeholder="Unit #" 
+                                  className="h-8 w-24 text-[11px] bg-white border-indigo-200 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm" 
+                                  value={userUnits[u.id] || ""}
+                                  onChange={(e) => setUserUnits(prev => ({ ...prev, [u.id]: e.target.value }))}
+                                />
                               </div>
                             </div>
-                            
-                            <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                              <Input 
-                                id={`unit-${u.id}`}
-                                placeholder="Unit #" 
-                                className="h-8 w-24 text-[11px] bg-white border-indigo-200 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm" 
-                                value={userUnits[u.id] || ""}
-                                onChange={(e) => setUserUnits(prev => ({ ...prev, [u.id]: e.target.value }))}
-                              />
-                            </div>
-                          </div>
-                        ))}
-                      </div>
+                          ))}
+                        </div>
+                      </ScrollArea>
                     </div>
                   </div>
                 </div>
@@ -835,13 +707,13 @@ export default function IntegrationsPage({ onBack }: { onBack: () => void }) {
 
                   <div className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 h-40 overflow-y-auto font-mono text-[10px] space-y-1.5 shadow-inner">
                     <div className="text-indigo-400/80 mb-1.5 border-b border-white/5 pb-1 flex justify-between">
-                      <span>Sync Engine v1.0.4</span>
+                      <span>Sync Engine v2.0</span>
                       <span className="animate-pulse">● LIVE</span>
                     </div>
                     {syncLog.map((line, i) => (
                       <div key={i} className={`flex gap-1.5 ${
                         line.startsWith("✅") ? "text-emerald-400" :
-                        line.startsWith("→")  ? "text-indigo-300" :
+                        line.startsWith("⏳")  ? "text-indigo-300" :
                         line.startsWith("❌") ? "text-rose-400" :
                         line === "" ? "" :
                         "text-slate-400"
@@ -885,22 +757,3 @@ export default function IntegrationsPage({ onBack }: { onBack: () => void }) {
   )
 }
 
-function Eye(props: any) {
-  return (
-    <svg
-      {...props}
-      xmlns="http://www.w3.org/2000/svg"
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0" />
-      <circle cx="12" cy="12" r="3" />
-    </svg>
-  )
-}

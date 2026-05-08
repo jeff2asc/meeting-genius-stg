@@ -355,7 +355,7 @@ export default function CreateBuildingModal({
           </div>
 
           {/* Master User - Can see all PMs and Companies */}
-          {isMaster && (
+          {isMaster ? (
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-foreground mb-2">
@@ -397,6 +397,20 @@ export default function CreateBuildingModal({
                 </select>
               </div>
             </div>
+          ) : (
+            (isCorporateAdmin || isPropertyManager) && (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1">
+                    Company Assignment
+                  </label>
+                  <div className="w-full px-3 py-2 bg-muted/50 text-primary font-bold rounded border border-dashed border-border text-sm">
+                    {companies.find(c => c.id === currentUser?.company_id)?.name || "Your Company"}
+                  </div>
+                  <p className="text-[10px] text-muted-foreground mt-1 italic">Building will be automatically assigned to your company</p>
+                </div>
+              </div>
+            )
           )}
 
           {/* Corporate Admin - Can see PMs from their company */}

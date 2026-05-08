@@ -8,6 +8,7 @@ import { supabase, Company, getVotingParameters } from "@/lib/supabase"
 import { hashPassword } from "@/lib/auth"
 import { isMaster as checkIsMaster, isCorporateAdmin as checkIsCorporateAdmin, isPropertyManager as checkIsPropertyManager } from "@/lib/permissions"
 import { triggerJanusResync } from "@/lib/janus"
+import { fetchJanusUserByEmail } from "@/lib/janus-client"
 
 interface CreateUserModalProps {
   isOpen: boolean
@@ -187,6 +188,13 @@ export default function CreateUserModal({
       if (exists) {
         return prev.filter((b) => b.id !== buildingId)
       } else {
+        // Auto-select company if Master and no company selected
+        if (isMaster && (userFormData.companyId === 0)) {
+          const building = buildings.find(b => b.id === buildingId)
+          if (building?.company_id) {
+            setUserFormData(prev => ({ ...prev, companyId: building.company_id as number }))
+          }
+        }
         return [...prev, { id: buildingId, unit_number: "", voting_weight: "1.00" }]
       }
     })
@@ -217,6 +225,48 @@ export default function CreateUserModal({
         userType: primary as UserType,
       }
     })
+  }
+
+  const handleEmailBlur = async () => {
+    if (isEditMode || !userFormData.email.includes("@")) return
+
+    console.log("🔍 Checking Janus for existing user:", userFormData.email)
+    const janusUser = await fetchJanusUserByEmail(userFormData.email)
+
+    if (janusUser) {
+      console.log("✅ Janus user found:", janusUser)
+      
+      // Auto-fill name if empty
+      if (!userFormData.name) {
+        setUserFormData(prev => ({ ...prev, name: janusUser.name || "" }))
+      }
+
+      // Auto-fill buildings/units
+      if (janusUser.properties && janusUser.properties.length > 0) {
+        const newBuildings = janusUser.properties
+          .filter((p: any) => buildings.some(b => b.id === p.building_id))
+          .map((p: any) => ({
+            id: p.building_id,
+            unit_number: p.unit_number || "",
+            voting_weight: "1.00"
+          }))
+
+        if (newBuildings.length > 0) {
+          setSelectedUserBuildings(newBuildings)
+          
+          // If Master, also auto-fill company from the first building
+          if (isMaster) {
+            const firstProp = janusUser.properties[0]
+            if (firstProp.company_id) {
+              setUserFormData(prev => ({ ...prev, companyId: firstProp.company_id }))
+            }
+          }
+        }
+      }
+
+      setError("ℹ️ This user exists in Janus. We've auto-filled their details.")
+      setTimeout(() => setError(null), 5000)
+    }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -338,18 +388,8 @@ export default function CreateUserModal({
             )
             companyIdToAssign = selectedPM?.company_id || null
           }
-        } else if (isCorporateAdmin) {
-          if (
-            primaryRole === "property_manager" ||
-            primaryRole === "user" ||
-            primaryRole === "owner"
-          ) {
-            companyIdToAssign = currentUser.company_id
-          }
-        } else if (isPropertyManager) {
-          if (primaryRole === "user" || primaryRole === "owner") {
-            companyIdToAssign = currentUser.company_id
-          }
+        } else if (isCorporateAdmin || isPropertyManager) {
+          companyIdToAssign = currentUser.company_id
         }
 
         finalUserType =
@@ -565,6 +605,7 @@ export default function CreateUserModal({
                 name="email"
                 value={userFormData.email}
                 onChange={handleInputChange}
+                onBlur={handleEmailBlur}
                 placeholder="john@example.com"
                 required
                 disabled={saving}
@@ -658,7 +699,7 @@ export default function CreateUserModal({
             </div>
           )}
 
-          {isMaster && (
+          {isMaster ? (
             <div className="space-y-2">
               <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground ml-1">Company Association</label>
               <select
@@ -674,6 +715,18 @@ export default function CreateUserModal({
                 ))}
               </select>
             </div>
+          ) : (
+            (isCorporateAdmin || isPropertyManager) && (
+              <div className="space-y-2">
+                <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground ml-1">Company Association</label>
+                <div className="w-full h-11 px-4 bg-muted/10 border border-dashed border-border rounded-xl flex items-center">
+                  <span className="text-sm font-bold text-primary">
+                    {companies.find(c => c.id === currentUser?.company_id)?.name || "Your Company"}
+                  </span>
+                </div>
+                <p className="text-[10px] text-muted-foreground ml-1 italic">Locked: Assigned based on your account</p>
+              </div>
+            )
           )}
 
           {(userFormData.roles.includes("property_manager") || 

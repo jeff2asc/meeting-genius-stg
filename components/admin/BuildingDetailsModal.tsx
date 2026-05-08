@@ -19,6 +19,7 @@ import { supabase, getVotingParameters } from "@/lib/supabase"
 import { triggerJanusResync } from "@/lib/janus"
 import { toast } from "sonner"
 import ImportUsersModal from "./ImportUsersModal"
+import { isPropertyManager as checkIsPropertyManager, isCorporateAdmin as checkIsCorporateAdmin, isMaster as checkIsMaster } from "@/lib/permissions"
 
 interface User {
   id: number
@@ -650,12 +651,18 @@ export default function BuildingDetailsModal({
                     value={buildingName}
                     onChange={(e) => setBuildingName(e.target.value)}
                     placeholder="Enter building name"
+                    readOnly={!(checkIsMaster(currentUser) || checkIsCorporateAdmin(currentUser) || checkIsPropertyManager(currentUser))}
+                    className={!(checkIsMaster(currentUser) || checkIsCorporateAdmin(currentUser) || checkIsPropertyManager(currentUser)) ? "bg-muted cursor-not-allowed" : ""}
                   />
                 </div>
                 <div>
                   <Label htmlFor="buildingType">Classification *</Label>
-                  <Select value={buildingType} onValueChange={setBuildingType}>
-                    <SelectTrigger>
+                  <Select 
+                    value={buildingType} 
+                    onValueChange={setBuildingType}
+                    disabled={!(checkIsMaster(currentUser) || checkIsCorporateAdmin(currentUser) || checkIsPropertyManager(currentUser))}
+                  >
+                    <SelectTrigger className={!(checkIsMaster(currentUser) || checkIsCorporateAdmin(currentUser) || checkIsPropertyManager(currentUser)) ? "bg-muted cursor-not-allowed" : ""}>
                       <SelectValue placeholder="Select classification" />
                     </SelectTrigger>
                     <SelectContent>
@@ -703,6 +710,8 @@ export default function BuildingDetailsModal({
                     value={street}
                     onChange={(e) => setStreet(e.target.value)}
                     placeholder="Enter street address"
+                    readOnly={!(checkIsMaster(currentUser) || checkIsCorporateAdmin(currentUser) || checkIsPropertyManager(currentUser))}
+                    className={!(checkIsMaster(currentUser) || checkIsCorporateAdmin(currentUser) || checkIsPropertyManager(currentUser)) ? "bg-muted cursor-not-allowed" : ""}
                   />
                 </div>
                 <div>
@@ -712,6 +721,8 @@ export default function BuildingDetailsModal({
                     value={city}
                     onChange={(e) => setCity(e.target.value)}
                     placeholder="Enter city"
+                    readOnly={!(checkIsMaster(currentUser) || checkIsCorporateAdmin(currentUser) || checkIsPropertyManager(currentUser))}
+                    className={!(checkIsMaster(currentUser) || checkIsCorporateAdmin(currentUser) || checkIsPropertyManager(currentUser)) ? "bg-muted cursor-not-allowed" : ""}
                   />
                 </div>
                 <div>
@@ -721,6 +732,8 @@ export default function BuildingDetailsModal({
                     value={province}
                     onChange={(e) => setProvince(e.target.value)}
                     placeholder="Enter municipality"
+                    readOnly={!(checkIsMaster(currentUser) || checkIsCorporateAdmin(currentUser) || checkIsPropertyManager(currentUser))}
+                    className={!(checkIsMaster(currentUser) || checkIsCorporateAdmin(currentUser) || checkIsPropertyManager(currentUser)) ? "bg-muted cursor-not-allowed" : ""}
                   />
                 </div>
               </div>
@@ -730,8 +743,9 @@ export default function BuildingDetailsModal({
                 <Select
                   value={managerId?.toString() || ""}
                   onValueChange={(value) => setManagerId(parseInt(value))}
+                  disabled={!(checkIsMaster(currentUser) || checkIsCorporateAdmin(currentUser) || checkIsPropertyManager(currentUser))}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger className={!(checkIsMaster(currentUser) || checkIsCorporateAdmin(currentUser) || checkIsPropertyManager(currentUser)) ? "bg-muted cursor-not-allowed" : ""}>
                     <SelectValue placeholder="Select property manager" />
                   </SelectTrigger>
                   <SelectContent>

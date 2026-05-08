@@ -570,8 +570,14 @@ export default function CompanyDetailsModal({
       setNewAdminPassword("")
       setShowAddAdmin(false)
       await fetchCompanyData()
-      // 🔄 Notify Janus
-      triggerJanusResync("user_created")
+      // 🔄 Notify Janus with full admin user data
+      triggerJanusResync("user_created", {
+        name: newAdminName.trim(),
+        email: newAdminEmail.toLowerCase().trim(),
+        user_type: "corporate_administrator",
+        roles: ["corporate_administrator"],
+        company_id: company?.id
+      }, "user")
     } catch (err: any) {
       console.error("Unexpected error:", err)
       setError(err.message || "An unexpected error occurred")

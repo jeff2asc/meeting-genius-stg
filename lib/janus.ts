@@ -10,9 +10,9 @@ const isLocal = typeof window !== 'undefined' && window.location.hostname === 'l
 
 const JANUS_API_BASE = isLocal
   ? "http://localhost:3001"
-  : (process.env.NEXT_PUBLIC_JANUS_API_URL || "https://janusapp.meetinggenius.ca");
+  : (process.env.NEXT_PUBLIC_JANUS_URL || "https://janusapp.meetinggenius.ca");
 
-const JANUS_API_KEY  = process.env.NEXT_PUBLIC_JANUS_API_KEY  || "meeting-genius-secret-key-2026"
+const JANUS_API_KEY  = process.env.NEXT_PUBLIC_API_KEY  || "meeting-genius-secret-key-2026"
 const JANUS_SYNC_ENDPOINT = "/api/janus/v1/sync"
 
 /**

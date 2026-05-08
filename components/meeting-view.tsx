@@ -2227,7 +2227,7 @@ export default function MeetingView({
                   </div>
                 </div>
                 
-                {isJanusIntegrated && (
+                {isJanusIntegrated && (janusData.repairs.length > 0 || janusData.complaints.length > 0) && (
                   <div className="flex gap-1 p-0.5 bg-muted rounded-lg">
                     <button
                       onClick={() => setSidebarTab("agenda")}
@@ -2235,18 +2235,22 @@ export default function MeetingView({
                     >
                       Agenda
                     </button>
-                    <button
-                      onClick={() => setSidebarTab("repairs")}
-                      className={`flex-1 text-[10px] py-1 rounded-md transition-all ${sidebarTab === "repairs" ? "bg-white shadow-sm font-bold text-primary" : "text-muted-foreground hover:bg-white/50"}`}
-                    >
-                      Repairs
-                    </button>
-                    <button
-                      onClick={() => setSidebarTab("complaints")}
-                      className={`flex-1 text-[10px] py-1 rounded-md transition-all ${sidebarTab === "complaints" ? "bg-white shadow-sm font-bold text-primary" : "text-muted-foreground hover:bg-white/50"}`}
-                    >
-                      Complaints
-                    </button>
+                    {janusData.repairs.length > 0 && (
+                      <button
+                        onClick={() => setSidebarTab("repairs")}
+                        className={`flex-1 text-[10px] py-1 rounded-md transition-all ${sidebarTab === "repairs" ? "bg-white shadow-sm font-bold text-primary" : "text-muted-foreground hover:bg-white/50"}`}
+                      >
+                        Repairs
+                      </button>
+                    )}
+                    {janusData.complaints.length > 0 && (
+                      <button
+                        onClick={() => setSidebarTab("complaints")}
+                        className={`flex-1 text-[10px] py-1 rounded-md transition-all ${sidebarTab === "complaints" ? "bg-white shadow-sm font-bold text-primary" : "text-muted-foreground hover:bg-white/50"}`}
+                      >
+                        Complaints
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -2527,7 +2531,7 @@ export default function MeetingView({
                 )}
               </div>
               
-              {isJanusIntegrated && (
+              {isJanusIntegrated && (janusData.repairs.length > 0 || janusData.complaints.length > 0) && (
                 <div className="flex gap-1 p-0.5 bg-muted rounded-lg">
                   <button
                     onClick={() => setSidebarTab("agenda")}
@@ -2535,18 +2539,22 @@ export default function MeetingView({
                   >
                     Agenda
                   </button>
-                  <button
-                    onClick={() => setSidebarTab("repairs")}
-                    className={`flex-1 text-[10px] py-1 rounded-md transition-all ${sidebarTab === "repairs" ? "bg-white shadow-sm font-bold text-primary" : "text-muted-foreground hover:bg-white/50"}`}
-                  >
-                    Repairs
-                  </button>
-                  <button
-                    onClick={() => setSidebarTab("complaints")}
-                    className={`flex-1 text-[10px] py-1 rounded-md transition-all ${sidebarTab === "complaints" ? "bg-white shadow-sm font-bold text-primary" : "text-muted-foreground hover:bg-white/50"}`}
-                  >
-                    Complaints
-                  </button>
+                  {janusData.repairs.length > 0 && (
+                    <button
+                      onClick={() => setSidebarTab("repairs")}
+                      className={`flex-1 text-[10px] py-1 rounded-md transition-all ${sidebarTab === "repairs" ? "bg-white shadow-sm font-bold text-primary" : "text-muted-foreground hover:bg-white/50"}`}
+                    >
+                      Repairs
+                    </button>
+                  )}
+                  {janusData.complaints.length > 0 && (
+                    <button
+                      onClick={() => setSidebarTab("complaints")}
+                      className={`flex-1 text-[10px] py-1 rounded-md transition-all ${sidebarTab === "complaints" ? "bg-white shadow-sm font-bold text-primary" : "text-muted-foreground hover:bg-white/50"}`}
+                    >
+                      Complaints
+                    </button>
+                  )}
                 </div>
               )}
             </div>
