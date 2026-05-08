@@ -116,45 +116,44 @@ export default function EditMeetingModal({
         return
       }
 
-      const { data: building, error: buildingError } = await supabase
+      // Fetch company ID first
+      const { data: building } = await supabase
         .from('buildings')
         .select('company_id')
         .eq('id', meeting.building_id)
         .single()
 
-      if (buildingError || !building?.company_id) {
-        setMeetingTypes([
-          "Council Meeting",
-          "AGM",
-          "SGM",
-          "Special Meeting",
-          "Emergency Meeting"
-        ])
-        setFormData(prev => ({
-          ...prev,
-          meetingType: meeting?.meeting_type || "Council Meeting"
-        }))
-        return
+      // 1. Get dynamic parameters from voting_parameters
+      const { data: params } = await supabase
+        .from("voting_parameters")
+        .select("value")
+        .eq("parameter_type", "meeting_type")
+        .or(`company_id.eq.${building?.company_id},company_id.is.null`)
+
+      const dynamicMeetingTypes = (params || []).map(p => p.value)
+
+      // 2. Get company defaults
+      let companyTypes: string[] = []
+      if (building?.company_id) {
+        const { data: company } = await supabase
+          .from('companies')
+          .select('default_meeting_types')
+          .eq('id', building.company_id)
+          .single()
+        companyTypes = company?.default_meeting_types || []
       }
 
-      const { data: company, error: companyError } = await supabase
-        .from('companies')
-        .select('default_meeting_types')
-        .eq('id', building.company_id)
-        .single()
+      // 3. Merge and deduplicate, with fallback
+      const finalMeetingTypes = [...new Set([
+        ...dynamicMeetingTypes, 
+        ...companyTypes,
+        ...(companyTypes.length === 0 && dynamicMeetingTypes.length === 0 ? ["Council Meeting", "AGM", "SGM", "Special Meeting", "Emergency Meeting"] : [])
+      ])]
 
-      const types = company?.default_meeting_types || [
-        "Council Meeting",
-        "AGM",
-        "SGM",
-        "Special Meeting",
-        "Emergency Meeting"
-      ]
-
-      setMeetingTypes(types)
+      setMeetingTypes(finalMeetingTypes)
       setFormData(prev => ({
         ...prev,
-        meetingType: meeting?.meeting_type || types[0] || ""
+        meetingType: meeting?.meeting_type || finalMeetingTypes[0] || ""
       }))
     }
 
@@ -206,35 +205,37 @@ export default function EditMeetingModal({
       .eq('id', newBuildingId)
       .single()
 
-    if (buildingError || !building?.company_id) {
-      setMeetingTypes([
-        "Council Meeting",
-        "AGM",
-        "SGM",
-        "Special Meeting",
-        "Emergency Meeting"
-      ])
-      return
+    // 1. Get dynamic parameters from voting_parameters
+    const { data: params } = await supabase
+      .from("voting_parameters")
+      .select("value")
+      .eq("parameter_type", "meeting_type")
+      .or(`company_id.eq.${building?.company_id},company_id.is.null`)
+
+    const dynamicMeetingTypes = (params || []).map(p => p.value)
+
+    // 2. Get company defaults
+    let companyTypes: string[] = []
+    if (building?.company_id) {
+      const { data: company } = await supabase
+        .from('companies')
+        .select('default_meeting_types')
+        .eq('id', building.company_id)
+        .single()
+      companyTypes = company?.default_meeting_types || []
     }
 
-    const { data: company, error: companyError } = await supabase
-      .from('companies')
-      .select('default_meeting_types')
-      .eq('id', building.company_id)
-      .single()
+    // 3. Merge and deduplicate
+    const finalMeetingTypes = [...new Set([
+      ...dynamicMeetingTypes, 
+      ...companyTypes,
+      ...(companyTypes.length === 0 && dynamicMeetingTypes.length === 0 ? ["Council Meeting", "AGM", "SGM", "Special Meeting", "Emergency Meeting"] : [])
+    ])]
 
-    const types = company?.default_meeting_types || [
-      "Council Meeting",
-      "AGM",
-      "SGM",
-      "Special Meeting",
-      "Emergency Meeting"
-    ]
-
-    setMeetingTypes(types)
+    setMeetingTypes(finalMeetingTypes)
     setFormData(prev => ({
       ...prev,
-      meetingType: types[0] || "Council Meeting"
+      meetingType: finalMeetingTypes[0] || "Council Meeting"
     }))
   }
 

@@ -62,6 +62,9 @@ interface Building {
   created_at: string
   users?: Array<{ id: number; name: string; email: string; user_type: string; unit_number?: string | null }>
   company?: { id: number; name: string } | null
+  board_meeting_notice_days?: number
+  general_meeting_notice_days?: number
+  notification_recipient_type?: string
 }
 
 type TabType = "users" | "buildings" | "companies" | "minutes" | "agenda" | "voting" | "audit" | "settings"
@@ -718,6 +721,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
             onViewDetails={handleViewBuildingDetails}
             onViewDocument={handleViewDocument}
             onManageDocuments={handleManageDocuments}
+            currentUser={currentUser}
           />
         )}
 
@@ -807,6 +811,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
         onSuccess={handleBuildingDetailsSuccess}
         building={selectedBuilding}
         availableUsers={getAvailableUsers()}
+        currentUser={currentUser}
       />
 
       <CreateCompanyModal

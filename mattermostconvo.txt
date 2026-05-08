@@ -1,0 +1,835 @@
+Meeting Genius Channel:
+
+
+
+gary
+1:25 PM
+thanks will do
+
+March 17
+
+tim.bramwell
+5:36 AM
+Hi @jeff - Good to see that the numebr of bugs and fixes are getting much smaller . https://www.loom.com/share/84f7bb5e25234433ab95896913646059, and https://www.loom.com/share/26360c7dc2cb446eb2f083e326781198
+
+March 19
+
+tim.bramwell
+4:25 AM
+@jeff - QUick issues to fix https://www.loom.com/share/dabc8f37f2da4634b22db4895dfcee16
+
+
+tim.bramwell
+5:24 AM
+Hi again @jeff - Another bug (time) https://www.loom.com/share/b9f380738ab94baf9a044307e9d4df58
+
+March 20
+
+tim.bramwell
+8:51 AM
+Hi @jeff - I finally got some to go through the JANUS appl. It's a very good start. Some things to think about https://www.loom.com/share/5870c81e14ce4c26b1c18f88e706280a
+
+March 31
+System
+12:14 AM
+@dianelle added to the channel by @tim.bramwell.
+April 01
+
+tim.bramwell
+2:38 AM
+Hi @jeff - Some fixes and bugs. https://www.loom.com/share/2e5bb7ef8fed4d11b4137b5d94ff2a58
+
+Loom
+26.03.31 - JANUS fixes and bugs
+Use Loom to record quick videos of your screen and cam. Explain anything clearly and easily – and skip the meeting. An essential tool for hybrid workplaces.
+
+26.03.31 - JANUS fixes and bugs
+We also should start putting together a user profile page so users can change name and password and, importantly, create a personal GPT-like page so each user can define their"personality" in the messages to suppliers and users. 
+
+
+jeff
+1:26 PM
+Noted @tim.bramwell 
+
+April 15
+
+tim.bramwell
+8:28 AM
+Hi @jeff - More fixes for MeetingGenius
+
+https://www.loom.com/share/96cdd0597a1a42b8ac307d35d0714d19
+
+
+tim.bramwell
+9:20 AM
+Hi @jeff - JANUS bugs and fixes https://www.loom.com/share/6fed0f47ac4c44b59d02eb248a5ae582
+
+
+jeff
+2:30 PM
+Thanks @tim.bramwell 
+
+April 17
+
+tim.bramwell
+12:58 AM
+Hi @jeff - And a transiption upload error https://www.loom.com/share/fd64a60878bc434b96447d56fb4fe2dd
+
+Thanks.
+
+
+tim.bramwell
+1:19 AM
+Bugs on the Minutes - https://www.loom.com/share/e4a1722769bd4670b4e19d79b21e58cd
+
+April 19
+
+tim.bramwell
+1:31 AM
+And something else I've been thinking about ...https://www.loom.com/share/e90f7410822b46b4b52e43ad21d8f219
+
+April 23
+System
+4:32 AM
+@gary and @dianelle were removed from the channel.
+
+tim.bramwell
+4:33 AM
+Hi @jeff  - I just a demo and there were some interesting questions that can up. 
+
+When the Send Notice button is used, are all the attached files for every section/topic (that has an attachment), get sent with the Agenda or Minutes? A: They should be sent as sepaate attachements with the document.
+A bug: the Add attachment function for the Section is not working. 
+
+
+tim.bramwell
+4:43 AM
+Lots of questions arising about the transcription workflow. I assume that when the transcript is uploaded, the View Transcript is essentially a text editor. Is that right?
+Another bug: The upload Transcript function is not working. I cannot upload a transcript ...
+
+
+jeff
+11:22 PM
+Hi @tim.bramwell — thanks for the feedback from the demo! Quick update on those points:
+
+1.Attachments: You're right, currently "Send Notice" only sends the text. I'll update it to include the actual files as separate attachments.
+
+2.Section Attachments: Looking into this now. 
+3.Transcript View: Currently, that's just a file viewer/downloader, not an editor. Let me know if you need it to be editable
+
+Upload Bug: Sorry about that! I'm jumping in to fix the upload error and the attachment issue .
+I'll let you know once these are sorted!
+
+And also Tim can I get the mattermost api key thanks 
+
+April 24
+
+tim.bramwell
+1:56 AM
+Hi @jeff - Thank you. Please update github and create/update the wiki change log outlining the changes . 
+
+
+tim.bramwell
+12:54 PM
+@jeff I'm updating our legal documents. Does the app use cookies?
+
+April 27
+
+jeff
+11:21 PM
+Yes @tim.bramwell 
+
+Functional Cookies:
+sidebar_state: This is a small cookie that remembers if the user left the sidebar open or closed so it stays that way when they refresh the page.
+
+Security & Authentication:
+Google reCAPTCHA: We use reCAPTCHA on the signup/login pages to prevent bots. Google sets technical cookies to perform risk analysis.
+Authentication: Most of our "session" data is stored in Local Storage (not cookies), but the backend service (Supabase) may set a technical cookie to keep the user securely logged in.
+
+Analytics:
+Vercel Analytics: We use a basic, privacy-friendly analytics tool to see how many people are using the app. This sets a first-party cookie for anonymous tracking.
+
+April 29
+
+tim.bramwell
+1:36 AM
+ca.meetinggenius.ca
+
+April 30
+
+tim.bramwell
+1:34 AM
+Hi @nat.aquino - Attached is a video outlining the needs for the MG user registration process. https://www.loom.com/share/618e9681f336454193553c2493aca4f8
+
+The basic idea is to collect data from the website form, and (1) allow the user to finish the subscription by paying either using Helcim (Stripe competitor) (helcim.com), (2) create an Odoo subscription with automated invoicng and payment cycle, (3) pass the building info collected from the form to MG so that it can define the user and setup the first building(s), and then (4) send an automated email to the new subscriber.  See https://devdocs.helcim.com/docs/overview-of-helcimpayjs 
+
+I am currently using chargebee.com in the short-term, but there's no Odoo integration so we have to duplicate some of the functionality. If the is an existing Odoo software subscription management odoo/app that can be used, that would be great. 
+
+@jeff - We HAVE to figure out how to remove the extra security that Gary has implemented on the app server to protect against the server spamming
+
+
+tim.bramwell
+8:03 AM
+@jeff - bugs & fixes https://www.loom.com/share/a824bbdeff10455aa334d3f18b4f9b08
+Bugs
+
+Dashboard is not working
+Add a Company is not working
+Add multiple people to a Building
+Buildings > Classification showing duplicates.
+Fixes: 
+
+Standard spreadsheet imports for User, Buildings and Companies.
+Move to markdown implementation profile sheets
+ADMINISTRATION
+
+Remove "Centralized ecosystem management"
+Ability to define Roles administrative
+Want ability to define the ticket number/format
+BUILDINGS
+
+New layout for tickets
+expand address field to separate fields?
+Operational Rules & Regulations building - add upload of document to injest into LLM. 
+Q: What does the Building AI Persona do? 
+SUPPLIERS
+
+Q: How do we manage Suppliers?
+FINANCIAL 
+
+Change "Vendor" to "Supplier"
+
+tim.bramwell
+2:56 PM
+@jeff - https://www.loom.com/share/fab6f603cf2848b9b806b58c9efef8f2. This is a unique issue that came up in a meeting today.  
+
+
+jeff
+11:02 PM
+Hi @tim.bramwell about the "pm.maple@janus.com" account it is hardcodded currently not in the table, I will give you an account that is the actual master account that can access multiple company, but you can try my other account that I gave you, which access only their each corresponding company the pm.maple account act as a master but messes up the roles. 
+
+
+jeff
+11:15 PM
+That is the reason those multiple duplicates, can you test one of our corporate admin account to a company?
+yaraastha65@gmail.com
+123456
+
+but if you want to view it as a master like in the meeting genius please let me know thanks
+
+May 01
+
+tim.bramwell
+12:38 AM
+@jeff - Ok, can you set me up as a master account using tim.bramwell@asccreative.com?
+
+I did see the workflows  and more nfo with the above account, so that helps. 
+
+I'd like to start beta testing this on my building in  the next week or so. Can you be ready for that timeframe? 
+
+
+tim.bramwell
+7:30 AM
+@jeff - Can you remove the pricing in the red box? No one needs to see this here , esp. becuase it is wrong.
+
+
+
+tim.bramwell
+7:38 AM
+Can you also fix the user count. It shows that there are four users, but no one listed. 
+
+
+Please remove one of the duplicate property manager fields. 
+
+
+Sunday
+System
+1:39 PM
+@gary added to the channel by @tim.bramwell.
+
+tim.bramwell
+1:46 PM
+@jeff - The manager1@janus.com account password has been breached. There doesn't look like anywhere to change a users profile information, incl password. 
+
+Tuesday
+
+nat.aquino
+1:44 AM
+Todo in Odoo/API
+
+Helcim integration
+
+tim.bramwell
+4:21 AM
+@jeff - Bugs https://www.loom.com/share/ba5553870620422bba096f5054bbc479
+
+
+tim.bramwell
+7:55 AM
+Hi @jeff
+
+Looking at JANUS again. I like the workflow section. Soem questions and fixes https://www.loom.com/share/ffbc0cebd402414e9d7a69658e3dfe73
+
+
+tim.bramwell
+8:09 AM
+@jeff @gary - We have our first MeetingGenius client. So I've asked Gary to setup a staging server, so that you (Jeff) can work on it. 
+
+
+tim.bramwell
+8:14 AM
+And we have our first production bug @jeff https://www.loom.com/share/5dab5de5f4924fac9636fa826aa2b7e1 
+
+another bug https://www.loom.com/share/39984554963c41b29ff6fd689fd73325
+
+Wednesday
+
+tim.bramwell
+9:14 AM
+@jeff We have another MG client so i need the onboarding bugs fixed immediately. 
+
+
+jeff
+8:06 PM
+Hi @tim.bramwell  everything in the loom video is working now i already push the update
+
+-fixing the UI in rollover import
+-before downloading minutes pdf only the end meeting need to fill up
+-when creating new company assign the same new user as Corporate admin and Property manager is saving now
+(old- multiple role is working like a promotion)
+-you can see now the all the users in the user tab(master)
+-Push repair and complaint to task in meetings tried to automate instead of manual - but manual first
+
+
+
+1 reply
+Following
+Last reply 2 days ago
+
+tim.bramwell
+8:18 PM
+@jeff @gary We now have clients that are being setup, and we have a major problem. The app/server security. 
+
+The temporary access security is still in place to keep the hacker out, but we will have to remove it for the production server because users need unvettered access. Our SSL and user level security should be dealing with hacking attempts but they are not.
+
+I need a coordinated approach from both of you to resolve this issue  
+
+
+gary
+10:24 PM
+I am discussing with jeff is there a way make meeting app ( node stuff ) as backbone of project
+
+10:24 PM
+brower jsut access some php wordpress code
+
+
+
+4 replies
+Follow
+Last reply yesterday
+we tried proxy at server level did not work
+
+hopefullly we can hide node.js code path further
+
+
+gary
+10:36 PM
+is the meeting app provide rest api ?
+
+
+
+
+3 replies
+Follow
+Last reply yesterday
+Yesterday
+
+tim.bramwell
+3:52 AM
+@jeff - There are more setup bugs - building setup and property manager list displays . Please https://www.loom.com/share/e4429a12d39b429281084e6a5a5207bd
+
+
+tim.bramwell
+4:12 AM
+@jeff Another bug - https://www.loom.com/share/27a24117b6d94b2c85c8700137424898
+
+
+gary
+4:50 AM
+@tim another way from OS protect app is use Create MySQL Authentication on NGINX
+
+I and not sure what db jeff using
+
+the OS can user your password table so every your code can send usr from OS pass you
+
+it will still be a pop up password
+
+but we can get rid of login screen after the pop up
+
+
+jeff
+6:04 PM
+Hi @tim.bramwell  and @gary, just finishing up the voting system after that I'll do this new bugs from loom today. then I will get back to you @gary about my solution about the security. 
+
+
+tim.bramwell
+9:33 PM
+@jeff - Please ensure that the issue getting Vesta building setup is resovled asap. They've been waiting for several days for the setup ... 
+
+Thanks
+
+
+gary
+10:59 PM
+
+
+
+
+
+
+
+thanks Jeff
+
+
+
+
+
+
+
+
+Private message with gary:
+	
+jeff
+6:27 PM
+
+
+
+
+
+
+
+Hi @gary can you give me access to go please, thanks
+
+
+gary
+10:55 PM
+yes allowed
+
+March 03
+
+jeff
+1:32 AM
+Hi @gary I'm gonna go ahead and get some sleep now, Can you give me more like idea where to look to fix our security issue? Thank you
+
+
+gary
+1:34 AM
+i have idea may be save us  effort and future leak , we  can build a vps  jsut run nginx reverse to you code
+
+your app can access JUST from proxy server
+
+
+jeff
+1:35 AM
+Are we using new vps?
+
+
+gary
+1:35 AM
+yes
+
+a small one is good enough
+
+the cheap
+
+it is cheap
+
+can  you code can be a api even
+
+
+jeff
+1:36 AM
+Shall we do it now? do you have already?
+
+
+gary
+1:36 AM
+I do not have 
+
+if you want test I can talk  to tim
+
+and set it up
+
+
+jeff
+1:37 AM
+So are you gonna give me the credential there so I can setitup on a clean vps or are you gonna do it?
+
+
+gary
+1:37 AM
+you do not need do any thoing
+
+I believe
+
+
+jeff
+1:37 AM
+You just pull from github?
+
+
+gary
+1:37 AM
+sice hte new vps is jsut nginx revers proxy
+
+I will not touch code eother
+
+since the new vps jsut a reverse proxy
+
+
+jeff
+1:38 AM
+What do you need from me? nothing? you just ask tim about it then you're good to go?
+
+
+gary
+1:38 AM
+like cdn ( cloudflare) 
+
+nothing
+
+
+jeff
+1:39 AM
+How about my deployment? from my local pc to the github to the server will there be change?
+
+
+gary
+1:39 AM
+you will deploy to current vps
+
+
+jeff
+1:40 AM
+so same deployment?
+
+
+gary
+1:40 AM
+trhe new vps jsut nginx ( current ngix is on app itsself)
+
+yes I beleive it will same deployment
+
+
+jeff
+1:40 AM
+Ok, please tell tim and if that is good to go let me know. so I can focus on features, security isn't really my specialty sorry.
+
+But let me know if you need something. 
+
+Thanks Gary 
+
+March 04
+
+gary
+12:24 AM
+you there ?
+
+can  you check url 
+
+https://ca.meetinggenius.ca/
+
+it is reverse proxy  to your app.meetinggenius.ca I pull direct  port 3000 to remote server 
+
+March 06
+
+jeff
+6:57 PM
+Hi @gary how do I ssh to the new server for the janus?
+
+
+gary
+9:33 PM
+same key
+
+March 07
+
+gary
+12:21 AM
+ip
+
+janusapp.meetinggenius.ca
+
+also in otyher channel 
+
+also
+
+gary
+
+8:55 AM
+
+@jeff a server Ollama 8B dedicated to MeetingGenius and JANUS is read
+
+ip: mgllm.asccreative.com
+
+can be access by your normal keys I had llama3.2 and llama3.1:8b installed
+
+it can be access from new janus server
+
+1) test from new janus server connect ollama server from command line
+
+root@janus:~# curl -X POST http://38.49.216.119:11434/api/generate -d '{"model": "llama3.2", "prompt": "Why is the sky blue?"}' {"model":"llama3.2","created_at":"2026-03-04T16:13:42.022615714Z","response":"The","done":false} {"model":"llama3.2","created_at":"2026-03-04T16:13:43.200556787Z","response":" sky","done":false} {"model":"llama3.2","created_at":"2026-03-04T16:13:44.392365193Z","response":" appears","done":false} {"model":"llama3.2","created_at":"2026-03-04T16:13:45.570135121Z","response":" blue","done":false} {"model":"llama3.2","created_at":"2026-03-04T16:13:46.752884929Z","response":" because","done":false}
+
+By domain
+
+root@janus:~# curl -X POST http://mgllm.asccreative.com:11434/api/generate -d '{"model": "llama3.2", "prompt": "Why is the sky blue?"}' {"model":"llama3.2","created_at":"2026-03-04T16:54:39.264236674Z","response":"The","done":false} {"model":"llama3.2","created_at":"2026-03-04T16:54:40.431669524Z","response":" reason","done":false} {"model":"llama3.2","created_at":"2026-03-04T16:54:41.601802537Z","response":" why","done":false} {"model":"llama3.2","created_at":"2026-03-04T16:54:42.776159274Z","response":" the","done":false} {"model":"llama3.2","created_at":"2026-03-04T16:54:43.965854243Z","response":" sky","done":false}
+
+2) test from current meeting genius server
+
+root@app:/opt/meetinggenius/app# curl -X POST http://38.49.216.119:11434/api/generate -d '{"model": "llama3.2", "prompt": "Why is the sky blue?"}' {"model":"llama3.2","created_at":"2026-03-04T16:50:57.101750087gary
+
+8:55 AM
+
+@jeff a server Ollama 8B dedicated to MeetingGenius and JANUS is read
+
+ip: mgllm.asccreative.com
+
+can be access by your normal keys I had llama3.2 and llama3.1:8b installed
+
+it can be access from new janus server
+
+1) test from new janus server connect ollama server from command line
+
+root@janus:~# curl -X POST http://38.49.216.119:11434/api/generate -d '{"model": "llama3.2", "prompt": "Why is the sky blue?"}' {"model":"llama3.2","created_at":"2026-03-04T16:13:42.022615714Z","response":"The","done":false} {"model":"llama3.2","created_at":"2026-03-04T16:13:43.200556787Z","response":" sky","done":false} {"model":"llama3.2","created_at":"2026-03-04T16:13:44.392365193Z","response":" appears","done":false} {"model":"llama3.2","created_at":"2026-03-04T16:13:45.570135121Z","response":" blue","done":false} {"model":"llama3.2","created_at":"2026-03-04T16:13:46.752884929Z","response":" because","done":false}
+
+By domain
+
+root@janus:~# curl -X POST http://mgllm.asccreative.com:11434/api/generate -d '{"model": "llama3.2", "prompt": "Why is the sky blue?"}' {"model":"llama3.2","created_at":"2026-03-04T16:54:39.264236674Z","response":"The","done":false} {"model":"llama3.2","created_at":"2026-03-04T16:54:40.431669524Z","response":" reason","done":false} {"model":"llama3.2","created_at":"2026-03-04T16:54:41.601802537Z","response":" why","done":false} {"model":"llama3.2","created_at":"2026-03-04T16:54:42.776159274Z","response":" the","done":false} {"model":"llama3.2","created_at":"2026-03-04T16:54:43.965854243Z","response":" sky","done":false}
+
+2) test from current meeting genius server
+
+root@app:/opt/meetinggenius/app# curl -X POST http://38.49.216.119:11434/api/generate -d '{"model": "llama3.2", "prompt": "Why is the sky blue?"}' {"model":"llama3.2","created_at":"2026-03-04T16:50:57.101750087gary
+
+8:55 AM
+
+@jeff a server Ollama 8B dedicated to MeetingGenius and JANUS is read
+
+ip: mgllm.asccreative.com
+
+can be access by your normal keys I had llama3.2 and llama3.1:8b installed
+
+it can be access from new janus server
+
+1) test from new janus server connect ollama server from command line
+
+root@janus:~# curl -X POST http://38.49.216.119:11434/api/generate -d '{"model": "llama3.2", "prompt": "Why is the sky blue?"}' {"model":"llama3.2","created_at":"2026-03-04T16:13:42.022615714Z","response":"The","done":false} {"model":"llama3.2","created_at":"2026-03-04T16:13:43.200556787Z","response":" sky","done":false} {"model":"llama3.2","created_at":"2026-03-04T16:13:44.392365193Z","response":" appears","done":false} {"model":"llama3.2","created_at":"2026-03-04T16:13:45.570135121Z","response":" blue","done":false} {"model":"llama3.2","created_at":"2026-03-04T16:13:46.752884929Z","response":" because","done":false}
+
+By domain
+
+root@janus:~# curl -X POST http://mgllm.asccreative.com:11434/api/generate -d '{"model": "llama3.2", "prompt": "Why is the sky blue?"}' {"model":"llama3.2","created_at":"2026-03-04T16:54:39.264236674Z","response":"The","done":false} {"model":"llama3.2","created_at":"2026-03-04T16:54:40.431669524Z","response":" reason","done":false} {"model":"llama3.2","created_at":"2026-03-04T16:54:41.601802537Z","response":" why","done":false} {"model":"llama3.2","created_at":"2026-03-04T16:54:42.776159274Z","response":" the","done":false} {"model":"llama3.2","created_at":"2026-03-04T16:54:43.965854243Z","response":" sky","done":false}
+
+2) test from current meeting genius server
+
+root@app:/opt/meetinggenius/app# curl -X POST http://38.49.216.119:11434/api/generate -d '{"model": "llama3.2", "prompt": "Why is the sky blue?"}' {"model":"llama3.2","created_at":"2026-03-04T16:50:57.101750087
+
+Show more
+another server
+
+sorry i post on other channel
+
+the proxy not working
+
+need still review code
+
+March 08
+
+jeff
+2:44 PM
+Do I need new ssh for the janus? is it a different from the meeting genius?
+
+By the way I am doing this for the meeting genius to deploy if there is changes in the code I us root again to login beuase if I use the pm2 it says wrong password is this ip address where the janus as well or different server vps?
+
+2. Server Deployment - GARY'S pm2 USER SETUP
+plink -i "C:\Users\Jeff Domingo\Videos\newkeymeeting.ppk" root@45.59.114.16
+
+In server shell (as root):
+su - pm2
+cd /opt/meetinggenius/app
+git config --global --add safe.directory /opt/meetinggenius/app
+git reset --hard origin/main
+git pull origin main
+
+Restart Gary's live app (direct next.js, not PM2)
+pkill -f next
+sleep 5
+
+Verify restart worked
+curl -I http://localhost:3000  # Should return 200 OK
+exit  # back to root
+
+sleep 5
+nohup npm run start -- -p 3000 &
+curl -I http://localhost:3000 
+
+
+jeff
+4:33 PM
+Hi @gary found this aswell from LLM on my entire folder of meeting-genius:
+
+After reviewing your entire codebase — API routes, auth, supabase client, permissions, and Next.js config — here's my honest assessment:
+
+✅ The Short Answer: The problem is the server/deployment, NOT primarily a code bug
+Gary's logs show the hacker hitting /_next/static/chunks/... — these are public JavaScript bundle files. In any Next.js app, static assets are always publicly accessible by design — no auth, no password needed. This is how Next.js works. The hacker doesn't need your credentials to download those JS files.
+
+🖥️ Why This Is Mostly a Server/Nginx Problem
+What Gary's logs actually show:
+
+185.177.72.60 - - "GET /_next/static/chunks/684-90b5f29cd8c8264e.js HTTP/1.1" 200
+This IP was scraping your public JS bundles — not logging in, not exploiting code. This is what automated internet scanners do to any publicly visible web app. They download the JS, then look for:
+
+Hardcoded API keys or secrets inside the bundles ← ⚠️ This is your real risk
+Exposed endpoints they can probe
+The miner script in failed.log was a separate server-level attack on the OS, not your app code. Someone found the server IP or an open port and tried to run a crypto miner.
+
+🎯 What Gary needs to fix on the server:
+Firewall — Only expose port 80/443, block everything else
+Nginx rate limiting — Block IPs that hit the same file 50+ times in 2 seconds
+IP allowlisting or Cloudflare proxy in front of the app
+No direct server IP exposure — all traffic must go through the proxy
+
+The good news is: your login/auth logic itself is solid — bcrypt hashing is correct, localStorage session handling is standard for this type of app, and the permissions system is well-structured.
+
+March 09
+
+gary
+8:55 AM
+yes the janus have same KEY
+
+as meetinggenius
+
+@jeff we are only expose port 443
+
+can we change password of meetinggenius ?
+
+to try
+
+if the code logical is solid
+
+I can add nginx rate limiting
+
+@jess the rate limit added
+
+
+jeff
+12:43 PM
+For example in MG I am using this to login:
+plink -i "C:\Users\Jeff Domingo\Videos\newkeymeeting.ppk" root@45.59.114.16
+
+Can you give me the command for the Janus? thanks
+
+What password of meetinggenius?
+
+@gary ?
+
+
+gary
+12:54 PM
+the user password
+
+yes
+
+for janus
+
+just use janu ip
+
+38.49.216.125
+
+the domain of the app is 
+
+
+jeff
+12:55 PM
+Windows PowerShell
+Copyright (C) Microsoft Corporation. All rights reserved.
+
+Install the latest PowerShell for new features and improvements! https://aka.ms/PSWindows
+
+PS C:\Users\Jeff Domingo> plink -i "C:\Users\Jeff Domingo\Videos\newkeymeeting.ppk" root@janusapp.meetinggenius.ca
+The host key is not cached for this server:
+  janusapp.meetinggenius.ca (port 22)
+You have no guarantee that the server is the computer you
+think it is.
+The server's ssh-ed25519 key fingerprint is:
+  ssh-ed25519 255 SHA256:8MgRNlEr2qhvRPLzpnkAIZFvwwpj1Hl6qt08QO7EwzI
+If you trust this host, enter "y" to add the key to Plink's
+cache and carry on connecting.
+If you want to carry on connecting just once, without adding
+the key to the cache, enter "n".
+If you do not trust this host, press Return to abandon the
+connection.
+Store key in cache? (y/n, Return cancels connection, i for more info) y
+Using username "root".
+Access granted. Press Return to begin session.
+
+Welcome to Ubuntu 24.04.4 LTS (GNU/Linux 6.8.0-54-generic x86_64)
+
+Documentation: https://help.ubuntu.com
+Management: https://landscape.canonical.com
+Support:        https://ubuntu.com/pro System information as of Sun Mar  8 21:54:56 PDT 2026 System load:  0.0                Processes:             118
+Usage of /:   0.5% of 483.29GB   Users logged in:       0
+Memory usage: 6%                 IPv4 address for eth0: 38.49.216.125
+Swap usage:   0%
+Strictly confined Kubernetes makes edge and IoT secure. Learn how MicroK8s
+just raised the bar for easy, resilient and secure K8s cluster deployment. https://ubuntu.com/engage/secure-kubernetes-at-the-edge
+Expanded Security Maintenance for Applications is not enabled.
+
+2 updates can be applied immediately.
+To see these additional updates run: apt list --upgradable
+
+Enable ESM Apps to receive additional future security updates.
+See https://ubuntu.com/esm or run: sudo pro status
+
+* System restart required *
+Last login: Wed Mar  4 08:54:00 2026 from 50.67.137.80
+root@janus:~#
+
+Show more
+Windows PowerShell update message FAQ - PowerShell
+This article explains the intent of the update notification message in Windows PowerShell.
+Windows PowerShell update message FAQ - PowerShell
+GOt loggedin now
+
+
+gary
+12:55 PM
+janusapp.meedinggenius.ca
+
+meeting
+
+the llm is same
+
+
+jeff
+12:55 PM
+I am here now:
+
+* System restart required *
+Last login: Wed Mar  4 08:54:00 2026 from 50.67.137.80
+root@janus:~#
+
+Thanks gary let's talk about the password of MG in the meeting genius
+
+
+gary
+12:56 PM
+yes please change users password
+
+
+gary
+11:07 PM
+it did not work
+
+spammer still call come url and download script from remote seems
+
+I guess they gave some code hiding in your code
+
+let us do this once  you have gotcha

@@ -79,7 +79,8 @@ export default function CreateUserModal({
 
   const fetchUserTypes = async () => {
     const params = await getVotingParameters(currentUser?.company_id)
-    setUserTypes(params.filter(p => p.parameter_type === 'user_type').map(p => p.value))
+    const types = params.filter(p => p.parameter_type === 'user_type').map(p => p.value)
+    setUserTypes([...new Set(types)])
   }
 
   const isMaster = checkIsMaster(currentUser)
@@ -250,17 +251,6 @@ export default function CreateUserModal({
         }
       }
 
-      if (primaryRole === "property_manager") {
-        if (selectedUserBuildings.length === 0) {
-          setError("Please select at least one building for the Property Manager")
-          return
-        }
-      } else if (primaryRole === "user" || primaryRole === "owner") {
-        if (!userFormData.assignedPmId || userFormData.assignedPmId === 0) {
-          setError("Please select a Property Manager for this user")
-          return
-        }
-      }
     }
 
     if (isCorporateAdmin && !isEditMode) {

@@ -57,7 +57,9 @@ export default function EditCompanyModal({
       setDecisionResults(company.default_decision_results || [
         "M/S/C",
         "Defeated",
-        "Deferred"
+        "Deferred",
+        "AGM",
+        "SGM"
       ])
     }
   }, [company])

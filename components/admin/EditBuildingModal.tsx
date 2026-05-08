@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { supabase } from "@/lib/supabase"
+import { supabase, getVotingParameters } from "@/lib/supabase"
 import { triggerJanusResync } from "@/lib/janus"
 
 interface Building {
@@ -27,6 +27,7 @@ interface EditBuildingModalProps {
   onSuccess: () => void
   building: Building | null
   availableUsers: Array<{ id: number; name: string; email: string }>
+  currentUser?: any
 }
 
 export default function EditBuildingModal({
@@ -34,7 +35,8 @@ export default function EditBuildingModal({
   onClose,
   onSuccess,
   building,
-  availableUsers
+  availableUsers,
+  currentUser
 }: EditBuildingModalProps) {
   const [buildingFormData, setBuildingFormData] = useState({
     name: "",
@@ -44,10 +46,25 @@ export default function EditBuildingModal({
     postalCode: "",
     country: ""
   })
-  const [buildingType, setBuildingType] = useState<'Strata/Condo' | 'Rental' | 'Housing Co-op'>('Strata/Condo')
+  const [buildingType, setBuildingType] = useState<string>("")
   const [selectedBuildingUsers, setSelectedBuildingUsers] = useState<number[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [buildingTypes, setBuildingTypes] = useState<string[]>([])
+
+  useEffect(() => {
+    if (isOpen) {
+      const fetchTypes = async () => {
+        const params = await getVotingParameters(currentUser?.company_id)
+        const types = params
+          .filter(p => p.parameter_type === 'building_type')
+          .map(p => p.value)
+        
+        setBuildingTypes([...new Set(types)])
+      }
+      fetchTypes()
+    }
+  }, [isOpen, currentUser])
 
   useEffect(() => {
     if (building) {
@@ -59,7 +76,7 @@ export default function EditBuildingModal({
         postalCode: building.postal_code || "",
         country: building.country || "Canada"
       })
-      setBuildingType((building.building_type as 'Strata/Condo' | 'Rental' | 'Housing Co-op') || 'Strata/Condo')
+      setBuildingType(building.building_type || "")
       setSelectedBuildingUsers(building.users?.map(u => u.id) || [])
     }
   }, [building])
@@ -277,13 +294,15 @@ export default function EditBuildingModal({
             </label>
             <select
               value={buildingType}
-              onChange={(e) => setBuildingType(e.target.value as 'Strata/Condo' | 'Rental' | 'Housing Co-op')}
+              onChange={(e) => setBuildingType(e.target.value)}
               disabled={saving}
               className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
             >
-              <option value="Strata/Condo">Strata/Condo</option>
-              <option value="Rental">Rental Building</option>
-              <option value="Housing Co-op">Housing Co-op</option>
+              {buildingTypes.length > 0 ? (
+                buildingTypes.map(t => <option key={t} value={t}>{t}</option>)
+              ) : (
+                <option value="">No types defined</option>
+              )}
             </select>
             <p className="text-xs text-muted-foreground mt-1">
               Select the type of building for proper legislation handling

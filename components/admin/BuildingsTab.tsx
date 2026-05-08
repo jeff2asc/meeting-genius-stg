@@ -9,7 +9,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { supabase } from "@/lib/supabase"
+import { supabase, getVotingParameters } from "@/lib/supabase"
+import { isMaster as checkIsMaster } from "@/lib/permissions"
 
 interface Building {
   id: number
@@ -31,6 +32,7 @@ interface BuildingsTabProps {
   onViewDetails: (building: Building) => void
   onViewDocument: (building: Building) => void
   onManageDocuments: (building: Building) => void
+  currentUser?: any
 }
 
 export default function BuildingsTab({
@@ -40,12 +42,26 @@ export default function BuildingsTab({
   isMaster,
   onViewDetails,
   onViewDocument,
-  onManageDocuments
+  onManageDocuments,
+  currentUser
 }: BuildingsTabProps) {
   const [typeFilter, setTypeFilter] = useState<string>('all')
   const [companyFilter, setCompanyFilter] = useState<string>('all')
   const [buildingsWithCompany, setBuildingsWithCompany] = useState<Building[]>([])
   const [companies, setCompanies] = useState<Array<{ id: number; name: string }>>([])
+  const [buildingTypes, setBuildingTypes] = useState<string[]>([])
+
+  useEffect(() => {
+    const fetchBuildingTypes = async () => {
+      const params = await getVotingParameters(currentUser?.company_id)
+      const types = params
+        .filter(p => p.parameter_type === 'building_type')
+        .map(p => p.value)
+      
+      setBuildingTypes([...new Set(types)])
+    }
+    fetchBuildingTypes()
+  }, [currentUser])
 
   // Fetch company data for all buildings
   useEffect(() => {
@@ -123,9 +139,9 @@ export default function BuildingsTab({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Types</SelectItem>
-              <SelectItem value="Strata/Condo">Strata/Condo</SelectItem>
-              <SelectItem value="Rental">Rental Building</SelectItem>
-              <SelectItem value="Housing Co-op">Housing Co-op</SelectItem>
+              {buildingTypes.map(type => (
+                <SelectItem key={type} value={type}>{type}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>

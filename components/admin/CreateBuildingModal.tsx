@@ -67,7 +67,8 @@ export default function CreateBuildingModal({
 
   const fetchBuildingTypes = async () => {
     const params = await getVotingParameters(currentUser?.company_id)
-    setBuildingTypes(params.filter(p => p.parameter_type === 'building_type').map(p => p.value))
+    const types = params.filter(p => p.parameter_type === 'building_type').map(p => p.value)
+    setBuildingTypes([...new Set(types)])
   }
 
   const isMaster = checkIsMaster(currentUser)
@@ -345,16 +346,7 @@ export default function CreateBuildingModal({
               {buildingTypes.length > 0 ? (
                 buildingTypes.map(t => <option key={t} value={t}>{t}</option>)
               ) : (
-                <>
-                  <option value="Strata Corporation">Strata Corporation</option>
-                  <option value="Condominium Corporation">Condominium Corporation</option>
-                  <option value="Equity Co-op">Equity Co-op</option>
-                  <option value="Non-Profit Co-op">Non-Profit Co-op</option>
-                  <option value="Tenant Association">Tenant Association</option>
-                  <option value="Non-Profit Society">Non-Profit Society</option>
-                  <option value="Trade Association">Trade Association</option>
-                  <option value="Professional Association">Professional Association</option>
-                </>
+                <option value="">No types defined in Voting Settings</option>
               )}
             </select>
             <p className="text-xs text-muted-foreground mt-1">

@@ -12,7 +12,8 @@ interface Building {
   address: string | null
   manager_id: number
   company_id: number | null
-  created_at: string
+  created_at: string;
+  logo_url?: string | null;
 }
 
 interface AgendaTemplatesTabProps {
@@ -103,6 +104,35 @@ const DEFAULT_INFOCARD_FIELDS: TemplateField[] = [
   { id: "location", label: "Location", order: 3, enabled: true },
   { id: "address", label: "Address", order: 4, enabled: true },
   { id: "strata_plan", label: "Strata Plan", order: 5, enabled: true },
+]
+
+const SAMPLE_MEETING: Meeting = {
+  id: 0,
+  title: "Sample Meeting Title",
+  meeting_date: new Date().toISOString(),
+  start_time: "6:30 PM",
+  location: "Boardroom / Microsoft Teams",
+  meeting_type: "Council Meeting",
+  strata_plan_number: "BCS 1234",
+  buildings: {
+    id: 0,
+    name: "Sample Building",
+    address: "789 Preview Lane, Vancouver, BC",
+    logo_url: null,
+    companies: null
+  }
+}
+
+const SAMPLE_SECTIONS: Section[] = [
+  { id: 1, title: "Call to Order", order_index: 1 },
+  { id: 2, title: "Approval of Agenda", order_index: 2 },
+  { id: 3, title: "New Business", order_index: 3 },
+]
+
+const SAMPLE_TOPICS: Topic[] = [
+  { id: 1, section_id: 1, title: "Roll Call", description: "Taking attendance and checking for quorum.", order_index: 1 },
+  { id: 2, section_id: 2, title: "Vote on Today's Agenda", description: null, order_index: 1 },
+  { id: 3, section_id: 3, title: "Elevator Modernization Project", description: "Reviewing bids from contractors.", order_index: 1 },
 ]
 
 export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplatesTabProps) {
@@ -219,8 +249,41 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
         .single()
 
       if (meetingError) {
-        setMeeting(null)
-        setSections([])
+        // Fallback to company defaults if no meetings exist
+        const building = buildings.find(b => b.id === selectedBuildingId)
+        
+        let defaultSections: any[] = []
+        if (building?.company_id) {
+          const { data: company } = await supabase
+            .from("companies")
+            .select("default_meeting_sections")
+            .eq("id", building.company_id)
+            .single()
+          
+          if (company?.default_meeting_sections) {
+            defaultSections = company.default_meeting_sections.map((title: string, idx: number) => ({
+              id: -(idx + 1),
+              title,
+              order_index: idx + 1
+            }))
+          }
+        }
+
+        const customSample: Meeting = {
+          ...SAMPLE_MEETING,
+          title: "Template Preview",
+          meeting_date: new Date().toISOString(),
+          buildings: {
+            id: selectedBuildingId,
+            name: building?.name || "Select a Building",
+            address: building?.address || "",
+            logo_url: building?.logo_url || null,
+            companies: null
+          }
+        }
+
+        setMeeting(customSample)
+        setSections(defaultSections)
         setTopics([])
         return
       }
@@ -245,6 +308,9 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
 
     } catch (err) {
       console.error("Error loading meeting:", err)
+      setMeeting(SAMPLE_MEETING)
+      setSections(SAMPLE_SECTIONS)
+      setTopics(SAMPLE_TOPICS)
     } finally {
       setLoadingMeeting(false)
     }
@@ -275,8 +341,8 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
         setCoverPageColor(data.coverpage_color || "#1e3a8a")
         setInfoCardAccentColor(data.infocard_accent_color || "#2563eb")
         setAgendaItemsColor(data.agenda_items_color || "#2563eb")
-        setCoverPageElements(data.coverpage_elements || DEFAULT_COVERPAGE_ELEMENTS)
-        setInfoCardFields(data.infocard_fields || DEFAULT_INFOCARD_FIELDS)
+        setCoverPageElements((data.coverpage_elements as unknown as CoverPageElement[]) || DEFAULT_COVERPAGE_ELEMENTS)
+        setInfoCardFields((data.infocard_fields as unknown as TemplateField[]) || DEFAULT_INFOCARD_FIELDS)
       }
 
       setHasChanges(false)
@@ -377,6 +443,8 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
           .from('agendatemplates')
           .update({
             ...templateData,
+            coverpage_elements: coverPageElements as any,
+            infocard_fields: infoCardFields as any,
             updatedat: new Date().toISOString()
           })
           .eq('id', templateId)
@@ -385,7 +453,11 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
       } else {
         const { data, error } = await supabase
           .from('agendatemplates')
-          .insert(templateData)
+          .insert({
+            ...templateData,
+            coverpage_elements: coverPageElements as any,
+            infocard_fields: infoCardFields as any
+          })
           .select()
           .single()
 
@@ -490,17 +562,16 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
               <Loader2 className="h-8 w-8 animate-spin mx-auto mb-2 text-primary" />
               <p className="text-muted-foreground">Loading...</p>
             </div>
-          ) : !meeting ? (
-            <div className="text-center py-12 border-2 border-dashed rounded-lg">
-              <FileText className="h-12 w-12 mx-auto text-muted-foreground mb-2" />
-              <p className="text-muted-foreground">No meetings found - create one first</p>
-            </div>
           ) : (
             <>
               <div className="grid grid-cols-12 gap-6 mb-6">
-
-                {/* Color Pickers — NO height slider */}
                 <div className="col-span-12 lg:col-span-3 space-y-4">
+                  <div className="flex items-center justify-between mb-2 px-1">
+                     <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Template Editor</h3>
+                     {meeting?.id === 0 && (
+                       <span className="text-[10px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-black uppercase tracking-wider">Default Template</span>
+                     )}
+                  </div>
 
                   <Card className="p-4">
                     <h3 className="text-sm font-semibold mb-3">Cover Background</h3>
@@ -577,9 +648,11 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
                   <Card className="p-6">
                     <div className="flex items-center justify-between mb-4">
                       <h3 className="text-lg font-semibold">📄 Live PDF Preview</h3>
-                      <span className="text-xs bg-green-100 text-green-800 px-3 py-1 rounded-full font-semibold">
-                        ● {meeting.title}
-                      </span>
+                      {meeting && (
+                        <span className="text-xs bg-green-100 text-green-800 px-3 py-1 rounded-full font-semibold">
+                          ● {meeting.title}
+                        </span>
+                      )}
                     </div>
 
                     <div
@@ -599,7 +672,7 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
                         onMouseUp={handleCoverMouseUp}
                         onMouseLeave={handleCoverMouseUp}
                       >
-                        {coverPageElements.filter(el => el.enabled).map(element => (
+                        {meeting && coverPageElements.filter(el => el.enabled).map(element => (
                           <div
                             key={element.id}
                             className={`absolute cursor-move transition-opacity ${draggingElementId === element.id ? 'opacity-70 scale-105' : 'hover:opacity-90'
@@ -626,9 +699,9 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
                                     boxShadow: '0 4px 12px rgba(0,0,0,0.3)'
                                   }}
                                 >
-                                  {meeting.buildings.logo_url || meeting.buildings.companies?.logo_url ? (
+                                  {meeting?.buildings?.logo_url || meeting?.buildings?.companies?.logo_url ? (
                                     <img
-                                      src={meeting.buildings.logo_url || meeting.buildings.companies?.logo_url || ''}
+                                      src={meeting?.buildings?.logo_url || meeting?.buildings?.companies?.logo_url || ''}
                                       alt="Logo"
                                       style={{
                                         maxWidth: '70px',
@@ -665,13 +738,13 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
 
                               {element.id === 'building_name' && (
                                 <div className="text-2xl font-light tracking-wide text-center max-w-[80%]" style={{ color: 'rgba(200, 220, 255, 0.95)' }}>
-                                  {meeting.buildings.name}
+                                  {meeting?.buildings?.name}
                                 </div>
                               )}
 
                               {element.id === 'meeting_type' && (
                                 <div className="text-lg font-normal tracking-wide text-center max-w-[80%]" style={{ color: 'rgba(200, 220, 255, 0.9)' }}>
-                                  {meeting.meeting_type || "Council Meeting"}
+                                  {meeting?.meeting_type || "Council Meeting"}
                                 </div>
                               )}
                             </div>
@@ -710,11 +783,11 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
                                         {field.label}
                                       </div>
                                       <div className="text-xs text-gray-900 font-medium">
-                                        {field.id === 'date' && formatMeetingDate(meeting.meeting_date)}
-                                        {field.id === 'time' && (meeting.start_time || 'TBA')}
-                                        {field.id === 'location' && (meeting.location || 'TBA')}
-                                        {field.id === 'address' && (meeting.buildings.address || 'TBA')}
-                                        {field.id === 'strata_plan' && (meeting.strata_plan_number || 'TBA')}
+                                        {field.id === 'date' && meeting && formatMeetingDate(meeting.meeting_date)}
+                                        {field.id === 'time' && (meeting?.start_time || 'TBA')}
+                                        {field.id === 'location' && (meeting?.location || 'TBA')}
+                                        {field.id === 'address' && (meeting?.buildings?.address || 'TBA')}
+                                        {field.id === 'strata_plan' && (meeting?.strata_plan_number || 'TBA')}
                                       </div>
                                     </div>
                                   </div>

@@ -99,8 +99,9 @@ export default function CreateMeetingModal({ onClose, onSuccess, buildings }: Cr
         .eq("id", selectedBuilding.company_id)
         .single()
 
-      // Merge company-specific types with dynamic types if necessary, or just use dynamic
-      const finalMeetingTypes = dynamicMeetingTypes.length > 0 ? dynamicMeetingTypes : (company?.default_meeting_types || ["Council Meeting", "AGM", "SGM", "Special Meeting", "Emergency Meeting"])
+      // Merge company-specific types with dynamic types from voting settings
+      const companyTypes = company?.default_meeting_types || ["Council Meeting", "AGM", "SGM", "Special Meeting", "Emergency Meeting"]
+      const finalMeetingTypes = [...new Set([...dynamicMeetingTypes, ...companyTypes])]
       
       setMeetingTypes(finalMeetingTypes)
       setMeetingSections(company?.default_meeting_sections || ["Call to Order", "Approval of Agenda", "Old Business / Business Arising", "New Business", "Financial Report", "Maintenance & Operations", "Correspondence", "Council Roundtable", "Adjournment"])
@@ -216,6 +217,42 @@ export default function CreateMeetingModal({ onClose, onSuccess, buildings }: Cr
           order_index: index + 1,
         }))
         await supabase.from("sections").insert(sectionsToInsert)
+
+        // ⭐ NEW: Auto-populate attendees with role 'attendee' or user_type 'attendee'
+        const selectedBuilding = buildings.find(b => b.id === formData.buildingId)
+        if (selectedBuilding?.company_id) {
+          // Fetch all eligible company users
+          const { data: users } = await supabase
+            .from("users")
+            .select("id, name, email, user_type, roles")
+            .eq("company_id", selectedBuilding.company_id)
+
+          if (users) {
+            const autoAttendees = users
+              .filter(u => {
+                const typeMatch = u.user_type?.toLowerCase() === 'attendee'
+                const roleMatch = Array.isArray(u.roles) && u.roles.some((r: string) => r.toLowerCase().includes('attendee'))
+                // Also check if roles is a string (fallback for legacy data)
+                const stringRoleMatch = typeof u.roles === 'string' && (u.roles as string).toLowerCase().includes('attendee')
+                
+                return typeMatch || roleMatch || stringRoleMatch
+              })
+              .map(u => ({
+                name: u.name,
+                email: u.email,
+                role: u.user_type?.toLowerCase() === 'attendee' ? 'Attendee' : 'Attendee',
+                user_id: u.id,
+                present: false
+              }))
+
+            if (autoAttendees.length > 0) {
+              await supabase
+                .from("meetings")
+                .update({ attendees: autoAttendees })
+                .eq("id", meetingData.id)
+            }
+          }
+        }
       }
 
       onSuccess()

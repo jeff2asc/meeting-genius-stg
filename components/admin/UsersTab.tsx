@@ -92,17 +92,7 @@ export default function UsersTab({
               : "Manage users assigned to you"}
           </p>
         </div>
-        {isMaster && onCreateBuilding && (
-          <Button 
-            onClick={onCreateBuilding}
-            variant="outline"
-            size="sm"
-            className="flex items-center gap-2 border-primary/20 hover:border-primary/50 hover:bg-primary/5"
-          >
-            <Plus className="h-4 w-4 text-primary" />
-            <span>Create Building</span>
-          </Button>
-        )}
+
       </div>
 
       {/* Search Field */}

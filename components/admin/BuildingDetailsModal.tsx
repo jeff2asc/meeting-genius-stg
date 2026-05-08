@@ -51,6 +51,7 @@ interface BuildingDetailsModalProps {
   onSuccess: () => void
   building: Building | null
   availableUsers: User[]
+  currentUser?: any
 }
 
 type TabType = "details" | "users" | "documents" | "notifications"
@@ -61,6 +62,7 @@ export default function BuildingDetailsModal({
   onSuccess,
   building,
   availableUsers,
+  currentUser
 }: BuildingDetailsModalProps) {
   const [activeTab, setActiveTab] = useState<TabType>("details")
   const [buildingName, setBuildingName] = useState("")
@@ -100,7 +102,6 @@ export default function BuildingDetailsModal({
   const [availableUsersForAssignment, setAvailableUsersForAssignment] = useState<User[]>([])
   const [loadingAvailableUsers, setLoadingAvailableUsers] = useState(false)
   const [selectedExistingUserId, setSelectedExistingUserId] = useState<number | "">("")
-  const [currentUser, setCurrentUser] = useState<User | null>(null)
   
   const [buildingTypes, setBuildingTypes] = useState<string[]>([])
   const [userBuildingTypes, setUserBuildingTypes] = useState<string[]>([])
@@ -164,23 +165,15 @@ export default function BuildingDetailsModal({
   const fetchDynamicParams = async () => {
     const params = await getVotingParameters(building?.company_id)
     
-    setBuildingTypes(params.filter(p => p.parameter_type === 'building_type').map(p => p.value))
-    setUserBuildingTypes(params.filter(p => p.parameter_type === 'user_type').map(p => p.value))
+    // Deduplicate values for Master users who see multiple company parameters
+    const types = params.filter(p => p.parameter_type === 'building_type').map(p => p.value)
+    setBuildingTypes([...new Set(types)])
+
+    const userTypes = params.filter(p => p.parameter_type === 'user_type').map(p => p.value)
+    setUserBuildingTypes([...new Set(userTypes)])
   }  
 
-  // ⭐ NEW: Get current user on mount
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const userJson = localStorage.getItem('current_user')
-      if (userJson) {
-        try {
-          setCurrentUser(JSON.parse(userJson))
-        } catch (err) {
-          console.error('Error parsing current user:', err)
-        }
-      }
-    }
-  }, [])
+
 
   const getDefaultRecipientType = (buildingType: string): string => {
     if (buildingType === "Housing Co-op") return "resident"
@@ -490,7 +483,10 @@ export default function BuildingDetailsModal({
         address: [street, city, province, postalCode, country].filter(Boolean).join(', '),
         building_type: buildingType,
         manager_id: managerId,
-        company_id: selectedCompanyId
+        company_id: selectedCompanyId,
+        board_meeting_notice_days: boardMeetingNoticeDays,
+        general_meeting_notice_days: generalMeetingNoticeDays,
+        notification_recipient_type: notificationRecipientType
       }, 'building')
       
       await onSuccess()
@@ -646,25 +642,44 @@ export default function BuildingDetailsModal({
         <div className="flex-1 overflow-y-auto p-6">
           {activeTab === "details" && (
             <div className="space-y-4">
-              <div>
-                <Label htmlFor="buildingName">Building Name *</Label>
-                <Input
-                  id="buildingName"
-                  value={buildingName}
-                  onChange={(e) => setBuildingName(e.target.value)}
-                  placeholder="Enter building name"
-                />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="buildingName">Property Name *</Label>
+                  <Input
+                    id="buildingName"
+                    value={buildingName}
+                    onChange={(e) => setBuildingName(e.target.value)}
+                    placeholder="Enter building name"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="buildingType">Classification *</Label>
+                  <Select value={buildingType} onValueChange={setBuildingType}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select classification" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {buildingTypes.length > 0 ? (
+                        buildingTypes.map(t => (
+                          <SelectItem key={t} value={t}>{t}</SelectItem>
+                        ))
+                      ) : (
+                        <SelectItem value="none" disabled>No types defined in Voting Settings</SelectItem>
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
 
               <div>
-                <Label htmlFor="company">Company Assignment</Label>
+                <Label htmlFor="company">Property Management</Label>
                 {currentUser?.user_type === "master" || currentUser?.roles?.includes("master") ? (
                   <Select 
                     value={selectedCompanyId?.toString() || "none"} 
                     onValueChange={(value) => setSelectedCompanyId(value === "none" ? null : parseInt(value))}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Assign to company" />
+                      <SelectValue placeholder="Assign to property management" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="none">No Company (Internal)</SelectItem>
@@ -678,13 +693,10 @@ export default function BuildingDetailsModal({
                     {building.company?.name || "No Company Assigned"}
                   </div>
                 )}
-                <p className="text-[10px] text-muted-foreground mt-1">
-                  Only System Administrators can transfer buildings between companies.
-                </p>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="md:col-span-2">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
                   <Label htmlFor="street">Street Address</Label>
                   <Input
                     id="street"
@@ -703,63 +715,18 @@ export default function BuildingDetailsModal({
                   />
                 </div>
                 <div>
-                  <Label htmlFor="province">Province / State</Label>
+                  <Label htmlFor="municipality">Municipality</Label>
                   <Input
-                    id="province"
+                    id="municipality"
                     value={province}
                     onChange={(e) => setProvince(e.target.value)}
-                    placeholder="Enter province or state"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="postalCode">Postal / Zip Code</Label>
-                  <Input
-                    id="postalCode"
-                    value={postalCode}
-                    onChange={(e) => setPostalCode(e.target.value)}
-                    placeholder="Enter postal code"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="country">Country</Label>
-                  <Input
-                    id="country"
-                    value={country}
-                    onChange={(e) => setCountry(e.target.value)}
-                    placeholder="Enter country"
+                    placeholder="Enter municipality"
                   />
                 </div>
               </div>
 
               <div>
-                <Label htmlFor="buildingType">Building Type *</Label>
-                <Select value={buildingType} onValueChange={setBuildingType}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select building type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {buildingTypes.length > 0 ? (
-                      buildingTypes.map(t => (
-                        <SelectItem key={t} value={t}>{t}</SelectItem>
-                      ))
-                    ) : (
-                      <>
-                        <SelectItem value="Strata Corporation">Strata Corporation</SelectItem>
-                        <SelectItem value="Condominium Corporation">Condominium Corporation</SelectItem>
-                        <SelectItem value="Equity Co-op">Equity Co-op</SelectItem>
-                        <SelectItem value="Non-Profit Co-op">Non-Profit Co-op</SelectItem>
-                        <SelectItem value="Tenant Association">Tenant Association</SelectItem>
-                        <SelectItem value="Non-Profit Society">Non-Profit Society</SelectItem>
-                        <SelectItem value="Trade Association">Trade Association</SelectItem>
-                        <SelectItem value="Professional Association">Professional Association</SelectItem>
-                      </>
-                    )}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div>
-                <Label htmlFor="manager">Property Manager *</Label>
+                <Label htmlFor="manager">Link Registered Property Manager *</Label>
                 <Select
                   value={managerId?.toString() || ""}
                   onValueChange={(value) => setManagerId(parseInt(value))}
@@ -770,11 +737,36 @@ export default function BuildingDetailsModal({
                   <SelectContent>
                     {propertyManagers.map((pm) => (
                       <SelectItem key={pm.id} value={pm.id.toString()}>
-                        {pm.name} ({pm.email})
+                        {pm.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                {managerId && (() => {
+                  const selectedPm = propertyManagers.find(pm => pm.id === managerId)
+                  return selectedPm ? (
+                    <div className="grid grid-cols-2 gap-4 mt-3">
+                      <div>
+                        <Label htmlFor="managerContactName">Manager Contact Name</Label>
+                        <Input
+                          id="managerContactName"
+                          value={selectedPm.name}
+                          readOnly
+                          className="bg-muted/50 text-muted-foreground cursor-not-allowed"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="professionalEmail">Professional Email</Label>
+                        <Input
+                          id="professionalEmail"
+                          value={selectedPm.email}
+                          readOnly
+                          className="bg-muted/50 text-muted-foreground cursor-not-allowed"
+                        />
+                      </div>
+                    </div>
+                  ) : null
+                })()}
               </div>
 
               <div className="bg-muted/50 p-4 rounded-lg">
@@ -826,7 +818,7 @@ export default function BuildingDetailsModal({
                     className="border-primary/50 text-primary hover:bg-primary/5"
                   >
                     <Plus className="h-4 w-4 mr-2" />
-                    New Resident
+                    New
                   </Button>
                 </div>
               </div>

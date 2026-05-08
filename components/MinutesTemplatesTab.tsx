@@ -13,7 +13,8 @@ interface Building {
   manager_id: number
   company_id: number | null
   building_type?: string
-  created_at: string
+  created_at: string;
+  logo_url?: string | null;
 }
 
 interface MinutesTemplatesTabProps {
@@ -145,6 +146,53 @@ const DEFAULT_INFOCARD_FIELDS: TemplateField[] = [
   },
   { id: "chair_person", label: "Chair Person", order: 6, enabled: true },
   { id: "minute_taker", label: "Minute Taker", order: 7, enabled: true },
+]
+
+const SAMPLE_MEETING: Meeting = {
+  id: 0,
+  title: "Sample Annual General Meeting",
+  meeting_date: new Date().toISOString(),
+  start_time: "7:00 PM",
+  end_time: "9:00 PM",
+  location: "Main Clubhouse / Zoom",
+  meeting_type: "AGM",
+  chair_person: "Jane Smith (Council President)",
+  minute_taker: "John Doe (Property Manager)",
+  status: "minutes",
+  attendees: [
+    { name: "John Doe", role: "Property Manager", attendance_status: "present" },
+    { name: "Jane Smith", role: "Council President", attendance_status: "present" },
+    { name: "Robert Brown", role: "Owner", attendance_status: "absent" },
+    { name: "Linda White", role: "Owner", attendance_status: "proxy" },
+  ],
+  buildings: {
+    id: 0,
+    name: "Sample Building Name",
+    address: "123 Sample Street, Vancouver, BC",
+    logo_url: null,
+    company_id: null,
+    companies: null
+  }
+}
+
+const SAMPLE_SECTIONS = [
+  { id: 1, title: "Call to Order", order_index: 1 },
+  { id: 2, title: "Approval of Previous Minutes", order_index: 2 },
+  { id: 3, title: "Financial Report", order_index: 3 },
+]
+
+const SAMPLE_TOPICS = [
+  { id: 1, section_id: 1, title: "Meeting Commencement", order_index: 1 },
+  { id: 2, section_id: 2, title: "Review of Minutes from Oct 2025", order_index: 1 },
+  { id: 3, section_id: 3, title: "2026 Budget Approval", order_index: 1 },
+]
+
+const SAMPLE_DECISIONS = [
+  { id: 1, topic_id: 3, title: "Budget approved with 95% majority", recorded_at: new Date().toISOString() }
+]
+
+const SAMPLE_TASKS = [
+  { id: 1, topic_id: 3, title: "Update monthly strata fees", created_at: new Date().toISOString() }
 ]
 
 export default function MinutesTemplatesTab({
@@ -320,29 +368,61 @@ export default function MinutesTemplatesTab({
       }
 
       if (error || !meetingData) {
-        setMeeting(null)
+        // Fallback to company defaults if no meetings exist
+        const building = buildings.find(b => b.id === buildingId)
+        
+        let defaultSections: any[] = []
+        if (building?.company_id) {
+          const { data: company } = await supabase
+            .from("companies")
+            .select("default_meeting_sections, name")
+            .eq("id", building.company_id)
+            .single()
+          
+          if (company?.default_meeting_sections) {
+            defaultSections = company.default_meeting_sections.map((title: string, idx: number) => ({
+              id: -(idx + 1), // Use negative IDs for transient preview sections
+              title,
+              order_index: idx + 1
+            }))
+          }
+        }
+
+        const customSample: Meeting = {
+          ...SAMPLE_MEETING,
+          title: "Template Preview",
+          meeting_date: new Date().toISOString(),
+          buildings: {
+            id: buildingId,
+            name: building?.name || "Select a Building",
+            address: building?.address || "",
+            logo_url: building?.logo_url || null,
+            company_id: building?.company_id || null,
+            companies: null
+          }
+        }
+
+        setMeeting(customSample)
         setAttendees([])
-        setSectionsData([])
+        setSectionsData(defaultSections)
         setTopicsData([])
         setDecisionsData([])
         setTasksData([])
+        setNotesData([])
         return
       }
 
       setMeeting(meetingData as any)
-
-      const meetingAttendees = (meetingData.attendees as Attendee[]) || []
-      setAttendees(meetingAttendees)
-
+      setAttendees((meetingData.attendees as unknown as Attendee[]) || [])
       await loadMinutesContent(meetingData.id)
     } catch (err) {
       console.error("Error loading meeting", err)
-      setMeeting(null)
-      setAttendees([])
-      setSectionsData([])
-      setTopicsData([])
-      setDecisionsData([])
-      setTasksData([])
+      setMeeting(SAMPLE_MEETING)
+      setAttendees(SAMPLE_MEETING.attendees as Attendee[])
+      setSectionsData(SAMPLE_SECTIONS)
+      setTopicsData(SAMPLE_TOPICS)
+      setDecisionsData(SAMPLE_DECISIONS)
+      setTasksData(SAMPLE_TASKS)
     } finally {
       setLoadingMeeting(false)
     }
@@ -455,10 +535,8 @@ export default function MinutesTemplatesTab({
       setActionItemsColor(data.action_items_color || "#f59e0b")
       setVoteResultsColor(data.vote_results_color || "#8b5cf6")
       setCoverPageHeight(175)
-      setCoverPageElements(
-        data.coverpage_elements || DEFAULT_COVERPAGE_ELEMENTS
-      )
-      setInfoCardFields(data.infocard_fields || DEFAULT_INFOCARD_FIELDS)
+      setCoverPageElements((data.coverpage_elements as unknown as CoverPageElement[]) || DEFAULT_COVERPAGE_ELEMENTS)
+      setInfoCardFields((data.infocard_fields as unknown as TemplateField[]) || DEFAULT_INFOCARD_FIELDS)
       setHasChanges(false)
       saveToHistory()
     } catch (err) {
@@ -566,6 +644,8 @@ export default function MinutesTemplatesTab({
           .from("minutes_templates")
           .update({
             ...templateData,
+            coverpage_elements: coverPageElements as any,
+            infocard_fields: infoCardFields as any,
             updated_at: new Date().toISOString(),
           })
           .eq("id", templateId)
@@ -574,7 +654,11 @@ export default function MinutesTemplatesTab({
       } else {
         const { data, error } = await supabase
           .from("minutes_templates")
-          .insert(templateData as any)
+          .insert({
+            ...templateData,
+            coverpage_elements: coverPageElements as any,
+            infocard_fields: infoCardFields as any
+          } as any)
           .select()
           .single()
 
@@ -713,18 +797,18 @@ export default function MinutesTemplatesTab({
                 Loading template preview...
               </p>
             </div>
-          ) : !meeting ? (
-            <div className="text-center py-12 border-2 border-dashed rounded-lg">
-              <FileText className="h-12 w-12 mx-auto text-muted-foreground mb-2" />
-              <p className="text-muted-foreground">
-                No meeting found for this building. Create at least one meeting
-                to see the live minutes preview.
-              </p>
-            </div>
           ) : (
             <div className="grid grid-cols-12 gap-6 mb-6">
               {/* Left controls */}
               <div className="col-span-12 lg:col-span-3 space-y-4">
+                <div className="flex items-center justify-between mb-2">
+                   <h3 className="text-sm font-bold text-primary flex items-center gap-2">
+                     <Save className="h-4 w-4" /> Template Editor
+                   </h3>
+                   {meeting?.id === 0 && (
+                     <span className="text-[10px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-black uppercase tracking-wider">Default Template</span>
+                   )}
+                </div>
 
 
                 <Card className="p-4">
@@ -861,7 +945,7 @@ export default function MinutesTemplatesTab({
                       Live Minutes Preview
                     </h3>
                     <span className="text-xs bg-purple-100 text-purple-800 px-3 py-1 rounded-full font-semibold">
-                      {meeting.title}
+                      {meeting?.title}
                     </span>
                   </div>
 
@@ -911,12 +995,12 @@ export default function MinutesTemplatesTab({
                                   className="bg-white rounded-full flex items-center justify-center shadow-lg"
                                   style={{ width: 80, height: 80 }}
                                 >
-                                  {meeting.buildings.logo_url ||
-                                    meeting.buildings.companies?.logo_url ? (
+                                  {meeting?.buildings?.logo_url ||
+                                    meeting?.buildings?.companies?.logo_url ? (
                                     <img
                                       src={
-                                        meeting.buildings.logo_url ||
-                                        meeting.buildings.companies?.logo_url ||
+                                        meeting?.buildings?.logo_url ||
+                                        meeting?.buildings?.companies?.logo_url ||
                                         ""
                                       }
                                       alt="Logo"
@@ -946,7 +1030,7 @@ export default function MinutesTemplatesTab({
                                     color: "rgba(200, 220, 255, 0.95)",
                                   }}
                                 >
-                                  {meeting.buildings.name}
+                                  {meeting?.buildings?.name}
                                 </div>
                               )}
 
@@ -957,7 +1041,7 @@ export default function MinutesTemplatesTab({
                                     color: "rgba(200, 220, 255, 0.9)",
                                   }}
                                 >
-                                  {meeting.meeting_type || "Council Meeting"}
+                                  {meeting?.meeting_type || "Council Meeting"}
                                 </div>
                               )}
                             </div>
@@ -1015,17 +1099,17 @@ export default function MinutesTemplatesTab({
                                     </div>
                                     <div className="text-xs text-gray-900 font-medium">
                                       {field.id === "date" &&
-                                        formatMeetingDate(meeting.meeting_date)}
+                                        meeting && formatMeetingDate(meeting.meeting_date)}
                                       {field.id === "start_time" &&
-                                        (meeting.start_time || "TBA")}
+                                        (meeting?.start_time || "TBA")}
                                       {field.id === "end_time" &&
-                                        (meeting.end_time || "TBA")}
+                                        (meeting?.end_time || "TBA")}
                                       {field.id === "location" &&
-                                        (meeting.location || "TBA")}
+                                        (meeting?.location || "TBA")}
                                       {field.id === "chair_person" &&
-                                        (meeting.chair_person || "TBA")}
+                                        (meeting?.chair_person || "TBA")}
                                       {field.id === "minute_taker" &&
-                                        (meeting.minute_taker || "TBA")}
+                                        (meeting?.minute_taker || "TBA")}
                                       {field.id === "attendees" &&
                                         (field.showFullList ? (
                                           <div className="space-y-1 mt-1">

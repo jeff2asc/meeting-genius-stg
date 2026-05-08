@@ -4,7 +4,7 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Trash, Send, CheckCircle, Loader2 } from "lucide-react"
+import { Trash, Send, CheckCircle, Loader2, Plus, Users } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
 
@@ -132,7 +132,7 @@ export default function AttendeeManagement({
 
       const res = await fetch('/api/send-email', {
         method: 'POST',
-        headers: {
+        headers: { 
           'Content-Type': 'application/json',
           'x-api-key': process.env.NEXT_PUBLIC_API_KEY || 'meeting-genius-secret-key-2026'
         },
@@ -156,6 +156,56 @@ export default function AttendeeManagement({
       toast.error('Unexpected error sending link')
     } finally {
       setSendingLink(null)
+    }
+  }
+
+  const fetchDefaultAttendees = async () => {
+    if (!companyId) return
+    const meetingIdNum = Number(meetingId)
+    
+    try {
+      // Fetch all eligible company users
+      const { data: users } = await supabase
+        .from('users')
+        .select('id, name, email, user_type, roles')
+        .eq('company_id', companyId)
+
+      if (users) {
+        const newAttendees = users
+          .filter(u => {
+            const typeMatch = u.user_type?.toLowerCase() === 'attendee'
+            const roleMatch = Array.isArray(u.roles) && u.roles.some((r: string) => r.toLowerCase().includes('attendee'))
+            const stringRoleMatch = typeof u.roles === 'string' && (u.roles as string).toLowerCase().includes('attendee')
+            
+            return typeMatch || roleMatch || stringRoleMatch
+          })
+          .map(u => ({
+            name: u.name,
+            email: u.email,
+            role: u.user_type?.toLowerCase() === 'attendee' ? 'Attendee' : 'Attendee',
+            user_id: u.id,
+            present: false
+          }))
+
+        if (newAttendees.length === 0) {
+          toast.info("No users with 'Attendee' role found in this company.")
+          return
+        }
+
+        // Merge with existing avoiding duplicates by email
+        const existingEmails = new Set(localAttendees.map(a => a.email?.toLowerCase()).filter(Boolean))
+        const uniqueNewAttendees = newAttendees.filter(a => !existingEmails.has(a.email?.toLowerCase()))
+
+        if (uniqueNewAttendees.length > 0) {
+          setLocalAttendees(prev => [...prev, ...uniqueNewAttendees])
+          toast.success(`Added ${uniqueNewAttendees.length} attendees from building.`)
+        } else {
+          toast.info("All building attendees are already in the list.")
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching building attendees:', err)
+      toast.error('Failed to sync attendees')
     }
   }
 
@@ -300,9 +350,28 @@ export default function AttendeeManagement({
               className="text-xs h-8"
             />
           </div>
-          <Button onClick={handleAddAttendee} disabled={!newAttendee.name} size="sm" className="h-8 w-full sm:w-auto">
-            + Add
-          </Button>
+          <div className="flex gap-2 w-full sm:w-auto">
+            <Button 
+              onClick={handleAddAttendee} 
+              disabled={!newAttendee.name} 
+              size="sm" 
+              className="h-8 flex-1 sm:flex-none gap-1 bg-primary/10 text-primary hover:bg-primary hover:text-white transition-all"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Add
+            </Button>
+            {companyId && (
+              <Button 
+                variant="outline" 
+                onClick={fetchDefaultAttendees}
+                size="sm"
+                className="h-8 flex-1 sm:flex-none gap-2 border-decision-purple/30 text-decision-purple hover:bg-decision-purple hover:text-white transition-all whitespace-nowrap"
+              >
+                <Users className="h-3.5 w-3.5" />
+                Sync from Building
+              </Button>
+            )}
+          </div>
         </div>
       )}
 

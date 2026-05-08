@@ -6,7 +6,7 @@ import { Card } from "@/components/ui/card"
 import { X, Trash2 } from "lucide-react"
 import { supabase, getCurrentUser, getVotingParameters } from "@/lib/supabase"
 import { toast } from "sonner"
-import { CheckCircle2, XCircle, AlertCircle } from "lucide-react"
+import { CheckCircle2, XCircle, AlertCircle, FileText, CheckSquare } from "lucide-react"
 
 interface DecisionModalProps {
   isOpen: boolean
@@ -75,6 +75,7 @@ export default function DecisionModal({
   const [votingTypes, setVotingTypes] = useState<string[]>([])
   const [selectedVotingType, setSelectedVotingType] = useState("")
   const [userTypeWeights, setUserTypeWeights] = useState<Record<string, number>>({})
+  const [topicTitle, setTopicTitle] = useState<string>("")
 
   const [parentDecision, setParentDecision] = useState<Decision | null>(null)
 
@@ -89,6 +90,9 @@ export default function DecisionModal({
   const [geniusSuggestions, setGeniusSuggestions] = useState<GeniusWord[]>([])
   const [selectedGeniusIndex, setSelectedGeniusIndex] = useState(0)
   const [geniusStartIndex, setGeniusStartIndex] = useState(-1)
+  const [topicNotes, setTopicNotes] = useState<any[]>([])
+  const [topicTasks, setTopicTasks] = useState<any[]>([])
+  const [showReferences, setShowReferences] = useState(false)
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const suggestionsRef = useRef<HTMLDivElement>(null)
@@ -105,6 +109,7 @@ export default function DecisionModal({
       fetchAttendees()
       fetchCompanyUsers()
       fetchGeniusWords()
+      fetchTopicTitle()
 
       if (editMode && existingDecisionId) {
         loadExistingDecision(existingDecisionId)
@@ -114,8 +119,56 @@ export default function DecisionModal({
         loadParentDecision(parentDecisionId)
       }
       fetchVotingTypes()
+      fetchTopicContent()
     }
-  }, [isOpen, meetingId, editMode, existingDecisionId, parentDecisionId])
+  }, [isOpen, meetingId, editMode, existingDecisionId, parentDecisionId, topicId])
+
+  const fetchTopicContent = async () => {
+    try {
+      const { data: notes } = await supabase
+        .from('notes')
+        .select('*')
+        .eq('topic_id', topicId)
+      
+      const { data: tasks } = await supabase
+        .from('tasks')
+        .select('*')
+        .eq('topic_id', topicId)
+
+      setTopicNotes(notes || [])
+      setTopicTasks(tasks || [])
+    } catch (err) {
+      console.error('Error fetching topic content:', err)
+    }
+  }
+
+  const insertReference = (content: string) => {
+    const cleanContent = content.trim()
+    if (!cleanContent) return
+    
+    if (motionText.trim()) {
+      setMotionText(prev => prev + "\n" + cleanContent)
+    } else {
+      setMotionText(cleanContent)
+    }
+    toast.success("Content inserted into motion")
+  }
+
+  const fetchTopicTitle = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('topics')
+        .select('title')
+        .eq('id', topicId)
+        .single()
+
+      if (!error && data) {
+        setTopicTitle(data.title)
+      }
+    } catch (err) {
+      console.error('Error fetching topic title:', err)
+    }
+  }
 
   const fetchVotingTypes = async () => {
     try {
@@ -235,25 +288,28 @@ export default function DecisionModal({
         return
       }
 
+      // 1. Get dynamic parameters from voting_parameters table
+      const params = await getVotingParameters(buildingData.company_id)
+      const dynamicResults = params
+        .filter(p => p.parameter_type === 'decision_result')
+        .map(p => p.value)
+
+      // 2. Get static defaults from companies table
       const { data: companyData, error: companyError } = await supabase
         .from("companies")
         .select("default_decision_results")
         .eq("id", buildingData.company_id)
         .single()
 
-      if (companyError) {
-        console.error("Error fetching company:", companyError)
-        return
-      }
+      const companyResults = companyData?.default_decision_results || []
 
-      if (companyData?.default_decision_results) {
-        setDecisionResults(companyData.default_decision_results)
-      } else {
-        setDecisionResults(["MSC", "Defeated", "Deferred"])
-      }
+      // 3. Merge and deduplicate (Force AGM/SGM to be present)
+      const baseDefaults = ["M/S/C", "Defeated", "Deferred", "AGM", "SGM"]
+      const mergedResults = [...new Set([...baseDefaults, ...dynamicResults, ...companyResults])]
+      setDecisionResults(mergedResults)
     } catch (err) {
       console.error("Error fetching decision results:", err)
-      setDecisionResults(["MSC", "Defeated", "Deferred"])
+      setDecisionResults(["M/S/C", "Defeated", "Deferred", "AGM", "SGM"])
     }
   }
 
@@ -736,6 +792,68 @@ export default function DecisionModal({
       )}
 
       <div className="space-y-4">
+        <div className="bg-muted/30 rounded-lg p-3 border border-border/50">
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground flex items-center gap-1.5">
+              <AlertCircle className="h-3.5 w-3.5" />
+              Topic Context
+            </div>
+            {(topicNotes.length > 0 || topicTasks.length > 0) && (
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={() => setShowReferences(!showReferences)}
+                className="h-6 px-2 text-[10px] font-bold text-primary hover:bg-primary/5"
+              >
+                {showReferences ? "Hide References" : `Show References (${topicNotes.length + topicTasks.length})`}
+              </Button>
+            )}
+          </div>
+          <div className="text-sm font-semibold text-foreground line-clamp-1 mb-1">
+            {topicTitle || "Loading topic..."}
+          </div>
+
+          {showReferences && (
+            <div className="mt-3 space-y-2 max-h-40 overflow-y-auto pr-1 animate-in slide-in-from-top-2 duration-200">
+              {topicNotes.length > 0 && (
+                <div className="space-y-1.5">
+                  <div className="text-[9px] font-bold text-muted-foreground/70 uppercase px-1">Notes</div>
+                  {topicNotes.map(note => (
+                    <div 
+                      key={note.id} 
+                      onClick={() => insertReference(note.content)}
+                      className="group flex items-start gap-2 p-2 rounded border border-dashed border-primary/20 bg-primary/5 hover:bg-primary/10 cursor-pointer transition-colors"
+                    >
+                      <FileText className="h-3.5 w-3.5 text-primary mt-0.5 shrink-0" />
+                      <div className="text-xs text-muted-foreground group-hover:text-foreground line-clamp-2">
+                        {note.content}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              
+              {topicTasks.length > 0 && (
+                <div className="space-y-1.5 mt-3">
+                  <div className="text-[9px] font-bold text-muted-foreground/70 uppercase px-1">Tasks</div>
+                  {topicTasks.map(task => (
+                    <div 
+                      key={task.id} 
+                      onClick={() => insertReference(`Task: ${task.description}`)}
+                      className="group flex items-start gap-2 p-2 rounded border border-dashed border-green-600/20 bg-green-600/5 hover:bg-green-600/10 cursor-pointer transition-colors"
+                    >
+                      <CheckSquare className="h-3.5 w-3.5 text-green-600 mt-0.5 shrink-0" />
+                      <div className="text-xs text-muted-foreground group-hover:text-foreground line-clamp-2">
+                        {task.description}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
         <div className="relative">
           <label className="block text-sm font-medium text-foreground mb-2">
             Motion / Resolution Text <span className="text-red-500">*</span>
@@ -810,7 +928,7 @@ export default function DecisionModal({
           )}
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className={`grid ${result === "AGM" || result === "SGM" ? "grid-cols-2" : "grid-cols-1"} gap-4`}>
           <div>
             <label className="block text-sm font-medium text-foreground mb-2">
               Result
@@ -830,31 +948,37 @@ export default function DecisionModal({
             </select>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-2">
-              Voting Mechanism
-            </label>
-            <select
-              value={selectedVotingType}
-              onChange={(e) => setSelectedVotingType(e.target.value)}
-              className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-              disabled={saving || deleting}
-            >
-              <option value="">Select mechanism...</option>
-              {votingTypes.map((type) => (
-                <option key={type} value={type}>
-                  {type}
-                </option>
-              ))}
-            </select>
-          </div>
+          {(result === "AGM" || result === "SGM") && (
+            <div className="animate-in slide-in-from-right-4 duration-300">
+              <label className="block text-sm font-medium text-foreground mb-2">
+                Voting Mechanism
+              </label>
+              <select
+                value={selectedVotingType}
+                onChange={(e) => setSelectedVotingType(e.target.value)}
+                className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                disabled={saving || deleting}
+              >
+                <option value="">Select mechanism...</option>
+                {votingTypes.map((type) => (
+                  <option key={type} value={type}>
+                    {type}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          {renderVotingDropdown("Votes For", "for", votersFor)}
-          {renderVotingDropdown("Votes Against", "against", votersAgainst)}
-          {renderVotingDropdown("Abstentions", "abstain", votersAbstain)}
-        </div>
+        {(result === "AGM" || result === "SGM") && (
+          <div className="space-y-4 animate-in slide-in-from-bottom-4 duration-300">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {renderVotingDropdown("Votes For", "for", votersFor)}
+              {renderVotingDropdown("Votes Against", "against", votersAgainst)}
+              {renderVotingDropdown("Abstentions", "abstain", votersAbstain)}
+            </div>
+          </div>
+        )}
 
         {/* Logic Calculation Preview */}
         {(votersFor.length > 0 || votersAgainst.length > 0 || votesFor !== "" || votesAgainst !== "") && (

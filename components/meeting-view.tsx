@@ -2879,32 +2879,7 @@ export default function MeetingView({
                             </div>
                           </div>
 
-                          {/* Section secondary row (attachment only now) */}
-                          <div className="flex items-center gap-2 mt-1 pl-7 overflow-x-auto scrollbar-hide">
-                            {userCanEdit && meeting.status !== "minutes" && (
-                              <>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-6 sm:h-7 px-2 text-[9px] sm:text-xs text-muted-foreground hover:text-primary border border-dashed border-muted-foreground/30 rounded-lg flex-shrink-0"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    const input = document.getElementById(`section-file-${section.id}`) as HTMLInputElement;
-                                    input?.click();
-                                  }}
-                                >
-                                  <Paperclip className="h-2.5 w-2.5 mr-1" />
-                                  Attach File
-                                </Button>
-                                <input
-                                  id={`section-file-${section.id}`}
-                                  type="file"
-                                  className="hidden"
-                                  onChange={(e) => handleSectionFileUpload(e, section.id)}
-                                />
-                              </>
-                            )}
-                          </div>
+                          {/* Section attachments row deleted */}
                         </div>
                         {section.isExpanded && (
                           <div className="px-12 pb-2">

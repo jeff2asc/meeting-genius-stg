@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button"
 import { Plus, Trash2, Edit2, Check, X, RotateCcw } from "lucide-react"
 import { toast } from "sonner"
 
-type ParameterType = 'meeting_type' | 'voting_type' | 'user_type' | 'building_type'
+type ParameterType = 'meeting_type' | 'voting_type' | 'user_type' | 'building_type' | 'decision_result'
 
 interface VotingParameter {
   id: number
@@ -308,6 +308,7 @@ export default function VotingTab() {
           {renderSection('voting_type', '⚖️ Voting Types', 'Define voting thresholds and resolution types (e.g., Majority, 75%).')}
           {renderSection('user_type', '👤 Member / User Weights', 'Set default voting multipliers based on user roles.')}
           {renderSection('building_type', '🏢 Organization Types', 'Classify the legal entity or building structure.')}
+          {renderSection('decision_result', '✅ Decision Results', 'Define common outcomes for motions (e.g., M/S/C, Defeated).')}
         </div>
       )}
 

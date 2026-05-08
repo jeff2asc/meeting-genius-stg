@@ -1492,9 +1492,8 @@ export async function getVotingParameters(companyId?: number | null) {
 
   if (companyId !== null && companyId !== undefined) {
     query = query.or(`company_id.is.null,company_id.eq.${companyId}`)
-  } else {
-    query = query.is("company_id", null)
   }
+  // If companyId is null (Master user), we don't add a filter and return ALL parameters
 
   const { data, error } = await query
 
