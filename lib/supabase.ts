@@ -971,9 +971,12 @@ export interface Database {
         Row: {
           id: number
           building_id: number
+          building_name: string | null
+          company_id: number | null
           title: string
           priority: string
           status: string
+          description: string | null
           budget: string | null
           estimated_cost: string | null
           quoted_amount: string | null
@@ -983,9 +986,12 @@ export interface Database {
         Insert: {
           id?: number
           building_id: number
+          building_name?: string | null
+          company_id?: number | null
           title: string
           priority: string
           status: string
+          description?: string | null
           budget?: string | null
           estimated_cost?: string | null
           quoted_amount?: string | null
@@ -995,9 +1001,12 @@ export interface Database {
         Update: {
           id?: number
           building_id?: number
+          building_name?: string | null
+          company_id?: number | null
           title?: string
           priority?: string
           status?: string
+          description?: string | null
           budget?: string | null
           estimated_cost?: string | null
           quoted_amount?: string | null
@@ -1010,8 +1019,11 @@ export interface Database {
         Row: {
           id: number
           building_id: number
+          building_name: string | null
+          company_id: number | null
           title: string
           description: string | null
+          priority: string | null
           status: string
           budget: string | null
           estimated_cost: string | null
@@ -1022,8 +1034,11 @@ export interface Database {
         Insert: {
           id?: number
           building_id: number
+          building_name?: string | null
+          company_id?: number | null
           title: string
           description?: string | null
+          priority?: string | null
           status: string
           budget?: string | null
           estimated_cost?: string | null
@@ -1034,8 +1049,11 @@ export interface Database {
         Update: {
           id?: number
           building_id?: number
+          building_name?: string | null
+          company_id?: number | null
           title?: string
           description?: string | null
+          priority?: string | null
           status?: string
           budget?: string | null
           estimated_cost?: string | null
@@ -1237,9 +1255,12 @@ export interface TaskAnalysis {
 export interface JanusRepair {
   id: number
   building_id: number
+  building_name?: string | null
+  company_id?: number | null
   title: string
   priority: string
   status: string
+  description?: string | null
   budget?: string | null
   estimated_cost?: string | null
   quoted_amount?: string | null
@@ -1250,8 +1271,11 @@ export interface JanusRepair {
 export interface JanusComplaint {
   id: number
   building_id: number
+  building_name?: string | null
+  company_id?: number | null
   title: string
   description: string | null
+  priority?: string | null
   status: string
   budget?: string | null
   estimated_cost?: string | null
@@ -1268,7 +1292,10 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://iehrlogqpse
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImllaHJsb2dxcHNlYmh1YmJhZnhvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA4OTMzNjIsImV4cCI6MjA3NjQ2OTM2Mn0.f00dmQAb0jNDni5hB_8seuHJwz_S3skkepmc_fIrEOk"
 
 // Fix: Use globalThis for better compatibility and ensure client is stored
-const globalForSupabase = globalThis as unknown as { supabase: SupabaseClient<Database> | undefined }
+const globalForSupabase = globalThis as unknown as { 
+  supabase: SupabaseClient<Database> | undefined,
+  supabaseAdmin: SupabaseClient<Database> | undefined 
+}
 
 export const supabase = globalForSupabase.supabase ?? createSupabaseClient<Database>(supabaseUrl, supabaseAnonKey, {
   global: {
@@ -1281,17 +1308,36 @@ export const supabase = globalForSupabase.supabase ?? createSupabaseClient<Datab
   }
 })
 
-if (process.env.NODE_ENV !== 'production') globalForSupabase.supabase = supabase
+if (process.env.NODE_ENV !== 'production') {
+  globalForSupabase.supabase = supabase
+}
 
 export function createClient() {
   return supabase
 }
 
 export function createAdminClient() {
+  if (globalForSupabase.supabaseAdmin) {
+    return globalForSupabase.supabaseAdmin
+  }
+
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImllaHJsb2dxcHNlYmh1YmJhZnhvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MDg5MzM2MiwiZXhwIjoyMDc2NDY5MzYyfQ.e4aGlDQdBj6c82is40kz2UM684QWfV46QZBiE8GOKHg"
-  return createSupabaseClient<Database>(supabaseUrl, key, {
-    auth: { persistSession: false, autoRefreshToken: false }
+  const client = createSupabaseClient<Database>(supabaseUrl, key, {
+    auth: { 
+      persistSession: false, 
+      autoRefreshToken: false,
+      detectSessionInUrl: false
+    }
   })
+
+  if (process.env.NODE_ENV !== 'production') {
+    globalForSupabase.supabaseAdmin = client
+  } else {
+    // In production, we still want to cache it in the module at least
+    globalForSupabase.supabaseAdmin = client
+  }
+
+  return client
 }
 
 // ============================================

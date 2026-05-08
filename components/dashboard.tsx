@@ -65,7 +65,6 @@ export default function Dashboard({
   const [isImporting, setIsImporting] = useState(false)
 
   useEffect(() => {
-    console.log('🚀 Dashboard mounted - starting fetchBuildings...')
     fetchBuildings()
     fetchCompanyLogo()
     fetchJanusData()
@@ -80,7 +79,6 @@ export default function Dashboard({
 
   useEffect(() => {
     if (selectedBuilding) {
-      console.log('🔄 Selected building changed:', selectedBuilding)
       fetchMeetings()
       fetchTasks()
       // Only re-fetch Janus data if already known to be integrated
@@ -93,7 +91,7 @@ export default function Dashboard({
   const fetchJanusData = async (forceResync = false) => {
     const currentUser = getCurrentUser()
     if (!currentUser) return
-
+    
     // ✅ Check Database: Is Janus integrated for this company?
     let isIntegrated = false
     if (currentUser.company_id) {
@@ -103,7 +101,7 @@ export default function Dashboard({
         .select('janus_integrated')
         .eq('id', currentUser.company_id)
         .single()
-
+      
       isIntegrated = !!company?.janus_integrated
     }
 
@@ -114,53 +112,54 @@ export default function Dashboard({
       isIntegrated = installed ? JSON.parse(installed).includes("janus") : false
     }
 
-    setIsJanusIntegrated(isIntegrated)
-
-    if (!isIntegrated) return
+    const isMaster = checkIsMaster(currentUser)
+    setIsJanusIntegrated(isIntegrated || isMaster)
+    
+    if (!isIntegrated && !isMaster) return
 
     try {
       const documentedSecret = "meeting-genius-secret-key-2026"
-      const res = await fetch(`${window.location.origin}/api/janus/v1/sync`, {
+      const res = await fetch(`${window.location.origin}/api/janus/v1/sync?company_id=${currentUser.company_id}`, {
         headers: { "x-api-key": documentedSecret }
       })
       if (!res.ok) throw new Error("Could not fetch Janus data")
-
+      
       const payload = await res.json()
-
+      
       let repairs = payload.data?.repairs || []
       let complaints = payload.data?.complaints || []
-
+      
       if (selectedBuilding !== "All") {
         const building = buildings.find(b => b.name === selectedBuilding)
         if (building) {
-          repairs = repairs.filter((r: any) =>
-            String(r.building_id) === String(building.id) ||
+          repairs = repairs.filter((r: any) => 
+            String(r.building_id) === String(building.id) || 
             (r.building_name && r.building_name.toLowerCase().includes((building.name || "").toLowerCase()))
           )
-          complaints = complaints.filter((c: any) =>
-            String(c.building_id) === String(building.id) ||
+          complaints = complaints.filter((c: any) => 
+            String(c.building_id) === String(building.id) || 
             (c.building_name && c.building_name.toLowerCase().includes((building.name || "").toLowerCase()))
           )
         }
       } else {
         // ⭐ SECURITY FILTER: Only show tickets for buildings this user is authorized to see
         const isMaster = checkIsMaster(currentUser);
-
+        
         if (!isMaster) {
           const authorizedNames = buildings.map(b => (b.name || "").toLowerCase()).filter(Boolean);
           const authorizedIds = buildings.map(b => String(b.id || ""));
 
-          repairs = repairs.filter((r: any) =>
-            authorizedIds.includes(String(r.building_id)) ||
+          repairs = repairs.filter((r: any) => 
+            authorizedIds.includes(String(r.building_id)) || 
             (r.building_name && authorizedNames.some(name => r.building_name.toLowerCase().includes(name)))
           );
-          complaints = complaints.filter((c: any) =>
-            authorizedIds.includes(String(c.building_id)) ||
+          complaints = complaints.filter((c: any) => 
+            authorizedIds.includes(String(c.building_id)) || 
             (c.building_name && authorizedNames.some(name => c.building_name.toLowerCase().includes(name)))
           );
         }
       }
-
+      
       setJanusData({ repairs, complaints })
     } catch (err) {
       console.error("Janus fetch error:", err)
@@ -172,7 +171,7 @@ export default function Dashboard({
   const handleImportToMeeting = async () => {
     if (!selectedTicketToImport || !targetMeetingId) return
     setIsImporting(true)
-
+    
     try {
       const adminClient = createAdminClient()
       // 1. Get the sections of the target meeting to find where to put the new topic
@@ -182,9 +181,9 @@ export default function Dashboard({
         .eq('meeting_id', parseInt(targetMeetingId))
         .order('order_index', { ascending: false })
         .limit(1)
-
+      
       const sectionId = sections?.[0]?.id || null
-
+      
       // 2. Get the last topic order index
       const { data: topics } = await adminClient
         .from('topics')
@@ -192,9 +191,9 @@ export default function Dashboard({
         .eq('meeting_id', parseInt(targetMeetingId))
         .order('order_index', { ascending: false })
         .limit(1)
-
+      
       const nextOrder = (topics?.[0]?.order_index || 0) + 1
-
+      
       // 3. Create the new topic from the Janus ticket
       const { error } = await adminClient
         .from('topics')
@@ -205,9 +204,9 @@ export default function Dashboard({
           description: selectedTicketToImport.description || `Priority: ${selectedTicketToImport.priority || 'N/A'}. Status: ${selectedTicketToImport.status}. Sync ID: ${selectedTicketToImport.id}`,
           order_index: nextOrder
         })
-
+      
       if (error) throw error
-
+      
       toast.success("Successfully imported to meeting!", {
         description: "The Janus ticket is now an agenda topic."
       })
@@ -247,16 +246,14 @@ export default function Dashboard({
   const fetchBuildings = async () => {
     try {
       const currentUser = getCurrentUser()
-      console.log('🔍 Current User:', currentUser)
 
       if (!currentUser) {
         console.error('❌ No current user found!')
         return
       }
 
-      console.log('📤 Executing buildings query via API...')
       let data: any[] = []
-
+      
       if (checkIsMaster(currentUser)) {
         data = await apiClient.v1.buildings.list()
       } else if (checkIsCorporateAdmin(currentUser)) {
@@ -269,7 +266,7 @@ export default function Dashboard({
           .from('user_buildings')
           .select('building_id')
           .eq('user_id', currentUser.id)
-
+        
         const buildingIds = userBuildings?.map(ub => ub.building_id) || []
         if (buildingIds.length > 0) {
           // Note: using building_ids filter if we decide to add it or just list with mapping
@@ -278,14 +275,6 @@ export default function Dashboard({
         }
       }
 
-      console.log('📊 Buildings API Result:', {
-        buildingCount: data?.length || 0,
-        buildings: data
-      })
-
-      console.log('✅ Buildings fetched successfully:', data)
-      console.log('📍 Setting buildings state with', data?.length || 0, 'buildings')
-
       setBuildings(data || [])
 
       if (onBuildingsLoaded) {
@@ -293,7 +282,6 @@ export default function Dashboard({
       }
 
       setSelectedBuilding("All")
-      console.log('✅ Selected building set to "All"')
 
       if (onBuildingSelected) {
         onBuildingSelected("All")
@@ -305,16 +293,14 @@ export default function Dashboard({
         onBuildingSelected("All")
       }
     } finally {
-      console.log('🏁 fetchBuildings completed, setting loading = false')
       setLoading(false)
     }
   }
 
   const fetchMeetings = async () => {
     try {
-      console.log('📅 fetchMeetings called for building:', selectedBuilding)
       let data: any[] = []
-
+      
       if (selectedBuilding !== "All") {
         const building = buildings.find(b => b.name === selectedBuilding)
         if (building) {
@@ -330,8 +316,6 @@ export default function Dashboard({
           return
         }
       }
-
-      console.log('✅ Meetings fetched:', data?.length || 0)
 
       const meetingTypes = Array.from(new Set(data?.map(m => m.meeting_type).filter(Boolean))) as string[]
       setAvailableMeetingTypes(meetingTypes.sort())
@@ -365,7 +349,7 @@ export default function Dashboard({
   const fetchTasks = async () => {
     try {
       let data: any[] = []
-
+      
       if (selectedBuilding !== "All") {
         const building = buildings.find(b => b.name === selectedBuilding)
         if (building) {
@@ -588,7 +572,6 @@ export default function Dashboard({
     )
   }
 
-  console.log('🎨 Rendering dashboard - loading:', loading, 'buildings:', buildings.length, 'selectedBuilding:', selectedBuilding)
 
   if (loading) {
     return (
@@ -749,8 +732,8 @@ export default function Dashboard({
             <button
               onClick={() => setActiveTab("meetings")}
               className={`pb-3 px-1 font-medium text-sm transition-colors ${activeTab === "meetings"
-                ? "border-b-2 border-primary text-primary"
-                : "text-muted-foreground hover:text-foreground"
+                  ? "border-b-2 border-primary text-primary"
+                  : "text-muted-foreground hover:text-foreground"
                 }`}
             >
               <Calendar className="h-4 w-4 inline mr-2" />
@@ -759,8 +742,8 @@ export default function Dashboard({
             <button
               onClick={() => setActiveTab("tasks")}
               className={`pb-3 px-1 font-medium text-sm transition-colors ${activeTab === "tasks"
-                ? "border-b-2 border-primary text-primary"
-                : "text-muted-foreground hover:text-foreground"
+                  ? "border-b-2 border-primary text-primary"
+                  : "text-muted-foreground hover:text-foreground"
                 }`}
             >
               <CheckSquare className="h-4 w-4 inline mr-2" />
@@ -769,8 +752,8 @@ export default function Dashboard({
             <button
               onClick={() => setActiveTab("all")}
               className={`pb-3 px-1 font-medium text-sm transition-colors ${activeTab === "all"
-                ? "border-b-2 border-primary text-primary"
-                : "text-muted-foreground hover:text-foreground"
+                  ? "border-b-2 border-primary text-primary"
+                  : "text-muted-foreground hover:text-foreground"
                 }`}
             >
               <FileText className="h-4 w-4 inline mr-2" />
@@ -781,8 +764,8 @@ export default function Dashboard({
                 <button
                   onClick={() => setActiveTab("repairs")}
                   className={`pb-3 px-1 font-medium text-sm transition-colors ${activeTab === "repairs"
-                    ? "border-b-2 border-primary text-primary"
-                    : "text-muted-foreground hover:text-foreground"
+                      ? "border-b-2 border-primary text-primary"
+                      : "text-muted-foreground hover:text-foreground"
                     }`}
                 >
                   <Wrench className="h-4 w-4 inline mr-2" />
@@ -791,8 +774,8 @@ export default function Dashboard({
                 <button
                   onClick={() => setActiveTab("complaints")}
                   className={`pb-3 px-1 font-medium text-sm transition-colors ${activeTab === "complaints"
-                    ? "border-b-2 border-primary text-primary"
-                    : "text-muted-foreground hover:text-foreground"
+                      ? "border-b-2 border-primary text-primary"
+                      : "text-muted-foreground hover:text-foreground"
                     }`}
                 >
                   <AlertTriangle className="h-4 w-4 inline mr-2" />
@@ -1076,15 +1059,16 @@ export default function Dashboard({
                 <tbody>
                   {filteredTasks.length > 0 ? (
                     filteredTasks.map((task) => {
-                      const isOverdue = task.due_date &&
-                        new Date(task.due_date) < new Date() &&
+                      const isOverdue = task.due_date && 
+                        new Date(task.due_date) < new Date() && 
                         task.status !== 'completed';
-
+                        
                       return (
-                        <tr
-                          key={task.id}
-                          className={`border-b border-border transition-colors ${isOverdue ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-muted/50'
-                            }`}
+                        <tr 
+                          key={task.id} 
+                          className={`border-b border-border transition-colors ${
+                            isOverdue ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-muted/50'
+                          }`}
                         >
                           {selectedBuilding === "All" && (
                             <td className="px-6 py-4 text-sm text-muted-foreground">{task.building}</td>
@@ -1242,7 +1226,7 @@ export default function Dashboard({
                 </div>
               )}
             </div>
-
+            
             {janusData.repairs.length === 0 ? (
               <Card className="p-20 text-center border-dashed bg-muted/20 rounded-3xl">
                 <Wrench className="h-12 w-12 text-muted-foreground/20 mx-auto mb-4" />
@@ -1257,10 +1241,11 @@ export default function Dashboard({
                       <div className="absolute top-0 left-0 w-1 h-full bg-primary" />
                       <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-2">
-                          <Badge variant="secondary" className={`text-[10px] uppercase font-black tracking-wider ${ticket.priority?.toUpperCase() === 'HIGH' ? 'bg-red-50 text-red-700 border-red-100' :
+                          <Badge variant="secondary" className={`text-[10px] uppercase font-black tracking-wider ${
+                            ticket.priority?.toUpperCase() === 'HIGH' ? 'bg-red-50 text-red-700 border-red-100' :
                             ticket.priority?.toUpperCase() === 'MEDIUM' ? 'bg-yellow-50 text-yellow-700 border-yellow-100' :
-                              'bg-primary/10 text-primary'
-                            }`}>
+                            'bg-primary/10 text-primary'
+                          }`}>
                             {ticket.priority || 'MEDIUM'} PRIORITY
                           </Badge>
                           {(ticket.budget || ticket.estimated_cost) && (
@@ -1288,12 +1273,12 @@ export default function Dashboard({
                       )}
                       <div className="flex items-center justify-between mt-auto pt-4 border-t border-border">
                         <span className="text-[10px] font-mono text-muted-foreground">#REP-{ticket.id}</span>
-                        <Button
-                          size="sm"
-                          variant="ghost"
+                        <Button 
+                          size="sm" 
+                          variant="ghost" 
                           className="h-7 text-[10px] gap-1 text-primary hover:bg-primary/10"
                           onClick={() => {
-                            setSelectedTicketToImport({ ...ticket, _type: 'repair' })
+                            setSelectedTicketToImport({...ticket, _type: 'repair'})
                             setIsImportModalOpen(true)
                           }}
                         >
@@ -1322,7 +1307,7 @@ export default function Dashboard({
                 </div>
               )}
             </div>
-
+            
             {janusData.complaints.length === 0 ? (
               <Card className="p-20 text-center border-dashed bg-muted/20 rounded-3xl">
                 <AlertTriangle className="h-12 w-12 text-muted-foreground/20 mx-auto mb-4" />
@@ -1337,9 +1322,10 @@ export default function Dashboard({
                       <div className="absolute top-0 left-0 w-1 h-full bg-amber-500" />
                       <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-2">
-                          <Badge variant="secondary" className={`text-[10px] uppercase font-black tracking-wider ${ticket.priority?.toUpperCase() === 'HIGH' ? 'bg-red-50 text-red-700 border-red-100' :
+                          <Badge variant="secondary" className={`text-[10px] uppercase font-black tracking-wider ${
+                            ticket.priority?.toUpperCase() === 'HIGH' ? 'bg-red-50 text-red-700 border-red-100' :
                             'bg-amber-100 text-amber-700'
-                            }`}>
+                          }`}>
                             {ticket.priority || 'MEDIUM'} PRIORITY
                           </Badge>
                           {(ticket.budget || ticket.estimated_cost) && (
@@ -1367,12 +1353,12 @@ export default function Dashboard({
                       )}
                       <div className="flex items-center justify-between mt-auto pt-4 border-t border-border">
                         <span className="text-[10px] font-mono text-muted-foreground">#COM-{ticket.id}</span>
-                        <Button
-                          size="sm"
-                          variant="ghost"
+                        <Button 
+                          size="sm" 
+                          variant="ghost" 
                           className="h-7 text-[10px] gap-1 text-amber-600 hover:bg-amber-50"
                           onClick={() => {
-                            setSelectedTicketToImport({ ...ticket, _type: 'complaint' })
+                            setSelectedTicketToImport({...ticket, _type: 'complaint'})
                             setIsImportModalOpen(true)
                           }}
                         >
@@ -1434,7 +1420,7 @@ export default function Dashboard({
 
               <div className="space-y-2">
                 <label className="text-[10px] font-black uppercase text-muted-foreground">Select Target Meeting</label>
-                <select
+                <select 
                   className="w-full h-10 px-3 bg-background border border-border rounded-lg text-sm outline-none focus:ring-2 focus:ring-primary/20"
                   value={targetMeetingId}
                   onChange={(e) => setTargetMeetingId(e.target.value)}
@@ -1455,9 +1441,9 @@ export default function Dashboard({
             </div>
 
             <div className="flex gap-3 pt-2">
-              <Button
-                variant="outline"
-                className="flex-1"
+              <Button 
+                variant="outline" 
+                className="flex-1" 
                 onClick={() => {
                   setIsImportModalOpen(false)
                   setSelectedTicketToImport(null)
@@ -1466,8 +1452,8 @@ export default function Dashboard({
               >
                 Cancel
               </Button>
-              <Button
-                className="flex-1"
+              <Button 
+                className="flex-1" 
                 disabled={!targetMeetingId || isImporting}
                 onClick={handleImportToMeeting}
               >

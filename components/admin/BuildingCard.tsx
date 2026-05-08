@@ -14,6 +14,7 @@ interface Building {
   building_type?: string
   created_at: string
   users?: Array<{ id: number; name: string; email: string; user_type: string }>
+  company?: { id: number; name: string } | null
 }
 
 interface BuildingCardProps {
@@ -46,14 +47,21 @@ export default function BuildingCard({
             <Building2 className="h-6 w-6 text-blue-600" />
           </div>
           <div className="flex-1">
-            <div className="flex items-center gap-2 mb-1">
-              <h3 className="font-semibold text-foreground">{building.name}</h3>
-              <Badge 
-                variant="outline" 
-                className={`text-xs ${getBuildingTypeColor(building.building_type || 'Strata/Condo')}`}
-              >
-                {building.building_type || 'Strata/Condo'}
-              </Badge>
+            <div className="flex flex-col mb-1">
+              {building.company?.name && (
+                <span className="text-[10px] font-black text-indigo-600 uppercase tracking-[0.1em] mb-0.5">
+                  {building.company.name}
+                </span>
+              )}
+              <div className="flex items-center gap-2">
+                <h3 className="font-bold text-slate-900 tracking-tight">{building.name}</h3>
+                <Badge 
+                  variant="outline" 
+                  className={`text-[10px] font-black uppercase tracking-wider ${getBuildingTypeColor(building.building_type || 'Strata/Condo')}`}
+                >
+                  {building.building_type || 'Strata/Condo'}
+                </Badge>
+              </div>
             </div>
             {building.address && (
               <p className="text-sm text-muted-foreground flex items-center gap-1">

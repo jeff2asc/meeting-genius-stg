@@ -37,9 +37,15 @@ export default function CreateBuildingModal({
 }: CreateBuildingModalProps) {
   const [buildingFormData, setBuildingFormData] = useState({
     name: "",
-    address: "",
+    street: "",
+    city: "",
+    province: "",
+    postalCode: "",
+    country: "Canada",
     managerId: preselectedManagerId !== undefined ? preselectedManagerId : (checkIsPropertyManager(currentUser) && !checkIsCorporateAdmin(currentUser) && !checkIsMaster(currentUser) ? currentUser.id : 0),
   })
+  const [selectedCompanyId, setSelectedCompanyId] = useState<number | null>(preselectedCompanyId || null)
+  const [companies, setCompanies] = useState<any[]>([])
   const [buildingType, setBuildingType] = useState<'Strata/Condo' | 'Rental' | 'Housing Co-op'>('Strata/Condo')
   const [selectedBuildingUsers, setSelectedBuildingUsers] = useState<number[]>([])
   const [saving, setSaving] = useState(false)
@@ -49,8 +55,15 @@ export default function CreateBuildingModal({
   useEffect(() => {
     if (isOpen) {
       fetchBuildingTypes()
+      fetchCompanies()
     }
   }, [isOpen])
+
+  const fetchCompanies = async () => {
+    if (!isMaster) return
+    const { data } = await supabase.from('companies').select('id, name').order('name')
+    setCompanies(data || [])
+  }
 
   const fetchBuildingTypes = async () => {
     const params = await getVotingParameters(currentUser?.company_id)
@@ -92,17 +105,10 @@ export default function CreateBuildingModal({
 
     try {
       // Determine company_id based on user type
-      let companyIdToAssign = null
+      let companyIdToAssign = selectedCompanyId
       
       if (isMaster) {
-        // Master needs to get company_id from the selected property manager
-        const { data: pmData } = await supabase
-          .from('users')
-          .select('company_id')
-          .eq('id', buildingFormData.managerId)
-          .single()
-        
-        companyIdToAssign = pmData?.company_id || null
+        // Use selected company ID directly
       } else if (isCorporateAdmin || isPropertyManager) {
         // Corporate Admin and Property Manager use their own company_id
         companyIdToAssign = currentUser.company_id
@@ -110,14 +116,23 @@ export default function CreateBuildingModal({
 
       console.log('🏢 Creating building with company_id:', companyIdToAssign)
 
+      const combinedAddress = [
+        buildingFormData.street.trim(),
+        buildingFormData.city.trim(),
+        buildingFormData.province.trim(),
+        buildingFormData.postalCode.trim(),
+        buildingFormData.country.trim()
+      ].filter(Boolean).join(', ')
+
       const { data: newBuilding, error: buildingError } = await supabase
         .from('buildings')
         .insert({
           name: buildingFormData.name.trim(),
-          address: buildingFormData.address.trim() || null,
+          address: combinedAddress || null,
           manager_id: buildingFormData.managerId,
           company_id: companyIdToAssign,
           building_type: buildingType,
+          primary_color: '#3b82f6',
         })
         .select()
         .single()
@@ -165,7 +180,11 @@ export default function CreateBuildingModal({
       // Reset form
       setBuildingFormData({
         name: "",
-        address: "",
+        street: "",
+        city: "",
+        province: "",
+        postalCode: "",
+        country: "Canada",
         managerId: preselectedManagerId !== undefined ? preselectedManagerId : (checkIsPropertyManager(currentUser) && !checkIsCorporateAdmin(currentUser) && !checkIsMaster(currentUser) ? currentUser.id : 0),
       })
       setBuildingType('Strata/Condo')
@@ -194,9 +213,9 @@ export default function CreateBuildingModal({
     : []
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 animate-in fade-in overflow-y-auto p-4">
-      <Card className="w-full max-w-2xl border-0 rounded-2xl shadow-2xl my-8">
-        <div className="flex items-center justify-between border-b border-border bg-gradient-to-r from-primary/5 to-decision-purple/5 p-6">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 animate-in fade-in p-4 overflow-y-auto">
+      <Card className="w-full max-w-2xl border-0 rounded-2xl shadow-2xl my-auto flex flex-col max-h-[95vh] overflow-hidden">
+        <div className="flex-shrink-0 flex items-center justify-between border-b border-border bg-gradient-to-r from-primary/5 to-decision-purple/5 p-6">
           <div>
             <h2 className="text-xl font-bold text-foreground">Create New Building</h2>
             <p className="text-sm text-muted-foreground">
@@ -212,12 +231,13 @@ export default function CreateBuildingModal({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          {error && (
-            <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded text-sm">
-              {error}
-            </div>
-          )}
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
+          <div className="flex-1 overflow-y-auto p-6 space-y-4">
+            {error && (
+              <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded text-sm">
+                {error}
+              </div>
+            )}
 
           <div>
             <label className="block text-sm font-medium text-foreground mb-2">
@@ -242,10 +262,70 @@ export default function CreateBuildingModal({
               </label>
               <input
                 type="text"
-                name="address"
-                value={buildingFormData.address}
+                name="street"
+                value={buildingFormData.street}
                 onChange={handleInputChange}
                 placeholder="e.g., 123 Main St"
+                disabled={saving}
+                className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-2">
+                City
+              </label>
+              <input
+                type="text"
+                name="city"
+                value={buildingFormData.city}
+                onChange={handleInputChange}
+                placeholder="e.g., Vancouver"
+                disabled={saving}
+                className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-2">
+                Province / State
+              </label>
+              <input
+                type="text"
+                name="province"
+                value={buildingFormData.province}
+                onChange={handleInputChange}
+                placeholder="e.g., BC"
+                disabled={saving}
+                className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-2">
+                Postal / Zip Code
+              </label>
+              <input
+                type="text"
+                name="postalCode"
+                value={buildingFormData.postalCode}
+                onChange={handleInputChange}
+                placeholder="e.g., V6B 1A1"
+                disabled={saving}
+                className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-2">
+                Country
+              </label>
+              <input
+                type="text"
+                name="country"
+                value={buildingFormData.country}
+                onChange={handleInputChange}
+                placeholder="e.g., Canada"
                 disabled={saving}
                 className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
               />
@@ -282,27 +362,48 @@ export default function CreateBuildingModal({
             </p>
           </div>
 
-          {/* Master User - Can see all PMs */}
+          {/* Master User - Can see all PMs and Companies */}
           {isMaster && (
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-2">
-                Property Manager *
-              </label>
-              <select
-                name="managerId"
-                value={buildingFormData.managerId}
-                onChange={handleInputChange}
-                disabled={saving}
-                required
-                className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
-              >
-                <option value={0}>Select Property Manager</option>
-                {availablePropertyManagers.map((pm: any) => (
-                  <option key={pm.id} value={pm.id}>
-                    {pm.name} ({pm.email})
-                  </option>
-                ))}
-              </select>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-2">
+                  Company Assignment
+                </label>
+                <select
+                  value={selectedCompanyId || "none"}
+                  onChange={(e) => setSelectedCompanyId(e.target.value === "none" ? null : parseInt(e.target.value))}
+                  disabled={saving}
+                  className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
+                >
+                  <option value="none">No Company (Internal)</option>
+                  {companies.map((c: any) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-2">
+                  Property Manager *
+                </label>
+                <select
+                  name="managerId"
+                  value={buildingFormData.managerId}
+                  onChange={handleInputChange}
+                  disabled={saving}
+                  required
+                  className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
+                >
+                  <option value={0}>Select Property Manager</option>
+                  {availablePropertyManagers.map((pm: any) => (
+                    <option key={pm.id} value={pm.id}>
+                      {pm.name} ({pm.email})
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
           )}
 
@@ -388,7 +489,9 @@ export default function CreateBuildingModal({
             </div>
           </div>
 
-          <div className="flex gap-3 pt-4">
+          </div>
+          
+          <div className="flex-shrink-0 border-t border-border p-6 bg-muted/5 flex gap-3">
             <Button 
               type="button" 
               variant="outline" 

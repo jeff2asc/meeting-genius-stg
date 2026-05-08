@@ -694,7 +694,7 @@ export default function CreateUserModal({
             <div className="space-y-3 pt-2">
               <div className="flex items-center justify-between ml-1">
                 <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Building Assignments</label>
-                {userFormData.roles.includes("property_manager") && (
+                {userFormData.roles.includes("property_manager") && isEditMode && (
                   <Button 
                     type="button" 
                     variant="ghost" 

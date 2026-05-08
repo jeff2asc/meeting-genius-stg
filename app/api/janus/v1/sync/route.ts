@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { janusClient } from "@/lib/janus-client";
 import { supabase } from "@/lib/supabase";
 
 export async function GET(req: NextRequest) {
@@ -10,20 +10,19 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Use centralized Supabase connection from @/lib/supabase
-  // which handles environment variables and fallbacks correctly.
-
   try {
     const forceSync = req.nextUrl.searchParams.get("force") === "true";
+    const companyId = req.nextUrl.searchParams.get("company_id");
 
-    // ⭐ ALWAYS fetch from Janus for now to ensure full metadata (company_id, building_name)
-    // since local DB might be missing these columns.
-    if (true) {
-      const janusSupabaseUrl = "https://ihldyefskzluuciaudmr.supabase.co"
-      const janusAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlobGR5ZWZza3psdXVjaWF1ZG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE3NTAwNjksImV4cCI6MjA4NzMyNjA2OX0.Fs6cvdgJSxGA5LvQhn3YK_6WPxGKwBQjf7ezM2Jl8Pc"
-      const janusDb = createClient(janusSupabaseUrl, janusAnonKey);
+    // ⭐ DIRECT FETCH from Janus DB (Bypassing HTTP middleware)
+    let query = janusClient.from('tickets').select('*');
       
-      const { data: rawTickets, error: janusErr } = await janusDb.from('tickets').select('*').order('created_at', { ascending: false });
+      if (companyId && companyId !== "undefined") {
+        query = query.eq('company_id', parseInt(companyId));
+      }
+
+      const { data: rawTickets, error: janusErr } = await query.order('created_at', { ascending: false });
+      
       if (janusErr) {
         console.warn("⚠️ Could not reach Janus DB:", janusErr.message);
         return NextResponse.json({ success: true, data: { repairs: [], complaints: [] }, warning: janusErr.message });
@@ -61,10 +60,6 @@ export async function GET(req: NextRequest) {
       }
 
       return NextResponse.json({ success: true, data: { repairs, complaints } });
-    }
-
-    // Fallback if the Janus fetch block was skipped (it shouldn't be due to if(true))
-    return NextResponse.json({ success: true, data: { repairs: [], complaints: [] } });
 
   } catch (err: any) {
     console.error("Janus Sync Error:", err);

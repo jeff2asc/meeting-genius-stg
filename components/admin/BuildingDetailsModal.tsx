@@ -42,6 +42,7 @@ interface Building {
   board_meeting_notice_days?: number
   general_meeting_notice_days?: number
   notification_recipient_type?: string
+  company?: { id: number; name: string } | null
 }
 
 interface BuildingDetailsModalProps {
@@ -63,11 +64,17 @@ export default function BuildingDetailsModal({
 }: BuildingDetailsModalProps) {
   const [activeTab, setActiveTab] = useState<TabType>("details")
   const [buildingName, setBuildingName] = useState("")
-  const [buildingAddress, setBuildingAddress] = useState("")
+  const [street, setStreet] = useState("")
+  const [city, setCity] = useState("")
+  const [province, setProvince] = useState("")
+  const [postalCode, setPostalCode] = useState("")
+  const [country, setCountry] = useState("Canada")
   const [buildingType, setBuildingType] = useState("")
   const [managerId, setManagerId] = useState<number | null>(null)
   const [selectedUsers, setSelectedUsers] = useState<number[]>([])
   const [propertyManagers, setPropertyManagers] = useState<User[]>([])
+  const [companies, setCompanies] = useState<Array<{ id: number; name: string }>>([])
+  const [selectedCompanyId, setSelectedCompanyId] = useState<number | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
   const [boardMeetingNoticeDays, setBoardMeetingNoticeDays] = useState(7)
@@ -103,11 +110,25 @@ export default function BuildingDetailsModal({
   useEffect(() => {
     if (isOpen && building && currentUser) {
       setBuildingName(building.name)
-      setBuildingAddress(building.address || "")
+      if (building.address) {
+        const parts = building.address.split(',').map(s => s.trim())
+        setStreet(parts[0] || "")
+        setCity(parts[1] || "")
+        setProvince(parts[2] || "")
+        setPostalCode(parts[3] || "")
+        setCountry(parts[4] || "Canada")
+      } else {
+        setStreet("")
+        setCity("")
+        setProvince("")
+        setPostalCode("")
+        setCountry("Canada")
+      }
       setBuildingType(building.building_type || "Strata/Condo")
       setManagerId(building.manager_id)
       setSelectedUsers(building.users?.map((u) => u.id) || [])
       setAssignedUsers(building.users || [])
+      setSelectedCompanyId(building.company_id)
       
       setBoardMeetingNoticeDays(building.board_meeting_notice_days || 7)
       setGeneralMeetingNoticeDays(building.general_meeting_notice_days || 7)
@@ -117,9 +138,28 @@ export default function BuildingDetailsModal({
       )
   
       fetchPropertyManagers()
+      fetchCompanies()
       fetchDynamicParams()
     }
   }, [isOpen, building?.id, currentUser])
+
+  const fetchCompanies = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("companies")
+        .select("id, name")
+        .order("name")
+
+      if (error) {
+        console.error("Error fetching companies:", error)
+        return
+      }
+
+      setCompanies(data || [])
+    } catch (err) {
+      console.error("Unexpected error:", err)
+    }
+  }
 
   const fetchDynamicParams = async () => {
     const params = await getVotingParameters(building?.company_id)
@@ -410,13 +450,22 @@ export default function BuildingDetailsModal({
     setSubmitting(true)
 
     try {
+      const combinedAddress = [
+        street.trim(),
+        city.trim(),
+        province.trim(),
+        postalCode.trim(),
+        country.trim()
+      ].filter(Boolean).join(', ')
+
       const { error: updateError } = await supabase
         .from("buildings")
         .update({
           name: buildingName.trim(),
-          address: buildingAddress.trim() || null,
+          address: combinedAddress || null,
           building_type: buildingType,
           manager_id: managerId,
+          company_id: selectedCompanyId,
           board_meeting_notice_days: boardMeetingNoticeDays,
           general_meeting_notice_days: generalMeetingNoticeDays,
           notification_recipient_type: notificationRecipientType,
@@ -438,10 +487,10 @@ export default function BuildingDetailsModal({
       triggerJanusResync('building_updated', {
         id: building.id,
         name: buildingName.trim(),
-        address: buildingAddress.trim(),
+        address: [street, city, province, postalCode, country].filter(Boolean).join(', '),
         building_type: buildingType,
         manager_id: managerId,
-        company_id: building.company_id
+        company_id: selectedCompanyId
       }, 'building')
       
       await onSuccess()
@@ -608,13 +657,78 @@ export default function BuildingDetailsModal({
               </div>
 
               <div>
-                <Label htmlFor="buildingAddress">Address</Label>
-                <Input
-                  id="buildingAddress"
-                  value={buildingAddress}
-                  onChange={(e) => setBuildingAddress(e.target.value)}
-                  placeholder="Enter building address"
-                />
+                <Label htmlFor="company">Company Assignment</Label>
+                {currentUser?.user_type === "master" || currentUser?.roles?.includes("master") ? (
+                  <Select 
+                    value={selectedCompanyId?.toString() || "none"} 
+                    onValueChange={(value) => setSelectedCompanyId(value === "none" ? null : parseInt(value))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Assign to company" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">No Company (Internal)</SelectItem>
+                      {companies.map(c => (
+                        <SelectItem key={c.id} value={c.id.toString()}>{c.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <div className="bg-muted/50 px-3 py-2 rounded-md text-sm font-medium border border-border">
+                    {building.company?.name || "No Company Assigned"}
+                  </div>
+                )}
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  Only System Administrators can transfer buildings between companies.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="md:col-span-2">
+                  <Label htmlFor="street">Street Address</Label>
+                  <Input
+                    id="street"
+                    value={street}
+                    onChange={(e) => setStreet(e.target.value)}
+                    placeholder="Enter street address"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="city">City</Label>
+                  <Input
+                    id="city"
+                    value={city}
+                    onChange={(e) => setCity(e.target.value)}
+                    placeholder="Enter city"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="province">Province / State</Label>
+                  <Input
+                    id="province"
+                    value={province}
+                    onChange={(e) => setProvince(e.target.value)}
+                    placeholder="Enter province or state"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="postalCode">Postal / Zip Code</Label>
+                  <Input
+                    id="postalCode"
+                    value={postalCode}
+                    onChange={(e) => setPostalCode(e.target.value)}
+                    placeholder="Enter postal code"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="country">Country</Label>
+                  <Input
+                    id="country"
+                    value={country}
+                    onChange={(e) => setCountry(e.target.value)}
+                    placeholder="Enter country"
+                  />
+                </div>
               </div>
 
               <div>
@@ -673,6 +787,12 @@ export default function BuildingDetailsModal({
                     <span className="font-medium">Company ID:</span>{" "}
                     {building.company_id || "None"}
                   </p>
+                  {building.company?.name && (
+                    <p>
+                      <span className="font-medium">Company Name:</span>{" "}
+                      {building.company.name}
+                    </p>
+                  )}
                   <p>
                     <span className="font-medium">Created:</span>{" "}
                     {new Date(building.created_at).toLocaleDateString()}
