@@ -45,7 +45,8 @@ putty.exe -i "C:\Users\Jeff Domingo\Videos\newkeymeeting.ppk" root@app.meetingge
    npm run build
 
 5. Restart the application:
-   pm2 restart meeting-genius
+   pm2 delete meeting-genius
+   pm2 start npm --name "meeting-genius" -- start -- -p 3000
 
 -----------------------------------------------------
 SERVER MAINTENANCE COMMANDS
