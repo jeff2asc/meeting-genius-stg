@@ -77,12 +77,14 @@ export default function AttendeeManagement({
     if (!attendee.email || !companyId) return
     setSendingLink(attendee.email)
 
+    const meetingIdNum = Number(meetingId)
+
     try {
       // 1. Get or generate the meeting's external token
       const { data: meetingData, error: meetingErr } = await supabase
         .from('meetings')
         .select('external_update_token, status')
-        .eq('id', meetingId)
+        .eq('id', meetingIdNum)
         .single()
 
       if (meetingErr || !meetingData) {
@@ -105,7 +107,7 @@ export default function AttendeeManagement({
         const { error: updateErr } = await supabase
           .from('meetings')
           .update({ external_update_token: token })
-          .eq('id', meetingId)
+          .eq('id', meetingIdNum)
 
         if (updateErr) {
           toast.error('Failed to generate meeting link')
@@ -130,7 +132,7 @@ export default function AttendeeManagement({
 
       const res = await fetch('/api/send-email', {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
           'x-api-key': process.env.NEXT_PUBLIC_API_KEY || 'meeting-genius-secret-key-2026'
         },
@@ -277,26 +279,28 @@ export default function AttendeeManagement({
       </div>
 
       {isAgenda && userCanEdit && (
-        <div className="flex gap-2">
+        <div className="grid grid-cols-1 sm:flex gap-2">
           <Input
             value={newAttendee.name || ""}
             onChange={e => setNewAttendee(n => ({ ...n, name: e.target.value }))}
             placeholder="Name"
             className="text-xs h-8"
           />
-          <Input
-            value={newAttendee.email || ""}
-            onChange={e => setNewAttendee(n => ({ ...n, email: e.target.value }))}
-            placeholder="Email"
-            className="text-xs h-8"
-          />
-          <Input
-            value={newAttendee.role || ""}
-            onChange={e => setNewAttendee(n => ({ ...n, role: e.target.value }))}
-            placeholder="Role"
-            className="text-xs h-8"
-          />
-          <Button onClick={handleAddAttendee} disabled={!newAttendee.name} size="sm" className="h-8">
+          <div className="grid grid-cols-2 sm:contents gap-2">
+            <Input
+              value={newAttendee.email || ""}
+              onChange={e => setNewAttendee(n => ({ ...n, email: e.target.value }))}
+              placeholder="Email"
+              className="text-xs h-8"
+            />
+            <Input
+              value={newAttendee.role || ""}
+              onChange={e => setNewAttendee(n => ({ ...n, role: e.target.value }))}
+              placeholder="Role"
+              className="text-xs h-8"
+            />
+          </div>
+          <Button onClick={handleAddAttendee} disabled={!newAttendee.name} size="sm" className="h-8 w-full sm:w-auto">
             + Add
           </Button>
         </div>
