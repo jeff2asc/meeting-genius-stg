@@ -66,7 +66,6 @@ export default function CompanyDetailsModal({
 }: CompanyDetailsModalProps) {
   const [users, setUsers] = useState<User[]>([])
   const [buildings, setBuildings] = useState<Building[]>([])
-  const [propertyManagers, setPropertyManagers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<Tab>("overview")
 
@@ -152,7 +151,6 @@ export default function CompanyDetailsModal({
       setActiveTab("overview")
       fetchCompanyDetails() // ⭐ Force fresh fetch of company columns
       fetchCompanyData()
-      fetchPropertyManagers()
 
       // ... other resets
       setSmtpPassword("")
@@ -208,18 +206,7 @@ export default function CompanyDetailsModal({
     }
   }
 
-  const fetchPropertyManagers = async () => {
-    if (!company) return
 
-    const { data } = await supabase
-      .from("users")
-      .select("id, name, email, user_type")
-      .eq("company_id", company.id)
-      .eq("user_type", "property_manager")
-      .order("name")
-
-    setPropertyManagers(data || [])
-  }
 
   const fetchCompanyDetails = async () => {
     if (!company) return
@@ -411,7 +398,6 @@ export default function CompanyDetailsModal({
         pmId = newUser.id
       }
 
-      await fetchPropertyManagers()
       await fetchCompanyData()
       setSelectedManagerId(pmId)
       setNewPMName("")
@@ -687,7 +673,6 @@ export default function CompanyDetailsModal({
       setSelectedRoles(["user"])
       setShowAddUser(false)
       await fetchCompanyData()
-      await fetchPropertyManagers()
       // 🔄 Notify Janus with full user data
       triggerJanusResync("user_created", {
         name: newUserName.trim(),
@@ -800,7 +785,6 @@ export default function CompanyDetailsModal({
       triggerJanusResync('user_deleted')
 
       await fetchCompanyData()
-      await fetchPropertyManagers()
     } catch (err) {
       console.error("Unexpected error:", err)
     }
@@ -834,7 +818,7 @@ export default function CompanyDetailsModal({
 
   const getManagerName = (managerId: number | null) => {
     if (!managerId) return "No manager assigned"
-    const manager = propertyManagers.find((pm) => pm.id === managerId)
+    const manager = users.find((u) => u.id === managerId)
     return manager ? manager.name : "Unknown manager"
   }
 
@@ -894,6 +878,11 @@ export default function CompanyDetailsModal({
   )
   const filteredUsers = getFilteredUsers()
 
+  const activePropertyManagers = users.filter(
+    (u) =>
+      u.user_type === "property_manager" ||
+      (Array.isArray(u.roles) && u.roles.includes("property_manager"))
+  )
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 animate-in fade-in overflow-y-auto p-4">
@@ -1476,7 +1465,7 @@ export default function CompanyDetailsModal({
                             className="w-full px-3 py-2 bg-white border border-border rounded focus:outline-none focus:ring-2 focus:ring-green-500"
                           >
                             <option value="">Select Property Manager *</option>
-                            {propertyManagers.map((pm) => (
+                            {activePropertyManagers.map((pm) => (
                               <option key={pm.id} value={pm.id}>
                                 {pm.name} ({pm.email})
                               </option>

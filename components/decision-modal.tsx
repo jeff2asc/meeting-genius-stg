@@ -76,6 +76,7 @@ export default function DecisionModal({
   const [selectedVotingType, setSelectedVotingType] = useState("")
   const [userTypeWeights, setUserTypeWeights] = useState<Record<string, number>>({})
   const [topicTitle, setTopicTitle] = useState<string>("")
+  const [meetingType, setMeetingType] = useState<string>("")
 
   const [parentDecision, setParentDecision] = useState<Decision | null>(null)
 
@@ -175,11 +176,12 @@ export default function DecisionModal({
       const meetingIdNum = typeof meetingId === 'string' ? parseInt(meetingId) : meetingId
       const { data: meetingData } = await supabase
         .from("meetings")
-        .select("building_id")
+        .select("building_id, meeting_type")
         .eq("id", meetingIdNum)
         .single()
 
       if (meetingData) {
+        setMeetingType(meetingData.meeting_type || "")
         const { data: buildingData } = await supabase
           .from("buildings")
           .select("company_id")
@@ -303,13 +305,13 @@ export default function DecisionModal({
 
       const companyResults = companyData?.default_decision_results || []
 
-      // 3. Merge and deduplicate (Force AGM/SGM to be present)
-      const baseDefaults = ["M/S/C", "Defeated", "Deferred", "AGM", "SGM"]
+      // 3. Merge and deduplicate
+      const baseDefaults = ["M/S/C", "Defeated", "Deferred"]
       const mergedResults = [...new Set([...baseDefaults, ...dynamicResults, ...companyResults])]
       setDecisionResults(mergedResults)
     } catch (err) {
       console.error("Error fetching decision results:", err)
-      setDecisionResults(["M/S/C", "Defeated", "Deferred", "AGM", "SGM"])
+      setDecisionResults(["M/S/C", "Defeated", "Deferred"])
     }
   }
 
@@ -928,15 +930,15 @@ export default function DecisionModal({
           )}
         </div>
 
-        <div className={`grid ${result === "AGM" || result === "SGM" ? "grid-cols-2" : "grid-cols-1"} gap-4`}>
+        <div className={`grid ${result === "M/S/C" || result === "Defeated" || meetingType === "AGM" || meetingType === "SGM" ? "grid-cols-2" : "grid-cols-1"} gap-4`}>
           <div>
-            <label className="block text-sm font-medium text-foreground mb-2">
+            <label className="block text-sm font-medium text-foreground mb-1.5 flex items-center gap-2">
               Result
             </label>
             <select
               value={result}
               onChange={(e) => setResult(e.target.value)}
-              className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+              className="w-full h-11 px-4 bg-background border border-border rounded-xl focus:ring-2 focus:ring-primary/20 outline-none transition-all"
               disabled={saving || deleting}
             >
               <option value="">Select result...</option>
@@ -948,18 +950,17 @@ export default function DecisionModal({
             </select>
           </div>
 
-          {(result === "AGM" || result === "SGM") && (
+          {(result === "M/S/C" || result === "Defeated" || meetingType === "AGM" || meetingType === "SGM") && (
             <div className="animate-in slide-in-from-right-4 duration-300">
-              <label className="block text-sm font-medium text-foreground mb-2">
+              <label className="block text-sm font-medium text-foreground mb-1.5 flex items-center gap-2">
                 Voting Mechanism
               </label>
               <select
                 value={selectedVotingType}
                 onChange={(e) => setSelectedVotingType(e.target.value)}
-                className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                className="w-full h-11 px-4 bg-background border border-border rounded-xl focus:ring-2 focus:ring-primary/20 outline-none transition-all"
                 disabled={saving || deleting}
               >
-                <option value="">Select mechanism...</option>
                 {votingTypes.map((type) => (
                   <option key={type} value={type}>
                     {type}
@@ -970,9 +971,9 @@ export default function DecisionModal({
           )}
         </div>
 
-        {(result === "AGM" || result === "SGM") && (
+        {(result === "M/S/C" || result === "Defeated" || meetingType === "AGM" || meetingType === "SGM") && (
           <div className="space-y-4 animate-in slide-in-from-bottom-4 duration-300">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="grid grid-cols-3 gap-4">
               {renderVotingDropdown("Votes For", "for", votersFor)}
               {renderVotingDropdown("Votes Against", "against", votersAgainst)}
               {renderVotingDropdown("Abstentions", "abstain", votersAbstain)}
@@ -981,7 +982,7 @@ export default function DecisionModal({
         )}
 
         {/* Logic Calculation Preview */}
-        {(votersFor.length > 0 || votersAgainst.length > 0 || votesFor !== "" || votesAgainst !== "") && (
+        {(result === "M/S/C" || result === "Defeated" || meetingType === "AGM" || meetingType === "SGM") && (votersFor.length > 0 || votersAgainst.length > 0 || votesFor !== "" || votesAgainst !== "") && (
           <div className="bg-muted/30 p-4 rounded-xl border border-border/50 animate-in fade-in zoom-in-95 duration-300">
             <div className="flex items-center justify-between mb-3">
                <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">

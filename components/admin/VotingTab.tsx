@@ -375,6 +375,13 @@ export default function VotingTab() {
                     <option value={2.0}>2.0 (Double)</option>
                     <option value={2.5}>2.5 (Executive)</option>
                     <option value={0.5}>0.5 (Reduced)</option>
+                    <option value={0.0}>0.0 (No Vote)</option>
+                    {(() => {
+                      const w = editingId ? editWeight : newWeight;
+                      return w !== null && w !== undefined && ![1.0, 1.5, 2.0, 2.5, 0.5, 0.0].includes(w) && !isNaN(w) ? (
+                        <option value={w}>{w} (Custom)</option>
+                      ) : null;
+                    })()}
                   </select>
                   <Input
                     type="number"

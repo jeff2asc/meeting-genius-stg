@@ -929,7 +929,6 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
         }}
         onSuccess={handleBuildingDetailsSuccess}
         building={selectedBuilding}
-        availableUsers={getAvailableUsers()}
         currentUser={dbUser || currentUser}
       />
 

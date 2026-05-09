@@ -41,6 +41,7 @@ export default function DecisionForm({ topicId, meetingId, onSave }: DecisionFor
   const [selectedVotingType, setSelectedVotingType] = useState("")
   const [customThreshold, setCustomThreshold] = useState<number>(50)
   const [topicTitle, setTopicTitle] = useState<string>("")
+  const [meetingType, setMeetingType] = useState<string>("")
   
   // @ Mention Autocomplete State
   const [showSuggestions, setShowSuggestions] = useState(false)
@@ -110,11 +111,12 @@ export default function DecisionForm({ topicId, meetingId, onSave }: DecisionFor
     try {
       const { data: meetingData } = await supabase
         .from("meetings")
-        .select("building_id")
+        .select("building_id, meeting_type")
         .eq("id", meetingId)
         .single()
 
       if (meetingData) {
+        setMeetingType(meetingData.meeting_type || "")
         const { data: buildingData } = await supabase
           .from("buildings")
           .select("company_id")
@@ -165,7 +167,7 @@ export default function DecisionForm({ topicId, meetingId, onSave }: DecisionFor
 
       if (meetingError || !meetingData) {
         console.error("Error fetching meeting:", meetingError)
-        setDecisionResults(["M/S/C", "Defeated", "Deferred", "AGM", "SGM"])
+        setDecisionResults(["M/S/C", "Defeated", "Deferred"])
         return
       }
 
@@ -177,7 +179,7 @@ export default function DecisionForm({ topicId, meetingId, onSave }: DecisionFor
 
       if (buildingError || !buildingData || !buildingData.company_id) {
         console.error("Error fetching building:", buildingError)
-        setDecisionResults(["M/S/C", "Defeated", "Deferred", "AGM", "SGM"])
+        setDecisionResults(["M/S/C", "Defeated", "Deferred"])
         return
       }
 
@@ -197,12 +199,12 @@ export default function DecisionForm({ topicId, meetingId, onSave }: DecisionFor
       const companyResults = companyData?.default_decision_results || []
 
       // 3. Merge and deduplicate (Force AGM/SGM to be present)
-      const baseDefaults = ["M/S/C", "Defeated", "Deferred", "AGM", "SGM"]
+      const baseDefaults = ["M/S/C", "Defeated", "Deferred"]
       const merged = [...new Set([...baseDefaults, ...dynamicResults, ...companyResults])]
       setDecisionResults(merged)
     } catch (err) {
       console.error("Error fetching decision results:", err)
-      setDecisionResults(["M/S/C", "Defeated", "Deferred", "AGM", "SGM"])
+      setDecisionResults(["M/S/C", "Defeated", "Deferred"])
     }
   }
 
@@ -672,7 +674,7 @@ export default function DecisionForm({ topicId, meetingId, onSave }: DecisionFor
         )}
       </div>
 
-      <div className={`grid ${result === "AGM" || result === "SGM" ? "grid-cols-2" : "grid-cols-1"} gap-4`}>
+      <div className={`grid ${result === "M/S/C" || result === "Defeated" || meetingType === "AGM" || meetingType === "SGM" ? "grid-cols-2" : "grid-cols-1"} gap-4`}>
         <div>
           <label className="block text-sm font-medium text-foreground mb-2">
             Result
@@ -691,8 +693,8 @@ export default function DecisionForm({ topicId, meetingId, onSave }: DecisionFor
             ))}
           </select>
         </div>
-
-        {(result === "AGM" || result === "SGM") && (
+ 
+        {(result === "M/S/C" || result === "Defeated" || meetingType === "AGM" || meetingType === "SGM") && (
           <div className="animate-in slide-in-from-right-4 duration-300">
             <label className="block text-sm font-medium text-foreground mb-2">
               Voting Mechanism
@@ -712,8 +714,8 @@ export default function DecisionForm({ topicId, meetingId, onSave }: DecisionFor
           </div>
         )}
       </div>
-
-      {(result === "AGM" || result === "SGM") && (
+ 
+      {(result === "M/S/C" || result === "Defeated" || meetingType === "AGM" || meetingType === "SGM") && (
         <div className="space-y-4 animate-in slide-in-from-bottom-4 duration-300">
           <div className="grid grid-cols-3 gap-4">
             {renderDropdown("Votes For", "for", votesFor)}
@@ -758,7 +760,7 @@ export default function DecisionForm({ topicId, meetingId, onSave }: DecisionFor
       {/* Dropdowns moved inside conditional block above */}
 
       {/* Logic Calculation Preview */}
-      {(votesFor.length > 0 || votesAgainst.length > 0) && (
+      {(result === "M/S/C" || result === "Defeated" || meetingType === "AGM" || meetingType === "SGM") && (votesFor.length > 0 || votesAgainst.length > 0) && (
         <div className="bg-muted/30 p-4 rounded-xl border border-border/50 animate-in fade-in zoom-in-95 duration-300">
           <div className="flex items-center justify-between mb-3">
              <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">

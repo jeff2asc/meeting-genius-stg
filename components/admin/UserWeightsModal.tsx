@@ -87,7 +87,8 @@ export default function UserWeightsModal({ isOpen, onClose, users, loading, onUp
                       <option value={2.0}>2.0 (Double)</option>
                       <option value={2.5}>2.5 (Executive)</option>
                       <option value={0.5}>0.5 (Reduced)</option>
-                      {user.voting_weight && ![1.0, 1.5, 2.0, 2.5, 0.5].includes(user.voting_weight) && (
+                      <option value={0.0}>0.0 (No Vote)</option>
+                      {user.voting_weight !== null && user.voting_weight !== undefined && ![1.0, 1.5, 2.0, 2.5, 0.5, 0.0].includes(user.voting_weight) && (
                         <option value={user.voting_weight}>{user.voting_weight} (Custom)</option>
                       )}
                     </select>
