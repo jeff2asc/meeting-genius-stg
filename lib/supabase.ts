@@ -200,6 +200,9 @@ export interface Database {
           rules_filename: string | null
           created_at: string
           updated_at: string
+          board_meeting_notice_days: number | null
+          general_meeting_notice_days: number | null
+          notification_recipient_type: string | null
         }
         Insert: {
           id?: number
@@ -218,6 +221,9 @@ export interface Database {
           rules_filename?: string | null
           created_at?: string
           updated_at?: string
+          board_meeting_notice_days?: number | null
+          general_meeting_notice_days?: number | null
+          notification_recipient_type?: string | null
         }
         Update: {
           id?: number
@@ -236,6 +242,9 @@ export interface Database {
           rules_filename?: string | null
           created_at?: string
           updated_at?: string
+          board_meeting_notice_days?: number | null
+          general_meeting_notice_days?: number | null
+          notification_recipient_type?: string | null
         }
         Relationships: [
           {
@@ -1492,8 +1501,10 @@ export async function getVotingParameters(companyId?: number | null) {
 
   if (companyId !== null && companyId !== undefined) {
     query = query.or(`company_id.is.null,company_id.eq.${companyId}`)
+  } else {
+    // If no company context is provided, only return global defaults
+    query = query.is("company_id", null)
   }
-  // If companyId is null (Master user), we don't add a filter and return ALL parameters
 
   const { data, error } = await query
 

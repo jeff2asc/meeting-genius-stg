@@ -16,7 +16,8 @@ import {
   Clock,
   MapPin,
   Building2,
-  Hash
+  Hash,
+  Globe
 } from "lucide-react"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
@@ -30,6 +31,7 @@ import {
   createAdminClient,
   getVotingParameters
 } from "@/lib/supabase"
+import { getCurrentLocalDate, getCurrentLocalTime } from "@/lib/timezone"
 
 interface CreateMeetingModalProps {
   onClose: () => void
@@ -41,9 +43,9 @@ interface CreateMeetingModalProps {
 export default function CreateMeetingModal({ onClose, onSuccess, buildings }: CreateMeetingModalProps) {
   const [formData, setFormData] = useState({
     title: "",
-    meetingDate: new Date().toISOString().split('T')[0],
+    meetingDate: getCurrentLocalDate(),
     location: "",
-    startTime: "",
+    startTime: getCurrentLocalTime(),
     meetingType: "",
     strataPlanNumber: "",
     buildingId: buildings[0]?.id || 0,
@@ -79,30 +81,30 @@ export default function CreateMeetingModal({ onClose, onSuccess, buildings }: Cr
   useEffect(() => {
     async function fetchCompanyDefaults() {
       const selectedBuilding = buildings.find(b => b.id === formData.buildingId)
-      
-      // Fetch meeting types from voting_parameters
+
+      // Single source of truth: voting_parameters for meeting types
       const votingParams = await getVotingParameters(selectedBuilding?.company_id)
-      const dynamicMeetingTypes = votingParams
+      const meetingTypesFromVoting = votingParams
         .filter(p => p.parameter_type === 'meeting_type')
         .map(p => p.value)
 
+      const fallbackTypes = ["Council Meeting", "AGM", "SGM", "Special Meeting", "Emergency Meeting"]
+      const finalMeetingTypes = meetingTypesFromVoting.length > 0 ? meetingTypesFromVoting : fallbackTypes
+
       if (!selectedBuilding || !selectedBuilding.company_id) {
-        setMeetingTypes(dynamicMeetingTypes.length > 0 ? dynamicMeetingTypes : ["Council Meeting", "AGM", "SGM", "Special Meeting", "Emergency Meeting"])
+        setMeetingTypes(finalMeetingTypes)
         setMeetingSections(["Call to Order", "Approval of Agenda", "Old Business / Business Arising", "New Business", "Financial Report", "Maintenance & Operations", "Correspondence", "Council Roundtable", "Adjournment"])
-        setFormData(f => ({ ...f, meetingType: dynamicMeetingTypes[0] || "Council Meeting" }))
+        setFormData(f => ({ ...f, meetingType: finalMeetingTypes[0] || "Council Meeting" }))
         return
       }
 
+      // Only fetch meeting sections from the company record (sections are still company-specific)
       const { data: company } = await supabase
         .from("companies")
-        .select("default_meeting_sections, default_meeting_types")
+        .select("default_meeting_sections")
         .eq("id", selectedBuilding.company_id)
         .single()
 
-      // Merge company-specific types with dynamic types from voting settings
-      const companyTypes = company?.default_meeting_types || ["Council Meeting", "AGM", "SGM", "Special Meeting", "Emergency Meeting"]
-      const finalMeetingTypes = [...new Set([...dynamicMeetingTypes, ...companyTypes])]
-      
       setMeetingTypes(finalMeetingTypes)
       setMeetingSections(company?.default_meeting_sections || ["Call to Order", "Approval of Agenda", "Old Business / Business Arising", "New Business", "Financial Report", "Maintenance & Operations", "Correspondence", "Council Roundtable", "Adjournment"])
       setFormData(f => ({ ...f, meetingType: finalMeetingTypes[0] || "Council Meeting" }))
@@ -532,6 +534,10 @@ export default function CreateMeetingModal({ onClose, onSuccess, buildings }: Cr
                       className="w-full px-4 py-2.5 bg-muted/20 border-border/50 rounded-xl text-sm focus:ring-2 focus:ring-primary/20 outline-none"
                     />
                   </div>
+                </div>
+                <div className="text-[10px] text-muted-foreground mt-1 flex items-center gap-1 px-1">
+                  <Globe className="h-2.5 w-2.5" />
+                  Timezone: {Intl.DateTimeFormat().resolvedOptions().timeZone} ({Intl.DateTimeFormat().resolvedOptions().timeZone.split('/').pop()?.replace('_', ' ')})
                 </div>
               </div>
 

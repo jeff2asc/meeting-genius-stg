@@ -12,6 +12,29 @@ import EditMeetingModal from "./EditMeetingModal"
 import TaskDetailsModal from "./TaskDetailsModal"
 import { isMaster as checkIsMaster, isCorporateAdmin as checkIsCorporateAdmin, isPropertyManager as checkIsPropertyManager } from "@/lib/permissions"
 import { Badge } from "@/components/ui/badge"
+import { Clock as ClockIcon } from "lucide-react"
+
+function CurrentTime() {
+  const [time, setTime] = useState(new Date())
+
+  useEffect(() => {
+    const timer = setInterval(() => setTime(new Date()), 1000)
+    return () => clearInterval(timer)
+  }, [])
+
+  return (
+    <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground bg-muted/50 px-3 py-1.5 rounded-full border border-border/50">
+      <ClockIcon className="h-3.5 w-3.5 text-primary animate-pulse" />
+      <span className="whitespace-nowrap font-bold">
+        {time.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
+      </span>
+      <span className="opacity-20 font-light">|</span>
+      <span className="whitespace-nowrap">
+        {time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+      </span>
+    </div>
+  )
+}
 
 interface DashboardProps {
   onStartMeeting: (meetingId: string) => void
@@ -593,6 +616,9 @@ export default function Dashboard({
                 alt="Meeting Genius Logo"
                 className="h-8 sm:h-10 w-auto object-contain"
               />
+            </div>
+            <div className="flex items-center gap-4">
+              <CurrentTime />
             </div>
           </div>
         </div>

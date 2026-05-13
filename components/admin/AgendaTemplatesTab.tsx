@@ -5,6 +5,7 @@ import { GripVertical, Save, FileText, Loader2, Undo } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { supabase } from "@/lib/supabase"
+import { getCurrentLocalDate } from "@/lib/timezone"
 
 interface Building {
   id: number
@@ -476,7 +477,8 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
   }
 
   const formatMeetingDate = (dateStr: string) => {
-    const date = new Date(dateStr)
+    if (!dateStr) return ""
+    const date = dateStr.includes('T') ? new Date(dateStr) : new Date(dateStr + 'T00:00:00')
     return date.toLocaleDateString("en-US", {
       weekday: "long",
       year: "numeric",

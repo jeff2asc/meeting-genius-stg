@@ -38,6 +38,30 @@ import { UploadTranscriptModal } from "@/components/transcript/upload-transcript
 import { PreviewTasksModal } from "@/components/transcript/preview-tasks-modal"
 import { ViewTranscriptsModal } from "@/components/transcript/view-transcripts-modal"
 import RolloverTopicModal from "./rollover-topic-modal"
+import { getCurrentLocalDate } from "@/lib/timezone"
+import { Clock as ClockIcon } from "lucide-react"
+
+function CurrentTime() {
+  const [time, setTime] = useState(new Date())
+
+  useEffect(() => {
+    const timer = setInterval(() => setTime(new Date()), 1000)
+    return () => clearInterval(timer)
+  }, [])
+
+  return (
+    <div className="flex items-center gap-1.5 text-[10px] sm:text-xs font-medium text-muted-foreground bg-muted/30 px-2 py-1 rounded-md border border-border/50">
+      <ClockIcon className="h-3 w-3 text-primary" />
+      <span className="whitespace-nowrap font-bold">
+        {time.toLocaleDateString([], { month: 'short', day: 'numeric' })}
+      </span>
+      <span className="opacity-20 font-light">|</span>
+      <span className="whitespace-nowrap">
+        {time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+      </span>
+    </div>
+  )
+}
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -1015,7 +1039,8 @@ export default function MeetingView({
 
   const formatDate = (dateString: string) => {
     if (!dateString) return "No date"
-    const combinedIso = `${dateString}T00:00:00Z`
+    // Use local time (no Z) to avoid UTC shift
+    const combinedIso = `${dateString}T00:00:00`
     const date = new Date(combinedIso)
 
     return date.toLocaleDateString(undefined, {
@@ -1030,9 +1055,9 @@ export default function MeetingView({
     if (!timeString) return null
 
     // ⭐ FIXED: Use the actual meeting date for correct DST offset handling
-    // instead of always using "today".
-    const referenceDate = meeting?.meeting_date || new Date().toISOString().split('T')[0]
-    const combinedIso = `${referenceDate}T${timeString}Z`
+    // instead of always using "today". Use local date and time (no Z).
+    const referenceDate = meeting?.meeting_date || getCurrentLocalDate()
+    const combinedIso = `${referenceDate}T${timeString}`
 
     const date = new Date(combinedIso)
     return date.toLocaleTimeString(undefined, {
@@ -1858,6 +1883,7 @@ export default function MeetingView({
               >
                 <FileText className="h-4 w-4 sm:h-5 sm:w-5" />
               </Button>
+              <CurrentTime />
             </div>
 
             <div className="flex-1 min-w-0">

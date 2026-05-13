@@ -62,9 +62,9 @@ interface Building {
   created_at: string
   users?: Array<{ id: number; name: string; email: string; user_type: string; unit_number?: string | null }>
   company?: { id: number; name: string } | null
-  board_meeting_notice_days?: number
-  general_meeting_notice_days?: number
-  notification_recipient_type?: string
+  board_meeting_notice_days?: number | null
+  general_meeting_notice_days?: number | null
+  notification_recipient_type?: string | null
 }
 
 type TabType = "users" | "buildings" | "companies" | "minutes" | "agenda" | "voting" | "audit" | "settings"
@@ -428,7 +428,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
       let buildingsQuery = supabase
         .from("buildings")
         .select(
-          "id, name, address, manager_id, company_id, building_type, created_at"
+          "id, name, address, manager_id, company_id, building_type, created_at, board_meeting_notice_days, general_meeting_notice_days, notification_recipient_type"
         )
         .order("name")
 

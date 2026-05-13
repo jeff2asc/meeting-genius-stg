@@ -77,21 +77,16 @@ export default function UserWeightsModal({ isOpen, onClose, users, loading, onUp
 
                   <div className="flex items-center gap-2">
                     <span className="text-[10px] font-bold text-muted-foreground uppercase">Weight:</span>
-                    <select
-                      value={user.voting_weight || 1.0}
-                      onChange={(e) => onUpdateWeight(user.id, parseFloat(e.target.value))}
-                      className="h-9 px-3 bg-background border border-input rounded-lg text-xs font-medium focus:ring-2 focus:ring-primary/20 outline-none transition-shadow"
-                    >
-                      <option value={1.0}>1.0 (Standard)</option>
-                      <option value={1.5}>1.5 (Management)</option>
-                      <option value={2.0}>2.0 (Double)</option>
-                      <option value={2.5}>2.5 (Executive)</option>
-                      <option value={0.5}>0.5 (Reduced)</option>
-                      <option value={0.0}>0.0 (No Vote)</option>
-                      {user.voting_weight !== null && user.voting_weight !== undefined && ![1.0, 1.5, 2.0, 2.5, 0.5, 0.0].includes(user.voting_weight) && (
-                        <option value={user.voting_weight}>{user.voting_weight} (Custom)</option>
-                      )}
-                    </select>
+                    <Input
+                      type="number"
+                      step="0.1"
+                      className="w-20 h-9 rounded-lg bg-background font-bold text-xs"
+                      value={user.voting_weight ?? 1.0}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value);
+                        onUpdateWeight(user.id, isNaN(val) ? 0 : val);
+                      }}
+                    />
                   </div>
                 </div>
               ))}

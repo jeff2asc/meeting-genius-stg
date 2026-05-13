@@ -1,0 +1,58 @@
+MG UPDATES & TASKS
+
+Priority 1:
+- Fix security issues in coordination with Gary.
+- Resolve data loss and integration issues.
+- Integration is now functional again.
+- Automate the transition of repairs and complaints to meeting tasks (initially manual; if completed, they should not appear in the meeting view).
+
+Priority 2:
+- Add new voting types (Parameters: Meeting type, voting type, user type, and building type).
+- Add new defaults based on documentation.
+- Enable Admin capability to add, edit, or delete these voting parameters.
+
+LOOM 1, 2, & 3:
+- UI fix for "Rollover Import" is completed (working).
+- Before downloading Minutes PDF: Only the end time needs to be provided now (completed/working).
+- Company Creation: Assigning a Corporate Admin (new user) and Property Manager (same user as corporate admin) is now saving correctly. Previously, it only worked for existing users being promoted; it now works for new users, though some minor fixes are still pending.
+- All users are now visible in the Admin/User tab. (Still need to verify if the issue persists on Tim's account once password access is confirmed).
+
+LOOM 4:
+- Creating new users with multiple role combinations is now working.
+- Admin -> Users Tab -> Edit User: Now displays which company and building the user is related to.
+- Building Creation: The list of users with the Property Manager role is now visible during setup.
+- UI cleanup and verification for the new building creation process.
+
+LOOM 5:
+- Admin -> Building Tab -> View Details -> Documents: URL reference saving is now functional. (Note: Scroll down slightly to see the specific URL save button; clicking the main "Save Changes" button directly doesn't trigger the URL save).
+
+LOOM 6:
+- Admin -> Building Tab -> View Details: Removed duplication in building classification when using a Master Account.
+- Admin -> Users Tab -> Edit User: UI fixes implemented.
+- Admin -> Agenda & Minutes Tabs: Added defaults for new buildings even if no meetings have been held yet.
+- Meetings: The voting mechanism for decisions will now only appear if the meeting type is AGM or SGM.
+- Decisions: Now includes related topics, notes, and tasks for better decision-making context.
+- Removed "Attach File" from the section.
+- Attendees: Automatically list all users assigned the "Attendee" role.
+- Topic titles are now editable and saving correctly.
+
+LOOM 7:
+- User list consistency: The list in the Users tab now matches the list in "Edit Building" (Building tab), even for new users. Manual assignment has been removed.
+
+LOOM 8:
+- Voting Tab: Organization type is now linked to building types.
+- Admin -> Company Tab: Property Manager is now immediately visible for the building.
+- Admin -> Voting Tab: Voting weight can now be set to zero in "Member / User Weights."
+
+-----------------------------------------------------
+
+JANUS UPDATES
+
+- Fixed multiple building issue.
+- Fixed download updates.
+
+LOOM:
+- UI fixes for "Edit Building" in the Admin panel.
+- File uploads in "Edit Building" now include PDF data extraction.
+- UI fixes for the Workflow Builder and added new actions.
+- Added dates to ticket conversations.

@@ -124,7 +124,7 @@ export default function CreateUserModal({
           assignedPmId: userData.assigned_pm_id || 0,
           companyId: userData.company_id || 0,
           roles: rolesFromDb,
-          voting_weight: userData.voting_weight || 1.0,
+          voting_weight: userData.voting_weight ?? 1.0,
         })
 
         const { data: userBuildings } = await supabase
@@ -136,7 +136,7 @@ export default function CreateUserModal({
           setSelectedUserBuildings(userBuildings.map((ub) => ({ 
             id: ub.building_id, 
             unit_number: ub.unit_number || "",
-            voting_weight: (ub.voting_weight || 1.00).toString()
+            voting_weight: (ub.voting_weight ?? 1.00).toString()
           })))
         }
       }
@@ -331,7 +331,7 @@ export default function CreateUserModal({
           roles: effectiveRoles,
           company_id: userFormData.companyId || null,
           assigned_pm_id: userFormData.assignedPmId || null,
-          voting_weight: userFormData.voting_weight || 1.0,
+          voting_weight: userFormData.voting_weight ?? 1.0,
         }
         
         companyIdToAssign = userFormData.companyId || null
@@ -360,7 +360,7 @@ export default function CreateUserModal({
             user_id: userId,
             building_id: b.id,
             unit_number: b.unit_number.trim() || null,
-            voting_weight: parseFloat(b.voting_weight) || 1.00,
+            voting_weight: parseFloat(b.voting_weight) ?? 1.00,
             user_building_type: userFormData.userType
           }))
 
@@ -485,7 +485,7 @@ export default function CreateUserModal({
               user_id: userIdToAssign as number,
               building_id: b.id,
               unit_number: b.unit_number.trim() || null,
-              voting_weight: parseFloat(b.voting_weight) || 1.00,
+              voting_weight: parseFloat(b.voting_weight) ?? 1.00,
               user_building_type: userFormData.userType as string
             }))
 
@@ -636,7 +636,10 @@ export default function CreateUserModal({
               <div className="flex gap-2">
                 <select
                   value={userFormData.voting_weight}
-                  onChange={(e) => setUserFormData(prev => ({ ...prev, voting_weight: parseFloat(e.target.value) || 1.0 }))}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value);
+                    setUserFormData(prev => ({ ...prev, voting_weight: isNaN(val) ? 1.0 : val }));
+                  }}
                   disabled={saving}
                   className="flex-1 h-11 px-3 bg-muted/30 border border-border rounded-xl focus:ring-2 focus:ring-primary/20 outline-none transition-all"
                 >
@@ -650,7 +653,10 @@ export default function CreateUserModal({
                   type="number"
                   step="0.01"
                   value={userFormData.voting_weight}
-                  onChange={(e) => setUserFormData(prev => ({ ...prev, voting_weight: parseFloat(e.target.value) || 1.0 }))}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value);
+                    setUserFormData(prev => ({ ...prev, voting_weight: isNaN(val) ? 1.0 : val }));
+                  }}
                   className="w-20 h-11 px-3 bg-muted/30 border border-border rounded-xl text-center font-bold"
                   disabled={saving}
                 />

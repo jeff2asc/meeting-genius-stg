@@ -390,7 +390,7 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
         <div className="flex justify-center">
           <ReCAPTCHA
             ref={captchaRef}
-            sitekey={process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY!}
+            sitekey="6LfKE-gsAAAAANXM4nX9kJF16xHCthr6n_sZlpj1"
             onChange={(token) => setCaptchaToken(token)}
             onExpired={() => setCaptchaToken(null)}
             theme="light"

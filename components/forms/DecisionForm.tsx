@@ -220,32 +220,52 @@ export default function DecisionForm({ topicId, meetingId, onSave }: DecisionFor
       if (meetingError || !meetingData) return
 
       // Step 2: get company_id from building
-      const { data: buildingData, error: buildingError } = await supabase
+      const { data: buildingData } = await supabase
         .from("buildings")
         .select("company_id")
         .eq("id", meetingData.building_id)
         .single()
 
-      if (buildingError || !buildingData?.company_id) return
+      // ── 3. Users linked to this building via user_buildings ──
+      const { data: userBuildings } = await supabase
+        .from("user_buildings")
+        .select("user_id")
+        .eq("building_id", meetingData.building_id)
 
-      // Step 3: fetch all users in this company with the eligible roles
-      const { data: usersData, error: usersError } = await supabase
-        .from("users")
-        .select("id, name, email, user_type, roles")
-        .eq("company_id", buildingData.company_id)
-        .in("user_type", ["user", "owner", "property_manager", "corporate_administrator"])
-        .order("name", { ascending: true })
+      const buildingUserIds = (userBuildings ?? []).map((ub: any) => ub.user_id).filter(Boolean)
 
-      if (usersError) {
-        console.error("Error fetching company users:", usersError)
-        return
-      }
+      const buildingUsersPromise = buildingUserIds.length > 0
+        ? supabase
+            .from("users")
+            .select("id, name, email, user_type, roles, voting_weight")
+            .in("id", buildingUserIds)
+        : Promise.resolve({ data: [] })
 
-      setCompanyUsers(usersData ?? [])
+      // ── 4. Users linked via company_id (PMs, Corp Admins, etc.) ──
+      const companyUsersPromise = buildingData?.company_id
+        ? supabase
+            .from("users")
+            .select("id, name, email, user_type, roles, voting_weight")
+            .eq("company_id", buildingData.company_id)
+        : Promise.resolve({ data: [] })
+
+      const [{ data: buildingUsers }, { data: companyUsers }] = await Promise.all([
+        buildingUsersPromise,
+        companyUsersPromise,
+      ])
+
+      // ── 5. Merge & deduplicate by id ──
+      const merged = [...(buildingUsers ?? []), ...(companyUsers ?? [])]
+      const unique = Array.from(
+        new Map(merged.map((u: any) => [u.id, u])).values()
+      ).sort((a: any, b: any) => a.name.localeCompare(b.name))
+
+      setCompanyUsers(unique)
     } catch (err) {
       console.error("Error fetching company users:", err)
     }
   }
+
 
   const fetchGeniusWords = async () => {
     if (!currentUser?.id) return
@@ -674,7 +694,7 @@ export default function DecisionForm({ topicId, meetingId, onSave }: DecisionFor
         )}
       </div>
 
-      <div className={`grid ${result === "M/S/C" || result === "Defeated" || meetingType === "AGM" || meetingType === "SGM" ? "grid-cols-2" : "grid-cols-1"} gap-4`}>
+      <div className={`grid ${meetingType === "AGM" || meetingType === "SGM" ? "grid-cols-2" : "grid-cols-1"} gap-4`}>
         <div>
           <label className="block text-sm font-medium text-foreground mb-2">
             Result
@@ -694,7 +714,7 @@ export default function DecisionForm({ topicId, meetingId, onSave }: DecisionFor
           </select>
         </div>
  
-        {(result === "M/S/C" || result === "Defeated" || meetingType === "AGM" || meetingType === "SGM") && (
+        {(meetingType === "AGM" || meetingType === "SGM") && (
           <div className="animate-in slide-in-from-right-4 duration-300">
             <label className="block text-sm font-medium text-foreground mb-2">
               Voting Mechanism
@@ -715,15 +735,13 @@ export default function DecisionForm({ topicId, meetingId, onSave }: DecisionFor
         )}
       </div>
  
-      {(result === "M/S/C" || result === "Defeated" || meetingType === "AGM" || meetingType === "SGM") && (
-        <div className="space-y-4 animate-in slide-in-from-bottom-4 duration-300">
-          <div className="grid grid-cols-3 gap-4">
-            {renderDropdown("Votes For", "for", votesFor)}
-            {renderDropdown("Votes Against", "against", votesAgainst)}
-            {renderDropdown("Abstentions", "abstain", votesAbstain)}
-          </div>
+      <div className="space-y-4 animate-in slide-in-from-bottom-4 duration-300">
+        <div className="grid grid-cols-3 gap-4">
+          {renderDropdown("Votes For", "for", votesFor)}
+          {renderDropdown("Votes Against", "against", votesAgainst)}
+          {renderDropdown("Abstentions", "abstain", votesAbstain)}
         </div>
-      )}
+      </div>
 
       {selectedVotingType === "Custom Percentage (%)" && (
         <div className="bg-primary/5 p-4 rounded-lg border border-primary/20 animate-in slide-in-from-top-2 duration-300">
@@ -760,7 +778,7 @@ export default function DecisionForm({ topicId, meetingId, onSave }: DecisionFor
       {/* Dropdowns moved inside conditional block above */}
 
       {/* Logic Calculation Preview */}
-      {(result === "M/S/C" || result === "Defeated" || meetingType === "AGM" || meetingType === "SGM") && (votesFor.length > 0 || votesAgainst.length > 0) && (
+      {(meetingType === "AGM" || meetingType === "SGM") && (votesFor.length > 0 || votesAgainst.length > 0) && (
         <div className="bg-muted/30 p-4 rounded-xl border border-border/50 animate-in fade-in zoom-in-95 duration-300">
           <div className="flex items-center justify-between mb-3">
              <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">

@@ -41,6 +41,10 @@ interface Building {
   address: string | null
   manager_id: number | null
   company_id?: number | null
+  building_type?: string
+  board_meeting_notice_days?: number | null
+  general_meeting_notice_days?: number | null
+  notification_recipient_type?: string | null
 }
 
 type Tab = "overview" | "buildings" | "admins" | "users" | "logo" | "usage_logs" | "llm_config"
@@ -190,7 +194,7 @@ export default function CompanyDetailsModal({
 
       const { data: buildingsData, error: buildingsError } = await supabase
         .from("buildings")
-        .select("id, name, address, manager_id")
+        .select("id, name, address, manager_id, building_type, board_meeting_notice_days, general_meeting_notice_days, notification_recipient_type")
         .eq("company_id", company.id)
         .order("name")
 
@@ -243,7 +247,7 @@ export default function CompanyDetailsModal({
 
       const { data, error: bError } = await supabase
         .from("buildings")
-        .select("id, name, address, manager_id, company_id")
+        .select("id, name, address, manager_id, company_id, building_type, board_meeting_notice_days, general_meeting_notice_days, notification_recipient_type")
         .order("name")
 
       if (bError) {

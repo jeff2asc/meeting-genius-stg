@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter }
 import { Button } from "@/components/ui/button"
 import { Plus, Trash2, Edit2, Check, X, RotateCcw } from "lucide-react"
 import { toast } from "sonner"
+import { Checkbox } from "@/components/ui/checkbox"
 
 type ParameterType = 'meeting_type' | 'voting_type' | 'user_type' | 'building_type' | 'decision_result'
 
@@ -32,10 +33,12 @@ export default function VotingTab() {
   const [editValue, setEditValue] = useState("")
   const [editDescription, setEditDescription] = useState("")
   const [isAdding, setIsAdding] = useState<ParameterType | null>(null)
-  const [newValue, setNewValue] = useState("")
+  const [newValue, setNewValue] = useState("resident")
   const [newDescription, setNewDescription] = useState("")
   const [editWeight, setEditWeight] = useState<number>(1.0)
   const [newWeight, setNewWeight] = useState<number>(1.0)
+  const [editLinkedVotingType, setEditLinkedVotingType] = useState("")
+  const [newLinkedVotingType, setNewLinkedVotingType] = useState("")
   const [companyUsers, setCompanyUsers] = useState<any[]>([])
   const [userLoading, setUserLoading] = useState(false)
   const [showUserModal, setShowUserModal] = useState(false)
@@ -93,7 +96,8 @@ export default function VotingTab() {
           value: newValue,
           description: newDescription || null,
           weight: type === 'user_type' ? newWeight : 1.0,
-          is_default: false
+          is_default: false,
+          ...(type === 'meeting_type' && { linked_voting_type: newLinkedVotingType || null })
         })
         .select()
         .single()
@@ -106,6 +110,7 @@ export default function VotingTab() {
       setParameters([...parameters, data as VotingParameter])
       setNewValue("")
       setNewDescription("")
+      setNewLinkedVotingType("")
       setIsAdding(null)
       toast.success("Parameter added")
     } catch (err) {
@@ -116,6 +121,8 @@ export default function VotingTab() {
   const handleUpdate = async (id: number) => {
     if (!editValue.trim()) return
 
+    const param = parameters.find(p => p.id === id)
+
     try {
       const adminClient = createAdminClient()
       const { error } = await adminClient
@@ -123,7 +130,8 @@ export default function VotingTab() {
         .update({
           value: editValue,
           description: editDescription || null,
-          weight: editWeight
+          weight: editWeight,
+          ...(param?.parameter_type === 'meeting_type' && { linked_voting_type: editLinkedVotingType || null })
         })
         .eq("id", id)
 
@@ -132,7 +140,10 @@ export default function VotingTab() {
         return
       }
 
-      setParameters(parameters.map(p => p.id === id ? { ...p, value: editValue, description: editDescription, weight: editWeight } : p))
+      setParameters(parameters.map(p => p.id === id
+        ? { ...p, value: editValue, description: editDescription, weight: editWeight, ...(param?.parameter_type === 'meeting_type' && { linked_voting_type: editLinkedVotingType || null }) }
+        : p
+      ))
       setEditingId(null)
       toast.success("Parameter updated")
     } catch (err) {
@@ -198,9 +209,10 @@ export default function VotingTab() {
               size="sm" 
               onClick={() => {
                 setIsAdding(type)
-                setNewValue("")
+                setNewValue(type === 'user_type' ? "resident" : "")
                 setNewDescription("")
                 setNewWeight(1.0)
+                setNewLinkedVotingType("")
                 setEditingId(null)
                 setParamModalOpen(true)
               }}
@@ -233,7 +245,7 @@ export default function VotingTab() {
                       {param.parameter_type === 'user_type' && (
                         <div className="flex items-center gap-1 mt-1">
                           <span className="text-[10px] font-bold bg-muted px-2 py-0.5 rounded text-muted-foreground border border-border/50">
-                            Weight: {param.weight || 1.0}
+                            Weight: {param.weight ?? 1.0}
                           </span>
                         </div>
                       )}
@@ -254,7 +266,8 @@ export default function VotingTab() {
                             setEditingId(param.id)
                             setEditValue(param.value)
                             setEditDescription(param.description || "")
-                            setEditWeight(param.weight || 1.0)
+                            setEditWeight(param.weight ?? 1.0)
+                            setEditLinkedVotingType((param as any).linked_voting_type || "")
                             setIsAdding(null)
                             setParamModalOpen(true)
                           }}
@@ -306,7 +319,6 @@ export default function VotingTab() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pb-12">
           {renderSection('meeting_type', '📋 Meeting Types', 'Define the types of meetings (e.g., AGM, Board Meeting).')}
           {renderSection('voting_type', '⚖️ Voting Types', 'Define voting thresholds and resolution types (e.g., Majority, 75%).')}
-          {renderSection('user_type', '👤 Member / User Weights', 'Set default voting multipliers based on user roles.')}
           {renderSection('building_type', '🏢 Organization Types', 'Classify the legal entity or building structure.')}
           {renderSection('decision_result', '✅ Decision Results', 'Define common outcomes for motions (e.g., M/S/C, Defeated).')}
         </div>
@@ -325,15 +337,66 @@ export default function VotingTab() {
           </DialogHeader>
 
           <div className="space-y-5 py-6">
+
+            {/* Available Voting Type — only shown for meeting_type parameters */}
+            {(isAdding === 'meeting_type' || (editingId && parameters.find(p => p.id === editingId)?.parameter_type === 'meeting_type')) && (() => {
+              const votingTypeOptions = parameters.filter(p => p.parameter_type === 'voting_type')
+              const currentValues = (editingId ? editLinkedVotingType : newLinkedVotingType)?.split(',').filter(Boolean) || []
+              
+              const toggleType = (val: string) => {
+                let nextValues
+                if (currentValues.includes(val)) {
+                  nextValues = currentValues.filter(v => v !== val)
+                } else {
+                  nextValues = [...currentValues, val]
+                }
+                const joined = nextValues.join(',')
+                if (editingId) setEditLinkedVotingType(joined)
+                else setNewLinkedVotingType(joined)
+              }
+
+              return votingTypeOptions.length > 0 ? (
+                <div className="space-y-3 p-4 bg-primary/5 border border-primary/20 rounded-xl">
+                  <div>
+                    <Label className="text-xs font-bold uppercase tracking-wider text-primary">⚖️ Available Voting Types</Label>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">Select which voting types will be available during this meeting type.</p>
+                  </div>
+                  <div className="grid grid-cols-1 gap-2 mt-2">
+                    {votingTypeOptions.map(vt => (
+                      <div key={vt.id} className="flex items-center space-x-2 bg-background/50 p-2 rounded-lg border border-border/50 hover:border-primary/30 transition-colors">
+                        <Checkbox 
+                          id={`vt-${vt.id}`} 
+                          checked={currentValues.includes(vt.value)}
+                          onCheckedChange={() => toggleType(vt.value)}
+                        />
+                        <label 
+                          htmlFor={`vt-${vt.id}`}
+                          className="text-sm font-medium leading-none cursor-pointer flex-1"
+                        >
+                          {vt.value}
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                  {currentValues.length === 0 && (
+                    <p className="text-[10px] text-amber-600 font-medium">⚠️ No types selected. All types will be shown by default.</p>
+                  )}
+                </div>
+              ) : (
+                <div className="p-3 bg-muted/20 rounded-xl text-xs text-muted-foreground italic">
+                  Create some Voting Types first to link them here.
+                </div>
+              )
+            })()}
+
             <div className="space-y-2">
               <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Value / Name</Label>
               {isAdding === 'user_type' || (editingId && parameters.find(p => p.id === editingId)?.parameter_type === 'user_type') ? (
                 <select
-                  value={editingId ? editValue : newValue}
+                  value={editingId ? editValue : (newValue || 'resident')}
                   onChange={(e) => editingId ? setEditValue(e.target.value) : setNewValue(e.target.value)}
                   className="w-full h-11 px-3 bg-muted/20 border border-input rounded-xl text-sm focus:ring-2 focus:ring-primary/20 outline-none transition-shadow"
                 >
-                  <option value="">-- Pick a Role --</option>
                   <option value="resident">Resident</option>
                   <option value="owner">Owner</option>
                   <option value="property_manager">Property Manager</option>
@@ -365,30 +428,16 @@ export default function VotingTab() {
               <div className="space-y-2">
                 <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Voting Weight (Multiplier)</Label>
                 <div className="flex items-center gap-3">
-                  <select
-                    value={editingId ? editWeight : newWeight}
-                    onChange={(e) => editingId ? setEditWeight(parseFloat(e.target.value)) : setNewWeight(parseFloat(e.target.value))}
-                    className="flex-1 h-11 px-3 bg-muted/20 border border-input rounded-xl text-sm focus:ring-2 focus:ring-primary/20 outline-none transition-shadow"
-                  >
-                    <option value={1.0}>1.0 (Standard)</option>
-                    <option value={1.5}>1.5 (Management)</option>
-                    <option value={2.0}>2.0 (Double)</option>
-                    <option value={2.5}>2.5 (Executive)</option>
-                    <option value={0.5}>0.5 (Reduced)</option>
-                    <option value={0.0}>0.0 (No Vote)</option>
-                    {(() => {
-                      const w = editingId ? editWeight : newWeight;
-                      return w !== null && w !== undefined && ![1.0, 1.5, 2.0, 2.5, 0.5, 0.0].includes(w) && !isNaN(w) ? (
-                        <option value={w}>{w} (Custom)</option>
-                      ) : null;
-                    })()}
-                  </select>
                   <Input
                     type="number"
                     step="0.1"
-                    className="w-24 h-11 rounded-xl bg-muted/20 font-bold"
+                    className="flex-1 h-11 rounded-xl bg-muted/20 font-bold"
                     value={editingId ? editWeight : newWeight}
-                    onChange={(e) => editingId ? setEditWeight(parseFloat(e.target.value)) : setNewWeight(parseFloat(e.target.value))}
+                    onChange={(e) => {
+                      const val = parseFloat(e.target.value)
+                      if (editingId) setEditWeight(val)
+                      else setNewWeight(val)
+                    }}
                   />
                 </div>
               </div>

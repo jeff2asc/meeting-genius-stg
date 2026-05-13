@@ -27,7 +27,9 @@ interface Attendee {
   // ============== DATE/TIME FORMATTERS ==============
   
   export function formatMeetingDate(dateStr: string): string {
-    const date = new Date(dateStr)
+    if (!dateStr) return ""
+    // Ensure date is treated as local to avoid UTC shift (e.g. "2026-05-14" -> local midnight)
+    const date = dateStr.includes('T') ? new Date(dateStr) : new Date(dateStr + 'T00:00:00')
     return date.toLocaleDateString('en-US', {
       weekday: 'long',
       year: 'numeric',

@@ -40,9 +40,9 @@ interface Building {
   building_type?: string
   created_at: string
   users?: Array<{ id: number; name: string; email: string; user_type: string; roles?: string[] | null; unit_number?: string | null }>
-  board_meeting_notice_days?: number
-  general_meeting_notice_days?: number
-  notification_recipient_type?: string
+  board_meeting_notice_days?: number | null
+  general_meeting_notice_days?: number | null
+  notification_recipient_type?: string | null
   company?: { id: number; name: string } | null
 }
 

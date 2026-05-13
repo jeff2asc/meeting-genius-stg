@@ -106,7 +106,7 @@ export default function DecisionModal({
 
   useEffect(() => {
     if (isOpen) {
-      fetchDecisionResults()
+      fetchVotingTypesAndResults()
       fetchAttendees()
       fetchCompanyUsers()
       fetchGeniusWords()
@@ -119,7 +119,6 @@ export default function DecisionModal({
       if (parentDecisionId) {
         loadParentDecision(parentDecisionId)
       }
-      fetchVotingTypes()
       fetchTopicContent()
     }
   }, [isOpen, meetingId, editMode, existingDecisionId, parentDecisionId, topicId])
@@ -171,46 +170,99 @@ export default function DecisionModal({
     }
   }
 
-  const fetchVotingTypes = async () => {
+  const fetchVotingTypesAndResults = async () => {
     try {
       const meetingIdNum = typeof meetingId === 'string' ? parseInt(meetingId) : meetingId
+      
+      // 1. Get meeting and building context
       const { data: meetingData } = await supabase
         .from("meetings")
         .select("building_id, meeting_type")
         .eq("id", meetingIdNum)
         .single()
 
-      if (meetingData) {
-        setMeetingType(meetingData.meeting_type || "")
-        const { data: buildingData } = await supabase
-          .from("buildings")
-          .select("company_id")
-          .eq("id", meetingData.building_id)
-          .single()
+      if (!meetingData) return
 
-        const params = await getVotingParameters(buildingData?.company_id)
-        const vTypes = params
-          .filter(p => p.parameter_type === 'voting_type')
-          .map(p => p.value)
-        
-        setVotingTypes(vTypes.length > 0 ? vTypes : ["Majority Vote (50%+1)", "Three-Quarter Vote (75%)", "Unanimous Vote (100%)"])
-        if (!editMode) {
-          setSelectedVotingType(vTypes[0] || "Majority Vote (50%+1)")
+      const currentMeetingType = meetingData.meeting_type || ""
+      setMeetingType(currentMeetingType)
+
+      const { data: buildingData } = await supabase
+        .from("buildings")
+        .select("company_id")
+        .eq("id", meetingData.building_id)
+        .single()
+
+      const companyId = buildingData?.company_id
+
+      // 2. Fetch all relevant parameters (Voting Types, Dynamic Decision Results, User Weights)
+      const params = await getVotingParameters(companyId)
+      
+      // 3. Process Voting Types
+      const allVTypes = params
+        .filter(p => p.parameter_type === 'voting_type')
+        .map(p => p.value)
+
+      const meetingTypeParam = params.find(
+        p => p.parameter_type === 'meeting_type' && p.value === currentMeetingType
+      )
+      const allowedTypesStr = (meetingTypeParam as any)?.linked_voting_type
+      
+      let filteredVTypes = allVTypes
+      if (allowedTypesStr) {
+        const allowedList = allowedTypesStr.split(',').filter(Boolean)
+        if (allowedList.length > 0) {
+          filteredVTypes = allVTypes.filter(vt => allowedList.includes(vt))
         }
-
-        const weights = params
-          .filter(p => p.parameter_type === 'user_type')
-          .reduce((acc, p) => {
-            // Company-specific weights (p.company_id !== null) should always override system defaults
-            if (!acc[p.value] || p.company_id !== null) {
-              acc[p.value] = (p as any).weight || 1.0;
-            }
-            return acc;
-          }, {} as Record<string, number>)
-        setUserTypeWeights(weights)
       }
+
+      const fallbackTypes = ["Majority Vote (50%+1)", "Three-Quarter Vote (75%)", "Unanimous Vote (100%)"]
+      const finalVTypes = filteredVTypes.length > 0 ? filteredVTypes : (allVTypes.length > 0 ? allVTypes : fallbackTypes)
+      setVotingTypes(finalVTypes)
+
+      if (!editMode && !selectedVotingType) {
+        setSelectedVotingType(finalVTypes[0] || "Majority Vote (50%+1)")
+      }
+
+      // 4. Process Decision Results
+      // a. dynamic results from parameters
+      const dynamicResults = params
+        .filter(p => p.parameter_type === 'decision_result')
+        .map(p => p.value)
+
+      // b. static results from company record
+      let companyResults: string[] = []
+      if (companyId) {
+        const { data: companyData } = await supabase
+          .from("companies")
+          .select("default_decision_results")
+          .eq("id", companyId)
+          .single()
+        companyResults = companyData?.default_decision_results || []
+      }
+
+      // c. system defaults
+      const baseDefaults = ["M/S/C", "Defeated", "Deferred"]
+      
+      // Merge all unique results
+      const mergedResults = [...new Set([...baseDefaults, ...dynamicResults, ...companyResults])]
+      setDecisionResults(mergedResults)
+
+      // 5. Process User Type Weights
+      const weights = params
+        .filter(p => p.parameter_type === 'user_type')
+        .reduce((acc, p) => {
+          if (!acc[p.value] || p.company_id !== null) {
+            acc[p.value] = (p as any).weight ?? 1.0;
+          }
+          return acc;
+        }, {} as Record<string, number>)
+      setUserTypeWeights(weights)
+
     } catch (err) {
-      console.error("Error fetching voting types:", err)
+      console.error("Error fetching voting context:", err)
+      // Basic fallbacks
+      setVotingTypes(["Majority Vote (50%+1)", "Three-Quarter Vote (75%)", "Unanimous Vote (100%)"])
+      setDecisionResults(["M/S/C", "Defeated", "Deferred"])
     }
   }
 
@@ -264,57 +316,6 @@ export default function DecisionModal({
     }
   }
 
-  const fetchDecisionResults = async () => {
-    try {
-      const meetingIdNum = typeof meetingId === 'string' ? parseInt(meetingId) : meetingId
-
-      const { data: meetingData, error: meetingError } = await supabase
-        .from("meetings")
-        .select("building_id")
-        .eq("id", meetingIdNum)
-        .single()
-
-      if (meetingError || !meetingData) {
-        console.error("Error fetching meeting:", meetingError)
-        return
-      }
-
-      const { data: buildingData, error: buildingError } = await supabase
-        .from("buildings")
-        .select("company_id")
-        .eq("id", meetingData.building_id)
-        .single()
-
-      if (buildingError || !buildingData || !buildingData.company_id) {
-        console.error("Error fetching building:", buildingError)
-        return
-      }
-
-      // 1. Get dynamic parameters from voting_parameters table
-      const params = await getVotingParameters(buildingData.company_id)
-      const dynamicResults = params
-        .filter(p => p.parameter_type === 'decision_result')
-        .map(p => p.value)
-
-      // 2. Get static defaults from companies table
-      const { data: companyData, error: companyError } = await supabase
-        .from("companies")
-        .select("default_decision_results")
-        .eq("id", buildingData.company_id)
-        .single()
-
-      const companyResults = companyData?.default_decision_results || []
-
-      // 3. Merge and deduplicate
-      const baseDefaults = ["M/S/C", "Defeated", "Deferred"]
-      const mergedResults = [...new Set([...baseDefaults, ...dynamicResults, ...companyResults])]
-      setDecisionResults(mergedResults)
-    } catch (err) {
-      console.error("Error fetching decision results:", err)
-      setDecisionResults(["M/S/C", "Defeated", "Deferred"])
-    }
-  }
-
   const fetchCompanyUsers = async () => {
     try {
       const meetingIdNum = typeof meetingId === 'string' ? parseInt(meetingId) : meetingId
@@ -333,21 +334,41 @@ export default function DecisionModal({
         .eq("id", meetingData.building_id)
         .single()
 
-      if (!buildingData?.company_id) return
+      // ── 1. Users linked to this building via user_buildings ──
+      const { data: userBuildings } = await supabase
+        .from("user_buildings")
+        .select("user_id")
+        .eq("building_id", meetingData.building_id)
 
-      const { data: usersData, error: usersError } = await supabase
-        .from("users")
-        .select("id, name, email, user_type, roles, voting_weight")
-        .eq("company_id", buildingData.company_id)
-        .in("user_type", ["user", "owner", "property_manager", "corporate_administrator", "resident"])
-        .order("name", { ascending: true })
+      const buildingUserIds = (userBuildings ?? []).map((ub: any) => ub.user_id).filter(Boolean)
 
-      if (usersError) {
-        console.error("Error fetching company users:", usersError)
-        return
-      }
+      const buildingUsersPromise = buildingUserIds.length > 0
+        ? supabase
+            .from("users")
+            .select("id, name, email, user_type, roles, voting_weight")
+            .in("id", buildingUserIds)
+        : Promise.resolve({ data: [] })
 
-      setCompanyUsers(usersData ?? [])
+      // ── 2. Users linked via company_id (PMs, Corp Admins, etc.) ──
+      const companyUsersPromise = buildingData?.company_id
+        ? supabase
+            .from("users")
+            .select("id, name, email, user_type, roles, voting_weight")
+            .eq("company_id", buildingData.company_id)
+        : Promise.resolve({ data: [] })
+
+      const [{ data: buildingUsers }, { data: companyUsers }] = await Promise.all([
+        buildingUsersPromise,
+        companyUsersPromise,
+      ])
+
+      // ── 3. Merge & deduplicate by id ──
+      const merged = [...(buildingUsers ?? []), ...(companyUsers ?? [])]
+      const unique = Array.from(
+        new Map(merged.map((u: any) => [u.id, u])).values()
+      ).sort((a: any, b: any) => a.name.localeCompare(b.name))
+
+      setCompanyUsers(unique)
     } catch (err) {
       console.error("Error fetching company users:", err)
     }
@@ -711,7 +732,7 @@ export default function DecisionModal({
         </button>
         
         {isOpen && (
-          <div className="absolute z-50 w-64 mt-1 bg-card border border-border rounded-lg shadow-xl max-h-56 overflow-y-auto">
+          <div className="absolute z-50 w-64 bottom-full mb-1 bg-card border border-border rounded-lg shadow-xl max-h-44 overflow-y-auto">
             {companyUsers.length === 0 && (
               <div className="p-3 text-sm text-muted-foreground text-center">No users found for this company</div>
             )}
@@ -772,89 +793,90 @@ export default function DecisionModal({
 
   // ⭐ NEW: Form content (shared between embedded and modal)
   const formContent = (
-    <div className="p-6 max-h-[80vh] overflow-y-auto">
-      {parentDecision && (
-        <div className="mb-4 p-3 bg-purple-50 border border-purple-200 rounded-lg">
-          <div className="flex items-start gap-2">
-            <div className="text-purple-600 font-semibold text-sm">Parent Motion:</div>
-            <div className="flex-1">
-              <p className="text-sm text-gray-700">{parentDecision.motion_text}</p>
-              {parentDecision.result && (
-                <p className="text-xs text-purple-600 mt-1">Result: {parentDecision.result}</p>
-              )}
+    <div className="flex flex-col max-h-[80vh]">
+      {/* ── Scrollable top section ── */}
+      <div className="p-6 pb-4 overflow-y-auto flex-1 min-h-0">
+        {parentDecision && (
+          <div className="mb-4 p-3 bg-purple-50 border border-purple-200 rounded-lg">
+            <div className="flex items-start gap-2">
+              <div className="text-purple-600 font-semibold text-sm">Parent Motion:</div>
+              <div className="flex-1">
+                <p className="text-sm text-gray-700">{parentDecision.motion_text}</p>
+                {parentDecision.result && (
+                  <p className="text-xs text-purple-600 mt-1">Result: {parentDecision.result}</p>
+                )}
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {error && (
-        <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded text-sm mb-4">
-          {error}
-        </div>
-      )}
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded text-sm mb-4">
+            {error}
+          </div>
+        )}
 
-      <div className="space-y-4">
-        <div className="bg-muted/30 rounded-lg p-3 border border-border/50">
-          <div className="flex items-center justify-between mb-2">
-            <div className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground flex items-center gap-1.5">
-              <AlertCircle className="h-3.5 w-3.5" />
-              Topic Context
+        <div className="space-y-4">
+          <div className="bg-muted/30 rounded-lg p-3 border border-border/50">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground flex items-center gap-1.5">
+                <AlertCircle className="h-3.5 w-3.5" />
+                Topic Context
+              </div>
+              {(topicNotes.length > 0 || topicTasks.length > 0) && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowReferences(!showReferences)}
+                  className="h-6 px-2 text-[10px] font-bold text-primary hover:bg-primary/5"
+                >
+                  {showReferences ? "Hide References" : `Show References (${topicNotes.length + topicTasks.length})`}
+                </Button>
+              )}
             </div>
-            {(topicNotes.length > 0 || topicTasks.length > 0) && (
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                onClick={() => setShowReferences(!showReferences)}
-                className="h-6 px-2 text-[10px] font-bold text-primary hover:bg-primary/5"
-              >
-                {showReferences ? "Hide References" : `Show References (${topicNotes.length + topicTasks.length})`}
-              </Button>
+            <div className="text-sm font-semibold text-foreground line-clamp-1 mb-1">
+              {topicTitle || "Loading topic..."}
+            </div>
+
+            {showReferences && (
+              <div className="mt-3 space-y-2 max-h-40 overflow-y-auto pr-1 animate-in slide-in-from-top-2 duration-200">
+                {topicNotes.length > 0 && (
+                  <div className="space-y-1.5">
+                    <div className="text-[9px] font-bold text-muted-foreground/70 uppercase px-1">Notes</div>
+                    {topicNotes.map(note => (
+                      <div
+                        key={note.id}
+                        onClick={() => insertReference(note.content)}
+                        className="group flex items-start gap-2 p-2 rounded border border-dashed border-primary/20 bg-primary/5 hover:bg-primary/10 cursor-pointer transition-colors"
+                      >
+                        <FileText className="h-3.5 w-3.5 text-primary mt-0.5 shrink-0" />
+                        <div className="text-xs text-muted-foreground group-hover:text-foreground line-clamp-2">
+                          {note.content}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {topicTasks.length > 0 && (
+                  <div className="space-y-1.5 mt-3">
+                    <div className="text-[9px] font-bold text-muted-foreground/70 uppercase px-1">Tasks</div>
+                    {topicTasks.map(task => (
+                      <div
+                        key={task.id}
+                        onClick={() => insertReference(`Task: ${task.description}`)}
+                        className="group flex items-start gap-2 p-2 rounded border border-dashed border-green-600/20 bg-green-600/5 hover:bg-green-600/10 cursor-pointer transition-colors"
+                      >
+                        <CheckSquare className="h-3.5 w-3.5 text-green-600 mt-0.5 shrink-0" />
+                        <div className="text-xs text-muted-foreground group-hover:text-foreground line-clamp-2">
+                          {task.description}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
           </div>
-          <div className="text-sm font-semibold text-foreground line-clamp-1 mb-1">
-            {topicTitle || "Loading topic..."}
-          </div>
-
-          {showReferences && (
-            <div className="mt-3 space-y-2 max-h-40 overflow-y-auto pr-1 animate-in slide-in-from-top-2 duration-200">
-              {topicNotes.length > 0 && (
-                <div className="space-y-1.5">
-                  <div className="text-[9px] font-bold text-muted-foreground/70 uppercase px-1">Notes</div>
-                  {topicNotes.map(note => (
-                    <div 
-                      key={note.id} 
-                      onClick={() => insertReference(note.content)}
-                      className="group flex items-start gap-2 p-2 rounded border border-dashed border-primary/20 bg-primary/5 hover:bg-primary/10 cursor-pointer transition-colors"
-                    >
-                      <FileText className="h-3.5 w-3.5 text-primary mt-0.5 shrink-0" />
-                      <div className="text-xs text-muted-foreground group-hover:text-foreground line-clamp-2">
-                        {note.content}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-              
-              {topicTasks.length > 0 && (
-                <div className="space-y-1.5 mt-3">
-                  <div className="text-[9px] font-bold text-muted-foreground/70 uppercase px-1">Tasks</div>
-                  {topicTasks.map(task => (
-                    <div 
-                      key={task.id} 
-                      onClick={() => insertReference(`Task: ${task.description}`)}
-                      className="group flex items-start gap-2 p-2 rounded border border-dashed border-green-600/20 bg-green-600/5 hover:bg-green-600/10 cursor-pointer transition-colors"
-                    >
-                      <CheckSquare className="h-3.5 w-3.5 text-green-600 mt-0.5 shrink-0" />
-                      <div className="text-xs text-muted-foreground group-hover:text-foreground line-clamp-2">
-                        {task.description}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
 
         <div className="relative">
           <label className="block text-sm font-medium text-foreground mb-2">
@@ -930,7 +952,135 @@ export default function DecisionModal({
           )}
         </div>
 
-        <div className={`grid ${result === "M/S/C" || result === "Defeated" || meetingType === "AGM" || meetingType === "SGM" ? "grid-cols-2" : "grid-cols-1"} gap-4`}>
+        {/* 🗳️ Advanced Voting Logic Preview — only for AGM and SGM meeting types */}
+        {(meetingType === "AGM" || meetingType === "SGM") && (votersFor.length > 0 || votersAgainst.length > 0 || votesFor !== "" || votesAgainst !== "") && (
+          <div className="bg-gradient-to-br from-primary/5 to-decision-purple/5 p-5 rounded-2xl border border-primary/20 shadow-sm animate-in fade-in zoom-in-95 duration-500">
+            <div className="flex items-center justify-between mb-4">
+              <h4 className="text-[11px] font-bold uppercase tracking-widest text-primary flex items-center gap-2">
+                <CheckSquare className="h-4 w-4" />
+                Live Decision Analysis
+              </h4>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] bg-white border border-primary/20 text-primary px-2.5 py-1 rounded-lg font-bold shadow-sm">
+                  {selectedVotingType || "Standard Majority"}
+                </span>
+              </div>
+            </div>
+
+            {(() => {
+              // 1. Calculate Raw Headcount
+              const forCount = votersFor.length || Number(votesFor) || 0;
+              const againstCount = votersAgainst.length || Number(votesAgainst) || 0;
+              const abstainCount = votersAbstain.length || Number(votesAbstain) || 0;
+
+              // 2. Calculate Weighted Totals
+              const calculateWeight = (names: string[]) => 
+                names.reduce((sum, name) => {
+                  const u = companyUsers.find(user => user.name === name);
+                  const roleLabel = u ? getRoleBadge(u).label : "";
+                  const roleWeight = userTypeWeights[u?.user_type || ""] || userTypeWeights[roleLabel] || 1.0;
+                  const weight = (u?.voting_weight !== undefined && u.voting_weight !== null) ? u.voting_weight : roleWeight;
+                  return sum + weight;
+                }, 0);
+
+              const wFor = votersFor.length > 0 ? calculateWeight(votersFor) : Number(votesFor) || 0;
+              const wAgainst = votersAgainst.length > 0 ? calculateWeight(votersAgainst) : Number(votesAgainst) || 0;
+              const wTotal = wFor + wAgainst;
+
+              // 3. Extract Threshold and Criteria
+              const percentage = wTotal > 0 ? (wFor / wTotal) * 100 : 0;
+              
+              // Intelligent Threshold Detection
+              const pctMatch = selectedVotingType.match(/(\d+)%/);
+              let threshold = pctMatch ? parseInt(pctMatch[1]) : 50;
+              
+              // Special logic for standard types if regex fails or for nuance
+              let isGreaterOrEqual = true;
+              if (selectedVotingType.toLowerCase().includes("unanimous") || selectedVotingType.includes("100")) {
+                threshold = 100;
+              } else if (selectedVotingType.toLowerCase().includes("three-quarter") || selectedVotingType.includes("75")) {
+                threshold = 75;
+              } else if (selectedVotingType.toLowerCase().includes("majority")) {
+                threshold = 50;
+                isGreaterOrEqual = false; // "Majority" usually means > 50%
+              }
+
+              const passed = isGreaterOrEqual ? percentage >= threshold : percentage > threshold;
+              const margin = percentage - threshold;
+
+              return (
+                <div className="space-y-4">
+                  {/* Result Verdict Card */}
+                  <div className={`flex items-center justify-between p-3 rounded-xl border ${passed ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"}`}>
+                    <div className="flex items-center gap-3">
+                      <div className={`p-2 rounded-full ${passed ? "bg-green-500" : "bg-red-500"}`}>
+                        {passed ? <CheckCircle2 className="h-5 w-5 text-white" /> : <XCircle className="h-5 w-5 text-white" />}
+                      </div>
+                      <div>
+                        <div className={`text-sm font-black ${passed ? "text-green-800" : "text-red-800"}`}>
+                          {passed ? "MOTION CARRIED" : "MOTION DEFEATED"}
+                        </div>
+                        <div className={`text-[10px] font-medium ${passed ? "text-green-600" : "text-red-600"}`}>
+                          {passed 
+                            ? `Exceeds ${threshold}% threshold by ${margin.toFixed(1)}%` 
+                            : `Requires ${Math.abs(margin).toFixed(1)}% more to pass`}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-2xl font-black text-foreground leading-none">{percentage.toFixed(1)}%</div>
+                      <div className="text-[9px] font-bold text-muted-foreground mt-1 uppercase tracking-tighter">Support Level</div>
+                    </div>
+                  </div>
+
+                  {/* Visual Progress Bar */}
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between text-[9px] font-bold text-muted-foreground uppercase px-1">
+                      <span>Against</span>
+                      <span>{threshold}% Threshold</span>
+                      <span>For</span>
+                    </div>
+                    <div className="h-3 w-full bg-muted/50 rounded-full overflow-hidden relative border border-border/20 p-0.5">
+                      <div 
+                        className={`h-full rounded-full transition-all duration-1000 ease-out shadow-sm ${passed ? "bg-green-500" : "bg-amber-500"}`} 
+                        style={{ width: `${percentage}%` }} 
+                      />
+                      {/* Threshold Marker */}
+                      <div 
+                        className="absolute top-0 bottom-0 w-0.5 bg-foreground/30 z-10" 
+                        style={{ left: `${threshold}%` }}
+                      >
+                        <div className="absolute -top-1 -left-[3px] w-2 h-2 rounded-full bg-foreground/30" />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Data Breakdown Table */}
+                  <div className="grid grid-cols-3 gap-2 pt-1">
+                    <div className="bg-white/50 p-2 rounded-lg border border-border/30">
+                      <div className="text-[9px] text-muted-foreground font-bold uppercase mb-0.5">Weighted For</div>
+                      <div className="text-xs font-black text-green-700">{wFor.toFixed(2)}</div>
+                    </div>
+                    <div className="bg-white/50 p-2 rounded-lg border border-border/30 text-center">
+                      <div className="text-[9px] text-muted-foreground font-bold uppercase mb-0.5">Against</div>
+                      <div className="text-xs font-black text-red-700">{wAgainst.toFixed(2)}</div>
+                    </div>
+                    <div className="bg-white/50 p-2 rounded-lg border border-border/30 text-right">
+                      <div className="text-[9px] text-muted-foreground font-bold uppercase mb-0.5">Participation</div>
+                      <div className="text-xs font-black text-foreground">{forCount + againstCount + abstainCount} <span className="text-[8px] font-medium text-muted-foreground">People</span></div>
+                    </div>
+                  </div>
+
+                  <p className="text-[9px] text-muted-foreground italic text-center px-4 leading-tight">
+                    * Weighted analysis based on organizational roles and multipliers. Abstentions are excluded from percentage calculation.
+                  </p>
+                </div>
+              );
+            })()}
+          </div>
+        )}
+
+        <div className={`grid ${meetingType === "AGM" || meetingType === "SGM" ? "grid-cols-2" : "grid-cols-1"} gap-4`}>
           <div>
             <label className="block text-sm font-medium text-foreground mb-1.5 flex items-center gap-2">
               Result
@@ -950,7 +1100,7 @@ export default function DecisionModal({
             </select>
           </div>
 
-          {(result === "M/S/C" || result === "Defeated" || meetingType === "AGM" || meetingType === "SGM") && (
+          {(meetingType === "AGM" || meetingType === "SGM") && (
             <div className="animate-in slide-in-from-right-4 duration-300">
               <label className="block text-sm font-medium text-foreground mb-1.5 flex items-center gap-2">
                 Voting Mechanism
@@ -969,121 +1119,22 @@ export default function DecisionModal({
               </select>
             </div>
           )}
+        </div>{/* close grid: result + voting mechanism */}
+
+        </div>{/* close space-y-4 */}
+      </div>{/* end scrollable section */}
+
+      {/* ── Non-clipping bottom section: vote dropdowns, preview, buttons ── */}
+      <div className="px-6 pt-2 pb-4 space-y-3">
+        <div className="space-y-2 animate-in slide-in-from-bottom-4 duration-300">
+          <div className="grid grid-cols-3 gap-4">
+            {renderVotingDropdown("Votes For", "for", votersFor)}
+            {renderVotingDropdown("Votes Against", "against", votersAgainst)}
+            {renderVotingDropdown("Abstentions", "abstain", votersAbstain)}
+          </div>
         </div>
 
-        {(result === "M/S/C" || result === "Defeated" || meetingType === "AGM" || meetingType === "SGM") && (
-          <div className="space-y-4 animate-in slide-in-from-bottom-4 duration-300">
-            <div className="grid grid-cols-3 gap-4">
-              {renderVotingDropdown("Votes For", "for", votersFor)}
-              {renderVotingDropdown("Votes Against", "against", votersAgainst)}
-              {renderVotingDropdown("Abstentions", "abstain", votersAbstain)}
-            </div>
-          </div>
-        )}
 
-        {/* Logic Calculation Preview */}
-        {(result === "M/S/C" || result === "Defeated" || meetingType === "AGM" || meetingType === "SGM") && (votersFor.length > 0 || votersAgainst.length > 0 || votesFor !== "" || votesAgainst !== "") && (
-          <div className="bg-muted/30 p-4 rounded-xl border border-border/50 animate-in fade-in zoom-in-95 duration-300">
-            <div className="flex items-center justify-between mb-3">
-               <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                  <AlertCircle className="h-3.5 w-3.5" />
-                  Voting Logic Preview
-               </h4>
-               {selectedVotingType && (
-                 <span className="text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded-full font-medium">
-                    {selectedVotingType}
-                 </span>
-               )}
-            </div>
-            
-            {(() => {
-              const vForRaw = votersFor.length || Number(votesFor) || 0;
-              const vAgainstRaw = votersAgainst.length || Number(votesAgainst) || 0;
-              
-              // Calculate weighted totals
-              const vFor = votersFor.length > 0 
-                ? votersFor.reduce((sum, name) => {
-                    const u = companyUsers.find(user => user.name === name);
-                    const roleLabel = u ? getRoleBadge(u).label : "";
-                    const roleWeight = userTypeWeights[u?.user_type || ""] || userTypeWeights[roleLabel] || 1.0;
-                    // Use individual weight if set and not 1.0, otherwise use role weight
-                    const weight = (u?.voting_weight && u.voting_weight !== 1.0) ? u.voting_weight : roleWeight;
-                    return sum + weight;
-                  }, 0)
-                : Number(votesFor) || 0;
-                
-              const vAgainst = votersAgainst.length > 0 
-                ? votersAgainst.reduce((sum, name) => {
-                    const u = companyUsers.find(user => user.name === name);
-                    const roleLabel = u ? getRoleBadge(u).label : "";
-                    const roleWeight = userTypeWeights[u?.user_type || ""] || userTypeWeights[roleLabel] || 1.0;
-                    // Use individual weight if set and not 1.0, otherwise use role weight
-                    const weight = (u?.voting_weight && u.voting_weight !== 1.0) ? u.voting_weight : roleWeight;
-                    return sum + weight;
-                  }, 0)
-                : Number(votesAgainst) || 0;
-
-              const total = vFor + vAgainst;
-              const totalRaw = vForRaw + vAgainstRaw;
-              const percentage = total > 0 ? (vFor / total) * 100 : 0;
-              
-              let passed = false;
-              let threshold = 50;
-              
-              if (selectedVotingType.includes("75") || selectedVotingType.includes("Three-Quarter")) {
-                passed = percentage >= 75;
-                threshold = 75;
-              } else if (selectedVotingType.includes("100") || selectedVotingType.includes("Unanimous")) {
-                passed = percentage >= 100 && vFor > 0;
-                threshold = 100;
-              } else {
-                passed = percentage > 50;
-                threshold = 50;
-              }
-
-              return (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      {passed ? (
-                        <CheckCircle2 className="h-5 w-5 text-green-500" />
-                      ) : (
-                        <XCircle className="h-5 w-5 text-red-500" />
-                      )}
-                      <span className={`text-sm font-bold ${passed ? "text-green-700" : "text-red-700"}`}>
-                        {passed ? "Motion Carried" : "Motion Defeated"}
-                      </span>
-                    </div>
-                    <div className="text-right">
-                      <span className="text-xl font-black text-foreground">{percentage.toFixed(1)}%</span>
-                      <span className="text-[10px] text-muted-foreground block">
-                        {total.toFixed(1)} weighted votes ({totalRaw} people)
-                      </span>
-                    </div>
-                  </div>
-                  
-                  <div className="h-2 w-full bg-muted rounded-full overflow-hidden relative">
-                    <div 
-                      className={`h-full transition-all duration-500 ${passed ? "bg-green-500" : "bg-red-500"}`} 
-                      style={{ width: `${percentage}%` }} 
-                    />
-                    {threshold < 100 && (
-                      <div 
-                        className="absolute h-4 w-0.5 bg-foreground/20 -mt-1 top-0" 
-                        style={{ left: `${threshold}%` }}
-                        title={`Threshold: ${threshold}%`}
-                      />
-                    )}
-                  </div>
-                  
-                  <p className="text-[10px] text-muted-foreground italic text-center">
-                    * Calculations exclude abstentions as per standard voting protocol.
-                  </p>
-                </div>
-              );
-            })()}
-          </div>
-        )}
 
         {editMode && (
           <div>
@@ -1101,9 +1152,10 @@ export default function DecisionModal({
             </select>
           </div>
         )}
-      </div>
+      </div>{/* end non-clipping section */}
 
-      <div className="flex gap-3 mt-6">
+      {/* Action buttons — also outside the scroll zone */}
+      <div className="flex gap-3 px-6 pb-4 pt-1 border-t border-border/40">
         {editMode && existingDecisionId && (
           <Button
             onClick={handleDelete}
