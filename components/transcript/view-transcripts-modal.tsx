@@ -115,7 +115,7 @@ export function ViewTranscriptsModal({ isOpen, meetingId, onClose }: ViewTranscr
     }
 
     setTranscribing(true)
-    const documentedSecret = "meeting-genius-secret-key-2026"
+    const documentedSecret = process.env.NEXT_PUBLIC_API_KEY || ""
 
     try {
       const transRes = await fetch("/api/transcripts/transcribe-recording", {

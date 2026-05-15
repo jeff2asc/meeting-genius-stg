@@ -75,7 +75,7 @@ export function UploadTranscriptModal({
       const response = await fetch("/api/transcripts/upload", {
         method: "POST",
         headers: {
-          "x-api-key": process.env.NEXT_PUBLIC_API_KEY || "meeting-genius-secret-key-2026",
+          "x-api-key": process.env.NEXT_PUBLIC_API_KEY || "",
         },
         body: formData,
       })

@@ -10,20 +10,23 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { sections } = await request.json()
-    if (!sections || !Array.isArray(sections)) {
-      return NextResponse.json({ error: 'Missing or invalid sections array' }, { status: 400 })
+    const { topics } = await request.json()
+    if (!topics || !Array.isArray(topics)) {
+      return NextResponse.json({ error: 'Missing or invalid topics array' }, { status: 400 })
     }
 
     const supabase = createAdminClient()
     
     const results = await Promise.all(
-      sections.map((section: { id: number; order_index: number }) =>
-        supabase
-          .from('sections')
-          .update({ order_index: section.order_index })
-          .eq('id', section.id)
-      )
+      topics.map((topic: { id: number; order_index: number; section_id?: number }) => {
+        const updateData: any = { order_index: topic.order_index }
+        if (topic.section_id !== undefined) updateData.section_id = topic.section_id
+        
+        return supabase
+          .from('topics')
+          .update(updateData)
+          .eq('id', topic.id)
+      })
     )
 
     const errors = results.filter(r => r.error).map(r => r.error?.message)

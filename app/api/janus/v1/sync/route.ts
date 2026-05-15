@@ -4,7 +4,7 @@ import { createAdminClient } from "@/lib/supabase";
 
 export async function GET(req: NextRequest) {
   const apiKey = req.headers.get("x-api-key");
-  const documentedSecret = process.env.NEXT_PUBLIC_API_KEY || "meeting-genius-secret-key-2026";
+  const documentedSecret = process.env.NEXT_PUBLIC_API_KEY || ""
 
   if (apiKey !== documentedSecret) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

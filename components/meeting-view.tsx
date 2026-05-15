@@ -305,7 +305,7 @@ export default function MeetingView({
     if (forceResync) setIsResyncing(true)
     
     try {
-      const documentedSecret = "meeting-genius-secret-key-2026"
+      const documentedSecret = process.env.NEXT_PUBLIC_API_KEY || ""
       const res = await fetch(`${window.location.origin}/api/janus/v1/sync`, {
         headers: { "x-api-key": documentedSecret }
       })
@@ -1507,7 +1507,7 @@ export default function MeetingView({
         method: "POST",
         headers: { 
           'Content-Type': 'application/json',
-          'x-api-key': process.env.NEXT_PUBLIC_API_KEY || 'meeting-genius-secret-key-2026'
+          'x-api-key': process.env.NEXT_PUBLIC_API_KEY || ''
         },
         body: JSON.stringify({
           companyId: buildingData.company_id,

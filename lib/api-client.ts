@@ -25,7 +25,7 @@ async function fetchApi<T>(
     method,
     headers: {
       'Content-Type': 'application/json',
-      'x-api-key': 'meeting-genius-secret-key-2026',
+      'x-api-key': process.env.NEXT_PUBLIC_API_KEY || '',
       ...headers,
     },
     body: body ? JSON.stringify(body) : undefined,

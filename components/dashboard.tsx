@@ -141,7 +141,7 @@ export default function Dashboard({
     if (!isIntegrated && !isMaster) return
 
     try {
-      const documentedSecret = "meeting-genius-secret-key-2026"
+      const documentedSecret = process.env.NEXT_PUBLIC_API_KEY || ""
       const res = await fetch(`${window.location.origin}/api/janus/v1/sync?company_id=${currentUser.company_id}`, {
         headers: { "x-api-key": documentedSecret }
       })

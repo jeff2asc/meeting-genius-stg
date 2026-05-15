@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase'
 
 const VALID_API_KEY = process.env.NEXT_PUBLIC_API_KEY || ''
 
-export async function PATCH(
+export async function DELETE(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
@@ -14,23 +14,10 @@ export async function PATCH(
     }
 
     const { id } = await params
-    const body = await request.json()
-    const { status, recorder_name, timekeeper_name, attendees } = body
-
-    if (!status) {
-      return NextResponse.json({ error: 'Missing status' }, { status: 400 })
-    }
-
     const supabase = createClient()
-    const updateData: any = { status }
-    
-    if (recorder_name) updateData.recorder_name = recorder_name
-    if (timekeeper_name) updateData.timekeeper_name = timekeeper_name
-    if (attendees) updateData.attendees = attendees
-
     const { error } = await supabase
-      .from('meetings')
-      .update(updateData)
+      .from('tasks')
+      .delete()
       .eq('id', parseInt(id))
 
     if (error) {

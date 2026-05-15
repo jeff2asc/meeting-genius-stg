@@ -143,7 +143,7 @@ export default function IntegrationsPage({ onBack }: { onBack: () => void }) {
     setIsLoadingData(true)
     
     try {
-      const documentedSecret = "meeting-genius-secret-key-2026"
+      const documentedSecret = process.env.NEXT_PUBLIC_API_KEY || ""
       const isMasterUser = checkIsMaster(user)
       const isCorpAdmin = checkIsCorporateAdmin(user)
       const userCompanyId = user?.company_id
@@ -215,7 +215,7 @@ export default function IntegrationsPage({ onBack }: { onBack: () => void }) {
     setSyncStep(1)
     setSyncLog(["⏳ Filtering data based on your selections..."])
     
-    const API_KEY = "meeting-genius-secret-key-2026"
+    const API_KEY = process.env.NEXT_PUBLIC_API_KEY || ""
     const currentUser = user
 
     try {
@@ -317,7 +317,7 @@ export default function IntegrationsPage({ onBack }: { onBack: () => void }) {
   const handleOpenJanus = () => {
     const user = getCurrentUser()
     const email = user?.email || ""
-    const token = (typeof window !== 'undefined' ? localStorage.getItem(`mg_janus_token_${user?.id}`) : null) || "meeting-genius-secret-key-2026"
+    const token = (typeof window !== 'undefined' ? localStorage.getItem(`mg_janus_token_${user?.id}`) : null) || (process.env.NEXT_PUBLIC_API_KEY || "")
     
     // Auto-detect environment for the dashboard link
     const isLocal = typeof window !== 'undefined' && window.location.hostname === 'localhost';
@@ -456,7 +456,7 @@ export default function IntegrationsPage({ onBack }: { onBack: () => void }) {
                       API Secret Key
                     </div>
                     <div className="text-foreground">
-                      meeting-genius-secret-key-2026
+                      {process.env.NEXT_PUBLIC_API_KEY || "Not Configured"}
                     </div>
                   </div>
                 )}

@@ -134,7 +134,7 @@ export default function AttendeeManagement({
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
-          'x-api-key': process.env.NEXT_PUBLIC_API_KEY || 'meeting-genius-secret-key-2026'
+          'x-api-key': process.env.NEXT_PUBLIC_API_KEY || ''
         },
         body: JSON.stringify({
           companyId,

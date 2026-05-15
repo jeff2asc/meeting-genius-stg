@@ -8,7 +8,7 @@ export async function POST(request: NextRequest) {
     
     // API Key verification
     const apiKeyHeader = request.headers.get('x-api-key');
-    const validApiKey = process.env.NEXT_PUBLIC_API_KEY || 'meeting-genius-secret-key-2026';
+    const validApiKey = process.env.NEXT_PUBLIC_API_KEY || ''
     if (!apiKeyHeader || apiKeyHeader !== validApiKey) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
