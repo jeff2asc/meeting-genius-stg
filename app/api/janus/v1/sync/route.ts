@@ -20,12 +20,14 @@ export async function GET(req: NextRequest) {
     let usersQuery    = db.from("users").select("*").neq("user_type", "vendor");
     let vendorsQuery  = db.from("users").select("*").eq("user_type", "vendor");
 
-    if (companyId && companyId !== "undefined") {
+    if (companyId && companyId !== "undefined" && companyId !== "null") {
       const cid = parseInt(companyId);
-      companiesQuery = companiesQuery.eq("id", cid);
-      buildingsQuery = buildingsQuery.eq("company_id", cid);
-      usersQuery     = usersQuery.eq("company_id", cid);
-      vendorsQuery   = vendorsQuery.eq("company_id", cid);
+      if (!isNaN(cid)) {
+        companiesQuery = companiesQuery.eq("id", cid);
+        buildingsQuery = buildingsQuery.eq("company_id", cid);
+        usersQuery     = usersQuery.eq("company_id", cid);
+        vendorsQuery   = vendorsQuery.eq("company_id", cid);
+      }
     }
 
     const [
@@ -39,7 +41,7 @@ export async function GET(req: NextRequest) {
     let ubQuery = db.from("user_buildings").select("*");
     if (buildings && buildings.length > 0) {
       ubQuery = ubQuery.in("building_id", buildings.map(b => b.id));
-    } else if (companyId && companyId !== "undefined") {
+    } else if (companyId && companyId !== "undefined" && companyId !== "null") {
       // If no buildings found for this company, return empty junctions
       ubQuery = ubQuery.eq("building_id", -1); 
     }
@@ -47,8 +49,11 @@ export async function GET(req: NextRequest) {
 
     // 3. Fetch Janus Tickets (Janus -> Meeting Genius) - Direct Fetch from Janus DB
     let ticketsQuery = janusClient.from('tickets').select('*');
-    if (companyId && companyId !== "undefined") {
-      ticketsQuery = ticketsQuery.eq('company_id', parseInt(companyId));
+    if (companyId && companyId !== "undefined" && companyId !== "null") {
+      const cid = parseInt(companyId);
+      if (!isNaN(cid)) {
+        ticketsQuery = ticketsQuery.eq('company_id', cid);
+      }
     }
 
     const { data: rawTickets, error: janusErr } = await ticketsQuery.order('created_at', { ascending: false });

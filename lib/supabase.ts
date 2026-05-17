@@ -1326,6 +1326,12 @@ export function createClient() {
 }
 
 export function createAdminClient() {
+  // If called on the client side (browser), SUPABASE_SERVICE_ROLE_KEY is not available.
+  // Return the regular supabase client which has full access via anon key / user session.
+  if (typeof window !== 'undefined') {
+    return supabase
+  }
+
   if (globalForSupabase.supabaseAdmin) {
     return globalForSupabase.supabaseAdmin
   }

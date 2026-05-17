@@ -12,8 +12,8 @@ export function formatUtcToLocalLong(dateString: string, timeString?: string): s
 
   // Combine with midnight UTC time if no time provided
   const combinedIso = timeString
-    ? `${dateString}T${timeString}Z`
-    : `${dateString}T00:00:00Z`
+    ? `${dateString}T${timeString}`
+    : `${dateString}T00:00:00`
 
   const date = new Date(combinedIso)
 
@@ -29,8 +29,8 @@ export function formatUtcToLocalShort(timeString: string, contextDate?: string):
   if (!timeString) return null
 
   // ⭐ FIXED: Use the actual context date for correct DST offset handling
-  const referenceDate = contextDate || new Date().toISOString().split('T')[0]
-  const combinedIso = `${referenceDate}T${timeString}Z`
+  const referenceDate = contextDate || getCurrentLocalDate()
+  const combinedIso = `${referenceDate}T${timeString}`
 
   const date = new Date(combinedIso)
   return date.toLocaleTimeString(undefined, {
@@ -136,4 +136,24 @@ export function formatUtcToLocalDateTime(utcIsoString: string): string {
     minute: "2-digit",
     hour12: true,
   })
+}
+/**
+ * Get current local date in YYYY-MM-DD format
+ */
+export function getCurrentLocalDate(): string {
+  const date = new Date()
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+/**
+ * Get current local time in HH:MM format
+ */
+export function getCurrentLocalTime(): string {
+  const date = new Date()
+  const hours = String(date.getHours()).padStart(2, '0')
+  const minutes = String(date.getMinutes()).padStart(2, '0')
+  return `${hours}:${minutes}`
 }

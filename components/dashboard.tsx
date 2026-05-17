@@ -109,7 +109,7 @@ export default function Dashboard({
         fetchJanusData()
       }
     }
-  }, [selectedBuilding, selectedMeetingType])
+  }, [selectedBuilding, selectedMeetingType, buildings, isJanusIntegrated])
 
   const fetchJanusData = async (forceResync = false) => {
     const currentUser = getCurrentUser()
@@ -152,8 +152,11 @@ export default function Dashboard({
       let repairs = payload.data?.repairs || []
       let complaints = payload.data?.complaints || []
       
-      if (selectedBuilding !== "All") {
-        const building = buildings.find(b => b.name === selectedBuilding)
+      // Fallback to payload.data.buildings if component buildings state is still empty on initial mount
+      const currentBuildings = buildings.length > 0 ? buildings : (payload.data?.buildings || [])
+
+      if (selectedBuilding !== "All" && selectedBuilding) {
+        const building = currentBuildings.find((b: any) => b.name === selectedBuilding)
         if (building) {
           repairs = repairs.filter((r: any) => 
             String(r.building_id) === String(building.id) || 
@@ -169,16 +172,16 @@ export default function Dashboard({
         const isMaster = checkIsMaster(currentUser);
         
         if (!isMaster) {
-          const authorizedNames = buildings.map(b => (b.name || "").toLowerCase()).filter(Boolean);
-          const authorizedIds = buildings.map(b => String(b.id || ""));
+          const authorizedNames = currentBuildings.map((b: any) => (b.name || "").toLowerCase()).filter(Boolean);
+          const authorizedIds = currentBuildings.map((b: any) => String(b.id || ""));
 
           repairs = repairs.filter((r: any) => 
             authorizedIds.includes(String(r.building_id)) || 
-            (r.building_name && authorizedNames.some(name => r.building_name.toLowerCase().includes(name)))
+            (r.building_name && authorizedNames.some((name: string) => r.building_name.toLowerCase().includes(name)))
           );
           complaints = complaints.filter((c: any) => 
             authorizedIds.includes(String(c.building_id)) || 
-            (c.building_name && authorizedNames.some(name => c.building_name.toLowerCase().includes(name)))
+            (c.building_name && authorizedNames.some((name: string) => c.building_name.toLowerCase().includes(name)))
           );
         }
       }
