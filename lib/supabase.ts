@@ -1520,10 +1520,18 @@ export async function getVotingParameters(companyId?: number | null) {
         // Deduplicate by parameter_type + value, giving precedence to company-specific overrides (company_id !== null) over global defaults (company_id === null)
         const dedupedMap = new Map<string, any>()
         for (const item of result.data) {
-          const key = `${item.parameter_type}:${item.value}`
+          const key = companyId 
+            ? `${item.parameter_type}:${item.value}` 
+            : `${item.parameter_type}:${item.value}:${item.company_id}`
           const existing = dedupedMap.get(key)
-          if (!existing || (existing.company_id === null && item.company_id !== null)) {
-            dedupedMap.set(key, item)
+          if (companyId) {
+            if (!existing || (existing.company_id === null && item.company_id !== null)) {
+              dedupedMap.set(key, item)
+            }
+          } else {
+            if (!existing) {
+              dedupedMap.set(key, item)
+            }
           }
         }
         return Array.from(dedupedMap.values())
@@ -1542,9 +1550,6 @@ export async function getVotingParameters(companyId?: number | null) {
 
   if (companyId !== null && companyId !== undefined) {
     query = query.or(`company_id.is.null,company_id.eq.${companyId}`)
-  } else {
-    // If no company context is provided, only return global defaults
-    query = query.is("company_id", null)
   }
 
   const { data, error } = await query
@@ -1559,10 +1564,18 @@ export async function getVotingParameters(companyId?: number | null) {
   // Deduplicate by parameter_type + value, giving precedence to company-specific overrides (company_id !== null) over global defaults (company_id === null)
   const dedupedMap = new Map<string, any>()
   for (const item of data) {
-    const key = `${item.parameter_type}:${item.value}`
+    const key = companyId 
+      ? `${item.parameter_type}:${item.value}` 
+      : `${item.parameter_type}:${item.value}:${item.company_id}`
     const existing = dedupedMap.get(key)
-    if (!existing || (existing.company_id === null && item.company_id !== null)) {
-      dedupedMap.set(key, item)
+    if (companyId) {
+      if (!existing || (existing.company_id === null && item.company_id !== null)) {
+        dedupedMap.set(key, item)
+      }
+    } else {
+      if (!existing) {
+        dedupedMap.set(key, item)
+      }
     }
   }
 

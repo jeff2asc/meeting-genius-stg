@@ -230,8 +230,10 @@ export default function VotingTab() {
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="font-semibold text-sm">{param.value}</span>
-                        {param.company_id === null && (
+                        {param.company_id === null ? (
                           <span className="text-[9px] bg-primary/10 text-primary px-1.5 py-0.5 rounded uppercase font-bold border border-primary/20">Default</span>
+                        ) : (
+                          <span className="text-[9px] bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded uppercase font-bold border border-amber-200">Company ID: {param.company_id}</span>
                         )}
                       </div>
                       {param.description && (
@@ -248,10 +250,12 @@ export default function VotingTab() {
                   </div>
                   <div className="flex items-center gap-1">
                     {(param.company_id === companyId || 
-                      currentUser?.user_type === 'master' || 
-                      currentUser?.roles?.includes('master') ||
-                      currentUser?.user_type === 'corporate_administrator' ||
-                      currentUser?.roles?.includes('corporate_administrator')) && (
+                      (currentUser?.user_type as any) === 'master' || 
+                      (currentUser?.roles as any)?.includes('master') ||
+                      (currentUser?.user_type as any) === 'corporate_administrator' ||
+                      (currentUser?.roles as any)?.includes('corporate_administrator') ||
+                      (currentUser?.user_type as any) === 'corporate_admin' ||
+                      (currentUser?.roles as any)?.includes('corporate_admin')) && (
                       <>
                         <Button 
                           variant="ghost" 

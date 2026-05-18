@@ -27,8 +27,6 @@ export async function GET(request: NextRequest) {
 
     if (companyId !== null && !isNaN(companyId)) {
       query = query.or(`company_id.is.null,company_id.eq.${companyId}`)
-    } else {
-      query = query.is('company_id', null)
     }
 
     const { data, error } = await query
@@ -50,25 +48,61 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { action, company_id, parameter_type, value, description, weight, linked_voting_type, id } = body
+    const { action, company_id, parameter_type, value, description, weight, linked_voting_type } = body
 
     const supabase = createAdminClient()
 
     if (action === 'upsert') {
-      // Create or update a company-specific override for a parameter
-      const { data, error } = await supabase
+      // Create or update a company-specific override for a parameter safely without DB ON CONFLICT constraint requirements
+      const { data: existing, error: findError } = await supabase
         .from('voting_parameters')
-        .upsert({
-          company_id,
-          parameter_type,
-          value,
-          description: description || null,
-          weight: weight !== undefined ? weight : 1.0,
-          is_default: false,
-          ...(parameter_type === 'meeting_type' && { linked_voting_type: linked_voting_type || null })
-        }, { onConflict: 'company_id,parameter_type,value', ignoreDuplicates: false })
-        .select()
-        .single()
+        .select('*')
+        .eq('company_id', company_id)
+        .eq('parameter_type', parameter_type)
+        .eq('value', value)
+        .maybeSingle()
+
+      if (findError) {
+        return NextResponse.json({ error: findError.message }, { status: 500 })
+      }
+
+      let data
+      let error
+
+      if (existing) {
+        // If it exists, update it
+        const { data: updated, error: updateError } = await supabase
+          .from('voting_parameters')
+          .update({
+            description: description || null,
+            weight: weight !== undefined ? weight : 1.0,
+            ...(parameter_type === 'meeting_type' && { linked_voting_type: linked_voting_type || null })
+          })
+          .eq('id', existing.id)
+          .select()
+          .single()
+
+        data = updated
+        error = updateError
+      } else {
+        // If it doesn't exist, insert it
+        const { data: inserted, error: insertError } = await supabase
+          .from('voting_parameters')
+          .insert({
+            company_id,
+            parameter_type,
+            value,
+            description: description || null,
+            weight: weight !== undefined ? weight : 1.0,
+            is_default: false,
+            ...(parameter_type === 'meeting_type' && { linked_voting_type: linked_voting_type || null })
+          })
+          .select()
+          .single()
+
+        data = inserted
+        error = insertError
+      }
 
       if (error) {
         return NextResponse.json({ error: error.message }, { status: 500 })
