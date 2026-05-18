@@ -5,7 +5,8 @@ import { X, Plus, Trash2, Edit2, Save, Loader2, Globe } from "lucide-react"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { supabase, Company, createAdminClient, getVotingParameters } from "@/lib/supabase"
+import { supabase, Company, getVotingParameters } from "@/lib/supabase"
+import { apiClient } from "@/lib/api-client"
 import { triggerJanusResync } from "@/lib/janus"
 import { toast } from "sonner"
 
@@ -115,27 +116,22 @@ export default function EditCompanyModal({
   const handleAddMeetingType = async () => {
     if (!newTypeValue.trim() || !company) return
     try {
-      const adminClient = createAdminClient()
-      const { data, error } = await adminClient
-        .from("voting_parameters")
-        .insert({
-          company_id: company.id,
-          parameter_type: "meeting_type",
-          value: newTypeValue.trim(),
-          linked_voting_type: newTypeLinkedVotingType || null,
-          is_default: false,
-          weight: 1.0,
-        })
-        .select()
-        .single()
+      const data = await apiClient.v1.votingParameters.insert({
+        company_id: company.id,
+        parameter_type: "meeting_type",
+        value: newTypeValue.trim(),
+        linked_voting_type: newTypeLinkedVotingType || null,
+        is_default: false,
+        weight: 1.0,
+      })
 
-      if (error) throw error
       setMeetingTypeParams(prev => [...prev, data as VotingParameter])
       setNewTypeValue("")
       setNewTypeLinkedVotingType("")
       setAddingNewType(false)
       toast.success("Meeting type added")
     } catch (err) {
+      console.error("Failed to add meeting type:", err)
       toast.error("Failed to add meeting type")
     }
   }
@@ -146,25 +142,18 @@ export default function EditCompanyModal({
     if (!param) return
 
     try {
-      const adminClient = createAdminClient()
-
       if (param.company_id === null) {
         // Use upsert to handle repeated saves (UNIQUE constraint on company_id,parameter_type,value)
         // Always preserve the original value (param.value) so it stays in sync with meetings.meeting_type
-        const { data, error } = await adminClient
-          .from("voting_parameters")
-          .upsert({
-            company_id: company.id,
-            parameter_type: "meeting_type",
-            value: param.value, // preserve original name — never rename global defaults
-            linked_voting_type: editingTypeLinkedVotingType || null,
-            is_default: false,
-            weight: 1.0,
-          }, { onConflict: 'company_id,parameter_type,value', ignoreDuplicates: false })
-          .select()
-          .single()
+        const data = await apiClient.v1.votingParameters.upsert({
+          company_id: company.id,
+          parameter_type: "meeting_type",
+          value: param.value, // preserve original name — never rename global defaults
+          linked_voting_type: editingTypeLinkedVotingType || null,
+          is_default: false,
+          weight: 1.0,
+        })
 
-        if (error) throw error
         setMeetingTypeParams(prev => prev.map(p => p.id === id ? (data as VotingParameter) : p))
         setEditingTypeId(null)
         setEditingTypeValue("")
@@ -173,16 +162,13 @@ export default function EditCompanyModal({
         return
       }
 
+      const data = await apiClient.v1.votingParameters.update({
+        id,
+        value: editingTypeValue.trim(),
+        linked_voting_type: editingTypeLinkedVotingType || null,
+        parameter_type: "meeting_type",
+      })
 
-      const { error } = await adminClient
-        .from("voting_parameters")
-        .update({
-          value: editingTypeValue.trim(),
-          linked_voting_type: editingTypeLinkedVotingType || null,
-        })
-        .eq("id", id)
-
-      if (error) throw error
       setMeetingTypeParams(prev =>
         prev.map(p => p.id === id
           ? { ...p, value: editingTypeValue.trim(), linked_voting_type: editingTypeLinkedVotingType || null } as any
@@ -194,6 +180,7 @@ export default function EditCompanyModal({
       setEditingTypeLinkedVotingType("")
       toast.success("Meeting type updated")
     } catch (err) {
+      console.error("Failed to update meeting type:", err)
       toast.error("Failed to update meeting type")
     }
   }
@@ -206,16 +193,11 @@ export default function EditCompanyModal({
     }
     if (!confirm("Delete this meeting type?")) return
     try {
-      const adminClient = createAdminClient()
-      const { error } = await adminClient
-        .from("voting_parameters")
-        .delete()
-        .eq("id", id)
-
-      if (error) throw error
+      await apiClient.v1.votingParameters.delete(id)
       setMeetingTypeParams(prev => prev.filter(p => p.id !== id))
       toast.success("Meeting type deleted")
     } catch (err) {
+      console.error("Failed to delete meeting type:", err)
       toast.error("Failed to delete meeting type")
     }
   }

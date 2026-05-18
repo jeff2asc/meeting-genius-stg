@@ -9,6 +9,40 @@ function isAuthorized(request: NextRequest) {
   return apiKey && apiKey === VALID_API_KEY
 }
 
+export async function GET(request: NextRequest) {
+  try {
+    if (!isAuthorized(request)) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const { searchParams } = new URL(request.url)
+    const companyIdStr = searchParams.get('company_id')
+    const companyId = companyIdStr ? parseInt(companyIdStr) : null
+
+    const supabase = createAdminClient()
+    let query = supabase
+      .from('voting_parameters')
+      .select('*')
+      .order('value')
+
+    if (companyId !== null && !isNaN(companyId)) {
+      query = query.or(`company_id.is.null,company_id.eq.${companyId}`)
+    } else {
+      query = query.is('company_id', null)
+    }
+
+    const { data, error } = await query
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    return NextResponse.json({ success: true, data })
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 })
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     if (!isAuthorized(request)) {

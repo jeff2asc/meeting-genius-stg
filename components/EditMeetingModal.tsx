@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { X, Building2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { supabase, getCurrentUser } from "@/lib/supabase"
+import { supabase, getCurrentUser, getVotingParameters } from "@/lib/supabase"
 import { utcToLocalDateTime, localDateTimeToUtcIso } from "@/lib/timezone"
 
 interface Meeting {
@@ -124,13 +124,10 @@ export default function EditMeetingModal({
         .single()
 
       // 1. Get dynamic parameters from voting_parameters
-      const { data: params } = await supabase
-        .from("voting_parameters")
-        .select("value")
-        .eq("parameter_type", "meeting_type")
-        .or(`company_id.eq.${building?.company_id},company_id.is.null`)
-
-      const dynamicMeetingTypes = (params || []).map(p => p.value)
+      const params = await getVotingParameters(building?.company_id)
+      const dynamicMeetingTypes = (params || [])
+        .filter(p => p.parameter_type === "meeting_type")
+        .map(p => p.value)
 
       // 2. Get company defaults
       let companyTypes: string[] = []
@@ -206,13 +203,10 @@ export default function EditMeetingModal({
       .single()
 
     // 1. Get dynamic parameters from voting_parameters
-    const { data: params } = await supabase
-      .from("voting_parameters")
-      .select("value")
-      .eq("parameter_type", "meeting_type")
-      .or(`company_id.eq.${building?.company_id},company_id.is.null`)
-
-    const dynamicMeetingTypes = (params || []).map(p => p.value)
+    const params = await getVotingParameters(building?.company_id)
+    const dynamicMeetingTypes = (params || [])
+      .filter(p => p.parameter_type === "meeting_type")
+      .map(p => p.value)
 
     // 2. Get company defaults
     let companyTypes: string[] = []

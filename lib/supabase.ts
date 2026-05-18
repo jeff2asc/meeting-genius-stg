@@ -1499,6 +1499,41 @@ export async function getCompanyDefaultSections(companyId: number) {
 }
 
 export async function getVotingParameters(companyId?: number | null) {
+  // If we are in the browser, call the server-side API instead of direct DB query to avoid RLS/401 errors
+  if (typeof window !== 'undefined') {
+    try {
+      const url = companyId 
+        ? `/api/v1/voting-parameters?company_id=${companyId}`
+        : `/api/v1/voting-parameters`
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': process.env.NEXT_PUBLIC_API_KEY || '',
+        }
+      })
+      if (!response.ok) {
+        throw new Error(`Failed to fetch voting parameters: ${response.statusText}`)
+      }
+      const result = await response.json()
+      if (result.success && result.data) {
+        // Deduplicate by parameter_type + value, giving precedence to company-specific overrides (company_id !== null) over global defaults (company_id === null)
+        const dedupedMap = new Map<string, any>()
+        for (const item of result.data) {
+          const key = `${item.parameter_type}:${item.value}`
+          const existing = dedupedMap.get(key)
+          if (!existing || (existing.company_id === null && item.company_id !== null)) {
+            dedupedMap.set(key, item)
+          }
+        }
+        return Array.from(dedupedMap.values())
+      }
+    } catch (err) {
+      console.error("Error fetching voting parameters via API:", err)
+      // fallback to direct query as last resort
+    }
+  }
+
   const adminClient = createAdminClient()
   let query = adminClient
     .from("voting_parameters")
