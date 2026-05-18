@@ -140,6 +140,23 @@ export const apiClient = {
         const response = await fetchApi<{ logo_url: string | null }>(`/v1/companies/${companyId}/logo`)
         return response.logo_url
       }
+    },
+    votingParameters: {
+      insert: async (param: any): Promise<any> => {
+        const response = await fetchApi<{ data: any }>('/v1/voting-parameters', 'POST', param)
+        return response.data
+      },
+      upsert: async (param: any): Promise<any> => {
+        const response = await fetchApi<{ data: any }>('/v1/voting-parameters', 'POST', { action: 'upsert', ...param })
+        return response.data
+      },
+      update: async (param: any): Promise<any> => {
+        const response = await fetchApi<{ data: any }>('/v1/voting-parameters', 'PATCH', param)
+        return response.data
+      },
+      delete: async (id: number): Promise<void> => {
+        await fetchApi(`/v1/voting-parameters?id=${id}`, 'DELETE')
+      }
     }
   }
 }

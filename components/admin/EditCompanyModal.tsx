@@ -5,7 +5,7 @@ import { X, Plus, Trash2, Edit2, Save, Loader2, Globe } from "lucide-react"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { supabase, Company, createAdminClient } from "@/lib/supabase"
+import { supabase, Company, createAdminClient, getVotingParameters } from "@/lib/supabase"
 import { triggerJanusResync } from "@/lib/janus"
 import { toast } from "sonner"
 
@@ -61,18 +61,9 @@ export default function EditCompanyModal({
   const fetchMeetingTypes = async (companyId: number) => {
     setLoadingTypes(true)
     try {
-      const adminClient = createAdminClient()
-      const { data, error } = await adminClient
-        .from("voting_parameters")
-        .select("*")
-        .or(`company_id.eq.${companyId},company_id.is.null`)
-        .order("is_default", { ascending: false })
-        .order("value")
-
-      if (error) throw error
-      const allParams = (data as VotingParameter[]) || []
-      setMeetingTypeParams(allParams.filter(p => p.parameter_type === 'meeting_type'))
-      setVotingTypeOptions(allParams.filter(p => p.parameter_type === 'voting_type'))
+      const allParams = await getVotingParameters(companyId)
+      setMeetingTypeParams(allParams.filter((p: any) => p.parameter_type === 'meeting_type'))
+      setVotingTypeOptions(allParams.filter((p: any) => p.parameter_type === 'voting_type'))
     } catch (err) {
       console.error("Error fetching meeting types:", err)
     } finally {
@@ -150,9 +141,39 @@ export default function EditCompanyModal({
   }
 
   const handleUpdateMeetingType = async (id: number) => {
-    if (!editingTypeValue.trim()) return
+    if (!editingTypeValue.trim() || !company) return
+    const param = meetingTypeParams.find(p => p.id === id)
+    if (!param) return
+
     try {
       const adminClient = createAdminClient()
+
+      if (param.company_id === null) {
+        // Use upsert to handle repeated saves (UNIQUE constraint on company_id,parameter_type,value)
+        // Always preserve the original value (param.value) so it stays in sync with meetings.meeting_type
+        const { data, error } = await adminClient
+          .from("voting_parameters")
+          .upsert({
+            company_id: company.id,
+            parameter_type: "meeting_type",
+            value: param.value, // preserve original name — never rename global defaults
+            linked_voting_type: editingTypeLinkedVotingType || null,
+            is_default: false,
+            weight: 1.0,
+          }, { onConflict: 'company_id,parameter_type,value', ignoreDuplicates: false })
+          .select()
+          .single()
+
+        if (error) throw error
+        setMeetingTypeParams(prev => prev.map(p => p.id === id ? (data as VotingParameter) : p))
+        setEditingTypeId(null)
+        setEditingTypeValue("")
+        setEditingTypeLinkedVotingType("")
+        toast.success("Meeting type configuration saved")
+        return
+      }
+
+
       const { error } = await adminClient
         .from("voting_parameters")
         .update({

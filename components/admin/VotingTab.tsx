@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { supabase, getCurrentUser, getVotingParameters, createAdminClient } from "@/lib/supabase"
+import { apiClient } from "@/lib/api-client"
 import UserWeightsModal from "./UserWeightsModal"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
@@ -87,25 +88,14 @@ export default function VotingTab() {
     if (!newValue.trim()) return
 
     try {
-      const adminClient = createAdminClient()
-      const { data, error } = await adminClient
-        .from("voting_parameters")
-        .insert({
-          company_id: companyId,
-          parameter_type: type,
-          value: newValue,
-          description: newDescription || null,
-          weight: type === 'user_type' ? newWeight : 1.0,
-          is_default: false,
-          ...(type === 'meeting_type' && { linked_voting_type: newLinkedVotingType || null })
-        })
-        .select()
-        .single()
-
-      if (error) {
-        toast.error("Failed to add parameter")
-        return
-      }
+      const data = await apiClient.v1.votingParameters.insert({
+        company_id: companyId,
+        parameter_type: type,
+        value: newValue,
+        description: newDescription || null,
+        weight: type === 'user_type' ? newWeight : 1.0,
+        linked_voting_type: type === 'meeting_type' ? newLinkedVotingType || null : null
+      })
 
       setParameters([...parameters, data as VotingParameter])
       setNewValue("")
@@ -113,8 +103,8 @@ export default function VotingTab() {
       setNewLinkedVotingType("")
       setIsAdding(null)
       toast.success("Parameter added")
-    } catch (err) {
-      toast.error("An error occurred")
+    } catch (err: any) {
+      toast.error(err.message || "Failed to add parameter")
     }
   }
 
@@ -122,32 +112,47 @@ export default function VotingTab() {
     if (!editValue.trim()) return
 
     const param = parameters.find(p => p.id === id)
+    if (!param) return
 
     try {
-      const adminClient = createAdminClient()
-      const { error } = await adminClient
-        .from("voting_parameters")
-        .update({
-          value: editValue,
+      // If editing a global default parameter, create a company-specific override instead of updating the global template.
+      // For meeting_type: ALWAYS preserve the original value (name) so it stays in sync with meetings.meeting_type.
+      // Use upsert so repeated saves don't fail on the UNIQUE (company_id, parameter_type, value) constraint.
+      if (param.company_id === null && companyId) {
+        const overrideValue = param.parameter_type === 'meeting_type' ? param.value : editValue
+
+        const data = await apiClient.v1.votingParameters.upsert({
+          company_id: companyId,
+          parameter_type: param.parameter_type,
+          value: overrideValue,
           description: editDescription || null,
           weight: editWeight,
-          ...(param?.parameter_type === 'meeting_type' && { linked_voting_type: editLinkedVotingType || null })
+          is_default: false,
+          linked_voting_type: param.parameter_type === 'meeting_type' ? editLinkedVotingType || null : null
         })
-        .eq("id", id)
 
-      if (error) {
-        toast.error("Failed to update parameter")
+        // Replace the global default in local state with the company override
+        setParameters(parameters.map(p => p.id === id ? (data as VotingParameter) : p))
+        setEditingId(null)
+        toast.success("Configuration saved")
         return
       }
 
-      setParameters(parameters.map(p => p.id === id
-        ? { ...p, value: editValue, description: editDescription, weight: editWeight, ...(param?.parameter_type === 'meeting_type' && { linked_voting_type: editLinkedVotingType || null }) }
-        : p
-      ))
+      // Normal update (either company specific parameter or global default updated by master admin)
+      const data = await apiClient.v1.votingParameters.update({
+        id,
+        value: editValue,
+        description: editDescription || null,
+        weight: editWeight,
+        parameter_type: param.parameter_type,
+        linked_voting_type: param.parameter_type === 'meeting_type' ? editLinkedVotingType || null : null
+      })
+
+      setParameters(parameters.map(p => p.id === id ? (data as VotingParameter) : p))
       setEditingId(null)
       toast.success("Parameter updated")
-    } catch (err) {
-      toast.error("An error occurred")
+    } catch (err: any) {
+      toast.error(err.message || "Failed to update parameter")
     }
   }
 
@@ -155,21 +160,11 @@ export default function VotingTab() {
     if (!confirm("Are you sure you want to delete this parameter?")) return
 
     try {
-      const adminClient = createAdminClient()
-      const { error } = await adminClient
-        .from("voting_parameters")
-        .delete()
-        .eq("id", id)
-
-      if (error) {
-        toast.error("Failed to delete parameter")
-        return
-      }
-
+      await apiClient.v1.votingParameters.delete(id)
       setParameters(parameters.filter(p => p.id !== id))
       toast.success("Parameter deleted")
-    } catch (err) {
-      toast.error("An error occurred")
+    } catch (err: any) {
+      toast.error(err.message || "Failed to delete parameter")
     }
   }
 
@@ -404,14 +399,26 @@ export default function VotingTab() {
                   <option value="user">General User</option>
                   <option value="vendor">Vendor</option>
                 </select>
-              ) : (
-                <Input
-                  placeholder="e.g., Majority Vote"
-                  className="h-11 rounded-xl bg-muted/20"
-                  value={editingId ? editValue : newValue}
-                  onChange={(e) => editingId ? setEditValue(e.target.value) : setNewValue(e.target.value)}
-                />
-              )}
+              ) : (() => {
+                // For global default meeting types, lock the name so it stays in sync with meetings.meeting_type
+                const editingParam = editingId ? parameters.find(p => p.id === editingId) : null
+                const isLockedGlobalMeetingType = editingParam?.company_id === null && editingParam?.parameter_type === 'meeting_type'
+                return (
+                  <div>
+                    <Input
+                      placeholder="e.g., Majority Vote"
+                      className={`h-11 rounded-xl bg-muted/20 ${isLockedGlobalMeetingType ? 'opacity-60 cursor-not-allowed' : ''}`}
+                      value={editingId ? editValue : newValue}
+                      onChange={(e) => editingId ? setEditValue(e.target.value) : setNewValue(e.target.value)}
+                      disabled={isLockedGlobalMeetingType}
+                    />
+                    {isLockedGlobalMeetingType && (
+                      <p className="text-[10px] text-amber-600 mt-1">⚠️ Name is locked — renaming would break sync with existing meetings.</p>
+                    )}
+                  </div>
+                )
+              })()}
+
             </div>
 
             <div className="space-y-2">

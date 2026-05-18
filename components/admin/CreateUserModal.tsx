@@ -633,34 +633,18 @@ export default function CreateUserModal({
 
             <div className="space-y-2">
               <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground ml-1">Voting Weight</label>
-              <div className="flex gap-2">
-                <select
-                  value={userFormData.voting_weight}
-                  onChange={(e) => {
-                    const val = parseFloat(e.target.value);
-                    setUserFormData(prev => ({ ...prev, voting_weight: isNaN(val) ? 1.0 : val }));
-                  }}
-                  disabled={saving}
-                  className="flex-1 h-11 px-3 bg-muted/30 border border-border rounded-xl focus:ring-2 focus:ring-primary/20 outline-none transition-all"
-                >
-                  <option value={1.0}>1.0 (Standard)</option>
-                  <option value={1.5}>1.5 (Management)</option>
-                  <option value={2.0}>2.0 (Double)</option>
-                  <option value={2.5}>2.5 (Executive)</option>
-                  <option value={0.5}>0.5 (Reduced)</option>
-                </select>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={userFormData.voting_weight}
-                  onChange={(e) => {
-                    const val = parseFloat(e.target.value);
-                    setUserFormData(prev => ({ ...prev, voting_weight: isNaN(val) ? 1.0 : val }));
-                  }}
-                  className="w-20 h-11 px-3 bg-muted/30 border border-border rounded-xl text-center font-bold"
-                  disabled={saving}
-                />
-              </div>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={userFormData.voting_weight}
+                onChange={(e) => {
+                  const val = parseFloat(e.target.value);
+                  setUserFormData(prev => ({ ...prev, voting_weight: isNaN(val) ? 0 : val }));
+                }}
+                className="w-full h-11 px-4 bg-muted/30 border border-border rounded-xl focus:ring-2 focus:ring-primary/20 outline-none transition-all font-semibold"
+                disabled={saving}
+              />
             </div>
           </div>
 

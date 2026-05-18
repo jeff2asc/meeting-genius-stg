@@ -1519,5 +1519,18 @@ export async function getVotingParameters(companyId?: number | null) {
     return []
   }
 
-  return data || []
+  if (!data) return []
+
+  // Deduplicate by parameter_type + value, giving precedence to company-specific overrides (company_id !== null) over global defaults (company_id === null)
+  const dedupedMap = new Map<string, any>()
+  for (const item of data) {
+    const key = `${item.parameter_type}:${item.value}`
+    const existing = dedupedMap.get(key)
+    if (!existing || (existing.company_id === null && item.company_id !== null)) {
+      dedupedMap.set(key, item)
+    }
+  }
+
+  return Array.from(dedupedMap.values())
 }
+
