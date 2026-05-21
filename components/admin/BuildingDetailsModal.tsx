@@ -220,12 +220,22 @@ export default function BuildingDetailsModal({
         country.trim()
       ].filter(Boolean).join(', ')
 
+      const provinceCode =
+        province.trim().toUpperCase() === "BRITISH COLUMBIA" || province.trim().toUpperCase() === "BC"
+          ? "BC"
+          : province.trim().toUpperCase() === "ONTARIO" || province.trim().toUpperCase() === "ON"
+            ? "ON"
+            : province.trim().length <= 3
+              ? province.trim().toUpperCase()
+              : null
+
       const { error: updateError } = await supabase
         .from("buildings")
         .update({
           name: buildingName.trim(),
           address: combinedAddress || null,
           building_type: buildingType,
+          province_code: provinceCode,
           manager_id: managerId,
           company_id: selectedCompanyId,
           board_meeting_notice_days: boardMeetingNoticeDays,

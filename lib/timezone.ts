@@ -1,43 +1,105 @@
 /**
- * Timezone utility functions for Meeting Genius
- * Handles conversion between UTC (database) and local browser timezone (display)
+ * Timezone utilities — floating date/time (stored and shown exactly as entered).
  */
 
+const WEEKDAYS = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+] as const
+
+const MONTHS_LONG = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+] as const
+
+const MONTHS_SHORT = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+] as const
+
+function parseDateParts(dateString: string): { y: number; m: number; d: number } | null {
+  const match = dateString.trim().match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (!match) return null
+  const y = parseInt(match[1], 10)
+  const m = parseInt(match[2], 10)
+  const d = parseInt(match[3], 10)
+  if (m < 1 || m > 12 || d < 1 || d > 31) return null
+  return { y, m, d }
+}
+
+function parseTimeParts(timeString: string): { h: number; min: number } | null {
+  const clean = timeString.trim().split(".")[0]
+  const parts = clean.split(":").map((p) => parseInt(p, 10))
+  if (parts.length < 2 || parts.some((n) => isNaN(n))) return null
+  return { h: parts[0], min: parts[1] }
+}
+
+/** Display YYYY-MM-DD without timezone conversion. */
+export function formatFloatingDate(
+  dateString: string,
+  style: "long" | "short" = "long",
+): string {
+  if (!dateString) return "No date"
+  const p = parseDateParts(dateString)
+  if (!p) return dateString
+
+  if (style === "short") {
+    return `${MONTHS_SHORT[p.m - 1]} ${p.d}, ${p.y}`
+  }
+
+  const weekday = WEEKDAYS[new Date(p.y, p.m - 1, p.d).getDay()]
+  return `${weekday}, ${MONTHS_LONG[p.m - 1]} ${p.d}, ${p.y}`
+}
+
+/** Display HH:MM(:SS) as 12-hour clock without timezone conversion. */
+export function formatFloatingTime(timeString: string): string | null {
+  if (!timeString) return null
+  const p = parseTimeParts(timeString)
+  if (!p) return timeString
+
+  const ampm = p.h >= 12 ? "PM" : "AM"
+  const hour12 = p.h % 12 === 0 ? 12 : p.h % 12
+  return `${hour12}:${String(p.min).padStart(2, "0")} ${ampm}`
+}
+
 /**
- * Format UTC date and time to local long format
- * Used for displaying dates in full format (e.g., "Thursday, January 8, 2026")
+ * Long date (+ optional time) — floating, no UTC shift.
  */
 export function formatUtcToLocalLong(dateString: string, timeString?: string): string {
   if (!dateString) return "No date"
-
-  // Combine with midnight UTC time if no time provided
-  const combinedIso = timeString
-    ? `${dateString}T${timeString}`
-    : `${dateString}T00:00:00`
-
-  const date = new Date(combinedIso)
-
-  return date.toLocaleDateString(undefined, {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  })
+  const datePart = formatFloatingDate(dateString, "long")
+  if (!timeString) return datePart
+  const timePart = formatFloatingTime(timeString)
+  return timePart ? `${datePart} at ${timePart}` : datePart
 }
 
-export function formatUtcToLocalShort(timeString: string, contextDate?: string): string | null {
-  if (!timeString) return null
-
-  // ⭐ FIXED: Use the actual context date for correct DST offset handling
-  const referenceDate = contextDate || getCurrentLocalDate()
-  const combinedIso = `${referenceDate}T${timeString}`
-
-  const date = new Date(combinedIso)
-  return date.toLocaleTimeString(undefined, {
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  })
+export function formatUtcToLocalShort(timeString: string, _contextDate?: string): string | null {
+  return formatFloatingTime(timeString)
 }
 
 /**
@@ -55,22 +117,9 @@ export function utcToLocalDateTime(
     return { date: utcDate || "", time: utcTime || "" }
   }
 
-  // Create a Date object from UTC date and time
-  const utcIsoString = `${utcDate}T${utcTime}Z`
-  const date = new Date(utcIsoString)
-
-  // Get local date in YYYY-MM-DD format
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, "0")
-  const day = String(date.getDate()).padStart(2, "0")
-  const localDate = `${year}-${month}-${day}`
-
-  // Get local time in HH:MM format (for time input)
-  const hours = String(date.getHours()).padStart(2, "0")
-  const minutes = String(date.getMinutes()).padStart(2, "0")
-  const localTime = `${hours}:${minutes}`
-
-  return { date: localDate, time: localTime }
+  // Bypass UTC conversion. Return the date and time exactly as stored in database.
+  const time = utcTime.length > 5 ? utcTime.substring(0, 5) : utcTime
+  return { date: utcDate, time }
 }
 
 /**
@@ -88,23 +137,9 @@ export function localDateTimeToUtcIso(
     return { date: localDate || "", time: localTime || "" }
   }
 
-  // Create a Date object from local date and time
-  const localIsoString = `${localDate}T${localTime}:00`
-  const date = new Date(localIsoString)
-
-  // Get UTC date in YYYY-MM-DD format
-  const year = date.getUTCFullYear()
-  const month = String(date.getUTCMonth() + 1).padStart(2, "0")
-  const day = String(date.getUTCDate()).padStart(2, "0")
-  const utcDate = `${year}-${month}-${day}`
-
-  // Get UTC time in HH:MM:SS format
-  const hours = String(date.getUTCHours()).padStart(2, "0")
-  const minutes = String(date.getUTCMinutes()).padStart(2, "0")
-  const seconds = String(date.getUTCSeconds()).padStart(2, "0")
-  const utcTime = `${hours}:${minutes}:${seconds}`
-
-  return { date: utcDate, time: utcTime }
+  // Bypass UTC conversion. Stored exactly as entered.
+  const time = localTime.length === 5 ? `${localTime}:00` : localTime
+  return { date: localDate, time }
 }
 
 /**
@@ -114,28 +149,14 @@ export function localDateTimeToUtcIso(
 export function formatUtcToLocalDateTime(utcIsoString: string): string {
   if (!utcIsoString) return ""
 
-  // If it already has Z or offset, use as is. 
-  // Otherwise, handle space-as-T and append Z.
   let cleanIso = utcIsoString.trim()
-  if (!cleanIso.includes('Z') && !cleanIso.match(/[+-]\d{2}(:?\d{2})?$/)) {
-    cleanIso = cleanIso.replace(' ', 'T') + 'Z'
-  }
+  cleanIso = cleanIso.replace(/Z$/, "").replace(/[+-]\d{2}:?\d{2}$/, "").replace(" ", "T")
 
-  const date = new Date(cleanIso)
-  
-  // Check if date is valid
-  if (isNaN(date.getTime())) {
-    return utcIsoString // fallback to original string if parsing fails
-  }
-
-  return date.toLocaleString(undefined, {
-    month: "numeric",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  })
+  const parts = cleanIso.split("T")
+  const datePart = formatFloatingDate(parts[0], "short")
+  const timePart = parts[1] ? formatFloatingTime(parts[1]) : null
+  if (!timePart) return datePart
+  return `${datePart} at ${timePart}`
 }
 /**
  * Get current local date in YYYY-MM-DD format

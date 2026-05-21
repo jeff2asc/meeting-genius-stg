@@ -12,10 +12,11 @@ import LoginForm from "@/components/login-form"
 import ProfileSettingsModal from "@/components/ProfileSettingsModal"
 import GeniusWordsManager from "@/components/GeniusWordsManager"
 import { isLoggedIn, getCurrentUser, clearCurrentUser } from "@/lib/supabase"
-import { canAccessAdmin, canCreateMeeting, getUserTypeDisplayName, canAccessIntegrations } from "@/lib/permissions"
+import { canAccessAdmin, canCreateMeeting, getUserTypeDisplayName, canAccessIntegrations, isMaster } from "@/lib/permissions"
+import MasterAnalyticsDashboard from "@/components/MasterAnalyticsDashboard"
 import IntegrationsPage from "@/components/IntegrationsPage"
 import { Button } from "@/components/ui/button"
-import { LogOut, Settings, User, Sparkles, ChevronDown, Share2 } from "lucide-react"
+import { LogOut, Settings, User, Sparkles, ChevronDown, Share2, Activity } from "lucide-react"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -25,7 +26,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 
-type Screen = "dashboard" | "meeting" | "admin" | "genius-words" | "integrations"
+type Screen = "dashboard" | "meeting" | "admin" | "genius-words" | "integrations" | "analytics"
 
 export default function Home() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
@@ -308,6 +309,16 @@ export default function Home() {
               <span>Profile Settings</span>
             </DropdownMenuItem>
 
+            {isMaster(currentUser) && (
+              <DropdownMenuItem
+                onClick={() => setCurrentScreen("analytics")}
+                className="cursor-pointer text-indigo-600 focus:text-indigo-600"
+              >
+                <Activity className="mr-2 h-4 w-4" />
+                <span>Master Control Panel</span>
+              </DropdownMenuItem>
+            )}
+
             <DropdownMenuItem
               onClick={handleGeniusWordsClick}
               className="cursor-pointer"
@@ -378,6 +389,10 @@ export default function Home() {
 
       {currentScreen === "integrations" && (
         <IntegrationsPage onBack={handleBackToDashboard} />
+      )}
+
+      {currentScreen === "analytics" && isMaster(currentUser) && (
+        <MasterAnalyticsDashboard onBack={handleBackToDashboard} />
       )}
 
       {/* ⭐ UPDATED: Task Modal with edit mode support */}

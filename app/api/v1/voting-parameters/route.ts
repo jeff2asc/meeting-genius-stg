@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminClient } from '@/lib/supabase'
+import { createAdminClient, getVotingParameters } from '@/lib/supabase'
 
 const VALID_API_KEY = process.env.NEXT_PUBLIC_API_KEY || ''
 
@@ -16,28 +16,29 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url)
-    const companyIdStr = searchParams.get('company_id')
-    const companyId = companyIdStr ? parseInt(companyIdStr) : null
+    const companyId = searchParams.get('company_id')
+    const companyIdInt = companyId ? parseInt(companyId) : null
 
-    const supabase = createAdminClient()
-    let query = supabase
-      .from('voting_parameters')
-      .select('*')
-      .order('value')
-
-    if (companyId !== null && !isNaN(companyId)) {
-      query = query.or(`company_id.is.null,company_id.eq.${companyId}`)
-    }
-
-    const { data, error } = await query
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
-    }
-
+    const data = await getVotingParameters(companyIdInt)
     return NextResponse.json({ success: true, data })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
+  }
+}
+
+
+async function checkCalculationFormulaExists(supabaseClient: any): Promise<boolean> {
+  try {
+    const { data } = await supabaseClient
+      .from('voting_parameters')
+      .select('*')
+      .limit(1)
+    if (data && data.length > 0) {
+      return 'calculation_formula' in data[0]
+    }
+    return false
+  } catch {
+    return false
   }
 }
 
@@ -48,13 +49,14 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { action, company_id, parameter_type, value, description, weight, linked_voting_type } = body
+    const { action, company_id, parameter_type, value, description, weight, linked_voting_type, calculation_formula, id } = body
 
     const supabase = createAdminClient()
+    const hasFormula = await checkCalculationFormulaExists(supabase)
 
     if (action === 'upsert') {
-      // Create or update a company-specific override for a parameter safely without DB ON CONFLICT constraint requirements
-      const { data: existing, error: findError } = await supabase
+      // Avoid upsert onConflict since UNIQUE constraint may not be in DB. Query first, then update or insert.
+      const { data: existing, error: fetchError } = await supabase
         .from('voting_parameters')
         .select('*')
         .eq('company_id', company_id)
@@ -62,31 +64,25 @@ export async function POST(request: NextRequest) {
         .eq('value', value)
         .maybeSingle()
 
-      if (findError) {
-        return NextResponse.json({ error: findError.message }, { status: 500 })
+      if (fetchError) {
+        return NextResponse.json({ error: fetchError.message }, { status: 500 })
       }
 
-      let data
-      let error
-
+      let result
       if (existing) {
-        // If it exists, update it
-        const { data: updated, error: updateError } = await supabase
+        result = await supabase
           .from('voting_parameters')
           .update({
             description: description || null,
             weight: weight !== undefined ? weight : 1.0,
+            ...(hasFormula && { calculation_formula: calculation_formula || null }),
             ...(parameter_type === 'meeting_type' && { linked_voting_type: linked_voting_type || null })
           })
           .eq('id', existing.id)
           .select()
           .single()
-
-        data = updated
-        error = updateError
       } else {
-        // If it doesn't exist, insert it
-        const { data: inserted, error: insertError } = await supabase
+        result = await supabase
           .from('voting_parameters')
           .insert({
             company_id,
@@ -94,15 +90,15 @@ export async function POST(request: NextRequest) {
             value,
             description: description || null,
             weight: weight !== undefined ? weight : 1.0,
+            ...(hasFormula && { calculation_formula: calculation_formula || null }),
             is_default: false,
             ...(parameter_type === 'meeting_type' && { linked_voting_type: linked_voting_type || null })
           })
           .select()
           .single()
-
-        data = inserted
-        error = insertError
       }
+
+      const { data, error } = result
 
       if (error) {
         return NextResponse.json({ error: error.message }, { status: 500 })
@@ -118,11 +114,12 @@ export async function POST(request: NextRequest) {
           value,
           description: description || null,
           weight: weight !== undefined ? weight : 1.0,
+          ...(hasFormula && { calculation_formula: calculation_formula || null }),
           is_default: false,
           ...(parameter_type === 'meeting_type' && { linked_voting_type: linked_voting_type || null })
         })
-        .select()
-        .single()
+          .select()
+          .single()
 
       if (error) {
         return NextResponse.json({ error: error.message }, { status: 500 })
@@ -141,18 +138,23 @@ export async function PATCH(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { id, value, description, weight, linked_voting_type, parameter_type } = body
+    const { id, value, description, weight, linked_voting_type, calculation_formula, parameter_type } = body
 
     if (!id) {
       return NextResponse.json({ error: 'Missing parameter ID' }, { status: 400 })
     }
 
     const supabase = createAdminClient()
+    const hasFormula = await checkCalculationFormulaExists(supabase)
 
     const updateData: any = {
       value,
       description: description || null,
       weight: weight !== undefined ? weight : 1.0,
+    }
+
+    if (hasFormula) {
+      updateData.calculation_formula = calculation_formula || null
     }
 
     if (parameter_type === 'meeting_type' || linked_voting_type !== undefined) {

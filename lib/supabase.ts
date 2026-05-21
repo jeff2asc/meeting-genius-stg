@@ -190,6 +190,7 @@ export interface Database {
           address: string | null
           company_id: number | null
           building_type: string
+          province_code: string | null
           logo_url: string | null
           header_text: string | null
           footer_text: string | null
@@ -211,6 +212,7 @@ export interface Database {
           address?: string | null
           company_id?: number | null
           building_type?: string
+          province_code?: string | null
           logo_url?: string | null
           header_text?: string | null
           footer_text?: string | null
@@ -232,6 +234,7 @@ export interface Database {
           address?: string | null
           company_id?: number | null
           building_type?: string
+          province_code?: string | null
           logo_url?: string | null
           header_text?: string | null
           footer_text?: string | null
@@ -508,6 +511,8 @@ export interface Database {
           description: string | null
           is_default: boolean
           weight: number
+          calculation_formula: string | null
+          linked_voting_type: string | null
           created_at: string
           updated_at: string
         }
@@ -519,6 +524,8 @@ export interface Database {
           description?: string | null
           is_default?: boolean
           weight?: number
+          calculation_formula?: string | null
+          linked_voting_type?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -530,6 +537,56 @@ export interface Database {
           description?: string | null
           is_default?: boolean
           weight?: number
+          calculation_formula?: string | null
+          linked_voting_type?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      jurisdiction_rules: {
+        Row: {
+          id: number
+          province_code: string
+          building_type: string
+          voting_type: string
+          threshold_percent: number
+          abstention_treatment: string
+          denominator_source: string
+          reconsideration_trigger: boolean
+          reconsideration_threshold_percent: number | null
+          reconsideration_hold_days: number
+          description: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: number
+          province_code: string
+          building_type: string
+          voting_type: string
+          threshold_percent: number
+          abstention_treatment?: string
+          denominator_source?: string
+          reconsideration_trigger?: boolean
+          reconsideration_threshold_percent?: number | null
+          reconsideration_hold_days?: number
+          description?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: number
+          province_code?: string
+          building_type?: string
+          voting_type?: string
+          threshold_percent?: number
+          abstention_treatment?: string
+          denominator_source?: string
+          reconsideration_trigger?: boolean
+          reconsideration_threshold_percent?: number | null
+          reconsideration_hold_days?: number
+          description?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -811,6 +868,11 @@ export interface Database {
           recorded_at: string
           edited_at: string | null
           status: string | null
+          vote_passed: boolean | null
+          vote_percentage: number | null
+          reconsideration_triggered: boolean | null
+          reconsideration_hold_days: number | null
+          reconsideration_hold_until: string | null
         }
         Insert: {
           id?: number
@@ -826,6 +888,11 @@ export interface Database {
           recorded_at?: string
           edited_at?: string | null
           status?: string | null
+          vote_passed?: boolean | null
+          vote_percentage?: number | null
+          reconsideration_triggered?: boolean | null
+          reconsideration_hold_days?: number | null
+          reconsideration_hold_until?: string | null
         }
         Update: {
           id?: number
@@ -841,6 +908,11 @@ export interface Database {
           recorded_at?: string
           edited_at?: string | null
           status?: string | null
+          vote_passed?: boolean | null
+          vote_percentage?: number | null
+          reconsideration_triggered?: boolean | null
+          reconsideration_hold_days?: number | null
+          reconsideration_hold_until?: string | null
         }
         Relationships: []
       }
@@ -1326,12 +1398,6 @@ export function createClient() {
 }
 
 export function createAdminClient() {
-  // If called on the client side (browser), SUPABASE_SERVICE_ROLE_KEY is not available.
-  // Return the regular supabase client which has full access via anon key / user session.
-  if (typeof window !== 'undefined') {
-    return supabase
-  }
-
   if (globalForSupabase.supabaseAdmin) {
     return globalForSupabase.supabaseAdmin
   }
@@ -1499,86 +1565,79 @@ export async function getCompanyDefaultSections(companyId: number) {
 }
 
 export async function getVotingParameters(companyId?: number | null) {
-  // If we are in the browser, call the server-side API instead of direct DB query to avoid RLS/401 errors
-  if (typeof window !== 'undefined') {
-    try {
-      const url = companyId 
-        ? `/api/v1/voting-parameters?company_id=${companyId}`
-        : `/api/v1/voting-parameters`
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': process.env.NEXT_PUBLIC_API_KEY || '',
+  try {
+    // If called on the server side (SSR, API routes), query Supabase directly using admin client
+    if (typeof window === 'undefined') {
+      const adminClient = createAdminClient()
+
+      if (companyId !== null && companyId !== undefined) {
+        // Fetch both global parameters and company-specific parameters
+        const { data: allParams, error } = await adminClient
+          .from("voting_parameters")
+          .select("*")
+          .or(`company_id.eq.${companyId},company_id.is.null`)
+          .order("value")
+
+        if (error) {
+          console.error("Error fetching voting parameters:", error)
+          return []
         }
-      })
-      if (!response.ok) {
-        throw new Error(`Failed to fetch voting parameters: ${response.statusText}`)
-      }
-      const result = await response.json()
-      if (result.success && result.data) {
-        // Deduplicate by parameter_type + value, giving precedence to company-specific overrides (company_id !== null) over global defaults (company_id === null)
-        const dedupedMap = new Map<string, any>()
-        for (const item of result.data) {
-          const key = companyId 
-            ? `${item.parameter_type}:${item.value}` 
-            : `${item.parameter_type}:${item.value}:${item.company_id}`
-          const existing = dedupedMap.get(key)
-          if (companyId) {
-            if (!existing || (existing.company_id === null && item.company_id !== null)) {
-              dedupedMap.set(key, item)
-            }
-          } else {
-            if (!existing) {
-              dedupedMap.set(key, item)
-            }
-          }
+
+        if (!allParams) return []
+
+        // Merge parameters: choose company-specific override over global default for any duplicate (parameter_type, value)
+        const mergedMap = new Map<string, any>()
+        
+        // 1. Load global defaults first
+        const globalParams = allParams.filter(p => p.company_id === null)
+        for (const param of globalParams) {
+          const key = `${param.parameter_type}:${param.value.toLowerCase()}`
+          mergedMap.set(key, param)
         }
-        return Array.from(dedupedMap.values())
+
+        // 2. Overwrite/add company-specific parameters
+        const companyParams = allParams.filter(p => p.company_id === companyId)
+        for (const param of companyParams) {
+          const key = `${param.parameter_type}:${param.value.toLowerCase()}`
+          mergedMap.set(key, param)
+        }
+
+        return Array.from(mergedMap.values())
+      } else {
+        // No companyId (e.g. global default edit by master admin)
+        const { data, error } = await adminClient
+          .from("voting_parameters")
+          .select("*")
+          .is("company_id", null)
+          .order("value")
+
+        if (error) {
+          console.error("Error fetching global parameters:", error)
+          return []
+        }
+        return data || []
       }
-    } catch (err) {
-      console.error("Error fetching voting parameters via API:", err)
-      // fallback to direct query as last resort
     }
-  }
 
-  const adminClient = createAdminClient()
-  let query = adminClient
-    .from("voting_parameters")
-    .select("*")
-    .order("value")
+    // On client side, fetch via the API route to bypass RLS and avoid 401
+    const url = companyId 
+      ? `/api/v1/voting-parameters?company_id=${companyId}`
+      : `/api/v1/voting-parameters`
 
-  if (companyId !== null && companyId !== undefined) {
-    query = query.or(`company_id.is.null,company_id.eq.${companyId}`)
-  }
+    const response = await fetch(url, {
+      headers: {
+        'x-api-key': process.env.NEXT_PUBLIC_API_KEY || '',
+      }
+    })
 
-  const { data, error } = await query
+    if (!response.ok) {
+      throw new Error(`API Request failed with status ${response.status}`)
+    }
 
-  if (error) {
-    console.error("Error fetching voting parameters:", error)
+    const result = await response.json()
+    return result.data || []
+  } catch (err) {
+    console.error("Error fetching voting parameters:", err)
     return []
   }
-
-  if (!data) return []
-
-  // Deduplicate by parameter_type + value, giving precedence to company-specific overrides (company_id !== null) over global defaults (company_id === null)
-  const dedupedMap = new Map<string, any>()
-  for (const item of data) {
-    const key = companyId 
-      ? `${item.parameter_type}:${item.value}` 
-      : `${item.parameter_type}:${item.value}:${item.company_id}`
-    const existing = dedupedMap.get(key)
-    if (companyId) {
-      if (!existing || (existing.company_id === null && item.company_id !== null)) {
-        dedupedMap.set(key, item)
-      }
-    } else {
-      if (!existing) {
-        dedupedMap.set(key, item)
-      }
-    }
-  }
-
-  return Array.from(dedupedMap.values())
 }
-

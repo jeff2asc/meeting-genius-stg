@@ -1047,9 +1047,10 @@ function buildMinutesHtml({
   let runningMinutes: number | null = null
   if (meeting.start_time) {
     try {
-      const st = new Date(meeting.start_time)
-      if (!isNaN(st.getTime())) {
-        runningMinutes = st.getHours() * 60 + st.getMinutes()
+      // start_time is a time string "HH:MM:SS" — parse parts directly (not via new Date)
+      const timeParts = meeting.start_time.split(':').map(Number)
+      if (timeParts.length >= 2 && !isNaN(timeParts[0]) && !isNaN(timeParts[1])) {
+        runningMinutes = timeParts[0] * 60 + timeParts[1]
       }
     } catch { /* ignore */ }
   }
@@ -1418,7 +1419,8 @@ function escapeHtml(text: any): string {
 }
 
 function formatMeetingDate(dateStr: string): string {
-  const date = new Date(dateStr)
+  // Append T00:00:00 so JS parses as local midnight instead of UTC midnight
+  const date = new Date(dateStr + 'T00:00:00')
   return date.toLocaleDateString("en-US", {
     weekday: "long",
     year: "numeric",

@@ -4,12 +4,13 @@ import { useState, useEffect } from "react"
 import { ChevronDown, User, Plus, Search, Calendar, FileText, Eye, Play, Edit2, CheckSquare, Trash2, Wrench, AlertTriangle, RefreshCw } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { supabase, getCurrentUser, createAdminClient } from "@/lib/supabase"
+import { supabase, getCurrentUser } from "@/lib/supabase"
 import { apiClient } from "@/lib/api-client"
-import { formatUtcToLocalShort } from "@/lib/timezone"
+import { formatFloatingDate, formatFloatingTime } from "@/lib/timezone"
 import { toast } from "sonner"
 import EditMeetingModal from "./EditMeetingModal"
 import TaskDetailsModal from "./TaskDetailsModal"
+import TicketDetailsModal from "./TicketDetailsModal"
 import { isMaster as checkIsMaster, isCorporateAdmin as checkIsCorporateAdmin, isPropertyManager as checkIsPropertyManager } from "@/lib/permissions"
 import { Badge } from "@/components/ui/badge"
 import { Clock as ClockIcon } from "lucide-react"
@@ -87,6 +88,10 @@ export default function Dashboard({
   const [targetMeetingId, setTargetMeetingId] = useState<string>("")
   const [isImporting, setIsImporting] = useState(false)
 
+  // ⭐ TICKET DETAILS MODAL STATES
+  const [isTicketDetailsModalOpen, setIsTicketDetailsModalOpen] = useState(false)
+  const [selectedTicketDetails, setSelectedTicketDetails] = useState<any>(null)
+
   useEffect(() => {
     fetchBuildings()
     fetchCompanyLogo()
@@ -118,7 +123,7 @@ export default function Dashboard({
     // ✅ Check Database: Is Janus integrated for this company?
     let isIntegrated = false
     if (currentUser.company_id) {
-      const adminClient = createAdminClient()
+      const adminClient = supabase
       const { data: company } = await adminClient
         .from('companies')
         .select('janus_integrated')
@@ -142,7 +147,10 @@ export default function Dashboard({
 
     try {
       const documentedSecret = process.env.NEXT_PUBLIC_API_KEY || ""
-      const res = await fetch(`${window.location.origin}/api/janus/v1/sync?company_id=${currentUser.company_id}`, {
+      const companyParam = isMaster 
+        ? `?user_id=${currentUser.id}` 
+        : `?company_id=${currentUser.company_id}&user_id=${currentUser.id}`
+      const res = await fetch(`${window.location.origin}/api/janus/v1/sync${companyParam}`, {
         headers: { "x-api-key": documentedSecret }
       })
       if (!res.ok) throw new Error("Could not fetch Janus data")
@@ -199,7 +207,7 @@ export default function Dashboard({
     setIsImporting(true)
     
     try {
-      const adminClient = createAdminClient()
+      const adminClient = supabase
       // 1. Get the sections of the target meeting to find where to put the new topic
       const { data: sections } = await adminClient
         .from('sections')
@@ -287,7 +295,7 @@ export default function Dashboard({
       } else if (checkIsPropertyManager(currentUser)) {
         data = await apiClient.v1.buildings.list({ manager_id: currentUser.id })
       } else {
-        const adminClient = createAdminClient()
+        const adminClient = supabase
         const { data: userBuildings } = await adminClient
           .from('user_buildings')
           .select('building_id')
@@ -351,11 +359,7 @@ export default function Dashboard({
         building: meeting.buildings?.name || selectedBuilding,
         building_id: meeting.building_id,
         title: meeting.title,
-        date: new Date(meeting.meeting_date + 'T00:00:00').toLocaleDateString('en-US', {
-          month: 'short',
-          day: 'numeric',
-          year: 'numeric'
-        }) + (meeting.start_time ? ` at ${formatUtcToLocalShort(meeting.start_time, meeting.meeting_date)}` : ''),
+        date: formatFloatingDate(meeting.meeting_date, 'short') + (meeting.start_time ? ` at ${formatFloatingTime(meeting.start_time)}` : ''),
         meeting_date: meeting.meeting_date,
         location: meeting.location,
         start_time: meeting.start_time,
@@ -1266,7 +1270,14 @@ export default function Dashboard({
                 {janusData.repairs
                   .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
                   .map((ticket: any) => (
-                    <Card key={`repair-${ticket.id}`} className="group relative overflow-hidden p-5 rounded-2xl border-border/50 hover:border-primary/50 hover:shadow-xl hover:shadow-primary/5 transition-all duration-500 bg-card/50 backdrop-blur-sm flex flex-col h-full min-h-[180px]">
+                    <Card 
+                      key={`repair-${ticket.id}`} 
+                      className="group relative overflow-hidden p-5 rounded-2xl border-border/50 hover:border-primary/50 hover:shadow-xl hover:shadow-primary/5 transition-all duration-500 bg-card/50 backdrop-blur-sm flex flex-col h-full min-h-[180px] cursor-pointer"
+                      onClick={() => {
+                        setSelectedTicketDetails({...ticket, _type: 'repair'})
+                        setIsTicketDetailsModalOpen(true)
+                      }}
+                    >
                       <div className="absolute top-0 left-0 w-1 h-full bg-primary" />
                       <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-2">
@@ -1301,12 +1312,17 @@ export default function Dashboard({
                         <p className="text-xs text-muted-foreground line-clamp-2 italic mb-4">"{ticket.description}"</p>
                       )}
                       <div className="flex items-center justify-between mt-auto pt-4 border-t border-border">
-                        <span className="text-[10px] font-mono text-muted-foreground">#REP-{ticket.id}</span>
+                        <span className="text-[10px] font-mono text-muted-foreground font-semibold">
+                          {ticket.janus_ticket_id && String(ticket.janus_ticket_id).startsWith('ticket-')
+                            ? ticket.janus_ticket_id
+                            : `#REP-${ticket.janus_ticket_id || ticket.id}`}
+                        </span>
                         <Button 
                           size="sm" 
                           variant="ghost" 
                           className="h-7 text-[10px] gap-1 text-primary hover:bg-primary/10"
-                          onClick={() => {
+                          onClick={(e) => {
+                            e.stopPropagation()
                             setSelectedTicketToImport({...ticket, _type: 'repair'})
                             setIsImportModalOpen(true)
                           }}
@@ -1347,7 +1363,14 @@ export default function Dashboard({
                 {janusData.complaints
                   .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
                   .map((ticket: any) => (
-                    <Card key={`complaint-${ticket.id}`} className="group relative overflow-hidden p-5 rounded-2xl border-border/50 hover:border-amber-500/50 hover:shadow-xl hover:shadow-amber-500/5 transition-all duration-500 bg-card/50 backdrop-blur-sm flex flex-col h-full min-h-[180px]">
+                    <Card 
+                      key={`complaint-${ticket.id}`} 
+                      className="group relative overflow-hidden p-5 rounded-2xl border-border/50 hover:border-amber-500/50 hover:shadow-xl hover:shadow-amber-500/5 transition-all duration-500 bg-card/50 backdrop-blur-sm flex flex-col h-full min-h-[180px] cursor-pointer"
+                      onClick={() => {
+                        setSelectedTicketDetails({...ticket, _type: 'complaint'})
+                        setIsTicketDetailsModalOpen(true)
+                      }}
+                    >
                       <div className="absolute top-0 left-0 w-1 h-full bg-amber-500" />
                       <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-2">
@@ -1381,12 +1404,17 @@ export default function Dashboard({
                         <p className="text-xs text-muted-foreground line-clamp-2 italic mb-4">"{ticket.description}"</p>
                       )}
                       <div className="flex items-center justify-between mt-auto pt-4 border-t border-border">
-                        <span className="text-[10px] font-mono text-muted-foreground">#COM-{ticket.id}</span>
+                        <span className="text-[10px] font-mono text-muted-foreground font-semibold">
+                          {ticket.janus_ticket_id && String(ticket.janus_ticket_id).startsWith('ticket-')
+                            ? ticket.janus_ticket_id
+                            : `#COM-${ticket.janus_ticket_id || ticket.id}`}
+                        </span>
                         <Button 
                           size="sm" 
                           variant="ghost" 
                           className="h-7 text-[10px] gap-1 text-amber-600 hover:bg-amber-50"
-                          onClick={() => {
+                          onClick={(e) => {
+                            e.stopPropagation()
                             setSelectedTicketToImport({...ticket, _type: 'complaint'})
                             setIsImportModalOpen(true)
                           }}
@@ -1459,7 +1487,7 @@ export default function Dashboard({
                     .filter(m => m.status !== 'Finalized')
                     .map(m => (
                       <option key={m.id} value={m.id}>
-                        {m.title} ({new Date(m.meeting_date).toLocaleDateString()})
+                        {m.title} ({formatFloatingDate(m.meeting_date, 'short')})
                       </option>
                     ))}
                 </select>
@@ -1563,6 +1591,15 @@ export default function Dashboard({
           }}
         />
       )}
+
+      <TicketDetailsModal
+        isOpen={isTicketDetailsModalOpen}
+        onClose={() => {
+          setIsTicketDetailsModalOpen(false)
+          setSelectedTicketDetails(null)
+        }}
+        ticket={selectedTicketDetails}
+      />
     </div>
   )
 }

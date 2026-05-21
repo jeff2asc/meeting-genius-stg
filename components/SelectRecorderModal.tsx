@@ -47,6 +47,9 @@ export default function SelectRecorderModal({
 
   if (!isOpen) return null
 
+  const presentAttendees = attendees.filter((a) => a.present)
+  const pickerList = presentAttendees.length > 0 ? presentAttendees : attendees
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 animate-in fade-in">
       <Card className="w-full max-w-md p-6 m-4 max-h-[90vh] overflow-y-auto">
@@ -98,8 +101,8 @@ export default function SelectRecorderModal({
               className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
             >
               <option value="">No chairperson</option>
-              {attendees.map((attendee, idx) => (
-                <option key={idx} value={attendee.name}>
+              {pickerList.map((attendee, idx) => (
+                <option key={`chair-${attendee.email || attendee.name}-${idx}`} value={attendee.name}>
                   {attendee.name}
                 </option>
               ))}
@@ -120,8 +123,8 @@ export default function SelectRecorderModal({
               className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
             >
               <option value="">Select recorder...</option>
-              {attendees.map((attendee, idx) => (
-                <option key={idx} value={attendee.name}>
+              {pickerList.map((attendee, idx) => (
+                <option key={`rec-${attendee.email || attendee.name}-${idx}`} value={attendee.name}>
                   {attendee.name}
                 </option>
               ))}
@@ -139,8 +142,8 @@ export default function SelectRecorderModal({
               className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
             >
               <option value="">No timekeeper</option>
-              {attendees.map((attendee, idx) => (
-                <option key={idx} value={attendee.name}>
+              {pickerList.map((attendee, idx) => (
+                <option key={`tk-${attendee.email || attendee.name}-${idx}`} value={attendee.name}>
                   {attendee.name}
                 </option>
               ))}

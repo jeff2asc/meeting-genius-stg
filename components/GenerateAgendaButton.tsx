@@ -594,14 +594,14 @@ function buildAgendaHtml({
     sectionTopics.forEach((t) => flatTopics.push({ sectionId: section.id, topic: t }))
   })
 
-  // Parse meeting start time into a Date we can advance
+  // Parse meeting start time into minutes we can advance
   let runningMinutes: number | null = null
   if (meetingStartTime) {
     try {
-      // start_time is stored as an ISO string
-      const st = new Date(meetingStartTime)
-      if (!isNaN(st.getTime())) {
-        runningMinutes = st.getHours() * 60 + st.getMinutes()
+      // start_time is stored as "HH:MM:SS" — parse parts directly (new Date on a time-only string is invalid)
+      const timeParts = meetingStartTime.split(':').map(Number)
+      if (timeParts.length >= 2 && !isNaN(timeParts[0]) && !isNaN(timeParts[1])) {
+        runningMinutes = timeParts[0] * 60 + timeParts[1]
       }
     } catch { /* ignore */ }
   }

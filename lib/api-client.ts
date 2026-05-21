@@ -142,6 +142,12 @@ export const apiClient = {
       }
     },
     votingParameters: {
+      list: async (companyId?: number): Promise<any[]> => {
+        let url = '/v1/voting-parameters'
+        if (companyId) url += `?company_id=${companyId}`
+        const response = await fetchApi<{ data: any[] }>(url)
+        return response.data
+      },
       insert: async (param: any): Promise<any> => {
         const response = await fetchApi<{ data: any }>('/v1/voting-parameters', 'POST', param)
         return response.data
@@ -156,6 +162,30 @@ export const apiClient = {
       },
       delete: async (id: number): Promise<void> => {
         await fetchApi(`/v1/voting-parameters?id=${id}`, 'DELETE')
+      }
+    },
+    jurisdictionRules: {
+      list: async (filters?: { building_type?: string; province_code?: string; voting_type?: string }): Promise<any[]> => {
+        let url = '/v1/jurisdiction-rules'
+        const params = new URLSearchParams()
+        if (filters?.building_type) params.append('building_type', filters.building_type)
+        if (filters?.province_code) params.append('province_code', filters.province_code)
+        if (filters?.voting_type) params.append('voting_type', filters.voting_type)
+        const qs = params.toString()
+        if (qs) url += `?${qs}`
+        const response = await fetchApi<{ data: any[] }>(url)
+        return response.data
+      },
+      create: async (rule: any): Promise<any> => {
+        const response = await fetchApi<{ data: any }>('/v1/jurisdiction-rules', 'POST', rule)
+        return response.data
+      },
+      update: async (id: number, updates: any): Promise<any> => {
+        const response = await fetchApi<{ data: any }>('/v1/jurisdiction-rules', 'PATCH', { id, ...updates })
+        return response.data
+      },
+      delete: async (id: number): Promise<void> => {
+        await fetchApi(`/v1/jurisdiction-rules?id=${id}`, 'DELETE')
       }
     }
   }

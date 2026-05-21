@@ -465,7 +465,7 @@ export default function MeetingExternalPage() {
                     <div className="flex items-center justify-center gap-4 mt-2 text-sm text-gray-500 flex-wrap">
                         {meeting.buildings?.name && <span>📍 {meeting.buildings.name}</span>}
                         {meeting.meeting_type && <span>📋 {meeting.meeting_type}</span>}
-                        <span>📅 {new Date(meeting.meeting_date).toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</span>
+                        <span>📅 {new Date(meeting.meeting_date + 'T00:00:00').toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</span>
                         {meeting.location && <span>🏢 {meeting.location}</span>}
                     </div>
 

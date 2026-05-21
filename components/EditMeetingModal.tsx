@@ -125,9 +125,9 @@ export default function EditMeetingModal({
 
       // 1. Get dynamic parameters from voting_parameters
       const params = await getVotingParameters(building?.company_id)
-      const dynamicMeetingTypes = (params || [])
-        .filter(p => p.parameter_type === "meeting_type")
-        .map(p => p.value)
+      const dynamicMeetingTypes = params
+        .filter((p: any) => p.parameter_type === "meeting_type")
+        .map((p: any) => p.value)
 
       // 2. Get company defaults
       let companyTypes: string[] = []
@@ -155,12 +155,12 @@ export default function EditMeetingModal({
     }
 
     if (meeting) {
-      // Convert UTC date/time to local for display in the form
+      // Floating time: values are stored exactly as entered — no UTC conversion needed
       let localDate = meeting.meeting_date
       let localTime = meeting.start_time || ""
 
       if (meeting.meeting_date && meeting.start_time) {
-        // If both date and time exist, convert from UTC to local
+        // utcToLocalDateTime is a passthrough — trims seconds from HH:MM:SS to HH:MM
         const { date, time } = utcToLocalDateTime(
           meeting.meeting_date,
           meeting.start_time
@@ -204,9 +204,9 @@ export default function EditMeetingModal({
 
     // 1. Get dynamic parameters from voting_parameters
     const params = await getVotingParameters(building?.company_id)
-    const dynamicMeetingTypes = (params || [])
-      .filter(p => p.parameter_type === "meeting_type")
-      .map(p => p.value)
+    const dynamicMeetingTypes = params
+      .filter((p: any) => p.parameter_type === "meeting_type")
+      .map((p: any) => p.value)
 
     // 2. Get company defaults
     let companyTypes: string[] = []
@@ -241,18 +241,18 @@ export default function EditMeetingModal({
     setSaving(true)
 
     try {
-      // Convert local date/time back to UTC for storage
-      let utcDate = formData.meetingDate
-      let utcTime = formData.startTime || null
+      // Floating time: store exactly as entered — no UTC conversion applied
+      let savedDate = formData.meetingDate
+      let savedTime = formData.startTime || null
 
       if (formData.meetingDate && formData.startTime) {
-        // Convert from local to UTC before saving
+        // localDateTimeToUtcIso is a passthrough — just appends :00 to HH:MM
         const { date, time } = localDateTimeToUtcIso(
           formData.meetingDate,
           formData.startTime
         )
-        utcDate = date
-        utcTime = time
+        savedDate = date
+        savedTime = time
       }
 
       const { error: updateError } = await supabase
@@ -260,9 +260,9 @@ export default function EditMeetingModal({
         .update({
           building_id: formData.buildingId,
           title: formData.title.trim(),
-          meeting_date: utcDate,
+          meeting_date: savedDate,
           location: formData.location.trim() || null,
-          start_time: utcTime,
+          start_time: savedTime,
           meeting_type: formData.meetingType,
           strata_plan_number: formData.strataPlanNumber.trim() || null,
         })
@@ -298,7 +298,7 @@ export default function EditMeetingModal({
           <div>
             <h2 className="text-xl font-bold text-foreground">Edit Meeting</h2>
             <p className="text-sm text-muted-foreground">
-              Update meeting details (times shown in your local timezone)
+              Update meeting details (times are stored and displayed exactly as entered)
             </p>
           </div>
           <button
@@ -421,7 +421,7 @@ export default function EditMeetingModal({
               className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
             />
             <p className="text-xs text-muted-foreground mt-1">
-              Enter time in your local timezone (e.g., 7:00 PM) - will be converted to UTC for storage
+              Enter time as an absolute floating time (e.g., 7:00 PM) - will be displayed exactly as entered regardless of timezone
             </p>
           </div>
 

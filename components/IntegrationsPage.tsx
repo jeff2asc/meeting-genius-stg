@@ -149,7 +149,14 @@ export default function IntegrationsPage({ onBack }: { onBack: () => void }) {
       const userCompanyId = user?.company_id
 
       // For Corporate Admins, we MUST force the company_id filter
-      const companyParam = (userCompanyId && !isMasterUser) ? `?company_id=${userCompanyId}` : ""
+      const params = new URLSearchParams()
+      if (userCompanyId && !isMasterUser) {
+        params.append("company_id", String(userCompanyId))
+      }
+      if (user?.id) {
+        params.append("user_id", String(user.id))
+      }
+      const companyParam = params.toString() ? `?${params.toString()}` : ""
       
       const res = await fetch(`${window.location.origin}/api/janus/v1/sync${companyParam}`, {
         headers: { "x-api-key": documentedSecret }

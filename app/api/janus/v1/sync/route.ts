@@ -12,7 +12,25 @@ export async function GET(req: NextRequest) {
 
   try {
     const companyId = req.nextUrl.searchParams.get("company_id");
+    const userId = req.nextUrl.searchParams.get("user_id");
     const db = createAdminClient(); // Bypasses RLS — can read all data
+
+    let isMasterUser = false;
+    if (userId) {
+      const uid = parseInt(userId, 10);
+      if (!isNaN(uid)) {
+        const { data: dbUser } = await db
+          .from("users")
+          .select("id, user_type, roles")
+          .eq("id", uid)
+          .maybeSingle();
+
+        if (dbUser) {
+          const roles = [dbUser.user_type || "", ...(dbUser.roles || [])].filter(Boolean);
+          isMasterUser = roles.some(role => role === "master");
+        }
+      }
+    }
 
     // 1. Fetch Portfolio Data (Meeting Genius -> Janus)
     let companiesQuery = db.from("companies").select("*");
@@ -20,7 +38,7 @@ export async function GET(req: NextRequest) {
     let usersQuery    = db.from("users").select("*").neq("user_type", "vendor");
     let vendorsQuery  = db.from("users").select("*").eq("user_type", "vendor");
 
-    if (companyId && companyId !== "undefined" && companyId !== "null") {
+    if (!isMasterUser && companyId && companyId !== "undefined" && companyId !== "null") {
       const cid = parseInt(companyId);
       if (!isNaN(cid)) {
         companiesQuery = companiesQuery.eq("id", cid);
@@ -41,7 +59,7 @@ export async function GET(req: NextRequest) {
     let ubQuery = db.from("user_buildings").select("*");
     if (buildings && buildings.length > 0) {
       ubQuery = ubQuery.in("building_id", buildings.map(b => b.id));
-    } else if (companyId && companyId !== "undefined" && companyId !== "null") {
+    } else if (!isMasterUser && companyId && companyId !== "undefined" && companyId !== "null") {
       // If no buildings found for this company, return empty junctions
       ubQuery = ubQuery.eq("building_id", -1); 
     }
@@ -49,7 +67,7 @@ export async function GET(req: NextRequest) {
 
     // 3. Fetch Janus Tickets (Janus -> Meeting Genius) - Direct Fetch from Janus DB
     let ticketsQuery = janusClient.from('tickets').select('*');
-    if (companyId && companyId !== "undefined" && companyId !== "null") {
+    if (!isMasterUser && companyId && companyId !== "undefined" && companyId !== "null") {
       const cid = parseInt(companyId);
       if (!isNaN(cid)) {
         ticketsQuery = ticketsQuery.eq('company_id', cid);
@@ -66,33 +84,57 @@ export async function GET(req: NextRequest) {
       console.warn("⚠️ Could not reach Janus DB:", janusErr.message);
       errors.push(`Janus DB: ${janusErr.message}`);
     } else if (rawTickets) {
-      const mapTicket = (t: any) => ({
-        id: Number(t.id || t.ticket_id),
-        building_id: Number(t.building_id || 0),
-        building_name: t.building_name || t.building || "",
-        company_id: t.company_id || null,
-        title: t.subject || t.title || t.issue_type || "Untitled",
-        priority: t.priority || t.urgency || "Medium",
-        status: t.state || t.status || "Open",
-        description: t.damage_description || t.description || t.content || "",
-        budget: t.budget || t.estimated_budget || null,
-        estimated_cost: t.estimated_cost || t.estimated_amount || t.estimated_fixed_amount || null,
-        quoted_amount: t.quoted_amount || t.quote_amount || null,
-        created_at: t.created_at || new Date().toISOString(),
-        updated_at: t.updated_at || new Date().toISOString(),
-        type: t.type?.toLowerCase() || 'repair'
-      });
+      const mapTicket = (t: any) => {
+        const company = (companies || []).find((c: any) => c.id === t.company_id);
+        return {
+          id: Number(t.id),
+          janus_ticket_id: t.ticket_id || t.ticket_number || String(t.id),
+          building_id: Number(t.building_id || 0),
+          building_name: t.building_name || t.building || "",
+          company_id: t.company_id || null,
+          company_name: company ? company.name : "N/A",
+          title: t.subject || t.title || t.issue_type || "Untitled",
+          priority: t.priority || t.urgency || "Medium",
+          status: t.state || t.status || "Open",
+          description: t.damage_description || t.description || t.content || "",
+          budget: t.budget || t.estimated_budget || null,
+          estimated_cost: t.estimated_cost || t.estimated_amount || t.estimated_fixed_amount || null,
+          quoted_amount: t.quoted_amount || t.quote_amount || null,
+          created_at: t.created_at || new Date().toISOString(),
+          updated_at: t.updated_at || new Date().toISOString(),
+          type: t.type?.toLowerCase() || 'repair',
+          sender_name: t.resident_name || t.resident || t.sender_email || "Anonymous",
+          unit_number: t.unit_number || t.target_unit_number || "",
+          source: t.source || "Portal"
+        };
+      };
 
       repairs = rawTickets.filter((t: any) => t.type?.toLowerCase() === 'repair').map(mapTicket);
       complaints = rawTickets.filter((t: any) => t.type?.toLowerCase() === 'complaint').map(mapTicket);
 
+      const toDbRow = (ticket: any) => ({
+        id: ticket.id,
+        building_id: ticket.building_id,
+        title: ticket.title,
+        priority: ticket.priority,
+        status: ticket.status,
+        budget: ticket.budget,
+        estimated_cost: ticket.estimated_cost,
+        quoted_amount: ticket.quoted_amount,
+        created_at: ticket.created_at,
+        updated_at: ticket.updated_at,
+        building_name: ticket.building_name,
+        company_id: ticket.company_id,
+        description: ticket.description
+      });
+
       // Cache locally (UPSERT) using admin client to bypass RLS
       if (repairs.length > 0) {
-        const { error: err1 } = await db.from("janus_repairs").upsert(repairs);
+        const { error: err1 } = await db.from("janus_repairs").upsert(repairs.map(toDbRow));
         if (err1) errors.push(`Repairs Cache: ${err1.message}`);
       }
       if (complaints.length > 0) {
-        const { error: err2 } = await db.from("janus_complaints").upsert(complaints);
+        const { error: err2 } = await db.from("janus_complaints").upsert(complaints.map(toDbRow));
         if (err2) errors.push(`Complaints Cache: ${err2.message}`);
       }
     }

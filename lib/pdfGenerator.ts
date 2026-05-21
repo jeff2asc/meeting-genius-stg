@@ -68,7 +68,8 @@ export const generatePDF = async (
   const building = meeting.buildings
   const company = building?.companies
 
-  const meetingDate = new Date(meeting.meeting_date).toLocaleDateString("en-US", {
+  // Append T00:00:00 so JS parses as local midnight instead of UTC midnight
+  const meetingDate = new Date(meeting.meeting_date + 'T00:00:00').toLocaleDateString("en-US", {
     weekday: "long",
     year: "numeric",
     month: "long",

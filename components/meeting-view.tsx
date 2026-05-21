@@ -80,12 +80,12 @@ import CreateTopicModal from "./create-topic-modal"
 import EditMeetingModal from "./EditMeetingModal"
 import AttendeeManagement, { Attendee } from "./AttendeeManagement"
 import SelectRecorderModal from "./SelectRecorderModal"
-import { supabase, getCurrentUser, createAdminClient } from "@/lib/supabase"
+import { supabase, getCurrentUser } from "@/lib/supabase"
 import { apiClient } from "@/lib/api-client"
 import { canEditMeeting, isReadOnly, isMaster as checkIsMaster } from "@/lib/permissions"
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd"
 import UnifiedItemModal from "./UnifiedItemModal"
-import { formatUtcToLocalLong, formatUtcToLocalShort } from "@/lib/timezone"
+import { formatFloatingDate, formatFloatingTime, formatUtcToLocalLong } from "@/lib/timezone"
 import { toast } from "sonner"
 
 interface MeetingViewProps {
@@ -281,7 +281,7 @@ export default function MeetingView({
     const companyId = meeting?.buildings?.company_id || currentUser.company_id
     
     if (companyId) {
-      const adminClient = createAdminClient()
+      const adminClient = supabase
       const { data: company } = await adminClient
         .from('companies')
         .select('janus_integrated')
@@ -306,7 +306,8 @@ export default function MeetingView({
     
     try {
       const documentedSecret = process.env.NEXT_PUBLIC_API_KEY || ""
-      const res = await fetch(`${window.location.origin}/api/janus/v1/sync`, {
+      const companyParam = currentUser?.id ? `?user_id=${currentUser.id}` : ""
+      const res = await fetch(`${window.location.origin}/api/janus/v1/sync${companyParam}`, {
         headers: { "x-api-key": documentedSecret }
       })
       if (!res.ok) throw new Error("Could not fetch Janus data")
@@ -389,7 +390,7 @@ export default function MeetingView({
     if (!meeting) return []
 
     try {
-      const adminClient = createAdminClient()
+      const adminClient = supabase
       const { data: allMeetings, error: meetingsError } = await adminClient
         .from("meetings")
         .select("id, meeting_date, title")
@@ -452,7 +453,7 @@ export default function MeetingView({
 
       if (topicsData && topicsData.length > 0) {
         const topicIds = topicsData.map((t: any) => t.id)
-        const adminClient = createAdminClient()
+        const adminClient = supabase
         
         const { data: tc } = await adminClient
           .from('tasks')
@@ -472,7 +473,7 @@ export default function MeetingView({
       let sectionAttachments: any[] = []
       if (sectionsData && sectionsData.length > 0) {
         const sectionIds = sectionsData.map((s: any) => s.id)
-        const adminClient = createAdminClient()
+        const adminClient = supabase
         const { data: sa } = await adminClient
           .from('section_attachments')
           .select('*')
@@ -503,7 +504,7 @@ export default function MeetingView({
 
   const checkForTranscripts = async () => {
     try {
-      const adminClient = createAdminClient()
+      const adminClient = supabase
       const { data, error } = await adminClient
         .from("meeting_transcripts")
         .select("id")
@@ -526,7 +527,7 @@ export default function MeetingView({
     if (!file || !meeting) return
 
     try {
-      const adminClient = createAdminClient()
+      const adminClient = supabase
       setLoading(true)
       const fileExt = file.name.split('.').pop()
       const fileName = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.]/g, '_')}`
@@ -572,7 +573,7 @@ export default function MeetingView({
     if (!confirm("Are you sure you want to remove this attachment?")) return
 
     try {
-      const adminClient = createAdminClient()
+      const adminClient = supabase
       const { error } = await adminClient
         .from('section_attachments')
         .delete()
@@ -1037,35 +1038,9 @@ export default function MeetingView({
     setShowPreviewTasks(false)
   }
 
-  const formatDate = (dateString: string) => {
-    if (!dateString) return "No date"
-    // Use local time (no Z) to avoid UTC shift
-    const combinedIso = `${dateString}T00:00:00`
-    const date = new Date(combinedIso)
+  const formatDate = (dateString: string) => formatFloatingDate(dateString, "long")
 
-    return date.toLocaleDateString(undefined, {
-      weekday: "long",
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    })
-  }
-
-  const formatTime = (timeString: string) => {
-    if (!timeString) return null
-
-    // ⭐ FIXED: Use the actual meeting date for correct DST offset handling
-    // instead of always using "today". Use local date and time (no Z).
-    const referenceDate = meeting?.meeting_date || getCurrentLocalDate()
-    const combinedIso = `${referenceDate}T${timeString}`
-
-    const date = new Date(combinedIso)
-    return date.toLocaleTimeString(undefined, {
-      hour: "numeric",
-      minute: "2-digit",
-      hour12: true,
-    })
-  }
+  const formatTime = (timeString: string) => formatFloatingTime(timeString)
 
   const handleSendNotice = async () => {
     if (!meeting) return

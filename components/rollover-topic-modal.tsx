@@ -23,8 +23,7 @@ import { Badge } from "@/components/ui/badge"
 import { 
   supabase, 
   getPreviousMeetingOfSameType, 
-  getTopicsFromMeeting,
-  createAdminClient
+  getTopicsFromMeeting
 } from "@/lib/supabase"
 import { toast } from "sonner"
 
@@ -136,7 +135,7 @@ export default function RolloverTopicModal({
 
     setLoading(true)
     try {
-      const adminSupabase = createAdminClient()
+      const adminSupabase = supabase
       const meetingIdNum = parseInt(meetingId)
       
       for (const topicId of selectedTopicIds) {

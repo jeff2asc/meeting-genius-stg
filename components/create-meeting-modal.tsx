@@ -28,7 +28,6 @@ import {
   supabase, 
   getPreviousMeetingOfSameType,
   getTopicsFromMeeting,
-  createAdminClient,
   getVotingParameters
 } from "@/lib/supabase"
 import { getCurrentLocalDate, getCurrentLocalTime } from "@/lib/timezone"
@@ -85,8 +84,8 @@ export default function CreateMeetingModal({ onClose, onSuccess, buildings }: Cr
       // Single source of truth: voting_parameters for meeting types
       const votingParams = await getVotingParameters(selectedBuilding?.company_id)
       const meetingTypesFromVoting = votingParams
-        .filter(p => p.parameter_type === 'meeting_type')
-        .map(p => p.value)
+        .filter((p: any) => p.parameter_type === 'meeting_type')
+        .map((p: any) => p.value)
 
       const fallbackTypes = ["Council Meeting", "AGM", "SGM", "Special Meeting", "Emergency Meeting"]
       const finalMeetingTypes = meetingTypesFromVoting.length > 0 ? meetingTypesFromVoting : fallbackTypes
@@ -270,7 +269,7 @@ export default function CreateMeetingModal({ onClose, onSuccess, buildings }: Cr
   const runExplicitRollover = async (newMeetingId: number) => {
     if (!prevMeeting) return
 
-    const adminSupabase = createAdminClient()
+    const adminSupabase = supabase
     const { data: oldSections } = await adminSupabase.from('sections').select('*').eq('meeting_id', prevMeeting.id).order('order_index')
     if (!oldSections) return
 
@@ -372,7 +371,7 @@ export default function CreateMeetingModal({ onClose, onSuccess, buildings }: Cr
   }
 
   async function cloneTopicItems(oldTopicId: number, newTopicId: number) {
-    const adminSupabase = createAdminClient()
+    const adminSupabase = supabase
     
     // Clone selected tasks
     const tasksToClone = prevTasks.filter(t => t.topic_id === oldTopicId && selectedTaskIds.includes(t.id))
@@ -537,7 +536,7 @@ export default function CreateMeetingModal({ onClose, onSuccess, buildings }: Cr
                 </div>
                 <div className="text-[10px] text-muted-foreground mt-1 flex items-center gap-1 px-1">
                   <Globe className="h-2.5 w-2.5" />
-                  Timezone: {Intl.DateTimeFormat().resolvedOptions().timeZone} ({Intl.DateTimeFormat().resolvedOptions().timeZone.split('/').pop()?.replace('_', ' ')})
+                  Times are stored exactly as entered — no timezone conversion applied
                 </div>
               </div>
 

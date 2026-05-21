@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -37,6 +37,10 @@ export default function AttendeeManagement({
 }: AttendeeManagementProps) {
   const [localAttendees, setLocalAttendees] = useState<Attendee[]>(attendees || [])
   const [newAttendee, setNewAttendee] = useState<Partial<Attendee>>({ name: "", email: "", role: "", present: false })
+
+  useEffect(() => {
+    setLocalAttendees(attendees || [])
+  }, [attendees])
   const [sendingLink, setSendingLink] = useState<string | null>(null) // tracks which email is sending
   const [sentLinks, setSentLinks] = useState<Set<string>>(new Set())
 

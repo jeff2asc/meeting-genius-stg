@@ -6,7 +6,25 @@ import { Card } from "@/components/ui/card"
 import { X, Trash2 } from "lucide-react"
 import { supabase, getCurrentUser, getVotingParameters } from "@/lib/supabase"
 import { toast } from "sonner"
-import { CheckCircle2, XCircle, AlertCircle, FileText, CheckSquare } from "lucide-react"
+import { AlertCircle, FileText, CheckSquare } from "lucide-react"
+import {
+  buildMeetingVoters,
+  getEligibleHeadcount,
+  getEligibleWeight,
+  getVoterWeight,
+  type MeetingAttendeeRecord,
+  type MeetingVoter,
+} from "@/lib/meeting-voters"
+import { apiClient } from "@/lib/api-client"
+import type { JurisdictionRule } from "@/lib/voting-engine"
+import {
+  evaluateDecisionVote,
+  inferProvinceCode,
+  toDecisionVoteSnapshot,
+  type BuildingVotingContext,
+  type VotingParameterRow,
+} from "@/lib/voting-rules"
+import VotingAnalysisPreview from "@/components/VotingAnalysisPreview"
 
 interface DecisionModalProps {
   isOpen: boolean
@@ -68,6 +86,7 @@ export default function DecisionModal({
   const [decisionResults, setDecisionResults] = useState<string[]>([])
   const [attendees, setAttendees] = useState<Attendee[]>([])
   const [companyUsers, setCompanyUsers] = useState<any[]>([])
+  const [meetingVoters, setMeetingVoters] = useState<MeetingVoter[]>([])
   const [votersFor, setVotersFor] = useState<string[]>([])
   const [votersAgainst, setVotersAgainst] = useState<string[]>([])
   const [votersAbstain, setVotersAbstain] = useState<string[]>([])
@@ -75,6 +94,9 @@ export default function DecisionModal({
   const [votingTypes, setVotingTypes] = useState<string[]>([])
   const [selectedVotingType, setSelectedVotingType] = useState("")
   const [userTypeWeights, setUserTypeWeights] = useState<Record<string, number>>({})
+  const [votingParametersData, setVotingParametersData] = useState<VotingParameterRow[]>([])
+  const [jurisdictionRules, setJurisdictionRules] = useState<JurisdictionRule[]>([])
+  const [buildingContext, setBuildingContext] = useState<BuildingVotingContext>({})
   const [topicTitle, setTopicTitle] = useState<string>("")
   const [meetingType, setMeetingType] = useState<string>("")
 
@@ -107,7 +129,6 @@ export default function DecisionModal({
   useEffect(() => {
     if (isOpen) {
       fetchVotingTypesAndResults()
-      fetchAttendees()
       fetchCompanyUsers()
       fetchGeniusWords()
       fetchTopicTitle()
@@ -188,14 +209,35 @@ export default function DecisionModal({
 
       const { data: buildingData } = await supabase
         .from("buildings")
-        .select("company_id")
+        .select("company_id, building_type, province_code, address")
         .eq("id", meetingData.building_id)
         .single()
 
       const companyId = buildingData?.company_id
 
+      const bCtx: BuildingVotingContext = {
+        building_type: buildingData?.building_type,
+        province_code: (buildingData as { province_code?: string })?.province_code,
+        address: buildingData?.address,
+      }
+      setBuildingContext(bCtx)
+
+      const provinceCode = inferProvinceCode(bCtx)
+      try {
+        const rules = await apiClient.v1.jurisdictionRules.list({
+          building_type: bCtx.building_type || undefined,
+          province_code: provinceCode,
+        })
+        setJurisdictionRules((rules || []) as JurisdictionRule[])
+      } catch {
+        setJurisdictionRules([])
+      }
+
       // 2. Fetch all relevant parameters (Voting Types, Dynamic Decision Results, User Weights)
       const params = await getVotingParameters(companyId)
+      setVotingParametersData(
+        params.filter((p) => p.parameter_type === "voting_type") as VotingParameterRow[],
+      )
       
       // 3. Process Voting Types
       const allVTypes = params
@@ -216,7 +258,22 @@ export default function DecisionModal({
       }
 
       const fallbackTypes = ["Majority Vote (50%+1)", "Three-Quarter Vote (75%)", "Unanimous Vote (100%)"]
-      const finalVTypes = filteredVTypes.length > 0 ? filteredVTypes : (allVTypes.length > 0 ? allVTypes : fallbackTypes)
+      let finalVTypes = filteredVTypes.length > 0 ? filteredVTypes : (allVTypes.length > 0 ? allVTypes : fallbackTypes)
+
+      if (provinceCode === "BC" && !finalVTypes.includes("80% Vote")) {
+        finalVTypes = [...finalVTypes, "80% Vote"]
+      }
+      if (provinceCode === "ON") {
+        const onTypes = [
+          "Majority — Votes Cast (ON S.53)",
+          "Majority — All Registered Units (ON By-law)",
+          "Majority — Votes at Meeting (ON By-law)",
+        ]
+        for (const t of onTypes) {
+          if (!finalVTypes.includes(t)) finalVTypes = [...finalVTypes, t]
+        }
+      }
+
       setVotingTypes(finalVTypes)
 
       if (!editMode && !selectedVotingType) {
@@ -322,7 +379,7 @@ export default function DecisionModal({
 
       const { data: meetingData } = await supabase
         .from("meetings")
-        .select("building_id")
+        .select("building_id, attendees")
         .eq("id", meetingIdNum)
         .single()
 
@@ -369,31 +426,17 @@ export default function DecisionModal({
       ).sort((a: any, b: any) => a.name.localeCompare(b.name))
 
       setCompanyUsers(unique)
-    } catch (err) {
-      console.error("Error fetching company users:", err)
-    }
-  }
-
-  const fetchAttendees = async () => {
-    try {
-      const meetingIdNum = typeof meetingId === 'string' ? parseInt(meetingId) : meetingId
-
-      const { data: meetingData, error } = await supabase
-        .from("meetings")
-        .select("attendees")
-        .eq("id", meetingIdNum)
-        .single()
-
-      if (error) {
-        console.error("Error fetching attendees:", error)
-        return
-      }
-
-      if (meetingData?.attendees) {
+      setMeetingVoters(
+        buildMeetingVoters(
+          (meetingData.attendees as MeetingAttendeeRecord[] | null) ?? [],
+          unique
+        )
+      )
+      if (meetingData.attendees) {
         setAttendees(meetingData.attendees as unknown as Attendee[])
       }
     } catch (err) {
-      console.error("Error fetching attendees:", err)
+      console.error("Error fetching company users:", err)
     }
   }
 
@@ -434,7 +477,7 @@ export default function DecisionModal({
       if (!textAfterAt.includes(" ") && !textAfterAt.includes("\n")) {
         setMentionStartIndex(atIndex)
 
-        const filtered = companyUsers.filter(user =>
+        const filtered = meetingVoters.filter(user =>
           user.name.toLowerCase().includes(textAfterAt.toLowerCase())
         )
 
@@ -586,6 +629,44 @@ export default function DecisionModal({
     }
   }
 
+  const buildVoteSnapshotFields = () => {
+    const hasVotes =
+      votersFor.length > 0 ||
+      votersAgainst.length > 0 ||
+      votesFor !== "" ||
+      votesAgainst !== ""
+
+    if (!selectedVotingType || !hasVotes) {
+      return {
+        vote_passed: null,
+        vote_percentage: null,
+        reconsideration_triggered: false,
+        reconsideration_hold_days: 0,
+        reconsideration_hold_until: null,
+      }
+    }
+
+    const { result } = evaluateDecisionVote({
+      votingType: selectedVotingType,
+      votersFor,
+      votersAgainst,
+      votersAbstain,
+      votesFor,
+      votesAgainst,
+      votesAbstain,
+      meetingVoters,
+      getWeight: (name) => getVoterWeight(meetingVoters, name),
+      eligibleHeadcount: getEligibleHeadcount(meetingVoters),
+      eligibleWeight: getEligibleWeight(meetingVoters),
+      jurisdictionRules,
+      votingParameters: votingParametersData,
+      building: buildingContext,
+      useWeighted: false,
+    })
+
+    return toDecisionVoteSnapshot(result)
+  }
+
   const handleSave = async () => {
     if (!motionText.trim()) {
       setError("Motion text is required")
@@ -594,6 +675,8 @@ export default function DecisionModal({
 
     setSaving(true)
     setError(null)
+
+    const voteSnapshot = buildVoteSnapshotFields()
 
     try {
       if (editMode && existingDecisionId) {
@@ -607,7 +690,8 @@ export default function DecisionModal({
             votes_abstain: votersAbstain.length || (votesAbstain === "" ? null : votesAbstain),
             voting_type: selectedVotingType || null,
             status: status as string,
-            edited_at: new Date().toISOString()
+            edited_at: new Date().toISOString(),
+            ...voteSnapshot,
           })
           .eq('id', existingDecisionId)
 
@@ -632,7 +716,8 @@ export default function DecisionModal({
             voting_type: selectedVotingType || null,
             parent_decision_id: parentDecisionId,
             status: status as string,
-            recorded_at: new Date().toISOString()
+            recorded_at: new Date().toISOString(),
+            ...voteSnapshot,
           })
 
         if (insertError) {
@@ -701,12 +786,20 @@ export default function DecisionModal({
     }
   }
 
-  const getRoleBadge = (user: any) => {
+  const getRoleBadge = (user: MeetingVoter | any) => {
     const t = user.user_type
     if (t === "corporate_administrator") return { label: "Corp Admin", color: "bg-purple-100 text-purple-700" }
     if (t === "property_manager") return { label: "PM", color: "bg-blue-100 text-blue-700" }
     if (t === "owner") return { label: "Owner", color: "bg-amber-100 text-amber-700" }
-    return { label: "Resident", color: "bg-green-100 text-green-700" }
+    if (t === "resident") return { label: "Resident", color: "bg-green-100 text-green-700" }
+    if (t === "attendee" || t === "user") {
+      const roleLabel = user.role ? user.role : "Attendee"
+      return { label: roleLabel, color: "bg-slate-100 text-slate-700" }
+    }
+    if (user.role) {
+      return { label: user.role, color: "bg-slate-100 text-slate-700" }
+    }
+    return { label: "Member", color: "bg-slate-100 text-slate-700" }
   }
 
   const renderVotingDropdown = (label: string, type: "for" | "against" | "abstain", selected: string[]) => {
@@ -733,15 +826,15 @@ export default function DecisionModal({
         
         {isOpen && (
           <div className="absolute z-50 w-64 bottom-full mb-1 bg-card border border-border rounded-lg shadow-xl max-h-44 overflow-y-auto">
-            {companyUsers.length === 0 && (
-              <div className="p-3 text-sm text-muted-foreground text-center">No users found for this company</div>
+            {meetingVoters.length === 0 && (
+              <div className="p-3 text-sm text-muted-foreground text-center">No attendees on this meeting — add people under Attendees first</div>
             )}
-            {companyUsers.map((user) => {
+            {meetingVoters.map((user) => {
               const badge = getRoleBadge(user)
               const isChecked = selected.includes(user.name)
               return (
                 <div
-                  key={user.id}
+                  key={String(user.id)}
                   className={`flex items-center gap-3 px-3 py-2.5 cursor-pointer transition-colors ${
                     isChecked ? "bg-primary/5" : "hover:bg-muted"
                   }`}
@@ -952,133 +1045,23 @@ export default function DecisionModal({
           )}
         </div>
 
-        {/* 🗳️ Advanced Voting Logic Preview — only for AGM and SGM meeting types */}
-        {(meetingType === "AGM" || meetingType === "SGM") && (votersFor.length > 0 || votersAgainst.length > 0 || votesFor !== "" || votesAgainst !== "") && (
-          <div className="bg-gradient-to-br from-primary/5 to-decision-purple/5 p-5 rounded-2xl border border-primary/20 shadow-sm animate-in fade-in zoom-in-95 duration-500">
-            <div className="flex items-center justify-between mb-4">
-              <h4 className="text-[11px] font-bold uppercase tracking-widest text-primary flex items-center gap-2">
-                <CheckSquare className="h-4 w-4" />
-                Live Decision Analysis
-              </h4>
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] bg-white border border-primary/20 text-primary px-2.5 py-1 rounded-lg font-bold shadow-sm">
-                  {selectedVotingType || "Standard Majority"}
-                </span>
-              </div>
-            </div>
-
-            {(() => {
-              // 1. Calculate Raw Headcount
-              const forCount = votersFor.length || Number(votesFor) || 0;
-              const againstCount = votersAgainst.length || Number(votesAgainst) || 0;
-              const abstainCount = votersAbstain.length || Number(votesAbstain) || 0;
-
-              // 2. Calculate Weighted Totals
-              const calculateWeight = (names: string[]) => 
-                names.reduce((sum, name) => {
-                  const u = companyUsers.find(user => user.name === name);
-                  const roleLabel = u ? getRoleBadge(u).label : "";
-                  const roleWeight = userTypeWeights[u?.user_type || ""] || userTypeWeights[roleLabel] || 1.0;
-                  const weight = (u?.voting_weight !== undefined && u.voting_weight !== null) ? u.voting_weight : roleWeight;
-                  return sum + weight;
-                }, 0);
-
-              const wFor = votersFor.length > 0 ? calculateWeight(votersFor) : Number(votesFor) || 0;
-              const wAgainst = votersAgainst.length > 0 ? calculateWeight(votersAgainst) : Number(votesAgainst) || 0;
-              const wTotal = wFor + wAgainst;
-
-              // 3. Extract Threshold and Criteria
-              const percentage = wTotal > 0 ? (wFor / wTotal) * 100 : 0;
-              
-              // Intelligent Threshold Detection
-              const pctMatch = selectedVotingType.match(/(\d+)%/);
-              let threshold = pctMatch ? parseInt(pctMatch[1]) : 50;
-              
-              // Special logic for standard types if regex fails or for nuance
-              let isGreaterOrEqual = true;
-              if (selectedVotingType.toLowerCase().includes("unanimous") || selectedVotingType.includes("100")) {
-                threshold = 100;
-              } else if (selectedVotingType.toLowerCase().includes("three-quarter") || selectedVotingType.includes("75")) {
-                threshold = 75;
-              } else if (selectedVotingType.toLowerCase().includes("majority")) {
-                threshold = 50;
-                isGreaterOrEqual = false; // "Majority" usually means > 50%
-              }
-
-              const passed = isGreaterOrEqual ? percentage >= threshold : percentage > threshold;
-              const margin = percentage - threshold;
-
-              return (
-                <div className="space-y-4">
-                  {/* Result Verdict Card */}
-                  <div className={`flex items-center justify-between p-3 rounded-xl border ${passed ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"}`}>
-                    <div className="flex items-center gap-3">
-                      <div className={`p-2 rounded-full ${passed ? "bg-green-500" : "bg-red-500"}`}>
-                        {passed ? <CheckCircle2 className="h-5 w-5 text-white" /> : <XCircle className="h-5 w-5 text-white" />}
-                      </div>
-                      <div>
-                        <div className={`text-sm font-black ${passed ? "text-green-800" : "text-red-800"}`}>
-                          {passed ? "MOTION CARRIED" : "MOTION DEFEATED"}
-                        </div>
-                        <div className={`text-[10px] font-medium ${passed ? "text-green-600" : "text-red-600"}`}>
-                          {passed 
-                            ? `Exceeds ${threshold}% threshold by ${margin.toFixed(1)}%` 
-                            : `Requires ${Math.abs(margin).toFixed(1)}% more to pass`}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-2xl font-black text-foreground leading-none">{percentage.toFixed(1)}%</div>
-                      <div className="text-[9px] font-bold text-muted-foreground mt-1 uppercase tracking-tighter">Support Level</div>
-                    </div>
-                  </div>
-
-                  {/* Visual Progress Bar */}
-                  <div className="space-y-1.5">
-                    <div className="flex justify-between text-[9px] font-bold text-muted-foreground uppercase px-1">
-                      <span>Against</span>
-                      <span>{threshold}% Threshold</span>
-                      <span>For</span>
-                    </div>
-                    <div className="h-3 w-full bg-muted/50 rounded-full overflow-hidden relative border border-border/20 p-0.5">
-                      <div 
-                        className={`h-full rounded-full transition-all duration-1000 ease-out shadow-sm ${passed ? "bg-green-500" : "bg-amber-500"}`} 
-                        style={{ width: `${percentage}%` }} 
-                      />
-                      {/* Threshold Marker */}
-                      <div 
-                        className="absolute top-0 bottom-0 w-0.5 bg-foreground/30 z-10" 
-                        style={{ left: `${threshold}%` }}
-                      >
-                        <div className="absolute -top-1 -left-[3px] w-2 h-2 rounded-full bg-foreground/30" />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Data Breakdown Table */}
-                  <div className="grid grid-cols-3 gap-2 pt-1">
-                    <div className="bg-white/50 p-2 rounded-lg border border-border/30">
-                      <div className="text-[9px] text-muted-foreground font-bold uppercase mb-0.5">Weighted For</div>
-                      <div className="text-xs font-black text-green-700">{wFor.toFixed(2)}</div>
-                    </div>
-                    <div className="bg-white/50 p-2 rounded-lg border border-border/30 text-center">
-                      <div className="text-[9px] text-muted-foreground font-bold uppercase mb-0.5">Against</div>
-                      <div className="text-xs font-black text-red-700">{wAgainst.toFixed(2)}</div>
-                    </div>
-                    <div className="bg-white/50 p-2 rounded-lg border border-border/30 text-right">
-                      <div className="text-[9px] text-muted-foreground font-bold uppercase mb-0.5">Participation</div>
-                      <div className="text-xs font-black text-foreground">{forCount + againstCount + abstainCount} <span className="text-[8px] font-medium text-muted-foreground">People</span></div>
-                    </div>
-                  </div>
-
-                  <p className="text-[9px] text-muted-foreground italic text-center px-4 leading-tight">
-                    * Weighted analysis based on organizational roles and multipliers. Abstentions are excluded from percentage calculation.
-                  </p>
-                </div>
-              );
-            })()}
-          </div>
-        )}
+        <VotingAnalysisPreview
+          selectedVotingType={selectedVotingType}
+          meetingVoters={meetingVoters}
+          votersFor={votersFor}
+          votersAgainst={votersAgainst}
+          votersAbstain={votersAbstain}
+          votesFor={votesFor}
+          votesAgainst={votesAgainst}
+          votesAbstain={votesAbstain}
+          userTypeWeights={userTypeWeights}
+          jurisdictionRules={jurisdictionRules}
+          votingParameters={votingParametersData}
+          building={buildingContext}
+          getWeight={(name) => getVoterWeight(meetingVoters, name)}
+          eligibleHeadcount={getEligibleHeadcount(meetingVoters)}
+          eligibleWeight={getEligibleWeight(meetingVoters)}
+        />
 
         <div className={`grid ${meetingType === "AGM" || meetingType === "SGM" ? "grid-cols-2" : "grid-cols-1"} gap-4`}>
           <div>

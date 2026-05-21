@@ -5,10 +5,11 @@ import { X, Plus, Trash2, Edit2, Save, Loader2, Globe } from "lucide-react"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { supabase, Company, getVotingParameters } from "@/lib/supabase"
-import { apiClient } from "@/lib/api-client"
+import { supabase, Company, getVotingParameters, getCurrentUser } from "@/lib/supabase"
+import { isMaster } from "@/lib/permissions"
 import { triggerJanusResync } from "@/lib/janus"
 import { toast } from "sonner"
+import { apiClient } from "@/lib/api-client"
 
 interface VotingParameter {
   id: number
@@ -130,9 +131,8 @@ export default function EditCompanyModal({
       setNewTypeLinkedVotingType("")
       setAddingNewType(false)
       toast.success("Meeting type added")
-    } catch (err) {
-      console.error("Failed to add meeting type:", err)
-      toast.error("Failed to add meeting type")
+    } catch (err: any) {
+      toast.error(err.message || "Failed to add meeting type")
     }
   }
 
@@ -142,63 +142,30 @@ export default function EditCompanyModal({
     if (!param) return
 
     try {
-      if (param.company_id === null) {
-        // Use upsert to handle repeated saves (UNIQUE constraint on company_id,parameter_type,value)
-        // Always preserve the original value (param.value) so it stays in sync with meetings.meeting_type
-        const data = await apiClient.v1.votingParameters.upsert({
-          company_id: company.id,
-          parameter_type: "meeting_type",
-          value: param.value, // preserve original name — never rename global defaults
-          linked_voting_type: editingTypeLinkedVotingType || null,
-          is_default: false,
-          weight: 1.0,
-        })
-
-        setMeetingTypeParams(prev => prev.map(p => p.id === id ? (data as VotingParameter) : p))
-        setEditingTypeId(null)
-        setEditingTypeValue("")
-        setEditingTypeLinkedVotingType("")
-        toast.success("Meeting type configuration saved")
-        return
-      }
-
       const data = await apiClient.v1.votingParameters.update({
         id,
         value: editingTypeValue.trim(),
         linked_voting_type: editingTypeLinkedVotingType || null,
         parameter_type: "meeting_type",
       })
-
-      setMeetingTypeParams(prev =>
-        prev.map(p => p.id === id
-          ? { ...p, value: editingTypeValue.trim(), linked_voting_type: editingTypeLinkedVotingType || null } as any
-          : p
-        )
-      )
+      setMeetingTypeParams(prev => prev.map(p => p.id === id ? (data as VotingParameter) : p))
       setEditingTypeId(null)
       setEditingTypeValue("")
       setEditingTypeLinkedVotingType("")
       toast.success("Meeting type updated")
-    } catch (err) {
-      console.error("Failed to update meeting type:", err)
-      toast.error("Failed to update meeting type")
+    } catch (err: any) {
+      toast.error(err.message || "Failed to update meeting type")
     }
   }
 
   const handleDeleteMeetingType = async (id: number) => {
-    const param = meetingTypeParams.find(p => p.id === id)
-    if (param?.is_default || param?.company_id === null) {
-      toast.error("Cannot delete a global default — edit it in Admin → Voting instead.")
-      return
-    }
     if (!confirm("Delete this meeting type?")) return
     try {
       await apiClient.v1.votingParameters.delete(id)
       setMeetingTypeParams(prev => prev.filter(p => p.id !== id))
       toast.success("Meeting type deleted")
-    } catch (err) {
-      console.error("Failed to delete meeting type:", err)
-      toast.error("Failed to delete meeting type")
+    } catch (err: any) {
+      toast.error(err.message || "Failed to delete meeting type")
     }
   }
 
@@ -438,9 +405,7 @@ export default function EditCompanyModal({
                           <div className="flex flex-col flex-1 min-w-0">
                             <div className="flex items-center gap-2">
                               <span className="flex-1 text-xs font-medium truncate">{param.value}</span>
-                              {(param.is_default || param.company_id === null) && (
-                                <span className="text-[9px] bg-primary/10 text-primary px-1.5 py-0.5 rounded uppercase font-bold border border-primary/20 shrink-0">Default</span>
-                              )}
+
                             </div>
                             {(param as any).linked_voting_type && (
                               <span className="text-[9px] text-muted-foreground mt-0.5">⚖️ {(param as any).linked_voting_type}</span>

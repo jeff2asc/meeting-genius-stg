@@ -4,7 +4,25 @@ import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { supabase, getCurrentUser, getVotingParameters } from "@/lib/supabase"
 import { toast } from "sonner"
-import { CheckCircle2, XCircle, AlertCircle, FileText, CheckSquare } from "lucide-react"
+import { AlertCircle, FileText } from "lucide-react"
+import type { JurisdictionRule } from "@/lib/voting-engine"
+import { apiClient } from "@/lib/api-client"
+import {
+  evaluateDecisionVote,
+  inferProvinceCode,
+  toDecisionVoteSnapshot,
+  type BuildingVotingContext,
+  type VotingParameterRow,
+} from "@/lib/voting-rules"
+import VotingAnalysisPreview from "@/components/VotingAnalysisPreview"
+import {
+  buildMeetingVoters,
+  getEligibleHeadcount,
+  getEligibleWeight,
+  getVoterWeight,
+  type MeetingAttendeeRecord,
+  type MeetingVoter,
+} from "@/lib/meeting-voters"
 
 interface DecisionFormProps {
   topicId: number
@@ -18,6 +36,7 @@ interface CompanyUser {
   email: string
   user_type: string
   roles: string[] | null
+  voting_weight?: number | null
 }
 
 interface GeniusWord {
@@ -37,15 +56,19 @@ export default function DecisionForm({ topicId, meetingId, onSave }: DecisionFor
   const [error, setError] = useState<string | null>(null)
   const [decisionResults, setDecisionResults] = useState<string[]>([])
   const [companyUsers, setCompanyUsers] = useState<CompanyUser[]>([])
+  const [meetingVoters, setMeetingVoters] = useState<MeetingVoter[]>([])
   const [votingTypes, setVotingTypes] = useState<string[]>([])
   const [selectedVotingType, setSelectedVotingType] = useState("")
   const [customThreshold, setCustomThreshold] = useState<number>(50)
   const [topicTitle, setTopicTitle] = useState<string>("")
   const [meetingType, setMeetingType] = useState<string>("")
+  const [buildingContext, setBuildingContext] = useState<BuildingVotingContext>({})
+  const [votingParametersData, setVotingParametersData] = useState<VotingParameterRow[]>([])
+  const [jurisdictionRules, setJurisdictionRules] = useState<JurisdictionRule[]>([])
   
   // @ Mention Autocomplete State
   const [showSuggestions, setShowSuggestions] = useState(false)
-  const [suggestions, setSuggestions] = useState<CompanyUser[]>([])
+  const [suggestions, setSuggestions] = useState<MeetingVoter[]>([])
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0)
   const [cursorPosition, setCursorPosition] = useState(0)
   const [mentionStartIndex, setMentionStartIndex] = useState(-1)
@@ -119,19 +142,48 @@ export default function DecisionForm({ topicId, meetingId, onSave }: DecisionFor
         setMeetingType(meetingData.meeting_type || "")
         const { data: buildingData } = await supabase
           .from("buildings")
-          .select("company_id")
+          .select("company_id, building_type, province_code, address")
           .eq("id", meetingData.building_id)
           .single()
 
+        const bCtx: BuildingVotingContext = {
+          building_type: buildingData?.building_type,
+          province_code: (buildingData as { province_code?: string })?.province_code,
+          address: buildingData?.address,
+        }
+        setBuildingContext(bCtx)
+
+        const provinceCode = inferProvinceCode(bCtx)
+        try {
+          const rules = await apiClient.v1.jurisdictionRules.list({
+            building_type: bCtx.building_type || undefined,
+            province_code: provinceCode,
+          })
+          setJurisdictionRules((rules || []) as JurisdictionRule[])
+        } catch {
+          setJurisdictionRules([])
+        }
+
         const params = await getVotingParameters(buildingData?.company_id)
-        const vTypes = params
-          .filter(p => p.parameter_type === 'voting_type')
-          .map(p => p.value)
+        const votingParams = params.filter((p: any) => p.parameter_type === "voting_type")
+        setVotingParametersData(votingParams as VotingParameterRow[])
+        const vTypes = votingParams.map((p: any) => p.value)
         
-        const baseTypes = vTypes.length > 0 ? vTypes : ["Majority Vote (50%+1)", "Three-Quarter Vote (75%)", "Unanimous Vote (100%)"]
-        const finalTypes = [...baseTypes]
+        let finalTypes = vTypes.length > 0 ? [...vTypes] : ["Majority Vote (50%+1)", "Three-Quarter Vote (75%)", "Unanimous Vote (100%)"]
         if (!finalTypes.includes("Custom Percentage (%)")) {
           finalTypes.push("Custom Percentage (%)")
+        }
+        if (provinceCode === "BC" && !finalTypes.includes("80% Vote")) {
+          finalTypes.push("80% Vote")
+        }
+        if (provinceCode === "ON") {
+          for (const t of [
+            "Majority — Votes Cast (ON S.53)",
+            "Majority — All Registered Units (ON By-law)",
+            "Majority — Votes at Meeting (ON By-law)",
+          ]) {
+            if (!finalTypes.includes(t)) finalTypes.push(t)
+          }
         }
         setVotingTypes(finalTypes)
         setSelectedVotingType(finalTypes[0])
@@ -186,8 +238,8 @@ export default function DecisionForm({ topicId, meetingId, onSave }: DecisionFor
       // 1. Get dynamic results from voting_parameters
       const params = await getVotingParameters(buildingData.company_id)
       const dynamicResults = params
-        .filter(p => p.parameter_type === 'decision_result')
-        .map(p => p.value)
+        .filter((p: any) => p.parameter_type === 'decision_result')
+        .map((p: any) => p.value)
 
       // 2. Get company defaults
       const { data: companyData } = await supabase
@@ -213,7 +265,7 @@ export default function DecisionForm({ topicId, meetingId, onSave }: DecisionFor
       // Step 1: get building_id from meeting
       const { data: meetingData, error: meetingError } = await supabase
         .from("meetings")
-        .select("building_id")
+        .select("building_id, attendees")
         .eq("id", meetingId)
         .single()
 
@@ -261,11 +313,16 @@ export default function DecisionForm({ topicId, meetingId, onSave }: DecisionFor
       ).sort((a: any, b: any) => a.name.localeCompare(b.name))
 
       setCompanyUsers(unique)
+      setMeetingVoters(
+        buildMeetingVoters(
+          (meetingData.attendees as MeetingAttendeeRecord[] | null) ?? [],
+          unique
+        )
+      )
     } catch (err) {
       console.error("Error fetching company users:", err)
     }
   }
-
 
   const fetchGeniusWords = async () => {
     if (!currentUser?.id) return
@@ -304,7 +361,7 @@ export default function DecisionForm({ topicId, meetingId, onSave }: DecisionFor
       if (!textAfterAt.includes(" ") && !textAfterAt.includes("\n")) {
         setMentionStartIndex(atIndex)
         
-        const filtered = companyUsers.filter(u =>
+        const filtered = meetingVoters.filter(u =>
           u.name.toLowerCase().includes(textAfterAt.toLowerCase())
         )
         
@@ -341,7 +398,7 @@ export default function DecisionForm({ topicId, meetingId, onSave }: DecisionFor
     }
   }
 
-  const insertMention = (user: CompanyUser) => {
+  const insertMention = (user: MeetingVoter) => {
     if (mentionStartIndex === -1) return
 
     const beforeMention = motionText.substring(0, mentionStartIndex)
@@ -431,6 +488,39 @@ export default function DecisionForm({ topicId, meetingId, onSave }: DecisionFor
     setError(null)
 
     try {
+      let voteSnapshot = {
+        vote_passed: null as boolean | null,
+        vote_percentage: null as number | null,
+        reconsideration_triggered: false,
+        reconsideration_hold_days: 0,
+        reconsideration_hold_until: null as string | null,
+      }
+
+      if (
+        selectedVotingType &&
+        (votesFor.length > 0 || votesAgainst.length > 0)
+      ) {
+        const { result: voteResult } = evaluateDecisionVote({
+          votingType: selectedVotingType,
+          votersFor: votesFor,
+          votersAgainst: votesAgainst,
+          votersAbstain: votesAbstain,
+          votesFor: "",
+          votesAgainst: "",
+          votesAbstain: "",
+          meetingVoters,
+          getWeight: (name) => getVoterWeight(meetingVoters, name),
+          eligibleHeadcount: getEligibleHeadcount(meetingVoters),
+          eligibleWeight: getEligibleWeight(meetingVoters),
+          jurisdictionRules,
+          votingParameters: votingParametersData,
+          building: buildingContext,
+          customThreshold:
+            selectedVotingType === "Custom Percentage (%)" ? customThreshold : undefined,
+        })
+        voteSnapshot = toDecisionVoteSnapshot(voteResult)
+      }
+
       const { error: insertError } = await supabase
         .from("decisions")
         .insert({
@@ -443,7 +533,8 @@ export default function DecisionForm({ topicId, meetingId, onSave }: DecisionFor
           votes_for: votesFor.length === 0 ? null : votesFor.length,
           votes_against: votesAgainst.length === 0 ? null : votesAgainst.length,
           votes_abstain: votesAbstain.length === 0 ? null : votesAbstain.length,
-          parent_decision_id: null
+          parent_decision_id: null,
+          ...voteSnapshot,
         })
 
       if (insertError) {
@@ -494,12 +585,20 @@ export default function DecisionForm({ topicId, meetingId, onSave }: DecisionFor
     }
   }
 
-  const getRoleBadge = (user: CompanyUser) => {
+  const getRoleBadge = (user: MeetingVoter | CompanyUser) => {
     const t = user.user_type
     if (t === "corporate_administrator") return { label: "Corp Admin", color: "bg-purple-100 text-purple-700" }
     if (t === "property_manager") return { label: "PM", color: "bg-blue-100 text-blue-700" }
     if (t === "owner") return { label: "Owner", color: "bg-amber-100 text-amber-700" }
-    return { label: "Resident", color: "bg-green-100 text-green-700" }
+    if (t === "resident") return { label: "Resident", color: "bg-green-100 text-green-700" }
+    if (t === "attendee" || t === "user") {
+      const roleLabel = "role" in user && user.role ? user.role : "Attendee"
+      return { label: roleLabel, color: "bg-slate-100 text-slate-700" }
+    }
+    if ("role" in user && user.role) {
+      return { label: user.role, color: "bg-slate-100 text-slate-700" }
+    }
+    return { label: "Member", color: "bg-slate-100 text-slate-700" }
   }
 
   const renderDropdown = (label: string, type: "for" | "against" | "abstain", selected: string[]) => {
@@ -523,15 +622,15 @@ export default function DecisionForm({ topicId, meetingId, onSave }: DecisionFor
         
         {isOpen && (
           <div className="absolute z-50 w-64 mt-1 bg-card border border-border rounded-lg shadow-xl max-h-56 overflow-y-auto">
-            {companyUsers.length === 0 && (
-              <div className="p-3 text-sm text-muted-foreground text-center">No users found for this company</div>
+            {meetingVoters.length === 0 && (
+              <div className="p-3 text-sm text-muted-foreground text-center">No attendees on this meeting — add people under Attendees first</div>
             )}
-            {companyUsers.map((user) => {
+            {meetingVoters.map((user) => {
               const badge = getRoleBadge(user)
               const isChecked = selected.includes(user.name)
               return (
                 <div
-                  key={user.id}
+                  key={String(user.id)}
                   className={`flex items-center gap-3 px-3 py-2.5 cursor-pointer transition-colors ${
                     isChecked ? "bg-primary/8" : "hover:bg-muted"
                   }`}
@@ -654,7 +753,7 @@ export default function DecisionForm({ topicId, meetingId, onSave }: DecisionFor
           >
             {suggestions.map((user, index) => (
               <button
-                key={user.id}
+                key={String(user.id)}
                 onClick={() => insertMention(user)}
                 className={`w-full text-left px-4 py-2 hover:bg-muted transition-colors ${
                   index === selectedSuggestionIndex ? 'bg-muted' : ''
@@ -775,95 +874,27 @@ export default function DecisionForm({ topicId, meetingId, onSave }: DecisionFor
         </div>
       )}
 
-      {/* Dropdowns moved inside conditional block above */}
+      <VotingAnalysisPreview
+        selectedVotingType={selectedVotingType}
+        meetingVoters={meetingVoters}
+        votersFor={votesFor}
+        votersAgainst={votesAgainst}
+        votersAbstain={votesAbstain}
+        votesFor=""
+        votesAgainst=""
+        votesAbstain=""
+        userTypeWeights={{}}
+        jurisdictionRules={jurisdictionRules}
+        votingParameters={votingParametersData}
+        building={buildingContext}
+        getWeight={(name) => getVoterWeight(meetingVoters, name)}
+        eligibleHeadcount={getEligibleHeadcount(meetingVoters)}
+        eligibleWeight={getEligibleWeight(meetingVoters)}
+        customThreshold={
+          selectedVotingType === "Custom Percentage (%)" ? customThreshold : undefined
+        }
+      />
 
-      {/* Logic Calculation Preview */}
-      {(meetingType === "AGM" || meetingType === "SGM") && (votesFor.length > 0 || votesAgainst.length > 0) && (
-        <div className="bg-muted/30 p-4 rounded-xl border border-border/50 animate-in fade-in zoom-in-95 duration-300">
-          <div className="flex items-center justify-between mb-3">
-             <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                <AlertCircle className="h-3.5 w-3.5" />
-                Voting Logic Preview
-             </h4>
-             <span className="text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded-full font-medium">
-                {selectedVotingType}
-             </span>
-          </div>
-          
-          {(() => {
-            const vFor = votesFor.length;
-            const vAgainst = votesAgainst.length;
-            const total = vFor + vAgainst;
-            const percentage = total > 0 ? (vFor / total) * 100 : 0;
-            
-            let passed = false;
-            let threshold = 50;
-            
-            if (selectedVotingType.toLowerCase().includes("75") || 
-                selectedVotingType.toLowerCase().includes("three-quarter") ||
-                selectedVotingType.toLowerCase().includes("special resolution")) {
-              passed = percentage >= 75;
-              threshold = 75;
-            } else if (selectedVotingType.toLowerCase().includes("100") || 
-                       selectedVotingType.toLowerCase().includes("unanimous")) {
-              passed = percentage >= 100 && vFor > 0;
-              threshold = 100;
-            } else if (selectedVotingType.toLowerCase().includes("80")) {
-              passed = percentage >= 80;
-              threshold = 80;
-            } else if (selectedVotingType === "Custom Percentage (%)") {
-              passed = percentage >= customThreshold;
-              threshold = customThreshold;
-            } else if (selectedVotingType.toLowerCase().includes("advisory")) {
-              passed = true; // Advisory votes are always "carried" in terms of recording
-              threshold = 0;
-            } else {
-              // Default to 50%+1 (Majority / Ordinary Resolution)
-              passed = percentage > 50;
-              threshold = 50;
-            }
-
-            return (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    {passed ? (
-                      <CheckCircle2 className="h-5 w-5 text-green-500" />
-                    ) : (
-                      <XCircle className="h-5 w-5 text-red-500" />
-                    )}
-                    <span className={`text-sm font-bold ${passed ? "text-green-700" : "text-red-700"}`}>
-                      {passed ? "Motion Carried" : "Motion Defeated"}
-                    </span>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-xl font-black text-foreground">{percentage.toFixed(1)}%</span>
-                    <span className="text-[10px] text-muted-foreground block">of {total} active votes</span>
-                  </div>
-                </div>
-                
-                <div className="h-2 w-full bg-muted rounded-full overflow-hidden flex">
-                  <div 
-                    className={`h-full transition-all duration-500 ${passed ? "bg-green-500" : "bg-red-500"}`} 
-                    style={{ width: `${percentage}%` }} 
-                  />
-                  {threshold < 100 && (
-                    <div 
-                      className="absolute h-4 w-0.5 bg-foreground/20 -mt-1" 
-                      style={{ left: `${threshold}%` }}
-                      title={`Threshold: ${threshold}%`}
-                    />
-                  )}
-                </div>
-                
-                <p className="text-[10px] text-muted-foreground italic text-center">
-                  * Calculations exclude abstentions as per standard voting protocol.
-                </p>
-              </div>
-            );
-          })()}
-        </div>
-      )}
 
       <div className="flex gap-3 pt-4">
         <Button
