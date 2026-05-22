@@ -6,6 +6,16 @@ import { apiClient } from "@/lib/api-client"
 import { isMaster, isCorporateAdmin } from "@/lib/permissions"
 import UserWeightsModal from "./UserWeightsModal"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
@@ -62,6 +72,10 @@ export default function VotingTab() {
   const [userLoading, setUserLoading] = useState(false)
   const [showUserModal, setShowUserModal] = useState(false)
   const [paramModalOpen, setParamModalOpen] = useState(false)
+  const [renameConfirmOpen, setRenameConfirmOpen] = useState(false)
+  const [renameMeetingCount, setRenameMeetingCount] = useState<number | null>(null)
+  const [renameCountLoading, setRenameCountLoading] = useState(false)
+  const [savingParam, setSavingParam] = useState(false)
 
   // ── Jurisdiction Rules state ──
   const [jurisdictionRules, setJurisdictionRules] = useState<JurisdictionRule[]>([])
@@ -81,6 +95,68 @@ export default function VotingTab() {
     fetchCompanyUsers()
     fetchJurisdictionRules()
   }, [])
+
+  // Preview how many meetings will be updated when renaming a meeting type
+  useEffect(() => {
+    if (!paramModalOpen || !editingId) {
+      setRenameMeetingCount(null)
+      setRenameCountLoading(false)
+      return
+    }
+
+    const param = parameters.find((p) => p.id === editingId)
+    if (!param || param.parameter_type !== "meeting_type") {
+      setRenameMeetingCount(null)
+      return
+    }
+
+    const trimmed = editValue.trim()
+    if (!trimmed || trimmed === param.value) {
+      setRenameMeetingCount(null)
+      setRenameCountLoading(false)
+      return
+    }
+
+    let cancelled = false
+    setRenameCountLoading(true)
+
+    async function loadMeetingCount() {
+      try {
+        let query = supabase
+          .from("meetings")
+          .select("id", { count: "exact", head: true })
+          .eq("meeting_type", param!.value)
+
+        if (param!.company_id != null) {
+          const { data: buildings, error: buildingsError } = await supabase
+            .from("buildings")
+            .select("id")
+            .eq("company_id", param!.company_id)
+
+          if (buildingsError) throw buildingsError
+          const buildingIds = (buildings || []).map((b) => b.id)
+          if (buildingIds.length === 0) {
+            if (!cancelled) setRenameMeetingCount(0)
+            return
+          }
+          query = query.in("building_id", buildingIds)
+        }
+
+        const { count, error } = await query
+        if (error) throw error
+        if (!cancelled) setRenameMeetingCount(count ?? 0)
+      } catch {
+        if (!cancelled) setRenameMeetingCount(null)
+      } finally {
+        if (!cancelled) setRenameCountLoading(false)
+      }
+    }
+
+    loadMeetingCount()
+    return () => {
+      cancelled = true
+    }
+  }, [paramModalOpen, editingId, editValue, parameters])
 
   const fetchCompanyUsers = async () => {
     if (!companyId) return
@@ -162,8 +238,8 @@ export default function VotingTab() {
     }
   }
 
-  const handleAdd = async (type: ParameterType) => {
-    if (!newValue.trim()) return
+  const handleAdd = async (type: ParameterType): Promise<boolean> => {
+    if (!newValue.trim()) return false
 
     try {
       const data = await apiClient.v1.votingParameters.insert({
@@ -183,22 +259,28 @@ export default function VotingTab() {
       setNewCalculationFormula("")
       setIsAdding(null)
       toast.success("Parameter added")
+      return true
     } catch (err: any) {
       toast.error(err.message || "Failed to add parameter")
+      return false
     }
   }
 
-  const handleUpdate = async (id: number) => {
-    if (!editValue.trim()) return
+  const handleUpdate = async (id: number): Promise<boolean> => {
+    if (!editValue.trim()) return false
 
     const param = parameters.find(p => p.id === id)
-    if (!param) return
+    if (!param) return false
 
+    const newValue = editValue.trim()
+    const isMeetingTypeRename =
+      param.parameter_type === 'meeting_type' && newValue !== param.value
+
+    setSavingParam(true)
     try {
-      // Both master and corporate admin: directly update the record by ID (rename allowed)
-      const data = await apiClient.v1.votingParameters.update({
+      const { data, meetingsUpdated, companiesUpdated } = await apiClient.v1.votingParameters.update({
         id,
-        value: editValue,
+        value: newValue,
         description: editDescription || null,
         weight: editWeight,
         calculation_formula: param.parameter_type === 'voting_type' ? editCalculationFormula || null : null,
@@ -208,9 +290,19 @@ export default function VotingTab() {
 
       setParameters(parameters.map(p => p.id === id ? (data as VotingParameter) : p))
       setEditingId(null)
-      toast.success("Parameter updated")
+
+      if (isMeetingTypeRename && (meetingsUpdated ?? 0) > 0) {
+        const extras = (companiesUpdated ?? 0) > 0 ? ` and ${companiesUpdated} company default list(s)` : ''
+        toast.success(`Meeting type renamed — updated ${meetingsUpdated} meeting(s)${extras}`)
+      } else {
+        toast.success("Parameter updated")
+      }
+      return true
     } catch (err: any) {
       toast.error(err.message || "Failed to update parameter")
+      return false
+    } finally {
+      setSavingParam(false)
     }
   }
 
@@ -739,20 +831,31 @@ export default function VotingTab() {
                   <option value="vendor">Vendor</option>
                 </select>
               ) : (() => {
-                // For global default meeting types, lock the name so it stays in sync with meetings.meeting_type
                 const editingParam = editingId ? parameters.find(p => p.id === editingId) : null
-                const isLockedGlobalMeetingType = editingParam?.company_id === null && editingParam?.parameter_type === 'meeting_type'
+                const isEditingMeetingType = editingParam?.parameter_type === 'meeting_type'
+                const isRenamingMeetingType =
+                  isEditingMeetingType &&
+                  editingParam &&
+                  editValue.trim() !== '' &&
+                  editValue.trim() !== editingParam.value
                 return (
                   <div>
                     <Input
                       placeholder="e.g., Majority Vote"
-                      className={`h-11 rounded-xl bg-muted/20 ${isLockedGlobalMeetingType ? 'opacity-60 cursor-not-allowed' : ''}`}
+                      className="h-11 rounded-xl bg-muted/20"
                       value={editingId ? editValue : newValue}
                       onChange={(e) => editingId ? setEditValue(e.target.value) : setNewValue(e.target.value)}
-                      disabled={isLockedGlobalMeetingType}
                     />
-                    {isLockedGlobalMeetingType && (
-                      <p className="text-[10px] text-amber-600 mt-1">⚠️ Name is locked — renaming would break sync with existing meetings.</p>
+                    {isEditingMeetingType && (
+                      <p className={`text-[10px] mt-1 ${isRenamingMeetingType ? 'text-amber-600' : 'text-muted-foreground'}`}>
+                        {isRenamingMeetingType
+                          ? renameCountLoading
+                            ? 'Checking how many meetings use this type…'
+                            : renameMeetingCount != null && renameMeetingCount > 0
+                              ? `${renameMeetingCount} meeting(s) use "${editingParam?.value}". Click Save Changes to rename them too.`
+                              : 'Click Save Changes to apply the new name.'
+                          : 'Meeting type name shown in dropdowns and on meeting records.'}
+                      </p>
                     )}
                   </div>
                 )
@@ -815,17 +918,84 @@ export default function VotingTab() {
             <Button variant="ghost" className="h-11 rounded-xl px-6" onClick={() => setParamModalOpen(false)}>Cancel</Button>
             <Button 
               className="bg-primary text-white font-bold h-11 rounded-xl px-8 shadow-lg shadow-primary/20"
-              onClick={() => {
-                if (editingId) handleUpdate(editingId)
-                else if (isAdding) handleAdd(isAdding)
-                setParamModalOpen(false)
+              disabled={savingParam}
+              onClick={async () => {
+                if (editingId) {
+                  const param = parameters.find((p) => p.id === editingId)
+                  const trimmed = editValue.trim()
+                  const isRename =
+                    param?.parameter_type === "meeting_type" &&
+                    trimmed &&
+                    trimmed !== param.value
+                  if (isRename) {
+                    setRenameConfirmOpen(true)
+                    return
+                  }
+                  const ok = await handleUpdate(editingId)
+                  if (ok) setParamModalOpen(false)
+                } else if (isAdding) {
+                  const ok = await handleAdd(isAdding)
+                  if (ok) setParamModalOpen(false)
+                }
               }}
             >
-              {editingId ? "Save Changes" : "Create Parameter"}
+              {savingParam ? "Saving…" : editingId ? "Save Changes" : "Create Parameter"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={renameConfirmOpen} onOpenChange={setRenameConfirmOpen}>
+        <AlertDialogContent className="z-[200]">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Rename meeting type?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-sm text-muted-foreground">
+                {(() => {
+                  const param = editingId ? parameters.find((p) => p.id === editingId) : null
+                  if (!param) return null
+                  const trimmed = editValue.trim()
+                  return (
+                    <>
+                      <p>
+                        <strong className="text-foreground">{param.value}</strong>
+                        {" → "}
+                        <strong className="text-foreground">{trimmed}</strong>
+                      </p>
+                      {renameMeetingCount != null && renameMeetingCount > 0 ? (
+                        <p>
+                          This will update <strong className="text-foreground">{renameMeetingCount}</strong> existing
+                          meeting(s) so they stay in sync with the new name.
+                        </p>
+                      ) : (
+                        <p>No existing meetings use the current name. Only the configuration label will change.</p>
+                      )}
+                    </>
+                  )
+                })()}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={savingParam}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={savingParam}
+              className="bg-primary text-white"
+              onClick={async (e) => {
+                e.preventDefault()
+                if (!editingId) return
+                const ok = await handleUpdate(editingId)
+                if (ok) {
+                  setRenameConfirmOpen(false)
+                  setParamModalOpen(false)
+                }
+              }}
+            >
+              {savingParam ? "Saving…" : "Rename & sync meetings"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* 🎯 Individual User Overrides Pop-up */}
       <UserWeightsModal 

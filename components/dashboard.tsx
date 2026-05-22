@@ -6,36 +6,26 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { supabase, getCurrentUser } from "@/lib/supabase"
 import { apiClient } from "@/lib/api-client"
-import { formatFloatingDate, formatFloatingTime } from "@/lib/timezone"
+import { formatFloatingDate, formatFloatingTime, formatFloatingTimeWithZone } from "@/lib/timezone"
 import { toast } from "sonner"
 import EditMeetingModal from "./EditMeetingModal"
 import TaskDetailsModal from "./TaskDetailsModal"
 import TicketDetailsModal from "./TicketDetailsModal"
+import { formatJanusTicketDisplayLabel, getJanusTicketRef } from "@/lib/janus"
+
+function enrichJanusTicket(ticket: any, kind: "repair" | "complaint") {
+  const ref = getJanusTicketRef(ticket)
+  return {
+    ...ticket,
+    _type: kind,
+    type: ticket.type || kind,
+    janus_ticket_id: ref,
+    ticket_id: ticket.ticket_id || ref,
+  }
+}
 import { isMaster as checkIsMaster, isCorporateAdmin as checkIsCorporateAdmin, isPropertyManager as checkIsPropertyManager } from "@/lib/permissions"
 import { Badge } from "@/components/ui/badge"
-import { Clock as ClockIcon } from "lucide-react"
-
-function CurrentTime() {
-  const [time, setTime] = useState(new Date())
-
-  useEffect(() => {
-    const timer = setInterval(() => setTime(new Date()), 1000)
-    return () => clearInterval(timer)
-  }, [])
-
-  return (
-    <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground bg-muted/50 px-3 py-1.5 rounded-full border border-border/50">
-      <ClockIcon className="h-3.5 w-3.5 text-primary animate-pulse" />
-      <span className="whitespace-nowrap font-bold">
-        {time.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
-      </span>
-      <span className="opacity-20 font-light">|</span>
-      <span className="whitespace-nowrap">
-        {time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-      </span>
-    </div>
-  )
-}
+import UserClock from "@/components/UserClock"
 
 interface DashboardProps {
   onStartMeeting: (meetingId: string) => void
@@ -93,6 +83,10 @@ export default function Dashboard({
   const [selectedTicketDetails, setSelectedTicketDetails] = useState<any>(null)
 
   useEffect(() => {
+    const user = getCurrentUser()
+    if (user && checkIsMaster(user)) {
+      setIsJanusIntegrated(true)
+    }
     fetchBuildings()
     fetchCompanyLogo()
     fetchJanusData()
@@ -140,25 +134,29 @@ export default function Dashboard({
       isIntegrated = installed ? JSON.parse(installed).includes("janus") : false
     }
 
-    const isMaster = checkIsMaster(currentUser)
-    setIsJanusIntegrated(isIntegrated || isMaster)
+    const isMasterUser = checkIsMaster(currentUser)
+    setIsJanusIntegrated(isIntegrated || isMasterUser)
     
-    if (!isIntegrated && !isMaster) return
+    if (!isIntegrated && !isMasterUser) return
 
     try {
       const documentedSecret = process.env.NEXT_PUBLIC_API_KEY || ""
-      const companyParam = isMaster 
-        ? `?user_id=${currentUser.id}` 
-        : `?company_id=${currentUser.company_id}&user_id=${currentUser.id}`
-      const res = await fetch(`${window.location.origin}/api/janus/v1/sync${companyParam}`, {
+      const syncParams = new URLSearchParams()
+      syncParams.set("user_id", String(currentUser.id))
+      if (isMasterUser) {
+        syncParams.set("scope", "master")
+      } else if (currentUser.company_id) {
+        syncParams.set("company_id", String(currentUser.company_id))
+      }
+      const res = await fetch(`${window.location.origin}/api/janus/v1/sync?${syncParams.toString()}`, {
         headers: { "x-api-key": documentedSecret }
       })
       if (!res.ok) throw new Error("Could not fetch Janus data")
       
       const payload = await res.json()
       
-      let repairs = payload.data?.repairs || []
-      let complaints = payload.data?.complaints || []
+      let repairs = (payload.data?.repairs || []).map((t: any) => enrichJanusTicket(t, "repair"))
+      let complaints = (payload.data?.complaints || []).map((t: any) => enrichJanusTicket(t, "complaint"))
       
       // Fallback to payload.data.buildings if component buildings state is still empty on initial mount
       const currentBuildings = buildings.length > 0 ? buildings : (payload.data?.buildings || [])
@@ -177,9 +175,7 @@ export default function Dashboard({
         }
       } else {
         // ⭐ SECURITY FILTER: Only show tickets for buildings this user is authorized to see
-        const isMaster = checkIsMaster(currentUser);
-        
-        if (!isMaster) {
+        if (!isMasterUser) {
           const authorizedNames = currentBuildings.map((b: any) => (b.name || "").toLowerCase()).filter(Boolean);
           const authorizedIds = currentBuildings.map((b: any) => String(b.id || ""));
 
@@ -359,7 +355,7 @@ export default function Dashboard({
         building: meeting.buildings?.name || selectedBuilding,
         building_id: meeting.building_id,
         title: meeting.title,
-        date: formatFloatingDate(meeting.meeting_date, 'short') + (meeting.start_time ? ` at ${formatFloatingTime(meeting.start_time)}` : ''),
+        date: formatFloatingDate(meeting.meeting_date, 'short') + (meeting.start_time ? ` at ${formatFloatingTimeWithZone(meeting.start_time, meeting.buildings?.timezone)}` : ''),
         meeting_date: meeting.meeting_date,
         location: meeting.location,
         start_time: meeting.start_time,
@@ -625,7 +621,7 @@ export default function Dashboard({
               />
             </div>
             <div className="flex items-center gap-4">
-              <CurrentTime />
+              <UserClock />
             </div>
           </div>
         </div>
@@ -1313,9 +1309,7 @@ export default function Dashboard({
                       )}
                       <div className="flex items-center justify-between mt-auto pt-4 border-t border-border">
                         <span className="text-[10px] font-mono text-muted-foreground font-semibold">
-                          {ticket.janus_ticket_id && String(ticket.janus_ticket_id).startsWith('ticket-')
-                            ? ticket.janus_ticket_id
-                            : `#REP-${ticket.janus_ticket_id || ticket.id}`}
+                          {formatJanusTicketDisplayLabel(ticket, "repair")}
                         </span>
                         <Button 
                           size="sm" 
@@ -1405,9 +1399,7 @@ export default function Dashboard({
                       )}
                       <div className="flex items-center justify-between mt-auto pt-4 border-t border-border">
                         <span className="text-[10px] font-mono text-muted-foreground font-semibold">
-                          {ticket.janus_ticket_id && String(ticket.janus_ticket_id).startsWith('ticket-')
-                            ? ticket.janus_ticket_id
-                            : `#COM-${ticket.janus_ticket_id || ticket.id}`}
+                          {formatJanusTicketDisplayLabel(ticket, "complaint")}
                         </span>
                         <Button 
                           size="sm" 

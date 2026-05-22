@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { janusClient } from "@/lib/janus-client";
 import { createAdminClient } from "@/lib/supabase";
+import { isMaster } from "@/lib/permissions";
 
 export async function GET(req: NextRequest) {
   const apiKey = req.headers.get("x-api-key");
@@ -15,8 +16,10 @@ export async function GET(req: NextRequest) {
     const userId = req.nextUrl.searchParams.get("user_id");
     const db = createAdminClient(); // Bypasses RLS — can read all data
 
-    let isMasterUser = false;
-    if (userId) {
+    const scopeMaster = req.nextUrl.searchParams.get("scope") === "master";
+    let isMasterUser = scopeMaster;
+
+    if (!isMasterUser && userId) {
       const uid = parseInt(userId, 10);
       if (!isNaN(uid)) {
         const { data: dbUser } = await db
@@ -26,11 +29,14 @@ export async function GET(req: NextRequest) {
           .maybeSingle();
 
         if (dbUser) {
-          const roles = [dbUser.user_type || "", ...(dbUser.roles || [])].filter(Boolean);
-          isMasterUser = roles.some(role => role === "master");
+          isMasterUser = isMaster(dbUser);
         }
       }
     }
+
+    // Master accounts must never be scoped to a single company (multiple user types / company_id on record)
+    const effectiveCompanyId =
+      isMasterUser ? null : companyId;
 
     // 1. Fetch Portfolio Data (Meeting Genius -> Janus)
     let companiesQuery = db.from("companies").select("*");
@@ -38,8 +44,8 @@ export async function GET(req: NextRequest) {
     let usersQuery    = db.from("users").select("*").neq("user_type", "vendor");
     let vendorsQuery  = db.from("users").select("*").eq("user_type", "vendor");
 
-    if (!isMasterUser && companyId && companyId !== "undefined" && companyId !== "null") {
-      const cid = parseInt(companyId);
+    if (!isMasterUser && effectiveCompanyId && effectiveCompanyId !== "undefined" && effectiveCompanyId !== "null") {
+      const cid = parseInt(effectiveCompanyId);
       if (!isNaN(cid)) {
         companiesQuery = companiesQuery.eq("id", cid);
         buildingsQuery = buildingsQuery.eq("company_id", cid);
@@ -59,7 +65,7 @@ export async function GET(req: NextRequest) {
     let ubQuery = db.from("user_buildings").select("*");
     if (buildings && buildings.length > 0) {
       ubQuery = ubQuery.in("building_id", buildings.map(b => b.id));
-    } else if (!isMasterUser && companyId && companyId !== "undefined" && companyId !== "null") {
+    } else if (!isMasterUser && effectiveCompanyId && effectiveCompanyId !== "undefined" && effectiveCompanyId !== "null") {
       // If no buildings found for this company, return empty junctions
       ubQuery = ubQuery.eq("building_id", -1); 
     }
@@ -67,8 +73,8 @@ export async function GET(req: NextRequest) {
 
     // 3. Fetch Janus Tickets (Janus -> Meeting Genius) - Direct Fetch from Janus DB
     let ticketsQuery = janusClient.from('tickets').select('*');
-    if (!isMasterUser && companyId && companyId !== "undefined" && companyId !== "null") {
-      const cid = parseInt(companyId);
+    if (!isMasterUser && effectiveCompanyId && effectiveCompanyId !== "undefined" && effectiveCompanyId !== "null") {
+      const cid = parseInt(effectiveCompanyId);
       if (!isNaN(cid)) {
         ticketsQuery = ticketsQuery.eq('company_id', cid);
       }
@@ -84,11 +90,22 @@ export async function GET(req: NextRequest) {
       console.warn("⚠️ Could not reach Janus DB:", janusErr.message);
       errors.push(`Janus DB: ${janusErr.message}`);
     } else if (rawTickets) {
+      const resolveJanusTicketId = (t: any): string => {
+        const candidates = [t.ticket_id, t.ticket_number, t.janus_ticket_id, t.external_id]
+        for (const c of candidates) {
+          if (c != null && String(c).trim()) return String(c).trim()
+        }
+        if (t.id != null) return `ticket-${t.id}`
+        return ""
+      }
+
       const mapTicket = (t: any) => {
         const company = (companies || []).find((c: any) => c.id === t.company_id);
+        const janusTicketId = resolveJanusTicketId(t)
         return {
           id: Number(t.id),
-          janus_ticket_id: t.ticket_id || t.ticket_number || String(t.id),
+          janus_ticket_id: janusTicketId,
+          ticket_id: janusTicketId,
           building_id: Number(t.building_id || 0),
           building_name: t.building_name || t.building || "",
           company_id: t.company_id || null,
@@ -114,6 +131,7 @@ export async function GET(req: NextRequest) {
 
       const toDbRow = (ticket: any) => ({
         id: ticket.id,
+        janus_ticket_id: ticket.janus_ticket_id,
         building_id: ticket.building_id,
         title: ticket.title,
         priority: ticket.priority,

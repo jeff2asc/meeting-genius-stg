@@ -141,10 +141,28 @@ export default function EditCompanyModal({
     const param = meetingTypeParams.find(p => p.id === id)
     if (!param) return
 
+    const newValue = editingTypeValue.trim()
+    if (newValue !== param.value) {
+      try {
+        const meetingCount = await apiClient.v1.votingParameters.countMeetingsForType(
+          param.value,
+          company.id,
+        )
+        const confirmMsg =
+          meetingCount > 0
+            ? `Renaming "${param.value}" to "${newValue}" will update ${meetingCount} existing meeting(s) for this company. Continue?`
+            : `Rename "${param.value}" to "${newValue}"?`
+        if (!confirm(confirmMsg)) return
+      } catch (err: any) {
+        toast.error(err.message || "Could not check affected meetings")
+        return
+      }
+    }
+
     try {
-      const data = await apiClient.v1.votingParameters.update({
+      const { data, meetingsUpdated } = await apiClient.v1.votingParameters.update({
         id,
-        value: editingTypeValue.trim(),
+        value: newValue,
         linked_voting_type: editingTypeLinkedVotingType || null,
         parameter_type: "meeting_type",
       })
@@ -152,7 +170,11 @@ export default function EditCompanyModal({
       setEditingTypeId(null)
       setEditingTypeValue("")
       setEditingTypeLinkedVotingType("")
-      toast.success("Meeting type updated")
+      if ((meetingsUpdated ?? 0) > 0) {
+        toast.success(`Meeting type updated — synced ${meetingsUpdated} existing meeting(s)`)
+      } else {
+        toast.success("Meeting type updated")
+      }
     } catch (err: any) {
       toast.error(err.message || "Failed to update meeting type")
     }

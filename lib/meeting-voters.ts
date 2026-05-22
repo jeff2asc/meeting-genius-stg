@@ -52,18 +52,9 @@ export function buildMeetingVoters(
   dbUsers: DbUserRecord[]
 ): MeetingVoter[] {
   const list = Array.isArray(attendees) ? attendees : []
+  // Voters must match the meeting attendee list only — never fall back to all company users.
   if (list.length === 0) {
-    return dbUsers
-      .map((u) => ({
-        id: u.id,
-        name: u.name,
-        email: u.email ?? undefined,
-        user_type: u.user_type ?? undefined,
-        roles: u.roles ?? null,
-        voting_weight: u.voting_weight ?? 1,
-        present: undefined,
-      }))
-      .sort((a, b) => a.name.localeCompare(b.name))
+    return []
   }
 
   const userById = new Map(dbUsers.map((u) => [u.id, u]))
@@ -73,22 +64,18 @@ export function buildMeetingVoters(
       .map((u) => [u.email!.toLowerCase(), u])
   )
 
-  const seen = new Set<string>()
   const voters: MeetingVoter[] = []
 
-  for (const att of list) {
+  list.forEach((att, index) => {
     const name = att.name?.trim()
-    if (!name) continue
-    const key = attendeeKey(att)
-    if (seen.has(key)) continue
-    seen.add(key)
+    if (!name) return
 
     const linked =
       (att.user_id != null ? userById.get(att.user_id) : undefined) ??
       (att.email ? userByEmail.get(att.email.toLowerCase()) : undefined)
 
     voters.push({
-      id: linked?.id ?? `att-${key}`,
+      id: linked?.id ?? `att-${index}-${attendeeKey(att)}`,
       name,
       email: att.email ?? linked?.email ?? undefined,
       user_type: linked?.user_type ?? inferUserTypeFromRole(att.role) ?? "attendee",
@@ -97,7 +84,7 @@ export function buildMeetingVoters(
       role: att.role,
       present: att.present,
     })
-  }
+  })
 
   return voters.sort((a, b) => a.name.localeCompare(b.name))
 }

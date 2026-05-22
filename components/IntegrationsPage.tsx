@@ -150,11 +150,13 @@ export default function IntegrationsPage({ onBack }: { onBack: () => void }) {
 
       // For Corporate Admins, we MUST force the company_id filter
       const params = new URLSearchParams()
-      if (userCompanyId && !isMasterUser) {
-        params.append("company_id", String(userCompanyId))
-      }
       if (user?.id) {
         params.append("user_id", String(user.id))
+      }
+      if (isMasterUser) {
+        params.append("scope", "master")
+      } else if (userCompanyId) {
+        params.append("company_id", String(userCompanyId))
       }
       const companyParam = params.toString() ? `?${params.toString()}` : ""
       

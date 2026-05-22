@@ -35,6 +35,20 @@ const normalizeRoles = (input: UserRolesInput): string[] => {
 
     if (Array.isArray((input as any).roles)) {
       roles.push(...((input as any).roles as string[]))
+    } else if (typeof (input as any).roles === "string" && (input as any).roles.trim()) {
+      try {
+        const parsed = JSON.parse((input as any).roles)
+        if (Array.isArray(parsed)) {
+          roles.push(...parsed.filter(Boolean).map(String))
+        }
+      } catch {
+        roles.push(
+          ...(input as any).roles
+            .split(",")
+            .map((s: string) => s.trim())
+            .filter(Boolean),
+        )
+      }
     }
 
     if (typeof (input as any).user_type === "string") {
@@ -52,16 +66,52 @@ const normalizeRoles = (input: UserRolesInput): string[] => {
   return []
 }
 
+const normalizeRoleToken = (role: string): string =>
+  role.trim().toLowerCase().replace(/\s+/g, "_")
+
 /**
  * Helper: does the user have ANY of the allowed roles?
+ * Case-insensitive; supports users with multiple roles (e.g. master + corporate_administrator).
  */
 const hasAnyRole = (
   input: UserRolesInput,
   allowed: (UserType | string)[],
 ): boolean => {
-  const roles = normalizeRoles(input)
+  const roles = normalizeRoles(input).map(normalizeRoleToken)
   if (roles.length === 0) return false
-  return roles.some((r) => allowed.includes(r))
+  const allowedNormalized = allowed.map(normalizeRoleToken)
+  return roles.some((r) => allowedNormalized.includes(r))
+}
+
+/** Server-side: resolve roles from a DB user row (handles JSON string roles). */
+export function rolesFromDbUser(dbUser: {
+  user_type?: string | null
+  roles?: string[] | string | null
+} | null): string[] {
+  if (!dbUser) return []
+
+  const roles: string[] = []
+
+  if (typeof dbUser.user_type === "string" && dbUser.user_type.trim()) {
+    roles.push(dbUser.user_type.trim())
+  }
+
+  if (Array.isArray(dbUser.roles)) {
+    roles.push(...dbUser.roles.filter(Boolean).map(String))
+  } else if (typeof dbUser.roles === "string" && dbUser.roles.trim()) {
+    try {
+      const parsed = JSON.parse(dbUser.roles)
+      if (Array.isArray(parsed)) {
+        roles.push(...parsed.filter(Boolean).map(String))
+      }
+    } catch {
+      roles.push(
+        ...dbUser.roles.split(",").map((s) => s.trim()).filter(Boolean),
+      )
+    }
+  }
+
+  return [...new Set(roles.map(normalizeRoleToken))]
 }
 
 /**

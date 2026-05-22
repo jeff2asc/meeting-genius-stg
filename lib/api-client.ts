@@ -156,9 +156,23 @@ export const apiClient = {
         const response = await fetchApi<{ data: any }>('/v1/voting-parameters', 'POST', { action: 'upsert', ...param })
         return response.data
       },
-      update: async (param: any): Promise<any> => {
-        const response = await fetchApi<{ data: any }>('/v1/voting-parameters', 'PATCH', param)
-        return response.data
+      countMeetingsForType: async (meetingType: string, companyId?: number | null): Promise<number> => {
+        let url = `/v1/voting-parameters?meeting_type_count=${encodeURIComponent(meetingType)}`
+        if (companyId != null) url += `&company_id=${companyId}`
+        const response = await fetchApi<{ count: number }>(url)
+        return response.count ?? 0
+      },
+      update: async (param: any): Promise<{ data: any; meetingsUpdated?: number; companiesUpdated?: number }> => {
+        const response = await fetchApi<{
+          data: any
+          meetingsUpdated?: number
+          companiesUpdated?: number
+        }>('/v1/voting-parameters', 'PATCH', param)
+        return {
+          data: response.data,
+          meetingsUpdated: response.meetingsUpdated,
+          companiesUpdated: response.companiesUpdated,
+        }
       },
       delete: async (id: number): Promise<void> => {
         await fetchApi(`/v1/voting-parameters?id=${id}`, 'DELETE')

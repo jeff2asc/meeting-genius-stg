@@ -16,6 +16,42 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url)
+    const meetingTypeCount = searchParams.get('meeting_type_count')
+
+    if (meetingTypeCount) {
+      const supabase = createAdminClient()
+      const companyIdParam = searchParams.get('company_id')
+      const companyIdInt = companyIdParam ? parseInt(companyIdParam) : null
+
+      let query = supabase
+        .from('meetings')
+        .select('id', { count: 'exact', head: true })
+        .eq('meeting_type', meetingTypeCount)
+
+      if (companyIdInt != null && !Number.isNaN(companyIdInt)) {
+        const { data: buildings, error: buildingsError } = await supabase
+          .from('buildings')
+          .select('id')
+          .eq('company_id', companyIdInt)
+
+        if (buildingsError) {
+          return NextResponse.json({ error: buildingsError.message }, { status: 500 })
+        }
+
+        const buildingIds = (buildings || []).map((b) => b.id)
+        if (buildingIds.length === 0) {
+          return NextResponse.json({ success: true, count: 0 })
+        }
+        query = query.in('building_id', buildingIds)
+      }
+
+      const { count, error } = await query
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 500 })
+      }
+      return NextResponse.json({ success: true, count: count ?? 0 })
+    }
+
     const companyId = searchParams.get('company_id')
     const companyIdInt = companyId ? parseInt(companyId) : null
 
@@ -23,6 +59,61 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ success: true, data })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
+  }
+}
+
+async function cascadeMeetingTypeRename(
+  supabase: ReturnType<typeof createAdminClient>,
+  oldValue: string,
+  newValue: string,
+  companyId: number | null,
+) {
+  let meetingsQuery = supabase.from('meetings').update({ meeting_type: newValue }).eq('meeting_type', oldValue)
+
+  if (companyId != null) {
+    const { data: buildings, error: buildingsError } = await supabase
+      .from('buildings')
+      .select('id')
+      .eq('company_id', companyId)
+
+    if (buildingsError) throw buildingsError
+
+    const buildingIds = (buildings || []).map((b) => b.id)
+    if (buildingIds.length === 0) {
+      return { meetingsUpdated: 0, companiesUpdated: 0 }
+    }
+    meetingsQuery = meetingsQuery.in('building_id', buildingIds)
+  }
+
+  const { data: updatedMeetings, error: meetingsError } = await meetingsQuery.select('id')
+  if (meetingsError) throw meetingsError
+
+  let companiesUpdated = 0
+  const { data: companies, error: companiesError } = await supabase
+    .from('companies')
+    .select('id, default_meeting_types')
+    .not('default_meeting_types', 'is', null)
+
+  if (companiesError) throw companiesError
+
+  for (const company of companies || []) {
+    const types = company.default_meeting_types as string[] | null
+    if (!types?.includes(oldValue)) continue
+    if (companyId != null && company.id !== companyId) continue
+
+    const updatedTypes = types.map((t) => (t === oldValue ? newValue : t))
+    const { error: updateCompanyError } = await supabase
+      .from('companies')
+      .update({ default_meeting_types: updatedTypes })
+      .eq('id', company.id)
+
+    if (updateCompanyError) throw updateCompanyError
+    companiesUpdated++
+  }
+
+  return {
+    meetingsUpdated: updatedMeetings?.length ?? 0,
+    companiesUpdated,
   }
 }
 
@@ -147,8 +238,50 @@ export async function PATCH(request: NextRequest) {
     const supabase = createAdminClient()
     const hasFormula = await checkCalculationFormulaExists(supabase)
 
+    const { data: existing, error: fetchError } = await supabase
+      .from('voting_parameters')
+      .select('*')
+      .eq('id', id)
+      .single()
+
+    if (fetchError || !existing) {
+      return NextResponse.json({ error: fetchError?.message || 'Parameter not found' }, { status: 404 })
+    }
+
+    const trimmedValue = typeof value === 'string' ? value.trim() : value
+    const isMeetingTypeRename =
+      existing.parameter_type === 'meeting_type' &&
+      typeof trimmedValue === 'string' &&
+      trimmedValue.length > 0 &&
+      trimmedValue !== existing.value
+
+    if (isMeetingTypeRename) {
+      let duplicateQuery = supabase
+        .from('voting_parameters')
+        .select('id')
+        .eq('parameter_type', 'meeting_type')
+        .eq('value', trimmedValue)
+        .neq('id', id)
+
+      duplicateQuery =
+        existing.company_id == null
+          ? duplicateQuery.is('company_id', null)
+          : duplicateQuery.eq('company_id', existing.company_id)
+
+      const { data: duplicate, error: duplicateError } = await duplicateQuery.maybeSingle()
+      if (duplicateError) {
+        return NextResponse.json({ error: duplicateError.message }, { status: 500 })
+      }
+      if (duplicate) {
+        return NextResponse.json(
+          { error: `A meeting type named "${trimmedValue}" already exists.` },
+          { status: 409 },
+        )
+      }
+    }
+
     const updateData: any = {
-      value,
+      value: trimmedValue,
       description: description || null,
       weight: weight !== undefined ? weight : 1.0,
     }
@@ -172,7 +305,34 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    return NextResponse.json({ success: true, data })
+    let cascadeResult = { meetingsUpdated: 0, companiesUpdated: 0 }
+    if (isMeetingTypeRename) {
+      try {
+        cascadeResult = await cascadeMeetingTypeRename(
+          supabase,
+          existing.value,
+          trimmedValue,
+          existing.company_id,
+        )
+      } catch (cascadeErr: any) {
+        await supabase
+          .from('voting_parameters')
+          .update({ value: existing.value })
+          .eq('id', id)
+        return NextResponse.json(
+          {
+            error: `Meeting type saved but failed to update existing meetings: ${cascadeErr.message}`,
+          },
+          { status: 500 },
+        )
+      }
+    }
+
+    return NextResponse.json({
+      success: true,
+      data,
+      ...(isMeetingTypeRename && cascadeResult),
+    })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }

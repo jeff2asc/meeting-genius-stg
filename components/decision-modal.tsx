@@ -36,6 +36,8 @@ interface DecisionModalProps {
   existingDecisionId?: number | null
   parentDecisionId?: number | null
   embedded?: boolean  // ⭐ NEW
+  /** Live attendee list from meeting view — keeps voters in sync after Attendees save */
+  meetingAttendees?: MeetingAttendeeRecord[]
 }
 
 interface Attendee {
@@ -72,7 +74,8 @@ export default function DecisionModal({
   editMode = false,
   existingDecisionId = null,
   parentDecisionId = null,
-  embedded = false  // ⭐ NEW
+  embedded = false,  // ⭐ NEW
+  meetingAttendees,
 }: DecisionModalProps) {
   const [motionText, setMotionText] = useState("")
   const [result, setResult] = useState("")
@@ -142,7 +145,7 @@ export default function DecisionModal({
       }
       fetchTopicContent()
     }
-  }, [isOpen, meetingId, editMode, existingDecisionId, parentDecisionId, topicId])
+  }, [isOpen, meetingId, editMode, existingDecisionId, parentDecisionId, topicId, meetingAttendees])
 
   const fetchTopicContent = async () => {
     try {
@@ -234,26 +237,37 @@ export default function DecisionModal({
       }
 
       // 2. Fetch all relevant parameters (Voting Types, Dynamic Decision Results, User Weights)
-      const params = await getVotingParameters(companyId)
+      type RawParam = {
+        id: number
+        company_id: number | null
+        parameter_type: string
+        value: string
+        description: string | null
+        weight?: number
+        linked_voting_type?: string | null
+        calculation_formula?: string | null
+        is_default?: boolean
+      }
+      const params = (await getVotingParameters(companyId)) as RawParam[]
       setVotingParametersData(
         params.filter((p) => p.parameter_type === "voting_type") as VotingParameterRow[],
       )
       
       // 3. Process Voting Types
       const allVTypes = params
-        .filter(p => p.parameter_type === 'voting_type')
-        .map(p => p.value)
+        .filter((p: RawParam) => p.parameter_type === 'voting_type')
+        .map((p: RawParam) => p.value)
 
       const meetingTypeParam = params.find(
-        p => p.parameter_type === 'meeting_type' && p.value === currentMeetingType
+        (p: RawParam) => p.parameter_type === 'meeting_type' && p.value === currentMeetingType
       )
-      const allowedTypesStr = (meetingTypeParam as any)?.linked_voting_type
+      const allowedTypesStr = meetingTypeParam?.linked_voting_type
       
       let filteredVTypes = allVTypes
       if (allowedTypesStr) {
         const allowedList = allowedTypesStr.split(',').filter(Boolean)
         if (allowedList.length > 0) {
-          filteredVTypes = allVTypes.filter(vt => allowedList.includes(vt))
+          filteredVTypes = allVTypes.filter((vt: string) => allowedList.includes(vt))
         }
       }
 
@@ -283,8 +297,8 @@ export default function DecisionModal({
       // 4. Process Decision Results
       // a. dynamic results from parameters
       const dynamicResults = params
-        .filter(p => p.parameter_type === 'decision_result')
-        .map(p => p.value)
+        .filter((p: RawParam) => p.parameter_type === 'decision_result')
+        .map((p: RawParam) => p.value)
 
       // b. static results from company record
       let companyResults: string[] = []
@@ -306,10 +320,10 @@ export default function DecisionModal({
 
       // 5. Process User Type Weights
       const weights = params
-        .filter(p => p.parameter_type === 'user_type')
-        .reduce((acc, p) => {
+        .filter((p: RawParam) => p.parameter_type === 'user_type')
+        .reduce((acc: Record<string, number>, p: RawParam) => {
           if (!acc[p.value] || p.company_id !== null) {
-            acc[p.value] = (p as any).weight ?? 1.0;
+            acc[p.value] = p.weight ?? 1.0;
           }
           return acc;
         }, {} as Record<string, number>)
@@ -426,15 +440,13 @@ export default function DecisionModal({
       ).sort((a: any, b: any) => a.name.localeCompare(b.name))
 
       setCompanyUsers(unique)
-      setMeetingVoters(
-        buildMeetingVoters(
-          (meetingData.attendees as MeetingAttendeeRecord[] | null) ?? [],
-          unique
-        )
-      )
-      if (meetingData.attendees) {
-        setAttendees(meetingData.attendees as unknown as Attendee[])
-      }
+
+      const attendeeList: MeetingAttendeeRecord[] =
+        meetingAttendees ??
+        ((meetingData.attendees as MeetingAttendeeRecord[] | null) ?? [])
+
+      setMeetingVoters(buildMeetingVoters(attendeeList, unique))
+      setAttendees(attendeeList as unknown as Attendee[])
     } catch (err) {
       console.error("Error fetching company users:", err)
     }
@@ -827,7 +839,9 @@ export default function DecisionModal({
         {isOpen && (
           <div className="absolute z-50 w-64 bottom-full mb-1 bg-card border border-border rounded-lg shadow-xl max-h-44 overflow-y-auto">
             {meetingVoters.length === 0 && (
-              <div className="p-3 text-sm text-muted-foreground text-center">No attendees on this meeting — add people under Attendees first</div>
+              <div className="p-3 text-sm text-muted-foreground text-center">
+                No voters — open <strong>Attendees</strong>, add people, click <strong>Save Attendees</strong>, then reopen this decision.
+              </div>
             )}
             {meetingVoters.map((user) => {
               const badge = getRoleBadge(user)

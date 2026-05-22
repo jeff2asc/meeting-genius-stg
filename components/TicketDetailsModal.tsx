@@ -8,6 +8,13 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { formatUtcToLocalLong } from "@/lib/timezone"
+import { getCurrentUser } from "@/lib/supabase"
+import {
+  buildJanusTicketViewUrl,
+  formatJanusTicketDisplayLabel,
+  getJanusTicketRef,
+  openJanusTicketView,
+} from "@/lib/janus"
 import { ExternalLink, Calendar, Building, DollarSign, AlertCircle, CheckCircle2, Clock, User, Shield, Info } from "lucide-react"
 
 interface TicketDetailsModalProps {
@@ -24,13 +31,29 @@ export default function TicketDetailsModal({
   if (!ticket) return null
 
   const isComplaint = ticket._type === 'complaint' || ticket.type === 'complaint'
-  const ticketPrefix = isComplaint ? '#COM-' : '#REP-'
-  const displayId = ticket.janus_ticket_id || ticket.ticket_id || ticket.ticket_number || String(ticket.id)
-  const isTicketString = displayId.startsWith('ticket-')
-  const ticketLabel = isTicketString ? displayId : `${ticketPrefix}${displayId}`
+  const ticketKind = isComplaint ? 'complaint' as const : 'repair' as const
+  const ticketLabel = formatJanusTicketDisplayLabel(ticket, ticketKind)
+  const ticketRef = getJanusTicketRef(ticket)
 
-  const janusUrl = process.env.NEXT_PUBLIC_JANUS_URL || "https://janusapp.meetinggenius.ca"
-  const ticketUrl = `${janusUrl}/tickets/${displayId}`
+  const currentUser = getCurrentUser()
+  const bridgeToken =
+    typeof window !== "undefined" && currentUser?.id
+      ? localStorage.getItem(`mg_janus_token_${currentUser.id}`) ||
+        process.env.NEXT_PUBLIC_API_KEY ||
+        ""
+      : process.env.NEXT_PUBLIC_API_KEY || ""
+
+  const ticketUrl = buildJanusTicketViewUrl(ticket, {
+    email: currentUser?.email,
+    bridgeToken: bridgeToken || undefined,
+  })
+
+  const openInJanus = () => {
+    openJanusTicketView(ticket, {
+      email: currentUser?.email,
+      bridgeToken: bridgeToken || undefined,
+    })
+  }
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -42,7 +65,9 @@ export default function TicketDetailsModal({
           <div className="flex justify-between items-start">
             <div className="space-y-1">
               <div className="flex items-center gap-2">
-                <span className="text-sm font-mono text-muted-foreground">{ticketLabel}</span>
+                <span className="text-sm font-mono text-muted-foreground">
+                  Ticket ID: <span className="text-foreground">{ticketLabel}</span>
+                </span>
                 <Badge variant="outline" className="uppercase text-[10px] tracking-wider font-bold">
                   {isComplaint ? 'Complaint' : 'Repair'}
                 </Badge>
@@ -142,7 +167,8 @@ export default function TicketDetailsModal({
             Close
           </Button>
           <Button 
-            onClick={() => window.open(ticketUrl, "_blank", "noopener,noreferrer")}
+            onClick={openInJanus}
+            disabled={!ticketUrl}
             className={isComplaint ? 'bg-amber-500 hover:bg-amber-600' : 'bg-primary'}
           >
             <ExternalLink className="h-4 w-4 mr-2" />
