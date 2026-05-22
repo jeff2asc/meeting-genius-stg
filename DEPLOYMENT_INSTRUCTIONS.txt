@@ -48,12 +48,6 @@ putty.exe -i "C:\Users\Jeff Domingo\Videos\newkeymeeting.ppk" root@app.meetingge
    pm2 delete meeting-genius
    pm2 start npm --name "meeting-genius" -- start -- -p 3000
 
------------------------------------------------------
-SERVER MAINTENANCE COMMANDS
------------------------------------------------------
-
-* See live error logs (if the app crashes):
-  pm2 logs meeting-genius
 
 * Completely restart everything (if the server is stuck):
   pm2 reload all
