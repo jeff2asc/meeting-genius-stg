@@ -115,6 +115,9 @@ function buildJanusTicketPath(ref: string, ticket?: JanusTicketLike): string {
 /**
  * Deep link to a ticket in the Janus dashboard (all repairs & complaints).
  * Uses /dashboard/tickets/{ticket_id} — not root /tickets/... (404).
+ *
+ * @deprecated Prefer openJanusTicketSSO() which uses the proper SSO flow.
+ * This function is kept for fallback/display purposes only (e.g. disabled button href).
  */
 export function buildJanusTicketViewUrl(
   ticket: JanusTicketLike,
@@ -129,6 +132,7 @@ export function buildJanusTicketViewUrl(
   const base = getJanusAppBaseUrl()
   const ticketPath = buildJanusTicketPath(ref, ticket)
 
+  // Legacy bridge token path — only used as a fallback display URL
   if (options?.email && options?.bridgeToken) {
     const params = new URLSearchParams({
       email: options.email,
@@ -141,7 +145,52 @@ export function buildJanusTicketViewUrl(
   return `${base}${ticketPath}`
 }
 
-/** Open any Janus ticket (repair or complaint) in a new tab. */
+/**
+ * Open a Janus ticket in a new tab using the proper SSO flow.
+ *
+ * Calls the MG server-side bridge (/api/janus/v1/bridge) which requests a
+ * signed token from Janus server-to-server, then redirects the browser to
+ * the ticket deep-link with that token. The user lands directly on the
+ * ticket — no login form.
+ *
+ * @param ticket  The ticket object (needs a resolvable ticket ref)
+ * @param email   The current user's email (from getCurrentUser())
+ * @returns       true if the window was opened, false on error
+ */
+export async function openJanusTicketSSO(
+  ticket: JanusTicketLike,
+  email: string,
+): Promise<boolean> {
+  if (typeof window === "undefined" || !email) return false
+
+  const ref = getJanusTicketRef(ticket)
+  if (!ref) return false
+
+  const ticketPath = buildJanusTicketPath(ref, ticket)
+
+  try {
+    const res = await fetch("/api/janus/v1/bridge", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: email.toLowerCase().trim(), redirect_to: ticketPath }),
+    })
+
+    const data = await res.json()
+
+    if (!res.ok || !data.redirect_url) {
+      console.error("[openJanusTicketSSO] Bridge error:", data)
+      return false
+    }
+
+    window.open(data.redirect_url, "_blank", "noopener,noreferrer")
+    return true
+  } catch (err) {
+    console.error("[openJanusTicketSSO] Fetch failed:", err)
+    return false
+  }
+}
+
+/** @deprecated Use openJanusTicketSSO() instead. */
 export function openJanusTicketView(
   ticket: JanusTicketLike,
   options?: { email?: string; bridgeToken?: string },

@@ -428,7 +428,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
       let buildingsQuery = supabase
         .from("buildings")
         .select(
-          "id, name, address, manager_id, company_id, building_type, created_at, board_meeting_notice_days, general_meeting_notice_days, notification_recipient_type"
+          "id, name, address, manager_id, company_id, building_type, created_at, board_meeting_notice_days, general_meeting_notice_days, notification_recipient_type, timezone"
         )
         .order("name")
 

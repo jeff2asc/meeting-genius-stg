@@ -415,7 +415,13 @@ export default function VotingTab() {
                             setEditValue(param.value)
                             setEditDescription(param.description || "")
                             setEditWeight(param.weight ?? 1.0)
-                            setEditLinkedVotingType((param as any).linked_voting_type || "")
+                            setEditLinkedVotingType(
+                              ((param as any).linked_voting_type || "")
+                                .split(',')
+                                .map((s: string) => s.trim())
+                                .filter(Boolean)
+                                .join(',')
+                            )
                             setEditCalculationFormula(param.calculation_formula || "")
                             setIsAdding(null)
                             setParamModalOpen(true)
@@ -766,15 +772,33 @@ export default function VotingTab() {
 
             {/* Available Voting Type — only shown for meeting_type parameters */}
             {(isAdding === 'meeting_type' || (editingId && parameters.find(p => p.id === editingId)?.parameter_type === 'meeting_type')) && (() => {
-              const votingTypeOptions = parameters.filter(p => p.parameter_type === 'voting_type')
-              const currentValues = (editingId ? editLinkedVotingType : newLinkedVotingType)?.split(',').filter(Boolean) || []
-              
-              const toggleType = (val: string) => {
-                let nextValues
-                if (currentValues.includes(val)) {
-                  nextValues = currentValues.filter(v => v !== val)
+              // Build the same deduplicated list the decision modal uses:
+              // company-specific row wins over global for the same name.
+              const vtByName = new Map<string, VotingParameter>()
+              parameters
+                .filter(p => p.parameter_type === 'voting_type' && p.company_id === null)
+                .forEach(p => vtByName.set(p.value.trim().toLowerCase(), p))
+              parameters
+                .filter(p => p.parameter_type === 'voting_type' && p.company_id !== null)
+                .forEach(p => vtByName.set(p.value.trim().toLowerCase(), p))
+              const votingTypeOptions = Array.from(vtByName.values())
+
+              // currentValues: lowercase list of what's currently checked
+              const currentValues = (editingId ? editLinkedVotingType : newLinkedVotingType)
+                ?.split(',')
+                .map((s: string) => s.trim().toLowerCase())
+                .filter(Boolean) || []
+
+              const toggleType = (canonicalName: string) => {
+                const key = canonicalName.trim().toLowerCase()
+                // Rebuild from canonical names to keep stored values clean
+                const currentCanonical = (editingId ? editLinkedVotingType : newLinkedVotingType)
+                  ?.split(',').map((s: string) => s.trim()).filter(Boolean) || []
+                let nextValues: string[]
+                if (currentCanonical.map(s => s.toLowerCase()).includes(key)) {
+                  nextValues = currentCanonical.filter(v => v.toLowerCase() !== key)
                 } else {
-                  nextValues = [...currentValues, val]
+                  nextValues = [...currentCanonical, canonicalName.trim()]
                 }
                 const joined = nextValues.join(',')
                 if (editingId) setEditLinkedVotingType(joined)
@@ -792,7 +816,7 @@ export default function VotingTab() {
                       <div key={vt.id} className="flex items-center space-x-2 bg-background/50 p-2 rounded-lg border border-border/50 hover:border-primary/30 transition-colors">
                         <Checkbox 
                           id={`vt-${vt.id}`} 
-                          checked={currentValues.includes(vt.value)}
+                          checked={currentValues.includes(vt.value.trim().toLowerCase())}
                           onCheckedChange={() => toggleType(vt.value)}
                         />
                         <label 

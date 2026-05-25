@@ -10,12 +10,12 @@ import { Button } from "@/components/ui/button"
 import { formatUtcToLocalLong } from "@/lib/timezone"
 import { getCurrentUser } from "@/lib/supabase"
 import {
-  buildJanusTicketViewUrl,
   formatJanusTicketDisplayLabel,
   getJanusTicketRef,
-  openJanusTicketView,
+  openJanusTicketSSO,
 } from "@/lib/janus"
 import { ExternalLink, Calendar, Building, DollarSign, AlertCircle, CheckCircle2, Clock, User, Shield, Info } from "lucide-react"
+import { useState } from "react"
 
 interface TicketDetailsModalProps {
   isOpen: boolean
@@ -33,26 +33,22 @@ export default function TicketDetailsModal({
   const isComplaint = ticket._type === 'complaint' || ticket.type === 'complaint'
   const ticketKind = isComplaint ? 'complaint' as const : 'repair' as const
   const ticketLabel = formatJanusTicketDisplayLabel(ticket, ticketKind)
-  const ticketRef = getJanusTicketRef(ticket)
 
   const currentUser = getCurrentUser()
-  const bridgeToken =
-    typeof window !== "undefined" && currentUser?.id
-      ? localStorage.getItem(`mg_janus_token_${currentUser.id}`) ||
-        process.env.NEXT_PUBLIC_API_KEY ||
-        ""
-      : process.env.NEXT_PUBLIC_API_KEY || ""
+  const [isOpeningJanus, setIsOpeningJanus] = useState(false)
 
-  const ticketUrl = buildJanusTicketViewUrl(ticket, {
-    email: currentUser?.email,
-    bridgeToken: bridgeToken || undefined,
-  })
+  const ticketRef = getJanusTicketRef(ticket)
 
-  const openInJanus = () => {
-    openJanusTicketView(ticket, {
-      email: currentUser?.email,
-      bridgeToken: bridgeToken || undefined,
-    })
+  const openInJanus = async () => {
+    if (!currentUser?.email) return
+    setIsOpeningJanus(true)
+    const ok = await openJanusTicketSSO(ticket, currentUser.email)
+    if (!ok) {
+      // Fallback: surface a toast-like inline message — no toast import needed,
+      // the button label change is enough feedback for a modal context.
+      console.error("[TicketDetailsModal] SSO open failed for ticket", ticketRef)
+    }
+    setIsOpeningJanus(false)
   }
 
   return (
@@ -168,11 +164,11 @@ export default function TicketDetailsModal({
           </Button>
           <Button 
             onClick={openInJanus}
-            disabled={!ticketUrl}
+            disabled={isOpeningJanus || !currentUser?.email || !ticketRef}
             className={isComplaint ? 'bg-amber-500 hover:bg-amber-600' : 'bg-primary'}
           >
             <ExternalLink className="h-4 w-4 mr-2" />
-            View in Janus
+            {isOpeningJanus ? "Opening…" : "View in Janus"}
           </Button>
         </div>
       </DialogContent>

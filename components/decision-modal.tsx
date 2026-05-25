@@ -254,44 +254,55 @@ export default function DecisionModal({
       )
       
       // 3. Process Voting Types
-      const allVTypes = params
-        .filter((p: RawParam) => p.parameter_type === 'voting_type')
-        .map((p: RawParam) => p.value)
+      // Build the resolved list: for each unique voting type name, prefer the
+      // company-specific row over the global one. This is the same set the admin
+      // sees in the checkboxes, so names always match what was saved in linked_voting_type.
+      const vtByName = new Map<string, string>() // lowercase name → canonical name
+      // Globals first (lower priority)
+      params
+        .filter((p: RawParam) => p.parameter_type === 'voting_type' && p.company_id === null)
+        .forEach((p: RawParam) => vtByName.set(p.value.trim().toLowerCase(), p.value.trim()))
+      // Company-specific overrides (higher priority — replaces global with same name)
+      params
+        .filter((p: RawParam) => p.parameter_type === 'voting_type' && p.company_id !== null)
+        .forEach((p: RawParam) => vtByName.set(p.value.trim().toLowerCase(), p.value.trim()))
 
+      const allVTypes = Array.from(vtByName.values())
+
+      // meeting_type and voting_type are global-only (company_id = null).
+      // Just find the single global row for this meeting type.
       const meetingTypeParam = params.find(
-        (p: RawParam) => p.parameter_type === 'meeting_type' && p.value === currentMeetingType
+        (p: RawParam) => p.parameter_type === 'meeting_type' &&
+                         p.value === currentMeetingType &&
+                         p.company_id === null
       )
+
       const allowedTypesStr = meetingTypeParam?.linked_voting_type
-      
-      let filteredVTypes = allVTypes
-      if (allowedTypesStr) {
-        const allowedList = allowedTypesStr.split(',').filter(Boolean)
-        if (allowedList.length > 0) {
-          filteredVTypes = allVTypes.filter((vt: string) => allowedList.includes(vt))
-        }
+
+      let filteredVTypes: string[]
+      if (allowedTypesStr && allowedTypesStr.trim()) {
+        // Filter to only the voting types checked in the admin
+        const allowedList = allowedTypesStr
+          .split(',')
+          .map((s: string) => s.trim().toLowerCase())
+          .filter(Boolean)
+        filteredVTypes = allVTypes.filter((vt: string) =>
+          allowedList.includes(vt.trim().toLowerCase())
+        )
+        // Safety: if nothing matched (stale data) show all
+        if (filteredVTypes.length === 0) filteredVTypes = allVTypes
+      } else {
+        // No voting types marked for this meeting type — show nothing
+        // Voting Mechanism dropdown will be hidden
+        filteredVTypes = []
       }
 
-      const fallbackTypes = ["Majority Vote (50%+1)", "Three-Quarter Vote (75%)", "Unanimous Vote (100%)"]
-      let finalVTypes = filteredVTypes.length > 0 ? filteredVTypes : (allVTypes.length > 0 ? allVTypes : fallbackTypes)
-
-      if (provinceCode === "BC" && !finalVTypes.includes("80% Vote")) {
-        finalVTypes = [...finalVTypes, "80% Vote"]
-      }
-      if (provinceCode === "ON") {
-        const onTypes = [
-          "Majority — Votes Cast (ON S.53)",
-          "Majority — All Registered Units (ON By-law)",
-          "Majority — Votes at Meeting (ON By-law)",
-        ]
-        for (const t of onTypes) {
-          if (!finalVTypes.includes(t)) finalVTypes = [...finalVTypes, t]
-        }
-      }
+      const finalVTypes = filteredVTypes
 
       setVotingTypes(finalVTypes)
 
       if (!editMode && !selectedVotingType) {
-        setSelectedVotingType(finalVTypes[0] || "Majority Vote (50%+1)")
+        setSelectedVotingType(finalVTypes[0] || "")
       }
 
       // 4. Process Decision Results
@@ -331,9 +342,9 @@ export default function DecisionModal({
 
     } catch (err) {
       console.error("Error fetching voting context:", err)
-      // Basic fallbacks
-      setVotingTypes(["Majority Vote (50%+1)", "Three-Quarter Vote (75%)", "Unanimous Vote (100%)"])
-      setDecisionResults(["M/S/C", "Defeated", "Deferred"])
+      // Leave lists empty — admin must configure types via the Voting tab
+      setVotingTypes([])
+      setDecisionResults([])
     }
   }
 
@@ -1077,7 +1088,7 @@ export default function DecisionModal({
           eligibleWeight={getEligibleWeight(meetingVoters)}
         />
 
-        <div className={`grid ${meetingType === "AGM" || meetingType === "SGM" ? "grid-cols-2" : "grid-cols-1"} gap-4`}>
+        <div className={`grid ${votingTypes.length > 0 ? "grid-cols-2" : "grid-cols-1"} gap-4`}>
           <div>
             <label className="block text-sm font-medium text-foreground mb-1.5 flex items-center gap-2">
               Result
@@ -1097,7 +1108,7 @@ export default function DecisionModal({
             </select>
           </div>
 
-          {(meetingType === "AGM" || meetingType === "SGM") && (
+          {votingTypes.length > 0 && (
             <div className="animate-in slide-in-from-right-4 duration-300">
               <label className="block text-sm font-medium text-foreground mb-1.5 flex items-center gap-2">
                 Voting Mechanism

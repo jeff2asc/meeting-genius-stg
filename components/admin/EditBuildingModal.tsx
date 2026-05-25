@@ -7,6 +7,35 @@ import { Card } from "@/components/ui/card"
 import { supabase, getVotingParameters } from "@/lib/supabase"
 import { triggerJanusResync } from "@/lib/janus"
 
+// Common IANA timezones — grouped for easy selection
+const TIMEZONE_OPTIONS = [
+  // Canada
+  { value: "America/Vancouver",   label: "Pacific Time — Vancouver (PT)" },
+  { value: "America/Edmonton",    label: "Mountain Time — Edmonton (MT)" },
+  { value: "America/Winnipeg",    label: "Central Time — Winnipeg (CT)" },
+  { value: "America/Toronto",     label: "Eastern Time — Toronto (ET)" },
+  { value: "America/Halifax",     label: "Atlantic Time — Halifax (AT)" },
+  { value: "America/St_Johns",    label: "Newfoundland Time — St. John's (NT)" },
+  // USA
+  { value: "America/Los_Angeles", label: "Pacific Time — Los Angeles (PT)" },
+  { value: "America/Denver",      label: "Mountain Time — Denver (MT)" },
+  { value: "America/Chicago",     label: "Central Time — Chicago (CT)" },
+  { value: "America/New_York",    label: "Eastern Time — New York (ET)" },
+  { value: "America/Phoenix",     label: "Arizona — Phoenix (no DST)" },
+  { value: "Pacific/Honolulu",    label: "Hawaii — Honolulu (HT)" },
+  { value: "America/Anchorage",   label: "Alaska — Anchorage (AKT)" },
+  // International
+  { value: "Europe/London",       label: "London (GMT/BST)" },
+  { value: "Europe/Paris",        label: "Paris / Berlin (CET)" },
+  { value: "Asia/Dubai",          label: "Dubai (GST)" },
+  { value: "Asia/Singapore",      label: "Singapore (SGT)" },
+  { value: "Asia/Manila",         label: "Manila (PHT)" },
+  { value: "Asia/Tokyo",          label: "Tokyo (JST)" },
+  { value: "Australia/Sydney",    label: "Sydney (AEST)" },
+  { value: "Pacific/Auckland",    label: "Auckland (NZST)" },
+  { value: "UTC",                 label: "UTC" },
+]
+
 interface Building {
   id: number
   name: string
@@ -17,6 +46,7 @@ interface Building {
   country: string | null
   manager_id: number
   building_type?: string
+  timezone?: string | null
   created_at: string
   users?: Array<{ id: number; name: string; email: string }>
 }
@@ -47,6 +77,7 @@ export default function EditBuildingModal({
     country: ""
   })
   const [buildingType, setBuildingType] = useState<string>("")
+  const [timezone, setTimezone] = useState<string>("America/Vancouver")
   const [selectedBuildingUsers, setSelectedBuildingUsers] = useState<number[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -56,11 +87,10 @@ export default function EditBuildingModal({
     if (isOpen) {
       const fetchTypes = async () => {
         const params = await getVotingParameters(currentUser?.company_id)
-        const types = params
+        const types = (params as Array<{ parameter_type: string; value: string }>)
           .filter(p => p.parameter_type === 'building_type')
           .map(p => p.value)
-        
-        setBuildingTypes([...new Set(types)])
+        setBuildingTypes([...new Set(types)] as string[])
       }
       fetchTypes()
     }
@@ -77,6 +107,7 @@ export default function EditBuildingModal({
         country: building.country || "Canada"
       })
       setBuildingType(building.building_type || "")
+      setTimezone(building.timezone || "America/Vancouver")
       setSelectedBuildingUsers(building.users?.map(u => u.id) || [])
     }
   }, [building])
@@ -111,7 +142,8 @@ export default function EditBuildingModal({
           province: buildingFormData.province.trim() || null,
           postal_code: buildingFormData.postalCode.trim() || null,
           country: buildingFormData.country.trim() || null,
-          building_type: buildingType
+          building_type: buildingType,
+          timezone: timezone || "America/Vancouver",
         })
         .eq('id', building.id)
 
@@ -306,6 +338,25 @@ export default function EditBuildingModal({
             </select>
             <p className="text-xs text-muted-foreground mt-1">
               Select the type of building for proper legislation handling
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-2">
+              Timezone
+            </label>
+            <select
+              value={timezone}
+              onChange={(e) => setTimezone(e.target.value)}
+              disabled={saving}
+              className="w-full px-3 py-2 bg-background text-foreground rounded border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
+            >
+              {TIMEZONE_OPTIONS.map(tz => (
+                <option key={tz.value} value={tz.value}>{tz.label}</option>
+              ))}
+            </select>
+            <p className="text-xs text-muted-foreground mt-1">
+              Meeting times will be displayed in this timezone
             </p>
           </div>
 

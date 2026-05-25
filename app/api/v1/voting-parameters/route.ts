@@ -118,6 +118,43 @@ async function cascadeMeetingTypeRename(
 }
 
 
+/**
+ * When a voting_type row is renamed, update the comma-separated
+ * linked_voting_type strings in all meeting_type rows that reference
+ * the old name. This is the app-level cascade — the DB trigger in
+ * sync_voting_mechanism.sql does the same automatically once applied.
+ */
+async function cascadeVotingTypeRename(
+  supabase: ReturnType<typeof createAdminClient>,
+  oldName: string,
+  newName: string,
+) {
+  // Fetch all meeting_type rows that contain the old name
+  const { data: rows, error } = await supabase
+    .from('voting_parameters')
+    .select('id, linked_voting_type')
+    .eq('parameter_type', 'meeting_type')
+    .not('linked_voting_type', 'is', null)
+
+  if (error || !rows || rows.length === 0) return
+
+  for (const row of rows) {
+    const parts: string[] = (row.linked_voting_type as string)
+      .split(',')
+      .map((s: string) => s.trim())
+      .filter(Boolean)
+
+    if (!parts.includes(oldName)) continue
+
+    const updated = parts.map((p: string) => (p === oldName ? newName : p)).join(',')
+
+    await supabase
+      .from('voting_parameters')
+      .update({ linked_voting_type: updated })
+      .eq('id', row.id)
+  }
+}
+
 async function checkCalculationFormulaExists(supabaseClient: any): Promise<boolean> {
   try {
     const { data } = await supabaseClient
@@ -142,15 +179,21 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { action, company_id, parameter_type, value, description, weight, linked_voting_type, calculation_formula, id } = body
 
+    // meeting_type and voting_type are always global — no per-company overrides.
+    // user_type, building_type, decision_result can still be company-scoped.
+    const effectiveCompanyId =
+      (parameter_type === 'meeting_type' || parameter_type === 'voting_type')
+        ? null
+        : (company_id || null)
+
     const supabase = createAdminClient()
     const hasFormula = await checkCalculationFormulaExists(supabase)
 
     if (action === 'upsert') {
-      // Avoid upsert onConflict since UNIQUE constraint may not be in DB. Query first, then update or insert.
       const { data: existing, error: fetchError } = await supabase
         .from('voting_parameters')
         .select('*')
-        .eq('company_id', company_id)
+        .is('company_id', null)
         .eq('parameter_type', parameter_type)
         .eq('value', value)
         .maybeSingle()
@@ -176,7 +219,7 @@ export async function POST(request: NextRequest) {
         result = await supabase
           .from('voting_parameters')
           .insert({
-            company_id,
+            company_id: effectiveCompanyId,
             parameter_type,
             value,
             description: description || null,
@@ -200,7 +243,7 @@ export async function POST(request: NextRequest) {
       const { data, error } = await supabase
         .from('voting_parameters')
         .insert({
-          company_id: company_id || null,
+          company_id: effectiveCompanyId,
           parameter_type,
           value,
           description: description || null,
@@ -328,6 +371,25 @@ export async function PATCH(request: NextRequest) {
       }
     }
 
+    // If a voting_type row was renamed, update linked_voting_type strings in all
+    // meeting_type rows that reference the old name (app-level cascade — the DB
+    // trigger in sync_voting_mechanism.sql handles this automatically once applied,
+    // but this ensures it works even before the migration runs).
+    const isVotingTypeRename =
+      existing.parameter_type === 'voting_type' &&
+      typeof trimmedValue === 'string' &&
+      trimmedValue.length > 0 &&
+      trimmedValue !== existing.value
+
+    if (isVotingTypeRename) {
+      try {
+        await cascadeVotingTypeRename(supabase, existing.value, trimmedValue)
+      } catch (err: any) {
+        // Non-fatal — log but don't fail the request
+        console.warn('[voting-parameters] linked_voting_type cascade failed:', err.message)
+      }
+    }
+
     return NextResponse.json({
       success: true,
       data,
@@ -353,6 +415,13 @@ export async function DELETE(request: NextRequest) {
 
     const supabase = createAdminClient()
 
+    // Fetch the row first so we can cascade-clean linked_voting_type if it's a voting_type
+    const { data: existing } = await supabase
+      .from('voting_parameters')
+      .select('parameter_type, value')
+      .eq('id', parseInt(id))
+      .maybeSingle()
+
     const { error } = await supabase
       .from('voting_parameters')
       .delete()
@@ -360,6 +429,32 @@ export async function DELETE(request: NextRequest) {
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    // Remove the deleted voting type from all meeting_type linked_voting_type strings
+    if (existing?.parameter_type === 'voting_type' && existing.value) {
+      try {
+        const { data: rows } = await supabase
+          .from('voting_parameters')
+          .select('id, linked_voting_type')
+          .eq('parameter_type', 'meeting_type')
+          .not('linked_voting_type', 'is', null)
+
+        for (const row of rows || []) {
+          const parts: string[] = (row.linked_voting_type as string)
+            .split(',')
+            .map((s: string) => s.trim())
+            .filter((s: string) => s && s !== existing.value)
+
+          await supabase
+            .from('voting_parameters')
+            .update({ linked_voting_type: parts.length > 0 ? parts.join(',') : null })
+            .eq('id', row.id)
+        }
+      } catch (err: any) {
+        // Non-fatal
+        console.warn('[voting-parameters] linked_voting_type cleanup on delete failed:', err.message)
+      }
     }
 
     return NextResponse.json({ success: true })
