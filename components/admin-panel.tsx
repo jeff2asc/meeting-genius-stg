@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { ArrowLeft, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { getCurrentUser, Company } from "@/lib/supabase"
@@ -95,7 +95,10 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
   const [showAssignUsersModal, setShowAssignUsersModal] = useState(false)
   const [selectedCompany, setSelectedCompany] = useState<Company | null>(null)
 
-  const currentUser = getCurrentUser()
+  const rawCurrentUser = getCurrentUser()
+  // Stabilize the reference so downstream useEffects don't re-fire on every render
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const currentUser = useMemo(() => rawCurrentUser, [rawCurrentUser?.id, rawCurrentUser?.user_type])
 
   // Document Management States
   const [buildingDocuments, setBuildingDocuments] = useState<Record<number, boolean>>({})

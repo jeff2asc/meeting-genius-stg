@@ -43,6 +43,7 @@ interface Building {
   board_meeting_notice_days?: number | null
   general_meeting_notice_days?: number | null
   notification_recipient_type?: string | null
+  timezone?: string | null
   company?: { id: number; name: string } | null
 }
 
@@ -80,7 +81,8 @@ export default function BuildingDetailsModal({
 
   const [boardMeetingNoticeDays, setBoardMeetingNoticeDays] = useState(7)
   const [generalMeetingNoticeDays, setGeneralMeetingNoticeDays] = useState(7)
-  const [notificationRecipientType, setNotificationRecipientType] = useState("owner")
+  const [notificationRecipientTypes, setNotificationRecipientTypes] = useState<string[]>(["owner"])
+  const [buildingTimezone, setBuildingTimezone] = useState("America/Vancouver")
 
   const [assignedUsers, setAssignedUsers] = useState<any[]>([])
 
@@ -113,10 +115,14 @@ export default function BuildingDetailsModal({
       
       setBoardMeetingNoticeDays(building.board_meeting_notice_days || 7)
       setGeneralMeetingNoticeDays(building.general_meeting_notice_days || 7)
-      setNotificationRecipientType(
-        building.notification_recipient_type ||
-        getDefaultRecipientType(building.building_type || "Strata/Condo")
-      )
+      const savedRecipients = building.notification_recipient_type
+      if (savedRecipients) {
+        // Support both legacy single values and new comma-separated multi-values
+        setNotificationRecipientTypes(savedRecipients.split(',').map(s => s.trim()).filter(Boolean))
+      } else {
+        setNotificationRecipientTypes([getDefaultRecipientType(building.building_type || "Strata/Condo")])
+      }
+      setBuildingTimezone(building.timezone || "America/Vancouver")
   
       fetchPropertyManagers()
       fetchCompanies()
@@ -143,14 +149,14 @@ export default function BuildingDetailsModal({
   }
 
   const fetchDynamicParams = async () => {
-    const params = await getVotingParameters(building?.company_id)
+    const params = await getVotingParameters(building?.company_id) as Array<{ parameter_type: string; value: string }>
     
     // Deduplicate values for Master users who see multiple company parameters
     const types = params.filter(p => p.parameter_type === 'building_type').map(p => p.value)
-    setBuildingTypes([...new Set(types)])
+    setBuildingTypes([...new Set(types)] as string[])
 
     const userTypes = params.filter(p => p.parameter_type === 'user_type').map(p => p.value)
-    setUserBuildingTypes([...new Set(userTypes)])
+    setUserBuildingTypes([...new Set(userTypes)] as string[])
   }  
 
 
@@ -161,12 +167,14 @@ export default function BuildingDetailsModal({
   }
 
   useEffect(() => {
-    if (buildingType === "Housing Co-op") {
-      setNotificationRecipientType("resident")
-    } else if (buildingType === "Strata/Condo" || buildingType === "Rental") {
-      setNotificationRecipientType("owner")
+    // Only nudge to a sensible default when building type changes AND nothing is selected.
+    // Skip on initial mount (when the modal is closed) to avoid racing with the main
+    // useEffect that loads saved recipients from the building record.
+    if (!isOpen) return
+    if (notificationRecipientTypes.length === 0) {
+      setNotificationRecipientTypes([getDefaultRecipientType(buildingType)])
     }
-  }, [buildingType])
+  }, [buildingType]) // eslint-disable-line react-hooks/exhaustive-deps
 
 
 
@@ -240,13 +248,15 @@ export default function BuildingDetailsModal({
           company_id: selectedCompanyId,
           board_meeting_notice_days: boardMeetingNoticeDays,
           general_meeting_notice_days: generalMeetingNoticeDays,
-          notification_recipient_type: notificationRecipientType,
+          notification_recipient_type: notificationRecipientTypes.length > 0 ? notificationRecipientTypes.join(',') : null,
+          timezone: buildingTimezone || null,
         })
         .eq("id", building.id)
 
       if (updateError) {
         console.error("Error updating building:", updateError)
-        alert("Failed to update building")
+        console.error("Error details:", JSON.stringify(updateError, null, 2))
+        alert(`Failed to update building: ${updateError.message || updateError.code || 'Unknown error'}`)
         return
       }
 
@@ -265,7 +275,7 @@ export default function BuildingDetailsModal({
         company_id: selectedCompanyId,
         board_meeting_notice_days: boardMeetingNoticeDays,
         general_meeting_notice_days: generalMeetingNoticeDays,
-        notification_recipient_type: notificationRecipientType
+        notification_recipient_type: notificationRecipientTypes.length > 0 ? notificationRecipientTypes.join(',') : null
       }, 'building')
       
       await onSuccess()
@@ -536,6 +546,49 @@ export default function BuildingDetailsModal({
                     />
                   </div>
                 </div>
+
+                {/* Timezone */}
+                <div>
+                  <Label htmlFor="timezone">Building Timezone</Label>
+                  <p className="text-xs text-muted-foreground mb-1.5">
+                    Meeting times will display in this timezone for all users.
+                  </p>
+                  <Select
+                    value={buildingTimezone}
+                    onValueChange={setBuildingTimezone}
+                    disabled={!(checkIsMaster(currentUser) || checkIsCorporateAdmin(currentUser) || checkIsPropertyManager(currentUser))}
+                  >
+                    <SelectTrigger
+                      id="timezone"
+                      className={!(checkIsMaster(currentUser) || checkIsCorporateAdmin(currentUser) || checkIsPropertyManager(currentUser)) ? "bg-muted cursor-not-allowed" : ""}
+                    >
+                      <SelectValue placeholder="Select timezone" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-72">
+                      <SelectItem value="America/Vancouver">Pacific Time — Vancouver / Victoria (PT)</SelectItem>
+                      <SelectItem value="America/Edmonton">Mountain Time — Calgary / Edmonton (MT)</SelectItem>
+                      <SelectItem value="America/Winnipeg">Central Time — Winnipeg (CT)</SelectItem>
+                      <SelectItem value="America/Toronto">Eastern Time — Toronto / Ottawa (ET)</SelectItem>
+                      <SelectItem value="America/Halifax">Atlantic Time — Halifax (AT)</SelectItem>
+                      <SelectItem value="America/St_Johns">Newfoundland Time — St. John's (NT)</SelectItem>
+                      <SelectItem value="America/New_York">Eastern Time — New York (ET)</SelectItem>
+                      <SelectItem value="America/Chicago">Central Time — Chicago (CT)</SelectItem>
+                      <SelectItem value="America/Denver">Mountain Time — Denver (MT)</SelectItem>
+                      <SelectItem value="America/Los_Angeles">Pacific Time — Los Angeles (PT)</SelectItem>
+                      <SelectItem value="America/Phoenix">Mountain Time (no DST) — Phoenix (MT)</SelectItem>
+                      <SelectItem value="America/Anchorage">Alaska Time — Anchorage (AKT)</SelectItem>
+                      <SelectItem value="Pacific/Honolulu">Hawaii Time — Honolulu (HT)</SelectItem>
+                      <SelectItem value="Europe/London">Greenwich Mean Time — London (GMT/BST)</SelectItem>
+                      <SelectItem value="Europe/Paris">Central European Time — Paris / Berlin (CET)</SelectItem>
+                      <SelectItem value="Asia/Dubai">Gulf Standard Time — Dubai (GST)</SelectItem>
+                      <SelectItem value="Asia/Singapore">Singapore Time (SGT)</SelectItem>
+                      <SelectItem value="Asia/Manila">Philippine Time — Manila (PHT)</SelectItem>
+                      <SelectItem value="Asia/Tokyo">Japan Standard Time — Tokyo (JST)</SelectItem>
+                      <SelectItem value="Australia/Sydney">Australian Eastern Time — Sydney (AEST)</SelectItem>
+                      <SelectItem value="Pacific/Auckland">New Zealand Time — Auckland (NZST)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
 
               <div>
@@ -707,8 +760,8 @@ export default function BuildingDetailsModal({
               setBoardMeetingNoticeDays={setBoardMeetingNoticeDays}
               generalMeetingNoticeDays={generalMeetingNoticeDays}
               setGeneralMeetingNoticeDays={setGeneralMeetingNoticeDays}
-              notificationRecipientType={notificationRecipientType}
-              setNotificationRecipientType={setNotificationRecipientType}
+              notificationRecipientTypes={notificationRecipientTypes}
+              setNotificationRecipientTypes={setNotificationRecipientTypes}
               buildingType={buildingType}
             />
           )}
@@ -739,9 +792,25 @@ interface NotificationsTabProps {
   setBoardMeetingNoticeDays: (days: number) => void
   generalMeetingNoticeDays: number
   setGeneralMeetingNoticeDays: (days: number) => void
-  notificationRecipientType: string
-  setNotificationRecipientType: (type: string) => void
+  notificationRecipientTypes: string[]
+  setNotificationRecipientTypes: (types: string[]) => void
   buildingType: string
+}
+
+const RECIPIENT_OPTIONS = [
+  { value: "owner",                   label: "Owners",           description: "Unit owners / strata lot owners" },
+  { value: "resident",                label: "Residents",        description: "Tenants and co-op members" },
+  { value: "property_manager",        label: "Property Manager", description: "Assigned property manager" },
+  { value: "corporate_administrator", label: "Corporate Admin",  description: "Company-level administrators" },
+  { value: "attendee",                label: "Attendees",        description: "Meeting attendees" },
+]
+
+function recipientLabel(types: string[]): string {
+  if (types.length === 0) return "No one selected"
+  if (types.length === RECIPIENT_OPTIONS.length) return "All Users"
+  return types
+    .map(v => RECIPIENT_OPTIONS.find(o => o.value === v)?.label ?? v)
+    .join(", ")
 }
 
 function NotificationsTab({
@@ -749,10 +818,18 @@ function NotificationsTab({
   setBoardMeetingNoticeDays,
   generalMeetingNoticeDays,
   setGeneralMeetingNoticeDays,
-  notificationRecipientType,
-  setNotificationRecipientType,
+  notificationRecipientTypes,
+  setNotificationRecipientTypes,
   buildingType,
 }: NotificationsTabProps) {
+  const toggle = (value: string) => {
+    setNotificationRecipientTypes(
+      notificationRecipientTypes.includes(value)
+        ? notificationRecipientTypes.filter(v => v !== value)
+        : [...notificationRecipientTypes, value]
+    )
+  }
+
   return (
     <div className="space-y-6">
       <Card className="p-6 bg-gradient-to-br from-blue-50 to-purple-50 border-blue-200">
@@ -811,40 +888,51 @@ function NotificationsTab({
               </span>
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              Default: 7 days. This is when the system will automatically send meeting notices to all {notificationRecipientType}s.
+              Default: 7 days. This is when the system will automatically send meeting notices to{" "}
+              <strong>{recipientLabel(notificationRecipientTypes)}</strong>.
             </p>
           </div>
 
+          {/* Multi-select recipient checkboxes */}
           <div>
-            <Label htmlFor="recipientType" className="text-sm font-medium">
-              Send Notifications To *
-            </Label>
-            <Select
-              value={notificationRecipientType}
-              onValueChange={setNotificationRecipientType}
-              disabled={buildingType === "Housing Co-op" || buildingType === "Strata/Condo"}
-            >
-              <SelectTrigger id="recipientType" className="mt-2">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {buildingType === "Housing Co-op" ? (
-                  <SelectItem value="resident">Residents</SelectItem>
-                ) : (
-                  <SelectItem value="owner">Owners</SelectItem>
-                )}
-              </SelectContent>
-            </Select>
-            <div className="mt-2 p-3 bg-white rounded-lg border">
-              <p className="text-xs text-muted-foreground">
-                <strong>Building Type: {buildingType}</strong>
-              </p>
-              <p className="text-xs text-muted-foreground mt-1">
-                {buildingType === "Housing Co-op" && "Housing Co-ops send notifications to "}
-                {(buildingType === "Strata/Condo" || buildingType === "Rental") && "Strata/Condo buildings send notifications to "}
-                {buildingType === "Housing Co-op" ? <strong>Residents</strong> : <strong>Owners</strong>}.
-              </p>
+            <Label className="text-sm font-medium">Send Notifications To *</Label>
+            <p className="text-xs text-muted-foreground mb-3 mt-0.5">
+              Select one or more recipient groups. <strong>Building Type: {buildingType}</strong>
+            </p>
+            <div className="grid grid-cols-1 gap-2">
+              {RECIPIENT_OPTIONS.map(option => {
+                const checked = notificationRecipientTypes.includes(option.value)
+                return (
+                  <label
+                    key={option.value}
+                    className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                      checked
+                        ? "bg-primary/5 border-primary/40"
+                        : "bg-white border-border hover:bg-muted/30"
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggle(option.value)}
+                      className="mt-0.5 h-4 w-4 rounded border-border accent-primary cursor-pointer"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm font-medium text-foreground">{option.label}</span>
+                      <p className="text-xs text-muted-foreground">{option.description}</p>
+                    </div>
+                  </label>
+                )
+              })}
             </div>
+            {notificationRecipientTypes.length === 0 && (
+              <p className="text-xs text-red-500 mt-2">Please select at least one recipient group.</p>
+            )}
+            {notificationRecipientTypes.length > 0 && (
+              <div className="mt-3 p-3 bg-white rounded-lg border text-xs text-muted-foreground">
+                Notices will be sent to: <strong>{recipientLabel(notificationRecipientTypes)}</strong>
+              </div>
+            )}
           </div>
         </div>
       </Card>
@@ -855,10 +943,10 @@ function NotificationsTab({
           <div>
             <h4 className="font-semibold text-sm text-blue-900 mb-1">How Notifications Work</h4>
             <ul className="text-xs text-blue-800 space-y-1">
-              <li>Notices/agendas will be automatically sent to {notificationRecipientType}s based on the configured days</li>
+              <li>Notices/agendas will be automatically sent to <strong>{recipientLabel(notificationRecipientTypes)}</strong> based on the configured days</li>
               <li>Board meetings typically require shorter notice periods</li>
               <li>General meetings may require longer notice periods per local regulations</li>
-              <li>The system will send reminders via email to all assigned {notificationRecipientType}s</li>
+              <li>The system will send reminders via email to all assigned recipients</li>
             </ul>
           </div>
         </div>
