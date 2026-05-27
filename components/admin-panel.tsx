@@ -42,6 +42,7 @@ interface UserRow {
   created_at: string
   assigned_pm_id: number | null
   company_id: number | null
+  company_name?: string | null
   buildings?: string[] // This can now be "Building Name (Unit #)"
   roles?: string[] | null
 }
@@ -65,6 +66,7 @@ interface Building {
   board_meeting_notice_days?: number | null
   general_meeting_notice_days?: number | null
   notification_recipient_type?: string | null
+  timezone?: string | null
 }
 
 type TabType = "users" | "buildings" | "companies" | "minutes" | "agenda" | "voting" | "audit" | "settings"
@@ -327,7 +329,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
 
       let usersQuery = supabase
         .from("users")
-        .select("id, name, email, user_type, roles, assigned_pm_id, company_id, created_at")
+        .select("id, name, email, user_type, roles, assigned_pm_id, company_id, created_at, companies(id, name)")
         .order("created_at", { ascending: false })
 
       const activeUser = dbUser || currentUser
@@ -375,7 +377,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
 
       const { data: userBuildingsData } = await ubQuery
 
-      const usersWithBuildings = (usersData || []).map((user) => {
+      const usersWithBuildings = (usersData || []).map((user: any) => {
         const userJunctions = (userBuildingsData || [])
           .filter((ub: any) => ub.user_id === user.id)
         
@@ -389,7 +391,8 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
           ...user,
           buildings: userBuildings,
           isUserInManagedBuilding,
-          buildingIds: userJunctions.map((ub: any) => ub.building_id)
+          buildingIds: userJunctions.map((ub: any) => ub.building_id),
+          company_name: user.companies?.name || null
         }
       })
 
@@ -405,14 +408,14 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
             user.assigned_pm_id === currentUser?.id || 
             user.id === currentUser?.id || 
             user.isUserInManagedBuilding ||
-            user.buildingIds.some(id => myBuildingIds.includes(id))
+            user.buildingIds.some((id: number) => myBuildingIds.includes(id))
         )
         setUsers(filteredUsers)
       } else {
         // Lower roles see users in THEIR buildings only
         const filteredUsers = usersWithBuildings.filter((user) => {
            if (user.id === currentUser?.id) return true
-           return user.buildingIds.some(id => myBuildingIds.includes(id))
+           return user.buildingIds.some((id: number) => myBuildingIds.includes(id))
         })
         setUsers(filteredUsers)
       }
@@ -955,6 +958,8 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
           setSelectedCompany(null)
         }}
         company={selectedCompany}
+        onBuildingsChanged={fetchBuildings}
+        onUsersChanged={fetchUsers}
       />
 
       <AssignUsersToCompanyModal

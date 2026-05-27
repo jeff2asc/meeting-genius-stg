@@ -1,7 +1,8 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { X, Plus, Trash2, Edit2, Save, Loader2, Globe } from "lucide-react"
+import { X, Plus, Trash2, Edit2, Save, Loader2, Globe, GripVertical } from "lucide-react"
+import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -34,7 +35,7 @@ export default function EditCompanyModal({
   company
 }: EditCompanyModalProps) {
   const [companyName, setCompanyName] = useState("")
-  const [meetingSections, setMeetingSections] = useState<string[]>([])
+  const [meetingSections, setMeetingSections] = useState<{ id: string; name: string }[]>([])
 
   // Meeting types — sourced from voting_parameters
   const [meetingTypeParams, setMeetingTypeParams] = useState<VotingParameter[]>([])
@@ -76,7 +77,7 @@ export default function EditCompanyModal({
   useEffect(() => {
     if (company) {
       setCompanyName(company.name)
-      setMeetingSections(company.default_meeting_sections || [
+      const initialSections = company.default_meeting_sections || [
         "Call to Order",
         "Approval of Agenda",
         "Old Business / Business Arising",
@@ -86,7 +87,11 @@ export default function EditCompanyModal({
         "Correspondence",
         "Council Roundtable",
         "Adjournment"
-      ])
+      ]
+      setMeetingSections(initialSections.map((name, i) => ({
+        id: `sec-${i}-${Date.now()}-${Math.random()}`,
+        name
+      })))
       setDecisionResults(company.default_decision_results || [
         "M/S/C",
         "Defeated",
@@ -97,20 +102,33 @@ export default function EditCompanyModal({
   }, [company])
 
   // ─── Meeting Sections ────────────────────────────────────────────────────────
-  const handleAddSection = () => setMeetingSections([...meetingSections, "New Section"])
+  const handleAddSection = () => setMeetingSections([...meetingSections, { id: `sec-${Date.now()}-${Math.random()}`, name: "New Section" }])
   const handleDeleteSection = (idx: number) => setMeetingSections(meetingSections.filter((_, i) => i !== idx))
   const handleEditSection = (idx: number) => {
     setEditingSectionIdx(idx)
-    setEditingValue(meetingSections[idx])
+    const section = meetingSections[idx]
+    setEditingValue(typeof section === 'object' && section !== null && 'name' in section ? (section as any).name : String(section))
   }
   const handleSaveSectionEdit = () => {
     if (editingSectionIdx !== null) {
       const updated = [...meetingSections]
-      updated[editingSectionIdx] = editingValue
+      const current = updated[editingSectionIdx]
+      if (typeof current === 'object' && current !== null && 'name' in current) {
+        updated[editingSectionIdx] = { ...current, name: editingValue }
+      } else {
+        updated[editingSectionIdx] = { id: `sec-${editingSectionIdx}-${Date.now()}-${Math.random()}`, name: editingValue }
+      }
       setMeetingSections(updated)
       setEditingSectionIdx(null)
       setEditingValue("")
     }
+  }
+  const handleDragEnd = (result: any) => {
+    if (!result.destination) return
+    const items = Array.from(meetingSections)
+    const [reorderedItem] = items.splice(result.source.index, 1)
+    items.splice(result.destination.index, 0, reorderedItem)
+    setMeetingSections(items)
   }
 
   // ─── Meeting Types — write directly to voting_parameters ────────────────────
@@ -222,11 +240,12 @@ export default function EditCompanyModal({
     setSaving(true)
 
     try {
+      const sectionsArray = meetingSections.map(s => typeof s === 'object' && s !== null && 'name' in s ? (s as any).name : String(s))
       const { error: updateError } = await supabase
         .from('companies')
         .update({
           name: companyName.trim(),
-          default_meeting_sections: meetingSections,
+          default_meeting_sections: sectionsArray,
           default_decision_results: decisionResults,
           updated_at: new Date().toISOString()
         })
@@ -243,7 +262,7 @@ export default function EditCompanyModal({
       triggerJanusResync('company_updated', {
         id: company.id,
         name: companyName.trim(),
-        default_meeting_sections: meetingSections,
+        default_meeting_sections: sectionsArray,
         default_decision_results: decisionResults,
       }, 'company')
 
@@ -318,34 +337,76 @@ export default function EditCompanyModal({
                 </Button>
               </label>
               <div className="space-y-1.5 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
-                {meetingSections.map((section, idx) =>
-                  editingSectionIdx === idx ? (
-                    <div key={idx} className="flex items-center gap-2 p-1.5 bg-primary/5 border border-primary/20 rounded-lg">
-                      <input
-                        type="text"
-                        value={editingValue}
-                        onChange={e => setEditingValue(e.target.value)}
-                        className="flex-1 px-2 py-1 bg-background text-sm rounded border border-border focus:ring-1 focus:ring-primary"
-                        autoFocus
-                      />
-                      <Button variant="default" size="sm" onClick={handleSaveSectionEdit} type="button" className="h-7 w-7 p-0">
-                        <Save className="h-3 w-3" />
-                      </Button>
-                    </div>
-                  ) : (
-                    <div key={idx} className="flex items-center justify-between gap-2 px-3 py-1.5 bg-muted/30 hover:bg-muted/60 rounded-md border border-border/40 group transition-all">
-                      <span className="flex-1 text-xs font-medium truncate">{section}</span>
-                      <div className="flex gap-0.5 opacity-0 group-hover:opacity-100">
-                        <Button variant="ghost" size="sm" type="button" onClick={() => handleEditSection(idx)} className="h-6 w-6 p-0">
-                          <Edit2 className="h-3 w-3" />
-                        </Button>
-                        <Button variant="ghost" size="sm" type="button" onClick={() => handleDeleteSection(idx)} className="h-6 w-6 p-0 text-red-500 hover:text-red-700">
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
+                <DragDropContext onDragEnd={handleDragEnd}>
+                  <Droppable droppableId="company-sections" type="SECTION">
+                    {(provided) => (
+                      <div
+                        {...provided.droppableProps}
+                        ref={provided.innerRef}
+                        className="space-y-1.5"
+                      >
+                        {meetingSections.map((section, idx) => {
+                          const isObject = typeof section === 'object' && section !== null && 'id' in section;
+                          const sectionId = isObject ? (section as any).id : `sec-fallback-${idx}-${Math.random()}`;
+                          const sectionName = isObject ? (section as any).name : String(section);
+
+                          return (
+                            <Draggable key={sectionId} draggableId={sectionId} index={idx}>
+                              {(provided) => {
+                                if (editingSectionIdx === idx) {
+                                  return (
+                                    <div
+                                      ref={provided.innerRef}
+                                      {...provided.draggableProps}
+                                      className="flex items-center gap-2 p-1.5 bg-primary/5 border border-primary/20 rounded-lg"
+                                    >
+                                      <input
+                                        type="text"
+                                        value={editingValue}
+                                        onChange={e => setEditingValue(e.target.value)}
+                                        className="flex-1 px-2 py-1 bg-background text-sm rounded border border-border focus:ring-1 focus:ring-primary"
+                                        autoFocus
+                                      />
+                                      <Button variant="default" size="sm" onClick={handleSaveSectionEdit} type="button" className="h-7 w-7 p-0">
+                                        <Save className="h-3 w-3" />
+                                      </Button>
+                                    </div>
+                                  )
+                                }
+                                return (
+                                  <div
+                                    ref={provided.innerRef}
+                                    {...provided.draggableProps}
+                                    className="flex items-center justify-between gap-2 px-3 py-1.5 bg-muted/30 hover:bg-muted/60 rounded-md border border-border/40 group transition-all"
+                                  >
+                                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                                      <div
+                                        {...provided.dragHandleProps}
+                                        className="text-muted-foreground/40 hover:text-muted-foreground cursor-grab active:cursor-grabbing p-0.5 rounded hover:bg-muted transition-colors"
+                                      >
+                                        <GripVertical className="h-3.5 w-3.5" />
+                                      </div>
+                                      <span className="text-xs font-medium truncate">{sectionName}</span>
+                                    </div>
+                                    <div className="flex gap-0.5 opacity-0 group-hover:opacity-100">
+                                      <Button variant="ghost" size="sm" type="button" onClick={() => handleEditSection(idx)} className="h-6 w-6 p-0">
+                                        <Edit2 className="h-3 w-3" />
+                                      </Button>
+                                      <Button variant="ghost" size="sm" type="button" onClick={() => handleDeleteSection(idx)} className="h-6 w-6 p-0 text-red-500 hover:text-red-700">
+                                        <Trash2 className="h-3 w-3" />
+                                      </Button>
+                                    </div>
+                                  </div>
+                                )
+                              }}
+                            </Draggable>
+                          )
+                        })}
+                        {provided.placeholder}
                       </div>
-                    </div>
-                  )
-                )}
+                    )}
+                  </Droppable>
+                </DragDropContext>
               </div>
             </div>
 
@@ -442,8 +503,8 @@ export default function EditCompanyModal({
                                 setEditingTypeLinkedVotingType((param as any).linked_voting_type || "")
                               }}
                               className="h-6 w-6 p-0"
-                              disabled={param.company_id === null && !param.is_default}
-                              title={param.company_id === null ? "Edit in Admin → Voting tab" : "Edit"}
+                              disabled={param.is_default === true}
+                              title={param.is_default ? "Cannot edit global defaults" : "Edit"}
                             >
                               <Edit2 className="h-3 w-3" />
                             </Button>
@@ -451,8 +512,8 @@ export default function EditCompanyModal({
                               variant="ghost" size="sm" type="button"
                               onClick={() => handleDeleteMeetingType(param.id)}
                               className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
-                              disabled={param.company_id === null}
-                              title={param.company_id === null ? "Cannot delete global defaults" : "Delete"}
+                              disabled={param.is_default === true}
+                              title={param.is_default ? "Cannot delete global defaults" : "Delete"}
                             >
                               <Trash2 className="h-3 w-3" />
                             </Button>

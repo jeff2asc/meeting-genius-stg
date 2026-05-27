@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
 
     // 2. Parse request body
     const body = await request.json()
-    const {
+    let {
       company_name,
       corporate_admin_name,
       corporate_admin_email,
@@ -39,8 +39,42 @@ export async function POST(request: NextRequest) {
       property_manager_password,
       default_meeting_sections,
       default_meeting_types,
-      smtp_config
+      smtp_config,
+      minutes
     } = body
+
+    let firstMeeting = null
+
+    if (minutes) {
+      const { extractOnboardingFromMinutes } = await import('@/lib/ai')
+      try {
+        const extracted = await extractOnboardingFromMinutes(minutes)
+        if (extracted) {
+          company_name = company_name || extracted.company_name
+          corporate_admin_name = corporate_admin_name || extracted.corporate_admin_name
+          corporate_admin_email = corporate_admin_email || extracted.corporate_admin_email
+          corporate_admin_password = corporate_admin_password || extracted.corporate_admin_password || 'MGAdmin2026!'
+          building_name = building_name || extracted.building_name
+          building_address = building_address || extracted.building_address
+          building_type = building_type || extracted.building_type
+          property_manager_name = property_manager_name || extracted.property_manager_name
+          property_manager_email = property_manager_email || extracted.property_manager_email
+          property_manager_password = property_manager_password || extracted.property_manager_password || 'MGAdmin2026!'
+          default_meeting_sections = default_meeting_sections || extracted.default_meeting_sections
+          default_meeting_types = default_meeting_types || extracted.default_meeting_types
+          
+          if (extracted.first_meeting) {
+            firstMeeting = extracted.first_meeting
+          }
+        }
+      } catch (err: any) {
+        console.error('Failed to extract onboarding from minutes:', err)
+        return NextResponse.json(
+          { error: 'Failed to parse meeting minutes: ' + err.message },
+          { status: 400 }
+        )
+      }
+    }
 
 
     // 3. Validation
@@ -180,6 +214,76 @@ export async function POST(request: NextRequest) {
     }
 
 
+    // 9.5 Create First Meeting / Agenda (if firstMeeting is provided and building exists)
+    let createdMeeting = null
+    if (building && firstMeeting) {
+      const { data: meetingData, error: meetingError } = await supabase
+        .from('meetings')
+        .insert({
+          building_id: building.id,
+          title: firstMeeting.title || 'First Meeting',
+          meeting_date: firstMeeting.meeting_date || new Date().toISOString().split('T')[0],
+          start_time: firstMeeting.start_time || null,
+          end_time: firstMeeting.end_time || null,
+          location: firstMeeting.location || null,
+          meeting_type: firstMeeting.meeting_type || 'Board Meeting',
+          status: 'working_agenda',
+          attendees: Array.isArray(firstMeeting.attendees)
+            ? firstMeeting.attendees.map((att: any) => ({
+                name: att.name || 'Attendee',
+                email: att.email || '',
+                role: att.role || 'Attendee',
+                present: false
+              }))
+            : []
+        })
+        .select()
+        .single()
+
+      if (meetingError) {
+        console.error('First meeting creation error:', meetingError)
+      } else if (meetingData) {
+        createdMeeting = meetingData
+
+        // Insert sections and topics
+        if (Array.isArray(firstMeeting.sections)) {
+          for (let sIdx = 0; sIdx < firstMeeting.sections.length; sIdx++) {
+            const section = firstMeeting.sections[sIdx]
+            const { data: sectionData, error: sectionError } = await supabase
+              .from('sections')
+              .insert({
+                meeting_id: createdMeeting.id,
+                title: section.title,
+                order_index: sIdx + 1
+              })
+              .select()
+              .single()
+
+            if (sectionError) {
+              console.error(`Section "${section.title}" creation error:`, sectionError)
+              continue
+            }
+
+            if (sectionData && Array.isArray(section.topics)) {
+              for (let tIdx = 0; tIdx < section.topics.length; tIdx++) {
+                const topic = section.topics[tIdx]
+                await supabase
+                  .from('topics')
+                  .insert({
+                    meeting_id: createdMeeting.id,
+                    section_id: sectionData.id,
+                    title: topic.title,
+                    description: topic.description || null,
+                    order_index: tIdx + 1
+                  })
+              }
+            }
+          }
+        }
+      }
+    }
+
+
     // 10. Success response
     return NextResponse.json({
       success: true,
@@ -202,6 +306,10 @@ export async function POST(request: NextRequest) {
           id: propertyManager.id,
           name: propertyManager.name,
           email: propertyManager.email
+        } : null,
+        first_meeting: createdMeeting ? {
+          id: createdMeeting.id,
+          title: createdMeeting.title
         } : null
       }
     }, { status: 201 })

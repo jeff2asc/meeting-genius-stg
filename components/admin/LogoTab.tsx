@@ -17,6 +17,7 @@ interface LogoTabProps {
 export default function LogoTab({ companyId, currentLogoUrl, onLogoUpdate }: LogoTabProps) {
   const [uploading, setUploading] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [logoUrl, setLogoUrl] = useState<string | null>(currentLogoUrl)
 
 
   const handleUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -31,9 +32,9 @@ export default function LogoTab({ companyId, currentLogoUrl, onLogoUpdate }: Log
     }
 
 
-    // Validate file size (2MB)
-    if (file.size > 2 * 1024 * 1024) {
-      toast.error('File size must be less than 2MB')
+    // Validate file size (50MB)
+    if (file.size > 50 * 1024 * 1024) {
+      toast.error('File size must be less than 50MB')
       return
     }
 
@@ -41,8 +42,8 @@ export default function LogoTab({ companyId, currentLogoUrl, onLogoUpdate }: Log
     setUploading(true)
     try {
       // Delete old logo if exists
-      if (currentLogoUrl) {
-        const oldPath = currentLogoUrl.split('/company-logos/')[1]
+      if (logoUrl) {
+        const oldPath = logoUrl.split('/company-logos/')[1]
         if (oldPath) {
           await supabase.storage.from('company-logos').remove([oldPath])
         }
@@ -84,6 +85,8 @@ export default function LogoTab({ companyId, currentLogoUrl, onLogoUpdate }: Log
       }
 
 
+      // ⭐ Update local state immediately so preview shows without page refresh
+      setLogoUrl(publicUrl)
       toast.success('Logo uploaded successfully')
       // Flag that logo was updated so Dashboard can refresh
       localStorage.setItem('company_logo_updated', '1')
@@ -99,14 +102,14 @@ export default function LogoTab({ companyId, currentLogoUrl, onLogoUpdate }: Log
 
 
   const handleDelete = async () => {
-    if (!currentLogoUrl) return
+    if (!logoUrl) return
     if (!confirm('Delete company logo? This will remove the logo from all displays.')) return
 
 
     setDeleting(true)
     try {
       // Delete from storage
-      const filePath = currentLogoUrl.split('/company-logos/')[1]
+      const filePath = logoUrl!.split('/company-logos/')[1]
       if (filePath) {
         const { error: storageError } = await supabase.storage
           .from('company-logos')
@@ -131,6 +134,8 @@ export default function LogoTab({ companyId, currentLogoUrl, onLogoUpdate }: Log
       }
 
 
+      // ⭐ Clear local state immediately so preview disappears without page refresh
+      setLogoUrl(null)
       toast.success('Logo deleted')
       // Flag that logo was updated so Dashboard can refresh
       localStorage.setItem('company_logo_updated', '1')
@@ -158,13 +163,13 @@ export default function LogoTab({ companyId, currentLogoUrl, onLogoUpdate }: Log
 
 
       {/* Current Logo Preview */}
-      {currentLogoUrl ? (
+      {logoUrl ? (
         <div className="border rounded-lg p-6 bg-muted/20">
           <p className="text-sm font-medium mb-4">Current Logo:</p>
           <div className="flex items-start gap-6">
             <div className="relative">
               <img 
-                src={currentLogoUrl} 
+                src={logoUrl} 
                 alt="Company Logo" 
                 className="h-32 w-32 rounded-lg object-cover border-2 border-border shadow-sm"
               />
@@ -207,7 +212,7 @@ export default function LogoTab({ companyId, currentLogoUrl, onLogoUpdate }: Log
             onClick={() => document.getElementById('logo-upload')?.click()}
           >
             <Upload className="h-4 w-4 mr-2" />
-            {uploading ? 'Uploading...' : currentLogoUrl ? 'Replace Logo' : 'Upload Logo'}
+            {uploading ? 'Uploading...' : logoUrl ? 'Replace Logo' : 'Upload Logo'}
           </Button>
         </label>
         <input
@@ -221,7 +226,7 @@ export default function LogoTab({ companyId, currentLogoUrl, onLogoUpdate }: Log
         <div className="text-xs text-muted-foreground space-y-1">
           <p>· Recommended: Square image (200x200px minimum)</p>
           <p>· Supported formats: PNG, JPG, SVG</p>
-          <p>· Maximum file size: 2MB</p>
+          <p>· Maximum file size: 50MB</p>
           <p>· Transparent background recommended for best results</p>
         </div>
       </div>

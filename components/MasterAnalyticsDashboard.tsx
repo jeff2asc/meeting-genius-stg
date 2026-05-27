@@ -1,59 +1,70 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { 
-  Building2, 
-  Users, 
-  Calendar, 
-  CheckSquare, 
-  ArrowLeft, 
-  Activity, 
-  CheckCircle2, 
-  GitPullRequest, 
-  Terminal, 
+import { useState, useEffect, useRef } from "react"
+import {
+  Building2,
+  Users,
+  Calendar,
+  CheckSquare,
+  ArrowLeft,
+  Activity,
+  CheckCircle2,
+  Terminal,
   HardDrive,
   AlertTriangle,
-  Play,
   RotateCcw,
-  Sparkles,
-  GitBranch,
-  ShieldCheck,
-  Zap
+  Zap,
+  Wrench,
+  MessageSquareWarning,
+  TrendingUp,
+  Clock,
+  ShieldAlert,
+  ChevronRight,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
-import { 
-  ResponsiveContainer, 
-  BarChart, 
-  Bar, 
-  XAxis, 
-  YAxis, 
-  Tooltip, 
-  PieChart, 
-  Pie, 
-  Cell, 
-  Legend,
-  AreaChart,
-  Area
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  PieChart,
+  Pie,
+  Cell,
 } from "recharts"
 
 interface MasterAnalyticsDashboardProps {
   onBack: () => void
 }
 
-interface PRLog {
+interface AuditLog {
   id: string
-  branch: string
-  title: string
-  status: "pending" | "approved" | "linting" | "failed"
-  date: string
-  commits: number
+  action_type: string
+  model_name: string | null
+  status: string
+  duration_ms: number | null
+  error_message: string | null
+  created_at: string
+  user_name?: string
+  company_name?: string
+}
+
+interface CompanyRow {
+  id: number
+  name: string
+  janus_integrated: boolean | null
+  building_count: number
+  user_count: number
 }
 
 export default function MasterAnalyticsDashboard({ onBack }: MasterAnalyticsDashboardProps) {
   const [loading, setLoading] = useState(true)
+  const terminalRef = useRef<HTMLDivElement>(null)
+
   const [metrics, setMetrics] = useState({
     companies: 0,
     buildings: 0,
@@ -61,88 +72,32 @@ export default function MasterAnalyticsDashboard({ onBack }: MasterAnalyticsDash
     meetings: 0,
     tasks: 0,
     repairs: 0,
-    complaints: 0
+    complaints: 0,
   })
 
   const [meetingStats, setMeetingStats] = useState<any[]>([])
   const [taskStats, setTaskStats] = useState<any[]>([])
-  const [janusStats, setJanusStats] = useState<any[]>([])
   const [overdueTasksCount, setOverdueTasksCount] = useState(0)
-
-  // Terminal state
-  const [terminalLogs, setTerminalLogs] = useState<string[]>([
-    "[16:42:01] [SYSTEM] Core Agent v1.0.4 initialized successfully.",
-    "[16:42:05] [MONITOR] Scanning GitHub repositories for unauthorized commits...",
-    "[16:42:07] [MONITOR] All repos match main branch signatures. Status: SECURE.",
-    "[16:43:10] [SYNC] Janus webhook received. Ingesting tickets...",
-    "[16:43:12] [SYNC] Updated 3 repairs and 1 complaint in database.",
-    "[16:45:00] [AGENT] Triggered AST analysis on voting parameter modules.",
-  ])
-
-  // Mock PR logs that the admin can interact with
-  const [prLogs, setPrLogs] = useState<PRLog[]>([
-    {
-      id: "pr-101",
-      branch: "agent/feat-voting-update",
-      title: "Feat: Add dynamic voting calculation parameters",
-      status: "pending",
-      date: "Today, 16:30",
-      commits: 2
-    },
-    {
-      id: "pr-102",
-      branch: "agent/fix-timezone-distortion",
-      title: "Fix: Implement absolute floating timezone handling",
-      status: "approved",
-      date: "Yesterday, 14:15",
-      commits: 1
-    },
-    {
-      id: "pr-103",
-      branch: "agent/ui-ticket-details-modal",
-      title: "Feat: Interactive Janus ticket metadata popup modal",
-      status: "approved",
-      date: "2 days ago",
-      commits: 4
-    },
-    {
-      id: "pr-104",
-      branch: "agent/db-self-host-prep",
-      title: "Refactor: Prepare environment configs for localhosted Supabase migration",
-      status: "linting",
-      date: "Today, 15:45",
-      commits: 3
-    }
-  ])
+  const [userRoleStats, setUserRoleStats] = useState<any[]>([])
+  const [companyRows, setCompanyRows] = useState<CompanyRow[]>([])
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([])
+  const [recentUsers, setRecentUsers] = useState<any[]>([])
+  const [janusIntegratedCount, setJanusIntegratedCount] = useState(0)
 
   useEffect(() => {
     fetchData()
-
-    // Dynamic terminal log updates to make it feel alive
-    const logPool = [
-      "[INFO] Scanning codebase for security vulnerabilities... 0 found.",
-      "[PROCESS] Compiling Tailwind CSS custom utility styles...",
-      "[SYNC] Mirroring table: voting_parameters with remote repository schema...",
-      "[AGENT] Analysing task completion velocity: 84.2% completion rate.",
-      "[MONITOR] GitHub branch protection enabled for 'main'.",
-      "[INFO] Auto-generated pull request check passed. Linter status: SUCCESS.",
-      "[SYNC] Janus sync endpoint call bypassed company filters successfully.",
-    ]
-
-    const interval = setInterval(() => {
-      const randomLog = logPool[Math.floor(Math.random() * logPool.length)]
-      const now = new Date()
-      const timeStr = now.toLocaleTimeString([], { hour12: false })
-      setTerminalLogs(prev => [...prev.slice(-15), `[${timeStr}] ${randomLog}`])
-    }, 6000)
-
-    return () => clearInterval(interval)
   }, [])
+
+  // Auto-scroll terminal to bottom when new logs arrive
+  useEffect(() => {
+    if (terminalRef.current) {
+      terminalRef.current.scrollTop = terminalRef.current.scrollHeight
+    }
+  }, [auditLogs])
 
   const fetchData = async () => {
     setLoading(true)
     try {
-      // 1. Fetch counts
       const [
         { count: companyCount },
         { count: buildingCount },
@@ -150,19 +105,44 @@ export default function MasterAnalyticsDashboard({ onBack }: MasterAnalyticsDash
         { data: meetingsData },
         { data: tasksData },
         { count: repairsCount },
-        { count: complaintsCount }
+        { count: complaintsCount },
+        { data: usersData },
+        { data: companiesData },
+        { data: auditData },
+        { data: buildingsData },
       ] = await Promise.all([
-        supabase.from('companies').select('*', { count: 'exact', head: true }),
-        supabase.from('buildings').select('*', { count: 'exact', head: true }),
-        supabase.from('users').select('*', { count: 'exact', head: true }),
-        supabase.from('meetings').select('status'),
-        supabase.from('tasks').select('status, due_date'),
-        supabase.from('janus_repairs').select('*', { count: 'exact', head: true }),
-        supabase.from('janus_complaints').select('*', { count: 'exact', head: true })
+        supabase.from("companies").select("*", { count: "exact", head: true }),
+        supabase.from("buildings").select("*", { count: "exact", head: true }),
+        supabase.from("users").select("*", { count: "exact", head: true }),
+        supabase.from("meetings").select("status"),
+        supabase.from("tasks").select("status, due_date"),
+        supabase.from("janus_repairs").select("*", { count: "exact", head: true }),
+        supabase.from("janus_complaints").select("*", { count: "exact", head: true }),
+        supabase
+          .from("users")
+          .select("id, name, email, user_type, roles, created_at, company_id")
+          .order("created_at", { ascending: false })
+          .limit(5),
+        supabase
+          .from("companies")
+          .select("id, name, janus_integrated")
+          .order("name"),
+        supabase
+          .from("audit_logs")
+          .select(`*, users:user_id(name), companies:company_id(name)`)
+          .order("created_at", { ascending: false })
+          .limit(40),
+        supabase
+          .from("buildings")
+          .select("id, company_id"),
       ])
 
       const meetings = meetingsData || []
       const tasks = tasksData || []
+      const allUsers = usersData || []
+      const companies = companiesData || []
+      const logs = auditData || []
+      const buildings = buildingsData || []
 
       setMetrics({
         companies: companyCount || 0,
@@ -171,74 +151,159 @@ export default function MasterAnalyticsDashboard({ onBack }: MasterAnalyticsDash
         meetings: meetings.length,
         tasks: tasks.length,
         repairs: repairsCount || 0,
-        complaints: complaintsCount || 0
+        complaints: complaintsCount || 0,
       })
 
-      // 2. Parse Meeting Stats
+      // Meeting status distribution
       const meetingCounts = meetings.reduce((acc: any, m: any) => {
-        const status = m.status || 'unknown'
-        acc[status] = (acc[status] || 0) + 1
+        const s = m.status || "unknown"
+        acc[s] = (acc[s] || 0) + 1
         return acc
       }, {})
-
       setMeetingStats([
         { name: "Draft", value: meetingCounts.working_agenda || 0, color: "#94a3b8" },
         { name: "Agenda", value: meetingCounts.agenda || 0, color: "#3b82f6" },
-        { name: "Finalized", value: meetingCounts.finalized || 0, color: "#10b981" }
+        { name: "Finalized", value: meetingCounts.finalized || 0, color: "#10b981" },
       ])
 
-      // 3. Parse Task Stats
+      // Task status breakdown
       const taskCounts = tasks.reduce((acc: any, t: any) => {
-        const status = t.status || 'open'
-        acc[status] = (acc[status] || 0) + 1
+        const s = t.status || "open"
+        acc[s] = (acc[s] || 0) + 1
         return acc
       }, {})
-
       setTaskStats([
         { name: "Completed", value: taskCounts.completed || 0, color: "#10b981" },
         { name: "In Progress", value: taskCounts.in_progress || 0, color: "#3b82f6" },
         { name: "Open", value: taskCounts.open || 0, color: "#f59e0b" },
-        { name: "Blocked", value: taskCounts.blocked || 0, color: "#ef4444" }
+        { name: "Blocked", value: taskCounts.blocked || 0, color: "#ef4444" },
       ])
 
-      // 4. Overdue Tasks
-      const today = new Date().toISOString().split('T')[0]
-      const overdue = tasks.filter((t: any) => t.status !== 'completed' && t.due_date && t.due_date < today).length
+      // Overdue tasks
+      const today = new Date().toISOString().split("T")[0]
+      const overdue = tasks.filter(
+        (t: any) => t.status !== "completed" && t.due_date && t.due_date < today
+      ).length
       setOverdueTasksCount(overdue)
 
-      // 5. Janus Integration health metrics
-      setJanusStats([
-        { name: "Repairs", value: repairsCount || 0 },
-        { name: "Complaints", value: complaintsCount || 0 }
-      ])
+      // User role breakdown (fetch all users for this)
+      const { data: allUsersForRoles } = await supabase
+        .from("users")
+        .select("user_type, roles")
+      const roleCounts: Record<string, number> = {}
+      ;(allUsersForRoles || []).forEach((u: any) => {
+        const roles: string[] = Array.isArray(u.roles) && u.roles.length > 0 ? u.roles : [u.user_type || "user"]
+        roles.forEach((r: string) => {
+          roleCounts[r] = (roleCounts[r] || 0) + 1
+        })
+      })
+      const roleColors: Record<string, string> = {
+        master: "#ef4444",
+        corporate_administrator: "#f59e0b",
+        property_manager: "#3b82f6",
+        owner: "#8b5cf6",
+        attendee: "#10b981",
+        resident: "#06b6d4",
+        user: "#94a3b8",
+        vendor: "#f97316",
+      }
+      const roleStats = Object.entries(roleCounts)
+        .map(([role, count]) => ({
+          name: role.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
+          value: count,
+          color: roleColors[role] || "#64748b",
+        }))
+        .sort((a, b) => b.value - a.value)
+      setUserRoleStats(roleStats)
 
+      // Janus integrated count
+      const janusCount = companies.filter((c: any) => c.janus_integrated).length
+      setJanusIntegratedCount(janusCount)
+
+      // Company rows enriched with building + user counts
+      const { data: allUsersForCompany } = await supabase
+        .from("users")
+        .select("company_id")
+
+      const buildingsByCompany: Record<number, number> = {}
+      buildings.forEach((b: any) => {
+        if (b.company_id) buildingsByCompany[b.company_id] = (buildingsByCompany[b.company_id] || 0) + 1
+      })
+
+      const usersByCompany: Record<number, number> = {}
+      ;(allUsersForCompany || []).forEach((u: any) => {
+        if (u.company_id) usersByCompany[u.company_id] = (usersByCompany[u.company_id] || 0) + 1
+      })
+
+      const enrichedCompanies: CompanyRow[] = companies.map((c: any) => ({
+        id: c.id,
+        name: c.name,
+        janus_integrated: c.janus_integrated,
+        building_count: buildingsByCompany[c.id] || 0,
+        user_count: usersByCompany[c.id] || 0,
+      }))
+      setCompanyRows(enrichedCompanies)
+
+      // Recent users
+      setRecentUsers(allUsers)
+
+      // Audit logs formatted
+      const formattedLogs: AuditLog[] = logs.map((log: any) => ({
+        ...log,
+        user_name: log.users?.name,
+        company_name: log.companies?.name,
+      }))
+      setAuditLogs(formattedLogs)
     } catch (err) {
-      console.error("Error fetching admin stats:", err)
+      console.error("Error fetching master analytics:", err)
       toast.error("Failed to load master analytics metrics")
     } finally {
       setLoading(false)
     }
   }
 
-  const handleApprovePR = (id: string) => {
-    setPrLogs(prev => prev.map(pr => {
-      if (pr.id === id) {
-        toast.success(`PR approved and merge pipeline triggered for branch: ${pr.branch}`)
-        return { ...pr, status: "approved" }
-      }
-      return pr
-    }))
+  // Format audit log entry as a terminal line
+  const formatTerminalLine = (log: AuditLog) => {
+    const time = new Date(log.created_at).toLocaleTimeString([], { hour12: false })
+    const who = log.user_name ? log.user_name : "System"
+    const company = log.company_name ? ` @ ${log.company_name}` : ""
+    const model = log.model_name ? ` [${log.model_name}]` : ""
+    const duration = log.duration_ms ? ` ${log.duration_ms}ms` : ""
+    const status = log.status === "success" ? "OK" : "ERR"
+    return `[${time}] [${status}]${model} ${log.action_type} — ${who}${company}${duration}`
+  }
+
+  const getTerminalColor = (log: AuditLog) => {
+    if (log.status === "error") return "text-red-400"
+    if (log.action_type?.includes("generate")) return "text-fuchsia-400"
+    if (log.action_type?.includes("minutes")) return "text-sky-400"
+    if (log.action_type?.includes("agenda")) return "text-indigo-400"
+    return "text-emerald-400"
+  }
+
+  const userTypeBadge = (type: string) => {
+    const map: Record<string, string> = {
+      master: "bg-red-500/15 text-red-400 border-red-500/30",
+      corporate_administrator: "bg-amber-500/15 text-amber-400 border-amber-500/30",
+      property_manager: "bg-blue-500/15 text-blue-400 border-blue-500/30",
+      owner: "bg-purple-500/15 text-purple-400 border-purple-500/30",
+      attendee: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
+      resident: "bg-cyan-500/15 text-cyan-400 border-cyan-500/30",
+      vendor: "bg-orange-500/15 text-orange-400 border-orange-500/30",
+      user: "bg-slate-500/15 text-slate-400 border-slate-500/30",
+    }
+    return map[type] || "bg-slate-500/15 text-slate-400 border-slate-500/30"
   }
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 p-6 md:p-8 space-y-8 font-sans selection:bg-indigo-500/30">
-      
+
       {/* Top Bar */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-800 pb-6">
         <div className="flex items-center gap-4">
-          <Button 
+          <Button
             onClick={onBack}
-            variant="ghost" 
+            variant="ghost"
             size="icon"
             className="rounded-full h-10 w-10 border border-slate-800 text-slate-400 hover:text-slate-100 hover:bg-slate-900"
           >
@@ -259,12 +324,12 @@ export default function MasterAnalyticsDashboard({ onBack }: MasterAnalyticsDash
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-bold px-3 py-1.5 rounded-full">
             <Zap className="h-3.5 w-3.5 fill-current animate-pulse" />
-            Supabase Status: Connected
+            Supabase: Connected
           </div>
-          <Button 
+          <Button
             onClick={fetchData}
-            variant="outline" 
-            size="sm" 
+            variant="outline"
+            size="sm"
             className="border-slate-800 bg-slate-900/50 hover:bg-slate-900 text-slate-300 rounded-xl"
           >
             <RotateCcw className="h-4 w-4 mr-2" /> Refresh
@@ -272,78 +337,141 @@ export default function MasterAnalyticsDashboard({ onBack }: MasterAnalyticsDash
         </div>
       </div>
 
-      {/* Grid of core metrics */}
+      {/* KPI Cards */}
       {loading ? (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 animate-pulse">
-          {[1, 2, 3, 4].map(i => (
-            <div key={i} className="h-28 bg-slate-900 rounded-2xl border border-slate-800/50"></div>
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="h-28 bg-slate-900 rounded-2xl border border-slate-800/50" />
           ))}
         </div>
       ) : (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
           <Card className="bg-slate-900/40 border-slate-800/80 backdrop-blur rounded-2xl hover:border-indigo-500/30 transition-all duration-300 shadow-xl group">
             <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-              <CardTitle className="text-xs font-bold uppercase tracking-wider text-slate-400">Total Companies</CardTitle>
+              <CardTitle className="text-xs font-bold uppercase tracking-wider text-slate-400">Companies</CardTitle>
               <div className="p-2 bg-indigo-500/10 rounded-xl text-indigo-400 group-hover:scale-110 transition-transform">
-                <Building2 className="h-4.5 w-4.5" />
+                <Building2 className="h-4 w-4" />
               </div>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-black text-white">{metrics.companies}</div>
-              <p className="text-[10px] text-slate-500 mt-1">Multi-tenant client accounts</p>
+              <div className="text-3xl font-black text-white">{metrics.companies}</div>
+              <p className="text-[10px] text-slate-500 mt-1">{janusIntegratedCount} Janus integrated</p>
             </CardContent>
           </Card>
 
           <Card className="bg-slate-900/40 border-slate-800/80 backdrop-blur rounded-2xl hover:border-blue-500/30 transition-all duration-300 shadow-xl group">
             <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-              <CardTitle className="text-xs font-bold uppercase tracking-wider text-slate-400">Total Buildings</CardTitle>
+              <CardTitle className="text-xs font-bold uppercase tracking-wider text-slate-400">Buildings</CardTitle>
               <div className="p-2 bg-blue-500/10 rounded-xl text-blue-400 group-hover:scale-110 transition-transform">
-                <HardDrive className="h-4.5 w-4.5" />
+                <HardDrive className="h-4 w-4" />
               </div>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-black text-white">{metrics.buildings}</div>
+              <div className="text-3xl font-black text-white">{metrics.buildings}</div>
               <p className="text-[10px] text-slate-500 mt-1">Managed legal entities</p>
             </CardContent>
           </Card>
 
           <Card className="bg-slate-900/40 border-slate-800/80 backdrop-blur rounded-2xl hover:border-emerald-500/30 transition-all duration-300 shadow-xl group">
             <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-              <CardTitle className="text-xs font-bold uppercase tracking-wider text-slate-400">Registered Users</CardTitle>
+              <CardTitle className="text-xs font-bold uppercase tracking-wider text-slate-400">Users</CardTitle>
               <div className="p-2 bg-emerald-500/10 rounded-xl text-emerald-400 group-hover:scale-110 transition-transform">
-                <Users className="h-4.5 w-4.5" />
+                <Users className="h-4 w-4" />
               </div>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-black text-white">{metrics.users}</div>
-              <p className="text-[10px] text-slate-500 mt-1">Active staff & board profiles</p>
+              <div className="text-3xl font-black text-white">{metrics.users}</div>
+              <p className="text-[10px] text-slate-500 mt-1">Registered profiles</p>
             </CardContent>
           </Card>
 
           <Card className="bg-slate-900/40 border-slate-800/80 backdrop-blur rounded-2xl hover:border-purple-500/30 transition-all duration-300 shadow-xl group">
             <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-              <CardTitle className="text-xs font-bold uppercase tracking-wider text-slate-400">Meetings Logged</CardTitle>
+              <CardTitle className="text-xs font-bold uppercase tracking-wider text-slate-400">Meetings</CardTitle>
               <div className="p-2 bg-purple-500/10 rounded-xl text-purple-400 group-hover:scale-110 transition-transform">
-                <Calendar className="h-4.5 w-4.5" />
+                <Calendar className="h-4 w-4" />
               </div>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-black text-white">{metrics.meetings}</div>
-              <p className="text-[10px] text-slate-500 mt-1">Total agendas & minutes</p>
+              <div className="text-3xl font-black text-white">{metrics.meetings}</div>
+              <p className="text-[10px] text-slate-500 mt-1">Agendas & minutes logged</p>
             </CardContent>
           </Card>
         </div>
       )}
 
-      {/* Main content layout */}
+      {/* Second row KPIs */}
+      {!loading && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
+          <Card className="bg-slate-900/40 border-slate-800/80 backdrop-blur rounded-2xl hover:border-amber-500/30 transition-all duration-300 shadow-xl group">
+            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+              <CardTitle className="text-xs font-bold uppercase tracking-wider text-slate-400">Tasks</CardTitle>
+              <div className="p-2 bg-amber-500/10 rounded-xl text-amber-400 group-hover:scale-110 transition-transform">
+                <CheckSquare className="h-4 w-4" />
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-black text-white">{metrics.tasks}</div>
+              {overdueTasksCount > 0 && (
+                <p className="text-[10px] text-red-400 mt-1 flex items-center gap-1">
+                  <AlertTriangle className="h-3 w-3" /> {overdueTasksCount} overdue
+                </p>
+              )}
+              {overdueTasksCount === 0 && <p className="text-[10px] text-slate-500 mt-1">No overdue tasks</p>}
+            </CardContent>
+          </Card>
+
+          <Card className="bg-slate-900/40 border-slate-800/80 backdrop-blur rounded-2xl hover:border-orange-500/30 transition-all duration-300 shadow-xl group">
+            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+              <CardTitle className="text-xs font-bold uppercase tracking-wider text-slate-400">Repairs</CardTitle>
+              <div className="p-2 bg-orange-500/10 rounded-xl text-orange-400 group-hover:scale-110 transition-transform">
+                <Wrench className="h-4 w-4" />
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-black text-white">{metrics.repairs}</div>
+              <p className="text-[10px] text-slate-500 mt-1">Janus maintenance items</p>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-slate-900/40 border-slate-800/80 backdrop-blur rounded-2xl hover:border-rose-500/30 transition-all duration-300 shadow-xl group">
+            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+              <CardTitle className="text-xs font-bold uppercase tracking-wider text-slate-400">Complaints</CardTitle>
+              <div className="p-2 bg-rose-500/10 rounded-xl text-rose-400 group-hover:scale-110 transition-transform">
+                <MessageSquareWarning className="h-4 w-4" />
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-black text-white">{metrics.complaints}</div>
+              <p className="text-[10px] text-slate-500 mt-1">Tenant escalations</p>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-slate-900/40 border-slate-800/80 backdrop-blur rounded-2xl hover:border-cyan-500/30 transition-all duration-300 shadow-xl group">
+            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+              <CardTitle className="text-xs font-bold uppercase tracking-wider text-slate-400">AI Events</CardTitle>
+              <div className="p-2 bg-cyan-500/10 rounded-xl text-cyan-400 group-hover:scale-110 transition-transform">
+                <TrendingUp className="h-4 w-4" />
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-black text-white">{auditLogs.length > 0 ? `${auditLogs.length}+` : "0"}</div>
+              <p className="text-[10px] text-slate-500 mt-1">Recent LLM events logged</p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Main grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        {/* Charts & System Breakdown */}
+
+        {/* Left: charts + company table */}
         <div className="lg:col-span-2 space-y-6">
-          
+
+          {/* Charts row */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            
-            {/* Meeting status distribution */}
+
+            {/* Meeting distribution */}
             <Card className="bg-slate-900/30 border-slate-800/80 rounded-2xl p-4 shadow-lg flex flex-col justify-between">
               <div>
                 <CardTitle className="text-sm font-bold uppercase tracking-wider text-slate-300 mb-4 flex items-center gap-2">
@@ -351,33 +479,27 @@ export default function MasterAnalyticsDashboard({ onBack }: MasterAnalyticsDash
                   Meeting Distribution
                 </CardTitle>
                 <div className="h-48 w-full flex items-center justify-center">
-                  {meetingStats.length > 0 ? (
+                  {meetingStats.some((s) => s.value > 0) ? (
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
-                        <Pie
-                          data={meetingStats}
-                          innerRadius={50}
-                          outerRadius={70}
-                          paddingAngle={3}
-                          dataKey="value"
-                        >
+                        <Pie data={meetingStats} innerRadius={50} outerRadius={70} paddingAngle={3} dataKey="value">
                           {meetingStats.map((entry, index) => (
                             <Cell key={`cell-${index}`} fill={entry.color} />
                           ))}
                         </Pie>
-                        <Tooltip 
+                        <Tooltip
                           contentStyle={{ backgroundColor: "#0f172a", border: "1px solid #334155", borderRadius: "8px" }}
                           itemStyle={{ color: "#fff" }}
                         />
                       </PieChart>
                     </ResponsiveContainer>
                   ) : (
-                    <div className="text-xs text-slate-500 italic">No meetings data</div>
+                    <div className="text-xs text-slate-500 italic">No meetings yet</div>
                   )}
                 </div>
               </div>
               <div className="grid grid-cols-3 gap-2 text-center text-xs mt-2 border-t border-slate-800/60 pt-3">
-                {meetingStats.map(stat => (
+                {meetingStats.map((stat) => (
                   <div key={stat.name} className="flex flex-col items-center">
                     <span className="flex items-center gap-1.5 text-slate-400">
                       <span className="h-2 w-2 rounded-full" style={{ backgroundColor: stat.color }} />
@@ -389,13 +511,13 @@ export default function MasterAnalyticsDashboard({ onBack }: MasterAnalyticsDash
               </div>
             </Card>
 
-            {/* Task completion status */}
+            {/* Task status */}
             <Card className="bg-slate-900/30 border-slate-800/80 rounded-2xl p-4 shadow-lg flex flex-col justify-between">
               <div>
                 <div className="flex justify-between items-center mb-4">
                   <CardTitle className="text-sm font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
                     <CheckSquare className="h-4 w-4 text-emerald-400" />
-                    Task Operations
+                    Task Status
                   </CardTitle>
                   {overdueTasksCount > 0 && (
                     <span className="bg-red-500/15 border border-red-500/30 text-red-400 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
@@ -405,12 +527,12 @@ export default function MasterAnalyticsDashboard({ onBack }: MasterAnalyticsDash
                   )}
                 </div>
                 <div className="h-48 w-full">
-                  {taskStats.length > 0 ? (
+                  {taskStats.some((s) => s.value > 0) ? (
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={taskStats}>
                         <XAxis dataKey="name" stroke="#64748b" fontSize={10} tickLine={false} />
-                        <YAxis stroke="#64748b" fontSize={10} tickLine={false} axisLine={false} />
-                        <Tooltip 
+                        <YAxis stroke="#64748b" fontSize={10} tickLine={false} axisLine={false} allowDecimals={false} />
+                        <Tooltip
                           contentStyle={{ backgroundColor: "#0f172a", border: "1px solid #334155", borderRadius: "8px" }}
                           itemStyle={{ color: "#fff" }}
                           cursor={{ fill: "rgba(255,255,255,0.05)" }}
@@ -423,160 +545,239 @@ export default function MasterAnalyticsDashboard({ onBack }: MasterAnalyticsDash
                       </BarChart>
                     </ResponsiveContainer>
                   ) : (
-                    <div className="text-xs text-slate-500 italic">No tasks data</div>
+                    <div className="h-full flex items-center justify-center text-xs text-slate-500 italic">No tasks yet</div>
                   )}
                 </div>
               </div>
               <div className="text-center text-[10px] text-slate-500 italic border-t border-slate-800/60 pt-3 mt-2">
-                * Real-time metrics from organization action items list.
+                Live data from all organization task lists
               </div>
             </Card>
           </div>
 
-          {/* Janus Integration metrics */}
+          {/* User role breakdown */}
           <Card className="bg-slate-900/30 border-slate-800/80 rounded-2xl p-5 shadow-lg">
-            <CardHeader className="p-0 mb-4 flex flex-row items-center justify-between">
-              <div>
-                <CardTitle className="text-sm font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
-                  <Activity className="h-4 w-4 text-emerald-400" />
-                  Janus Core Sync Diagnostics
-                </CardTitle>
-                <CardDescription className="text-xs text-slate-400 mt-0.5">Integration telemetry and volume sync trends.</CardDescription>
-              </div>
-              <span className="bg-emerald-500/10 text-emerald-400 text-xs px-2 py-0.5 rounded-full border border-emerald-500/30">
-                ACTIVE
-              </span>
+            <CardHeader className="p-0 mb-4">
+              <CardTitle className="text-sm font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
+                <Users className="h-4 w-4 text-purple-400" />
+                User Role Breakdown
+              </CardTitle>
+              <CardDescription className="text-xs text-slate-500 mt-0.5">Distribution of all registered user roles across the platform.</CardDescription>
             </CardHeader>
-            
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="bg-slate-950/40 border border-slate-800/50 rounded-xl p-4 flex flex-col justify-center">
-                <span className="text-[10px] uppercase font-bold text-slate-500">Repairs Synced</span>
-                <span className="text-2xl font-black text-white mt-1">{metrics.repairs}</span>
-                <p className="text-[10px] text-slate-500 mt-1">Mirrored maintenance items</p>
+            {loading ? (
+              <div className="space-y-2 animate-pulse">
+                {[1, 2, 3].map((i) => <div key={i} className="h-8 bg-slate-800 rounded-lg" />)}
               </div>
-
-              <div className="bg-slate-950/40 border border-slate-800/50 rounded-xl p-4 flex flex-col justify-center">
-                <span className="text-[10px] uppercase font-bold text-slate-500">Complaints Synced</span>
-                <span className="text-2xl font-black text-white mt-1">{metrics.complaints}</span>
-                <p className="text-[10px] text-slate-500 mt-1">Tenant issue escalations</p>
+            ) : userRoleStats.length === 0 ? (
+              <p className="text-xs text-slate-500 italic">No users found.</p>
+            ) : (
+              <div className="space-y-2">
+                {userRoleStats.map((role) => {
+                  const pct = metrics.users > 0 ? Math.round((role.value / metrics.users) * 100) : 0
+                  return (
+                    <div key={role.name} className="flex items-center gap-3">
+                      <span className="text-xs text-slate-400 w-40 shrink-0">{role.name}</span>
+                      <div className="flex-1 bg-slate-800/50 rounded-full h-2 overflow-hidden">
+                        <div
+                          className="h-2 rounded-full transition-all duration-700"
+                          style={{ width: `${pct}%`, backgroundColor: role.color }}
+                        />
+                      </div>
+                      <span className="text-xs font-bold text-white w-8 text-right">{role.value}</span>
+                    </div>
+                  )
+                })}
               </div>
-
-              <div className="bg-slate-950/40 border border-slate-800/50 rounded-xl p-4 flex flex-col justify-center">
-                <span className="text-[10px] uppercase font-bold text-slate-500">API Handshake</span>
-                <span className="text-emerald-400 text-sm font-bold mt-1 flex items-center gap-1.5">
-                  <span className="h-2 w-2 rounded-full bg-emerald-500 animate-ping" />
-                  99.9% Success Rate
-                </span>
-                <p className="text-[10px] text-slate-500 mt-1">No filtering constraints applied</p>
-              </div>
-            </div>
+            )}
           </Card>
 
-          {/* Core Agent Github PR and Branch pipeline control panel */}
+          {/* Company breakdown table */}
           <Card className="bg-slate-900/30 border-slate-800/80 rounded-2xl p-5 shadow-lg">
             <CardHeader className="p-0 mb-4 flex flex-row items-center justify-between">
               <div>
                 <CardTitle className="text-sm font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
-                  <GitBranch className="h-4 w-4 text-indigo-400" />
-                  GitHub AI-Branch Merge Control Pipeline
+                  <Building2 className="h-4 w-4 text-indigo-400" />
+                  Company Overview
                 </CardTitle>
-                <CardDescription className="text-xs text-slate-400 mt-0.5">Reviews and merges AI-generated code changes securely.</CardDescription>
+                <CardDescription className="text-xs text-slate-500 mt-0.5">All registered client companies and their resource counts.</CardDescription>
               </div>
               <span className="text-[10px] bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 px-2 py-0.5 rounded-full font-bold">
-                Human-in-the-Loop Safe Mode
+                {companyRows.length} Total
               </span>
             </CardHeader>
-
-            <div className="divide-y divide-slate-800/50 border border-slate-800/50 rounded-xl bg-slate-950/20 overflow-hidden">
-              {prLogs.map(pr => (
-                <div key={pr.id} className="p-3.5 flex flex-col md:flex-row md:items-center justify-between gap-3 group hover:bg-slate-900/20 transition-colors">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold text-indigo-400 bg-indigo-950/40 px-2 py-0.5 rounded-md border border-indigo-900/50 font-mono">
-                        {pr.branch}
-                      </span>
-                      <span className="text-[10px] text-slate-500">{pr.date}</span>
+            {loading ? (
+              <div className="space-y-2 animate-pulse">
+                {[1, 2, 3].map((i) => <div key={i} className="h-12 bg-slate-800 rounded-xl" />)}
+              </div>
+            ) : companyRows.length === 0 ? (
+              <p className="text-xs text-slate-500 italic">No companies found.</p>
+            ) : (
+              <div className="divide-y divide-slate-800/50 border border-slate-800/50 rounded-xl bg-slate-950/20 overflow-hidden">
+                {companyRows.map((company) => (
+                  <div key={company.id} className="flex items-center justify-between px-4 py-3 hover:bg-slate-900/30 transition-colors group">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="h-8 w-8 rounded-lg bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 font-black text-xs shrink-0">
+                        {company.name.charAt(0).toUpperCase()}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-bold text-white truncate">{company.name}</p>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          {company.janus_integrated ? (
+                            <span className="text-[9px] font-bold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
+                              JANUS ✓
+                            </span>
+                          ) : (
+                            <span className="text-[9px] font-bold text-slate-500 bg-slate-800/50 px-1.5 py-0.5 rounded border border-slate-700/50">
+                              No Janus
+                            </span>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                    <p className="text-sm font-bold text-white leading-tight">{pr.title}</p>
-                    <div className="text-[10px] text-slate-400 flex items-center gap-1">
-                      <span>{pr.commits} commits</span>
-                      <span>•</span>
-                      <span>Verified by Core Agent Safeguards</span>
+                    <div className="flex items-center gap-4 shrink-0 text-right">
+                      <div className="text-center">
+                        <div className="text-xs font-black text-white">{company.building_count}</div>
+                        <div className="text-[9px] text-slate-500">buildings</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-xs font-black text-white">{company.user_count}</div>
+                        <div className="text-[9px] text-slate-500">users</div>
+                      </div>
+                      <ChevronRight className="h-4 w-4 text-slate-600 group-hover:text-slate-400 transition-colors" />
                     </div>
                   </div>
-
-                  <div className="flex items-center gap-3">
-                    {pr.status === "pending" ? (
-                      <Button 
-                        size="sm" 
-                        onClick={() => handleApprovePR(pr.id)}
-                        className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs"
-                      >
-                        <ShieldCheck className="h-3.5 w-3.5 mr-1" /> Approve & Merge
-                      </Button>
-                    ) : pr.status === "approved" ? (
-                      <span className="text-[11px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 rounded-lg flex items-center gap-1">
-                        <CheckCircle2 className="h-3.5 w-3.5 fill-current" /> Merged to Main
-                      </span>
-                    ) : pr.status === "linting" ? (
-                      <span className="text-[11px] font-bold text-blue-400 bg-blue-500/10 border border-blue-500/20 px-3 py-1 rounded-lg flex items-center gap-1.5">
-                        <span className="h-1.5 w-1.5 rounded-full bg-blue-400 animate-ping" />
-                        Running Linter Checks...
-                      </span>
-                    ) : (
-                      <span className="text-[11px] font-bold text-red-400 bg-red-500/10 border border-red-500/20 px-3 py-1 rounded-lg flex items-center gap-1">
-                        Failed Build
-                      </span>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </Card>
         </div>
 
-        {/* Real-time Agent Thinking Pipeline Terminal */}
+        {/* Right: Real AI audit log terminal + recent users */}
         <div className="space-y-6">
-          <Card className="bg-slate-900/40 border-slate-800/80 backdrop-blur rounded-2xl p-5 shadow-lg flex flex-col h-full min-h-[500px]">
+
+          {/* Real AI Audit Log Terminal */}
+          <Card className="bg-slate-900/40 border-slate-800/80 backdrop-blur rounded-2xl p-5 shadow-lg flex flex-col" style={{ minHeight: "460px" }}>
             <CardHeader className="p-0 mb-4 flex flex-row items-center justify-between border-b border-slate-800 pb-3">
               <div>
                 <CardTitle className="text-sm font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
                   <Terminal className="h-4 w-4 text-indigo-400" />
-                  Core Agent Thinking Pipeline Log
+                  AI Activity Log
                 </CardTitle>
-                <p className="text-[10px] text-slate-500 mt-0.5">Real-time telemetry from AI task completion processes.</p>
+                <p className="text-[10px] text-slate-500 mt-0.5">Live feed from <code className="text-indigo-400">audit_logs</code> table</p>
               </div>
               <span className="h-2 w-2 rounded-full bg-indigo-500 animate-ping" />
             </CardHeader>
 
-            {/* Terminal View Container */}
-            <div className="flex-1 bg-slate-950/80 border border-slate-800/80 rounded-xl p-4 font-mono text-[11px] leading-relaxed text-indigo-300 overflow-y-auto space-y-2 h-[450px] shadow-inner select-all">
-              {terminalLogs.map((log, index) => {
-                let colorClass = "text-indigo-300"
-                if (log.includes("[SYSTEM]")) colorClass = "text-amber-400"
-                else if (log.includes("[SUCCESS]")) colorClass = "text-emerald-400"
-                else if (log.includes("[PROCESS]")) colorClass = "text-sky-400"
-                else if (log.includes("[SYNC]")) colorClass = "text-indigo-400"
-                else if (log.includes("[AGENT]")) colorClass = "text-fuchsia-400"
-
-                return (
-                  <div key={index} className={`${colorClass} hover:bg-slate-900/40 px-1 py-0.5 rounded transition-colors`}>
-                    {log}
+            <div
+              ref={terminalRef}
+              className="flex-1 bg-slate-950/80 border border-slate-800/80 rounded-xl p-4 font-mono text-[11px] leading-relaxed overflow-y-auto space-y-1.5 shadow-inner"
+              style={{ maxHeight: "380px" }}
+            >
+              {loading ? (
+                <div className="text-slate-500 animate-pulse">Loading audit logs...</div>
+              ) : auditLogs.length === 0 ? (
+                <div className="text-slate-500 italic">No AI activity logged yet.</div>
+              ) : (
+                auditLogs.slice().reverse().map((log) => (
+                  <div
+                    key={log.id}
+                    className={`${getTerminalColor(log)} hover:bg-slate-900/40 px-1 py-0.5 rounded transition-colors`}
+                  >
+                    {formatTerminalLine(log)}
+                    {log.status === "error" && log.error_message && (
+                      <div className="text-red-300/70 pl-4 text-[10px] mt-0.5 truncate">
+                        ↳ {log.error_message}
+                      </div>
+                    )}
                   </div>
-                )
-              })}
+                ))
+              )}
               <div className="text-slate-500 animate-pulse mt-3 flex items-center gap-1">
                 <span>$</span>
                 <span className="h-3 w-1.5 bg-slate-500 inline-block" />
               </div>
             </div>
-            
-            <div className="mt-4 pt-4 border-t border-slate-800/60 flex items-center justify-between text-[10px] text-slate-400">
+
+            <div className="mt-4 pt-3 border-t border-slate-800/60 flex items-center justify-between text-[10px] text-slate-500">
               <span className="flex items-center gap-1.5">
-                <HardDrive className="h-3 w-3 text-slate-500" />
-                Host: Production VPS
+                <ShieldAlert className="h-3 w-3 text-slate-600" />
+                Source: audit_logs (last 40 events)
               </span>
-              <span>Buffer: 16 Logs</span>
+              <span>
+                {auditLogs.filter((l) => l.status === "error").length} errors
+              </span>
+            </div>
+          </Card>
+
+          {/* Recent Registrations */}
+          <Card className="bg-slate-900/40 border-slate-800/80 backdrop-blur rounded-2xl p-5 shadow-lg">
+            <CardHeader className="p-0 mb-4 flex flex-row items-center justify-between border-b border-slate-800 pb-3">
+              <div>
+                <CardTitle className="text-sm font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
+                  <Clock className="h-4 w-4 text-emerald-400" />
+                  Recent Users
+                </CardTitle>
+                <p className="text-[10px] text-slate-500 mt-0.5">Latest 5 registered profiles</p>
+              </div>
+            </CardHeader>
+            {loading ? (
+              <div className="space-y-3 animate-pulse">
+                {[1, 2, 3].map((i) => <div key={i} className="h-10 bg-slate-800 rounded-lg" />)}
+              </div>
+            ) : recentUsers.length === 0 ? (
+              <p className="text-xs text-slate-500 italic">No users found.</p>
+            ) : (
+              <div className="space-y-2">
+                {recentUsers.map((user: any) => (
+                  <div key={user.id} className="flex items-center gap-3 py-2 border-b border-slate-800/40 last:border-0">
+                    <div className="h-8 w-8 rounded-full bg-gradient-to-br from-indigo-500/30 to-purple-500/30 border border-indigo-500/20 flex items-center justify-center text-indigo-300 font-black text-xs shrink-0">
+                      {user.name?.charAt(0)?.toUpperCase() || "?"}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-bold text-white truncate">{user.name}</p>
+                      <p className="text-[10px] text-slate-500 truncate">{user.email}</p>
+                    </div>
+                    <span className={`text-[9px] font-bold px-2 py-0.5 rounded border shrink-0 ${userTypeBadge(user.user_type)}`}>
+                      {(user.user_type || "user").replace(/_/g, " ")}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+
+          {/* Janus sync status */}
+          <Card className="bg-slate-900/40 border-slate-800/80 backdrop-blur rounded-2xl p-5 shadow-lg">
+            <CardHeader className="p-0 mb-4">
+              <CardTitle className="text-sm font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
+                <Activity className="h-4 w-4 text-emerald-400" />
+                Janus Sync Status
+              </CardTitle>
+            </CardHeader>
+            <div className="space-y-3">
+              <div className="flex justify-between items-center bg-slate-950/40 border border-slate-800/50 rounded-xl px-4 py-3">
+                <div>
+                  <p className="text-[10px] uppercase font-bold text-slate-500">Repairs</p>
+                  <p className="text-xl font-black text-white">{metrics.repairs}</p>
+                </div>
+                <Wrench className="h-6 w-6 text-orange-400/40" />
+              </div>
+              <div className="flex justify-between items-center bg-slate-950/40 border border-slate-800/50 rounded-xl px-4 py-3">
+                <div>
+                  <p className="text-[10px] uppercase font-bold text-slate-500">Complaints</p>
+                  <p className="text-xl font-black text-white">{metrics.complaints}</p>
+                </div>
+                <MessageSquareWarning className="h-6 w-6 text-rose-400/40" />
+              </div>
+              <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-4 py-3">
+                <CheckCircle2 className="h-4 w-4 text-emerald-400 fill-current" />
+                <div>
+                  <p className="text-[10px] font-bold text-emerald-400">
+                    {janusIntegratedCount} of {metrics.companies} companies integrated
+                  </p>
+                  <p className="text-[9px] text-slate-500">Janus webhook active</p>
+                </div>
+              </div>
             </div>
           </Card>
         </div>

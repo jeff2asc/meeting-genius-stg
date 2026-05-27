@@ -14,6 +14,7 @@ interface UserRow {
   user_type: string
   created_at: string
   assigned_pm_id: number | null
+  company_name?: string | null
   buildings?: string[]
   roles?: string[] | null
   voting_weight?: number

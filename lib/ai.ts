@@ -1,7 +1,7 @@
-import "@/lib/polyfill";
 import { extractTasksFromTranscript as googleGeminiExtract, transcribeAudio as googleGeminiTranscribe } from "./gemini";
 import { extractTasksFromTranscriptOllama as customOllamaExtract, transcribeAudioOllama } from "./ollama";
 import { extractTasksFromTranscript as openaiExtract, transcribeAudio as openaiTranscribe } from "./openai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 interface Topic {
   id: number;
@@ -320,5 +320,110 @@ export async function transcribeAudio(
     throw error;
   }
 }
+
+/**
+ * Extracts onboarding details (company, admin, building, PM, first agenda) from meeting minutes/transcripts.
+ */
+export async function extractOnboardingFromMinutes(
+  minutesText: string,
+  customApiKey?: string
+): Promise<any> {
+  let apiKey = customApiKey || process.env.GEMINI_API_KEY || "";
+  
+  if (!apiKey) {
+    try {
+      const { createClient } = await import("./supabase");
+      const supabase = createClient();
+      const { data } = await supabase
+        .from("system_settings")
+        .select("key, value")
+        .eq("key", "global_llm_api_key")
+        .single();
+      if (data?.value) {
+        apiKey = data.value;
+      }
+    } catch (e) {
+      console.error("Failed to fetch global_llm_api_key from system_settings", e);
+    }
+  }
+
+  if (!apiKey) {
+    throw new Error("Missing Gemini API Key");
+  }
+
+  const genAI = new GoogleGenerativeAI(apiKey);
+  const model = genAI.getGenerativeModel({
+    model: "gemini-1.5-flash",
+    generationConfig: { responseMimeType: "application/json" }
+  });
+
+  const prompt = `
+Analyze the following meeting minutes or transcript and extract the details needed to define a new property management company account, building, and the first meeting agenda.
+
+Return a JSON object conforming strictly to this JSON schema structure:
+{
+  "company_name": "string (The property management company name)",
+  "corporate_admin_name": "string (The name of the administrator or chair)",
+  "corporate_admin_email": "string (If not explicitly found, construct one like admin@companydomain.com based on the company name)",
+  "corporate_admin_password": "string (Default all passwords to 'MGAdmin2026!' if not explicitly present)",
+  "building_name": "string (The name of the building or property)",
+  "building_address": "string or null (The street address of the building)",
+  "building_type": "string (One of: 'Strata/Condo', 'Rental Building', or 'Housing Co-op')",
+  "property_manager_name": "string or null (The property manager's name if mentioned)",
+  "property_manager_email": "string or null (The property manager's email if mentioned)",
+  "property_manager_password": "string (Default to 'MGAdmin2026!' if not explicitly present)",
+  "default_meeting_sections": ["string (List of default section names for meetings)"],
+  "default_meeting_types": ["string (List of default meeting type names)"],
+  "first_meeting": {
+    "title": "string (E.g., Board Meeting - October 2026)",
+    "meeting_date": "string (Format: YYYY-MM-DD)",
+    "start_time": "string or null (Format: HH:MM)",
+    "end_time": "string or null (Format: HH:MM)",
+    "location": "string or null",
+    "meeting_type": "string",
+    "strata_plan_number": "string or null (E.g., BCS1234)",
+    "attendees": [
+      {
+        "name": "string",
+        "email": "string",
+        "role": "string"
+      }
+    ],
+    "sections": [
+      {
+        "title": "string (Section title, e.g., Call to Order, Old Business, New Business)",
+        "topics": [
+          {
+            "title": "string (Topic title, e.g., Approval of minutes, Plumbing repair)",
+            "description": "string or null (Detailed description or notes for the topic)"
+          }
+        ]
+      }
+    ]
+  }
+}
+
+Make sure to construct valid and logical email addresses if they are missing from the minutes.
+Default all passwords to "MGAdmin2026!" if they are not explicitly present in the minutes.
+Ensure the first_meeting contains the structural sections and topics discussed in the minutes.
+
+Minutes text:
+"""
+\${minutesText}
+"""
+`;
+
+  const result = await model.generateContent(prompt);
+  const response = await result.response;
+  const text = response.text();
+
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    console.error("Failed to parse onboarding JSON from Gemini", e);
+    throw new Error("Failed to parse extracted onboarding details from minutes");
+  }
+}
+
 
 

@@ -13,6 +13,7 @@ interface UserCardProps {
     buildings?: string[]
     roles?: string[] | null
     voting_weight?: number
+    company_name?: string | null
   }
   onEdit?: (userId: number) => void
   onDelete?: (userId: number) => void
@@ -81,6 +82,15 @@ export default function UserCard({ user, onEdit, onDelete }: UserCardProps) {
           <div className="flex-1">
             <h3 className="font-semibold text-foreground">{user.name}</h3>
             <p className="text-sm text-muted-foreground">{user.email}</p>
+
+            {user.company_name && (
+              <div className="mt-1">
+                <span className="text-[11px] font-medium inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-100">
+                  <Briefcase className="h-3 w-3" />
+                  {user.company_name}
+                </span>
+              </div>
+            )}
 
             {user.buildings && user.buildings.length > 0 ? (
               <div className="flex flex-wrap gap-1 mt-2">

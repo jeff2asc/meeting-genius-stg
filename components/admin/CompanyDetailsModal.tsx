@@ -24,6 +24,8 @@ interface CompanyDetailsModalProps {
   isOpen: boolean
   onClose: () => void
   company: Company | null
+  onBuildingsChanged?: () => void
+  onUsersChanged?: () => void
 }
 
 interface User {
@@ -67,6 +69,8 @@ export default function CompanyDetailsModal({
   isOpen,
   onClose,
   company,
+  onBuildingsChanged,
+  onUsersChanged,
 }: CompanyDetailsModalProps) {
   const [users, setUsers] = useState<User[]>([])
   const [buildings, setBuildings] = useState<Building[]>([])
@@ -341,6 +345,7 @@ export default function CompanyDetailsModal({
 
       setSelectedExistingUserId("")
       setShowAttachExistingUser(false)
+      onUsersChanged?.()
 
       alert("✅ User attached to company successfully!")
     } catch (err) {
@@ -408,6 +413,7 @@ export default function CompanyDetailsModal({
       setNewPMEmail("")
       setNewPMPassword("")
       setShowCreatePM(false)
+      onUsersChanged?.()
       // 🔄 Notify Janus with full user data
       const pmData = { id: pmId, name: newPMName.trim(), email: newPMEmail.toLowerCase().trim(), user_type: "property_manager", company_id: company?.id }
       triggerJanusResync("user_created", pmData, "user")
@@ -434,22 +440,57 @@ export default function CompanyDetailsModal({
     setError(null)
 
     try {
-      const { error: insertError } = await supabase.from("buildings").insert({
-        name: newBuildingName.trim(),
-        address: newBuildingAddress.trim() || null,
-        city: newBuildingCity.trim() || null,
-        province: newBuildingProvince.trim() || null,
-        postal_code: newBuildingPostalCode.trim() || null,
-        country: newBuildingCountry.trim() || null,
-        company_id: company?.id,
-        manager_id: selectedManagerId,
-      })
+      const combinedAddress = [
+        newBuildingAddress.trim(),
+        newBuildingCity.trim(),
+        newBuildingProvince.trim(),
+        newBuildingPostalCode.trim(),
+        newBuildingCountry.trim()
+      ].filter(Boolean).join(', ')
+
+      const provinceCode =
+        newBuildingProvince.trim().toUpperCase() === "BRITISH COLUMBIA" || newBuildingProvince.trim().toUpperCase() === "BC"
+          ? "BC"
+          : newBuildingProvince.trim().toUpperCase() === "ONTARIO" || newBuildingProvince.trim().toUpperCase() === "ON"
+            ? "ON"
+            : newBuildingProvince.trim().length <= 3
+              ? newBuildingProvince.trim().toUpperCase()
+              : null
+
+      const { data: newBuilding, error: insertError } = await supabase
+        .from("buildings")
+        .insert({
+          name: newBuildingName.trim(),
+          address: combinedAddress || null,
+          province_code: provinceCode,
+          company_id: company?.id,
+          manager_id: selectedManagerId,
+          building_type: "Strata/Condo",
+          primary_color: "#3b82f6",
+          timezone: "America/Vancouver",
+        })
+        .select()
+        .single()
 
       if (insertError) {
         console.error("Error adding building:", insertError)
         setError("Failed to add building")
         setSavingBuilding(false)
         return
+      }
+
+      // Assign property manager to building in user_buildings
+      if (newBuilding && selectedManagerId) {
+        const { error: pmAssignError } = await supabase
+          .from("user_buildings")
+          .insert({
+            user_id: selectedManagerId,
+            building_id: newBuilding.id,
+          })
+
+        if (pmAssignError) {
+          console.error("Error assigning property manager to building:", pmAssignError)
+        }
       }
 
       setNewBuildingName("")
@@ -461,17 +502,10 @@ export default function CompanyDetailsModal({
       setSelectedManagerId(null)
       setShowAddBuilding(false)
       await fetchCompanyData()
+      onBuildingsChanged?.()
+      
       // 🔄 Notify Janus with full building data
-      triggerJanusResync("building_created", { 
-        name: newBuildingName.trim(), 
-        address: newBuildingAddress.trim(), 
-        city: newBuildingCity.trim(),
-        province: newBuildingProvince.trim(),
-        postal_code: newBuildingPostalCode.trim(),
-        country: newBuildingCountry.trim(),
-        company_id: company?.id, 
-        manager_id: selectedManagerId 
-      }, "building")
+      triggerJanusResync("building_created", newBuilding, "building")
     } catch (err) {
       console.error("Unexpected error:", err)
       setError("An unexpected error occurred")
@@ -505,6 +539,7 @@ export default function CompanyDetailsModal({
       triggerJanusResync('building_deleted')
 
       await fetchCompanyData()
+      onBuildingsChanged?.()
     } catch (err) {
       console.error("Unexpected error:", err)
     }
@@ -560,6 +595,7 @@ export default function CompanyDetailsModal({
       setNewAdminPassword("")
       setShowAddAdmin(false)
       await fetchCompanyData()
+      onUsersChanged?.()
       // 🔄 Notify Janus with full admin user data
       triggerJanusResync("user_created", {
         name: newAdminName.trim(),
@@ -610,6 +646,7 @@ export default function CompanyDetailsModal({
 
       setSelectedAdminUserId("")
       await fetchCompanyData()
+      onUsersChanged?.()
       alert("✅ User promoted to Corporate Administrator!")
     } catch (err) {
       console.error("Unexpected error promoting admin:", err)
@@ -677,6 +714,7 @@ export default function CompanyDetailsModal({
       setSelectedRoles(["user"])
       setShowAddUser(false)
       await fetchCompanyData()
+      onUsersChanged?.()
       // 🔄 Notify Janus with full user data
       triggerJanusResync("user_created", {
         name: newUserName.trim(),
@@ -789,6 +827,7 @@ export default function CompanyDetailsModal({
       triggerJanusResync('user_deleted')
 
       await fetchCompanyData()
+      onUsersChanged?.()
     } catch (err) {
       console.error("Unexpected error:", err)
     }
@@ -861,6 +900,7 @@ export default function CompanyDetailsModal({
       await fetchAvailableBuildings()
       setSelectedExistingBuildingId("")
       setShowAttachExisting(false)
+      onBuildingsChanged?.()
     } catch (err) {
       console.error("Unexpected error attaching building:", err)
       setError("An unexpected error occurred while attaching building")
