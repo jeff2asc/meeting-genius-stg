@@ -11,7 +11,9 @@ import CreateMeetingModal from "@/components/create-meeting-modal"
 import LoginForm from "@/components/login-form"
 import ProfileSettingsModal from "@/components/ProfileSettingsModal"
 import GeniusWordsManager from "@/components/GeniusWordsManager"
+import ImpersonationBanner from "@/components/ImpersonationBanner"
 import { isLoggedIn, getCurrentUser, clearCurrentUser } from "@/lib/supabase"
+import { isImpersonating } from "@/lib/impersonation"
 import { canAccessAdmin, canCreateMeeting, getUserTypeDisplayName, canAccessIntegrations, isMaster } from "@/lib/permissions"
 import MasterAnalyticsDashboard from "@/components/MasterAnalyticsDashboard"
 import IntegrationsPage from "@/components/IntegrationsPage"
@@ -249,9 +251,13 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen bg-background">
+    <main className={`min-h-screen bg-background${isImpersonating() ? " pt-10" : ""}`}>
+      {/* Impersonation banner — master-only, shown when viewing as another user */}
+      {isImpersonating() && currentUser && (
+        <ImpersonationBanner viewingAs={currentUser.name} />
+      )}
       {/* Top Navigation */}
-      <div className="fixed top-2.5 right-2.5 sm:top-4 sm:right-4 z-50 flex items-center gap-1.5 sm:gap-2">
+      <div className={`fixed ${isImpersonating() ? "top-[42px]" : "top-2.5 sm:top-4"} right-2.5 sm:right-4 z-50 flex items-center gap-1.5 sm:gap-2`}>
         {userCanAccessAdmin && currentScreen !== "admin" && (
           <Button
             onClick={handleAdminClick}

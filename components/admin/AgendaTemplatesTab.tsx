@@ -15,6 +15,7 @@ interface Building {
   company_id: number | null
   created_at: string;
   logo_url?: string | null;
+  companies?: { logo_url: string | null } | null;
 }
 
 interface AgendaTemplatesTabProps {
@@ -165,6 +166,7 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
   const [sections, setSections] = useState<Section[]>([])
   const [topics, setTopics] = useState<Topic[]>([])
   const [loadingMeeting, setLoadingMeeting] = useState(false)
+  const [companyLogoUrl, setCompanyLogoUrl] = useState<string | null>(null)
 
   // Save to history
   const saveToHistory = useCallback(() => {
@@ -229,6 +231,19 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
 
     setLoadingMeeting(true)
     try {
+      // Fetch company logo directly from the building's company
+      const building = buildings.find(b => b.id === selectedBuildingId)
+      if (building?.company_id) {
+        const { data: companyData } = await supabase
+          .from("companies")
+          .select("logo_url")
+          .eq("id", building.company_id)
+          .single()
+        setCompanyLogoUrl(companyData?.logo_url || null)
+      } else {
+        setCompanyLogoUrl(building?.logo_url || null)
+      }
+
       const { data: meetingData, error: meetingError } = await supabase
         .from("meetings")
         .select(`
@@ -244,7 +259,7 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
             )
           )
         `)
-        .eq("buildings.id", selectedBuildingId)
+        .eq("building_id", selectedBuildingId)
         .order("meeting_date", { ascending: false })
         .limit(1)
         .single()
@@ -279,7 +294,7 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
             name: building?.name || "Select a Building",
             address: building?.address || "",
             logo_url: building?.logo_url || null,
-            companies: null
+            companies: (building as any)?.companies || null
           }
         }
 
@@ -701,9 +716,9 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
                                     boxShadow: '0 4px 12px rgba(0,0,0,0.3)'
                                   }}
                                 >
-                                  {meeting?.buildings?.logo_url || meeting?.buildings?.companies?.logo_url ? (
+                                  {meeting?.buildings?.logo_url || meeting?.buildings?.companies?.logo_url || companyLogoUrl ? (
                                     <img
-                                      src={meeting?.buildings?.logo_url || meeting?.buildings?.companies?.logo_url || ''}
+                                      src={meeting?.buildings?.logo_url || meeting?.buildings?.companies?.logo_url || companyLogoUrl || ''}
                                       alt="Logo"
                                       style={{
                                         maxWidth: '70px',

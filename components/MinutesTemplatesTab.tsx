@@ -16,6 +16,7 @@ interface Building {
   building_type?: string
   created_at: string;
   logo_url?: string | null;
+  companies?: { logo_url: string | null } | null;
 }
 
 interface MinutesTemplatesTabProps {
@@ -235,6 +236,7 @@ export default function MinutesTemplatesTab({
   const [meeting, setMeeting] = useState<Meeting | null>(null)
   const [attendees, setAttendees] = useState<Attendee[]>([])
   const [loadingMeeting, setLoadingMeeting] = useState(false)
+  const [companyLogoUrl, setCompanyLogoUrl] = useState<string | null>(null)
 
   const [sectionsData, setSectionsData] = useState<any[]>([])
   const [topicsData, setTopicsData] = useState<any[]>([])
@@ -318,6 +320,19 @@ export default function MinutesTemplatesTab({
   const loadMostRecentMeeting = async (buildingId: number) => {
     setLoadingMeeting(true)
     try {
+      // Fetch company logo directly — reliable regardless of meeting state
+      const building = buildings.find(b => b.id === buildingId)
+      if (building?.company_id) {
+        const { data: companyData } = await supabase
+          .from("companies")
+          .select("logo_url")
+          .eq("id", building.company_id)
+          .single()
+        setCompanyLogoUrl(companyData?.logo_url || null)
+      } else {
+        setCompanyLogoUrl(building?.logo_url || null)
+      }
+
       let { data: meetingData, error } = await supabase
         .from("meetings")
         .select(
@@ -399,7 +414,7 @@ export default function MinutesTemplatesTab({
             address: building?.address || "",
             logo_url: building?.logo_url || null,
             company_id: building?.company_id || null,
-            companies: null
+            companies: (building as any)?.companies || null
           }
         }
 
@@ -998,11 +1013,13 @@ export default function MinutesTemplatesTab({
                                   style={{ width: 80, height: 80 }}
                                 >
                                   {meeting?.buildings?.logo_url ||
-                                    meeting?.buildings?.companies?.logo_url ? (
+                                    meeting?.buildings?.companies?.logo_url ||
+                                    companyLogoUrl ? (
                                     <img
                                       src={
                                         meeting?.buildings?.logo_url ||
                                         meeting?.buildings?.companies?.logo_url ||
+                                        companyLogoUrl ||
                                         ""
                                       }
                                       alt="Logo"

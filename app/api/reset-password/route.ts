@@ -207,6 +207,35 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ success: true, message: 'Password reset successfully. You can now log in.' })
         }
 
+        // ─── ACTION: admin-set ────────────────────────────────────────────────
+        if (action === 'admin-set') {
+            const { userId, newPassword } = body
+
+            if (!userId || !newPassword) {
+                return NextResponse.json({ error: 'userId and newPassword are required' }, { status: 400 })
+            }
+
+            if (newPassword.length < 6) {
+                return NextResponse.json({ error: 'Password must be at least 6 characters' }, { status: 400 })
+            }
+
+            const salt = await bcrypt.genSalt(10)
+            const newHash = await bcrypt.hash(newPassword, salt)
+
+            const { error: updateError } = await supabase
+                .from('users')
+                .update({ password_hash: newHash })
+                .eq('id', userId)
+
+            if (updateError) {
+                console.error('[Admin Set Password] Error:', updateError)
+                return NextResponse.json({ error: 'Failed to update password' }, { status: 500 })
+            }
+
+            console.log(`[Admin Set Password] Password updated for user id=${userId}`)
+            return NextResponse.json({ success: true, message: 'Password updated successfully.' })
+        }
+
         return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
 
     } catch (error) {

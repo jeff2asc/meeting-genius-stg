@@ -1,6 +1,6 @@
 "use client"
 
-import { User, Building2, Shield, Briefcase, UserCheck, Users, Pencil, Trash2 } from "lucide-react"
+import { User, Building2, Shield, Briefcase, UserCheck, Users, Pencil, Trash2, Sparkles, KeyRound, LogIn } from "lucide-react"
 import { Card } from "@/components/ui/card"
 
 interface UserCardProps {
@@ -14,9 +14,14 @@ interface UserCardProps {
     roles?: string[] | null
     voting_weight?: number
     company_name?: string | null
+    company_id?: number | null
+    assigned_pm_id?: number | null
   }
   onEdit?: (userId: number) => void
   onDelete?: (userId: number) => void
+  onManageGeniusWords?: (user: { id: number; name: string }) => void
+  onSetPassword?: (user: { id: number; name: string; email: string }) => void
+  onImpersonate?: (user: { id: number; name: string; email: string; user_type: string; roles?: string[] | null; company_id?: number | null; assigned_pm_id?: number | null }) => void
 }
 
 const getRoleIcon = (role: string) => {
@@ -67,7 +72,7 @@ const formatRole = (role: string) => {
   return role.replace(/_/g, " ").toUpperCase()
 }
 
-export default function UserCard({ user, onEdit, onDelete }: UserCardProps) {
+export default function UserCard({ user, onEdit, onDelete, onManageGeniusWords, onSetPassword, onImpersonate }: UserCardProps) {
   // Use roles array if available, otherwise fall back to single user_type
   const roles = Array.from(new Set([user.user_type, ...(user.roles || [])]))
   const primaryRole = roles[0]
@@ -140,8 +145,46 @@ export default function UserCard({ user, onEdit, onDelete }: UserCardProps) {
             </p>
           </div>
 
-          {(onEdit || onDelete) && (
+          {(onEdit || onDelete || onManageGeniusWords || onSetPassword || onImpersonate) && (
             <div className="flex gap-1">
+              {onImpersonate && (
+                <button
+                  type="button"
+                  onClick={() => onImpersonate({
+                    id: user.id,
+                    name: user.name,
+                    email: user.email,
+                    user_type: user.user_type,
+                    roles: user.roles,
+                    company_id: user.company_id,
+                    assigned_pm_id: user.assigned_pm_id,
+                  })}
+                  className="flex h-8 w-8 items-center justify-center rounded-full border border-green-200 text-green-700 hover:bg-green-50"
+                  title="Sign in as this user"
+                >
+                  <LogIn className="h-4 w-4" />
+                </button>
+              )}
+              {onSetPassword && (
+                <button
+                  type="button"
+                  onClick={() => onSetPassword({ id: user.id, name: user.name, email: user.email })}
+                  className="flex h-8 w-8 items-center justify-center rounded-full border border-amber-200 text-amber-700 hover:bg-amber-50"
+                  title="Set password"
+                >
+                  <KeyRound className="h-4 w-4" />
+                </button>
+              )}
+              {onManageGeniusWords && (
+                <button
+                  type="button"
+                  onClick={() => onManageGeniusWords({ id: user.id, name: user.name })}
+                  className="flex h-8 w-8 items-center justify-center rounded-full border border-purple-200 text-purple-700 hover:bg-purple-50"
+                  title="Manage GeniusWords"
+                >
+                  <Sparkles className="h-4 w-4" />
+                </button>
+              )}
               {onEdit && (
                 <button
                   type="button"

@@ -61,6 +61,8 @@ interface Building {
   company_id: number | null
   building_type?: string
   created_at: string
+  logo_url?: string | null
+  companies?: { logo_url: string | null } | null
   users?: Array<{ id: number; name: string; email: string; user_type: string; unit_number?: string | null }>
   company?: { id: number; name: string } | null
   board_meeting_notice_days?: number | null
@@ -434,26 +436,33 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
       let buildingsQuery = supabase
         .from("buildings")
         .select(
-          "id, name, address, manager_id, company_id, building_type, created_at, board_meeting_notice_days, general_meeting_notice_days, notification_recipient_type, timezone"
+          "id, name, address, manager_id, company_id, building_type, created_at, board_meeting_notice_days, general_meeting_notice_days, notification_recipient_type, timezone, logo_url, companies(logo_url)"
         )
         .order("name")
 
       const activeUser = dbUser || currentUser
-      if (isMaster) {
-        // Master sees all
-      } else if (isCorporateAdmin) {
+      // Re-derive roles inside the function to avoid stale closure issues
+      const userIsMaster = checkIsMaster(activeUser)
+      const userIsCorporateAdmin = checkIsCorporateAdmin(activeUser)
+      const userIsPropManager = checkIsPropertyManager(activeUser)
+
+      if (userIsMaster) {
+        // Master sees ALL buildings across all companies — no filter applied
+      } else if (userIsCorporateAdmin) {
+        // Corporate Admin sees all buildings belonging to their company
         if (activeUser?.company_id) {
           buildingsQuery = buildingsQuery.eq("company_id", activeUser.company_id)
         } else {
+          // Corporate Admin with no company_id assigned — nothing to show
           setBuildings([])
           setLoading(false)
           return
         }
-      } else if (isPropManager && currentUser?.id) {
+      } else if (userIsPropManager && currentUser?.id) {
         // PMs see buildings in their company OR where they are manager_id OR where they are assigned in user_buildings
         const { data: myBuildings } = await supabase.from("user_buildings").select("building_id").eq("user_id", currentUser.id)
         const myIds = myBuildings?.map(b => b.building_id) || []
-        
+
         if (activeUser?.company_id) {
           buildingsQuery = buildingsQuery.or(`company_id.eq.${activeUser.company_id},manager_id.eq.${currentUser.id}${myIds.length > 0 ? `,id.in.(${myIds.join(',')})` : ''}`)
         } else {
@@ -491,7 +500,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
           users!inner(id, name, email, user_type, roles, company_id)
         `)
 
-      if (!isMaster && currentUser?.company_id) {
+      if (!userIsMaster && currentUser?.company_id) {
         ubQueryBuildings = ubQueryBuildings.eq("users.company_id", currentUser.company_id)
       }
 

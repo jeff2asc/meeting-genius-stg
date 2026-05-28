@@ -6,6 +6,10 @@ import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import UserCard from "./UserCard"
+import GeniusWordsModal from "./GeniusWordsModal"
+import SetPasswordModal from "./SetPasswordModal"
+import { startImpersonation } from "@/lib/impersonation"
+import type { User } from "@/lib/supabase"
 
 interface UserRow {
   id: number
@@ -61,6 +65,8 @@ export default function UsersTab({
   onCreateBuilding,
 }: UsersTabProps) {
   const [searchQuery, setSearchQuery] = useState("")
+  const [geniusWordsTarget, setGeniusWordsTarget] = useState<{ id: number; name: string } | null>(null)
+  const [setPasswordTarget, setSetPasswordTarget] = useState<{ id: number; name: string; email: string } | null>(null)
 
   const canManageUser = (targetUser: UserRow) => {
     if (isMaster || isCorporateAdmin || isPropManager) return true
@@ -74,25 +80,26 @@ export default function UsersTab({
     return isMaster || isCorporateAdmin
   }
 
-  // Apply search filter on top of existing filters
+  // Apply search filter on top of existing filters, always sorted A→Z by name
   const searchFilteredUsers = useMemo(() => {
-    if (!searchQuery.trim()) return filteredUsers
+    const base = searchQuery.trim()
+      ? filteredUsers.filter((user) => {
+          const query = searchQuery.toLowerCase()
+          const matchesBasic =
+            user.name.toLowerCase().includes(query) ||
+            user.email.toLowerCase().includes(query) ||
+            user.user_type.toLowerCase().replace(/_/g, " ").includes(query)
 
-    const query = searchQuery.toLowerCase()
-    return filteredUsers.filter((user) => {
-      const matchesBasic =
-        user.name.toLowerCase().includes(query) ||
-        user.email.toLowerCase().includes(query) ||
-        user.user_type.toLowerCase().replace(/_/g, " ").includes(query)
+          const roles = user.roles || []
+          const matchesRoles = roles.some((r) =>
+            r.toLowerCase().replace(/_/g, " ").includes(query)
+          )
 
-      // Also search in roles array
-      const roles = user.roles || []
-      const matchesRoles = roles.some((r) =>
-        r.toLowerCase().replace(/_/g, " ").includes(query)
-      )
+          return matchesBasic || matchesRoles
+        })
+      : filteredUsers
 
-      return matchesBasic || matchesRoles
-    })
+    return [...base].sort((a, b) => a.name.localeCompare(b.name))
   }, [filteredUsers, searchQuery])
 
   return (
@@ -209,6 +216,12 @@ export default function UsersTab({
                 user={user}
                 onEdit={canManageUser(user) ? () => onEditUser(user.id) : undefined}
                 onDelete={canDeleteUser(user) ? () => onDeleteUser(user.id) : undefined}
+                onManageGeniusWords={isMaster ? (u) => setGeniusWordsTarget(u) : undefined}
+                onSetPassword={isMaster ? (u) => setSetPasswordTarget(u) : undefined}
+                onImpersonate={isMaster ? (u) => {
+                  if (!confirm(`Sign in as ${u.name}? You'll see a banner to return to your account.`)) return
+                  startImpersonation(u as User)
+                } : undefined}
               />
             )
           })}
@@ -223,6 +236,20 @@ export default function UsersTab({
               : "No users found matching filters"}
           </p>
         </div>
+      )}
+
+      {geniusWordsTarget && (
+        <GeniusWordsModal
+          targetUser={geniusWordsTarget}
+          onClose={() => setGeniusWordsTarget(null)}
+        />
+      )}
+
+      {setPasswordTarget && (
+        <SetPasswordModal
+          targetUser={setPasswordTarget}
+          onClose={() => setSetPasswordTarget(null)}
+        />
       )}
     </>
   )
