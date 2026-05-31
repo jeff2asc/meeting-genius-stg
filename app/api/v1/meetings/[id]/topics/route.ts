@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase'
+import { createAdminClient } from '@/lib/supabase'
 
 const VALID_API_KEY = process.env.NEXT_PUBLIC_API_KEY || ''
 
@@ -14,7 +14,7 @@ export async function GET(
     }
 
     const { id } = await params
-    const supabase = createClient()
+    const supabase = createAdminClient()
     const { data, error } = await supabase
       .from('topics')
       .select('*, notes(count), decisions(count)')

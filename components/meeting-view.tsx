@@ -445,60 +445,113 @@ export default function MeetingView({
       const sectionsData = await apiClient.v1.sections.list(meetingId)
       const topicsData = await apiClient.v1.topics.list(meetingId)
 
-      const archived = topicsData.filter((t: any) => t.is_archived)
+      const archived = (topicsData || []).filter((t: any) => t.is_archived)
+      const visibleTopics = (topicsData || []).filter((t: any) => !t.is_archived)
 
-      // Fetch all task counts and attachment counts for topics in this meeting
       let taskCounts: any[] = []
       let attachmentCounts: any[] = []
-
-      if (topicsData && topicsData.length > 0) {
-        const topicIds = topicsData.map((t: any) => t.id)
-        const adminClient = supabase
-        
-        const { data: tc } = await adminClient
-          .from('tasks')
-          .select('topic_id')
-          .in('topic_id', topicIds)
-        
-        const { data: ac } = await adminClient
-          .from('topic_attachments')
-          .select('topic_id')
-          .in('topic_id', topicIds)
-          
-        taskCounts = tc || []
-        attachmentCounts = ac || []
-      }
-
-      // Fetch section attachments
       let sectionAttachments: any[] = []
-      if (sectionsData && sectionsData.length > 0) {
-        const sectionIds = sectionsData.map((s: any) => s.id)
+
+      if (visibleTopics.length > 0) {
+        const topicIds = visibleTopics.map((t: any) => t.id)
         const adminClient = supabase
-        const { data: sa } = await adminClient
-          .from('section_attachments')
-          .select('*')
-          .in('section_id', sectionIds)
-        sectionAttachments = sa || []
+
+        try {
+          const { data: tc, error: tcError } = await adminClient
+            .from("tasks")
+            .select("topic_id")
+            .in("topic_id", topicIds)
+
+          if (tcError) {
+            console.error("Task counts query failed:", tcError)
+          } else {
+            taskCounts = tc || []
+          }
+        } catch (err) {
+          console.error("Task counts query crashed:", err)
+        }
+
+        try {
+          const { data: ac, error: acError } = await adminClient
+            .from("topic_attachments")
+            .select("topic_id")
+            .in("topic_id", topicIds)
+
+          if (acError) {
+            console.error("Topic attachments query failed:", acError)
+          } else {
+            attachmentCounts = ac || []
+          }
+        } catch (err) {
+          console.error("Topic attachments query crashed:", err)
+        }
       }
 
-      const sectionsWithTopics: Section[] = (sectionsData || []).map((section) => ({
+      if ((sectionsData || []).length > 0) {
+        const sectionIds = (sectionsData || []).map((s: any) => s.id)
+        const adminClient = supabase
+
+        try {
+          const { data: sa, error: saError } = await adminClient
+            .from("section_attachments")
+            .select("*")
+            .in("section_id", sectionIds)
+
+          if (saError) {
+            console.error("Section attachments query failed:", saError)
+          } else {
+            sectionAttachments = sa || []
+          }
+        } catch (err) {
+          console.error("Section attachments query crashed:", err)
+        }
+      }
+
+      const mapTopic = (t: any): Topic => ({
+        ...t,
+        tasks: taskCounts.filter(tc => tc.topic_id === t.id).length || 0,
+        decisions: t.decisions?.[0]?.count || 0,
+        attachments: attachmentCounts.filter(ac => ac.topic_id === t.id).length || 0,
+      })
+
+      // Build all sections (including empty ones so newly-created meetings show their structure)
+      const builtSections: Section[] = (sectionsData || []).map((section: any) => ({
         ...section,
         isExpanded: expandedStates[section.id] ?? true,
         attachments: sectionAttachments.filter(sa => sa.section_id === section.id),
-        topics: topicsData
-          .filter((t: any) => t.section_id === section.id && !t.is_archived)
-          .map((t: any) => ({
-            ...t,
-            tasks: taskCounts?.filter(tc => tc.topic_id === t.id).length || 0,
-            decisions: t.decisions?.[0]?.count || 0,
-            attachments: attachmentCounts?.filter(ac => ac.topic_id === t.id).length || 0
-          }))
+        topics: visibleTopics
+          .filter((t: any) => t.section_id === section.id)
+          .map(mapTopic),
       }))
 
-      setSections(sectionsWithTopics)
+      // Topics not assigned to any section
+      const unsectionedTopics: Topic[] = visibleTopics
+        .filter((t: any) => t.section_id == null)
+        .map(mapTopic)
+
+      // Show all sections if any exist; otherwise group unsectioned topics under a fallback section
+      const finalSections: Section[] =
+        builtSections.length > 0
+          ? builtSections
+          : unsectionedTopics.length > 0
+          ? [
+              {
+                id: -1,
+                title: "Agenda Items",
+                order_index: 0,
+                topics: unsectionedTopics,
+                attachments: [],
+                isExpanded: expandedStates[-1] ?? true,
+              },
+            ]
+          : []
+
+      setSections(finalSections)
       setArchivedTopics(archived)
     } catch (err) {
       console.error("Unexpected error fetching sections/topics:", err)
+      setSections([])
+      setArchivedTopics([])
     }
   }
 

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { 
   X, 
   ChevronRight, 
@@ -54,6 +54,9 @@ export default function CreateMeetingModal({ onClose, onSuccess, buildings }: Cr
   const [step, setStep] = useState(0) // 0: Details, 1: Rollover Selection
   const [meetingTypes, setMeetingTypes] = useState<string[]>([])
   const [meetingSections, setMeetingSections] = useState<string[]>([])
+  // Ref mirrors meetingSections so createMeeting always reads the latest value
+  // even if called before the async fetchCompanyDefaults effect resolves.
+  const meetingSectionsRef = useRef<string[]>([])
   
   // Rollover Preview Data
   const [prevMeeting, setPrevMeeting] = useState<any>(null)
@@ -91,8 +94,10 @@ export default function CreateMeetingModal({ onClose, onSuccess, buildings }: Cr
       const finalMeetingTypes = meetingTypesFromVoting.length > 0 ? meetingTypesFromVoting : fallbackTypes
 
       if (!selectedBuilding || !selectedBuilding.company_id) {
+        const defaultSections = ["Call to Order", "Approval of Agenda", "Old Business / Business Arising", "New Business", "Financial Report", "Maintenance & Operations", "Correspondence", "Council Roundtable", "Adjournment"]
         setMeetingTypes(finalMeetingTypes)
-        setMeetingSections(["Call to Order", "Approval of Agenda", "Old Business / Business Arising", "New Business", "Financial Report", "Maintenance & Operations", "Correspondence", "Council Roundtable", "Adjournment"])
+        setMeetingSections(defaultSections)
+        meetingSectionsRef.current = defaultSections
         setFormData(f => ({ ...f, meetingType: finalMeetingTypes[0] || "Council Meeting" }))
         return
       }
@@ -104,8 +109,10 @@ export default function CreateMeetingModal({ onClose, onSuccess, buildings }: Cr
         .eq("id", selectedBuilding.company_id)
         .single()
 
+      const resolvedSections = company?.default_meeting_sections || ["Call to Order", "Approval of Agenda", "Old Business / Business Arising", "New Business", "Financial Report", "Maintenance & Operations", "Correspondence", "Council Roundtable", "Adjournment"]
       setMeetingTypes(finalMeetingTypes)
-      setMeetingSections(company?.default_meeting_sections || ["Call to Order", "Approval of Agenda", "Old Business / Business Arising", "New Business", "Financial Report", "Maintenance & Operations", "Correspondence", "Council Roundtable", "Adjournment"])
+      setMeetingSections(resolvedSections)
+      meetingSectionsRef.current = resolvedSections
       setFormData(f => ({ ...f, meetingType: finalMeetingTypes[0] || "Council Meeting" }))
     }
 
@@ -212,7 +219,11 @@ export default function CreateMeetingModal({ onClose, onSuccess, buildings }: Cr
       if (withRollover && prevMeeting) {
         await runExplicitRollover(meetingData.id)
       } else {
-        const sectionsToInsert = meetingSections.map((title, index) => ({
+        // Use the ref to get the latest sections value — avoids a race condition where
+        // meetingSections state is still [] if fetchCompanyDefaults hasn't resolved yet.
+        const fallbackSections = ["Call to Order", "Approval of Agenda", "Old Business / Business Arising", "New Business", "Financial Report", "Maintenance & Operations", "Correspondence", "Council Roundtable", "Adjournment"]
+        const sectionsSource = meetingSectionsRef.current.length > 0 ? meetingSectionsRef.current : fallbackSections
+        const sectionsToInsert = sectionsSource.map((title, index) => ({
           meeting_id: meetingData.id,
           title,
           order_index: index + 1,
