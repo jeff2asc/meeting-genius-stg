@@ -238,12 +238,69 @@ export default function MeetingView({
         building: meetingData.buildings?.name || "Unknown",
       })
 
+      // Auto-repair: insert company default sections if the meeting has none.
+      // The check + insert happens inside repairMissingSections to avoid races.
+      await repairMissingSections(meetingData)
+
       await fetchSectionsAndTopics()
       await checkForTranscripts()
     } catch (err) {
       console.error("Unexpected error:", err)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const repairMissingSections = async (meetingData: any) => {
+    try {
+      // Check first — only insert if there are genuinely no sections yet
+      const existing = await apiClient.v1.sections.list(meetingId)
+      if (existing && existing.length > 0) return
+
+      const fallbackSections = [
+        "Call to Order",
+        "Approval of Agenda",
+        "Old Business / Business Arising",
+        "New Business",
+        "Financial Report",
+        "Maintenance & Operations",
+        "Correspondence",
+        "Council Roundtable",
+        "Adjournment",
+      ]
+
+      let defaultSections = fallbackSections
+
+      // Try to get the company's configured default sections via the building
+      if (meetingData.building_id) {
+        const { data: building } = await supabase
+          .from("buildings")
+          .select("company_id")
+          .eq("id", meetingData.building_id)
+          .single()
+
+        if (building?.company_id) {
+          const { data: company } = await supabase
+            .from("companies")
+            .select("default_meeting_sections")
+            .eq("id", building.company_id)
+            .single()
+
+          const sections = company?.default_meeting_sections
+          if (Array.isArray(sections) && sections.length > 0) {
+            defaultSections = sections as string[]
+          }
+        }
+      }
+
+      const sectionsToInsert = defaultSections.map((title, index) => ({
+        title,
+        order_index: index + 1,
+      }))
+
+      await apiClient.v1.sections.create(meetingId, sectionsToInsert)
+    } catch (err) {
+      console.error("Failed to auto-repair missing sections:", err)
     }
   }
 
@@ -318,7 +375,6 @@ export default function MeetingView({
       const buildingId = meeting?.building_id
       const buildingName = meeting?.buildings?.name?.toLowerCase()
       const companyId = meeting?.buildings?.company_id
-      const currentUser = getCurrentUser()
       const isMaster = currentUser ? checkIsMaster(currentUser) : false
       
       const filteredRepairs = (payload.data.repairs || []).filter((r: any) => {

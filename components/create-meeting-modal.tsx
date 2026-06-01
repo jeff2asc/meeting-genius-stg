@@ -30,6 +30,7 @@ import {
   getTopicsFromMeeting,
   getVotingParameters
 } from "@/lib/supabase"
+import { apiClient } from "@/lib/api-client"
 import { getCurrentLocalDate, getCurrentLocalTime } from "@/lib/timezone"
 
 interface CreateMeetingModalProps {
@@ -192,6 +193,42 @@ export default function CreateMeetingModal({ onClose, onSuccess, buildings }: Cr
     }
   }
 
+  // Auto-populate attendees from company users with user_type/role 'attendee'.
+  // Used by both the fresh-create and rollover paths.
+  const autoPopulateAttendees = async (meetingId: number) => {
+    const selectedBuilding = buildings.find(b => b.id === formData.buildingId)
+    if (!selectedBuilding?.company_id) return
+
+    const { data: users } = await supabase
+      .from("users")
+      .select("id, name, email, user_type, roles")
+      .eq("company_id", selectedBuilding.company_id)
+
+    if (!users) return
+
+    const autoAttendees = users
+      .filter(u => {
+        const typeMatch = u.user_type?.toLowerCase() === 'attendee'
+        const roleMatch = Array.isArray(u.roles) && u.roles.some((r: string) => r.toLowerCase().includes('attendee'))
+        const stringRoleMatch = typeof u.roles === 'string' && (u.roles as string).toLowerCase().includes('attendee')
+        return typeMatch || roleMatch || stringRoleMatch
+      })
+      .map(u => ({
+        name: u.name,
+        email: u.email,
+        role: 'Attendee',
+        user_id: u.id,
+        present: false,
+      }))
+
+    if (autoAttendees.length > 0) {
+      await supabase
+        .from("meetings")
+        .update({ attendees: autoAttendees })
+        .eq("id", meetingId)
+    }
+  }
+
   const createMeeting = async (withRollover: boolean) => {
     setLoading(true)
     setError("")
@@ -217,54 +254,21 @@ export default function CreateMeetingModal({ onClose, onSuccess, buildings }: Cr
       if (insertError) throw insertError
 
       if (withRollover && prevMeeting) {
+        // Rollover: sections come from company defaults (see runExplicitRollover),
+        // attendees come from the user's selection in step 2.
         await runExplicitRollover(meetingData.id)
       } else {
-        // Use the ref to get the latest sections value — avoids a race condition where
-        // meetingSections state is still [] if fetchCompanyDefaults hasn't resolved yet.
+        // No previous meeting for this building + type → use company default sections.
         const fallbackSections = ["Call to Order", "Approval of Agenda", "Old Business / Business Arising", "New Business", "Financial Report", "Maintenance & Operations", "Correspondence", "Council Roundtable", "Adjournment"]
         const sectionsSource = meetingSectionsRef.current.length > 0 ? meetingSectionsRef.current : fallbackSections
         const sectionsToInsert = sectionsSource.map((title, index) => ({
-          meeting_id: meetingData.id,
           title,
           order_index: index + 1,
         }))
-        await supabase.from("sections").insert(sectionsToInsert)
+        await apiClient.v1.sections.create(meetingData.id, sectionsToInsert)
 
-        // ⭐ NEW: Auto-populate attendees with role 'attendee' or user_type 'attendee'
-        const selectedBuilding = buildings.find(b => b.id === formData.buildingId)
-        if (selectedBuilding?.company_id) {
-          // Fetch all eligible company users
-          const { data: users } = await supabase
-            .from("users")
-            .select("id, name, email, user_type, roles")
-            .eq("company_id", selectedBuilding.company_id)
-
-          if (users) {
-            const autoAttendees = users
-              .filter(u => {
-                const typeMatch = u.user_type?.toLowerCase() === 'attendee'
-                const roleMatch = Array.isArray(u.roles) && u.roles.some((r: string) => r.toLowerCase().includes('attendee'))
-                // Also check if roles is a string (fallback for legacy data)
-                const stringRoleMatch = typeof u.roles === 'string' && (u.roles as string).toLowerCase().includes('attendee')
-                
-                return typeMatch || roleMatch || stringRoleMatch
-              })
-              .map(u => ({
-                name: u.name,
-                email: u.email,
-                role: u.user_type?.toLowerCase() === 'attendee' ? 'Attendee' : 'Attendee',
-                user_id: u.id,
-                present: false
-              }))
-
-            if (autoAttendees.length > 0) {
-              await supabase
-                .from("meetings")
-                .update({ attendees: autoAttendees })
-                .eq("id", meetingData.id)
-            }
-          }
-        }
+        // Auto-populate attendees from company users
+        await autoPopulateAttendees(meetingData.id)
       }
 
       onSuccess()
@@ -284,23 +288,43 @@ export default function CreateMeetingModal({ onClose, onSuccess, buildings }: Cr
     const { data: oldSections } = await adminSupabase.from('sections').select('*').eq('meeting_id', prevMeeting.id).order('order_index')
     if (!oldSections) return
 
+    // ── Use the company's default section arrangement (not the previous meeting's) ──
+    const fallbackSections = ["Call to Order", "Approval of Agenda", "Old Business / Business Arising", "New Business", "Financial Report", "Maintenance & Operations", "Correspondence", "Council Roundtable", "Adjournment"]
+    const companySections = meetingSectionsRef.current.length > 0 ? meetingSectionsRef.current : fallbackSections
+
+    // Build a union: company defaults first (in order), then any extra sections from the
+    // previous meeting that aren't already covered by the company defaults.
+    const companyTitlesLower = companySections.map(s => s.toLowerCase())
+    const extraOldSections = oldSections.filter(s => !companyTitlesLower.includes(s.title.toLowerCase()))
+    const allNewSectionTitles = [...companySections, ...extraOldSections.map(s => s.title)]
+
     const sectionIdMap: Record<number, number> = {}
     const newSectionTitleMap: Record<string, number> = {}
 
-    for (const oldSec of oldSections) {
-      const { data: newSec } = await adminSupabase
-        .from('sections')
-        .insert({
-          meeting_id: newMeetingId,
-          title: oldSec.title,
-          order_index: oldSec.order_index
-        })
-        .select()
-        .single()
-      
-      if (newSec) {
-        sectionIdMap[oldSec.id] = newSec.id
-        newSectionTitleMap[newSec.title] = newSec.id
+    // Check if sections were already inserted (idempotency guard)
+    const alreadyInserted = await apiClient.v1.sections.list(String(newMeetingId))
+    if (alreadyInserted && alreadyInserted.length > 0) {
+      // Sections exist — just build the maps from what's already there
+      for (const sec of alreadyInserted) {
+        newSectionTitleMap[sec.title.toLowerCase()] = sec.id
+        for (const oldSec of oldSections) {
+          if (oldSec.title.toLowerCase() === sec.title.toLowerCase()) {
+            sectionIdMap[oldSec.id] = sec.id
+          }
+        }
+      }
+    } else {
+      // Insert all sections in one batch call
+      const sectionsPayload = allNewSectionTitles.map((title, i) => ({ title, order_index: i + 1 }))
+      const inserted = await apiClient.v1.sections.create(newMeetingId, sectionsPayload)
+
+      for (const newSec of (inserted || [])) {
+        newSectionTitleMap[newSec.title.toLowerCase()] = newSec.id
+        for (const oldSec of oldSections) {
+          if (oldSec.title.toLowerCase() === newSec.title.toLowerCase()) {
+            sectionIdMap[oldSec.id] = newSec.id
+          }
+        }
       }
     }
 
@@ -340,7 +364,7 @@ export default function CreateMeetingModal({ onClose, onSuccess, buildings }: Cr
       }
     }
 
-    const targetOldBusinessId = newSectionTitleMap["Old Business / Business Arising"]
+    const targetOldBusinessId = newSectionTitleMap["old business / business arising"]
     if (targetOldBusinessId && movedTopics.length > 0) {
       for (const topic of movedTopics) {
         sectionTopicCount[targetOldBusinessId] = (sectionTopicCount[targetOldBusinessId] || 0) + 1

@@ -93,6 +93,10 @@ export const apiClient = {
         const response = await fetchApi<{ data: any[] }>(`/v1/meetings/${meetingId}/sections`)
         return response.data
       },
+      create: async (meetingId: string | number, sections: { title: string; order_index: number }[]): Promise<any[]> => {
+        const response = await fetchApi<{ data: any[] }>(`/v1/meetings/${meetingId}/sections`, 'POST', sections)
+        return response.data
+      },
       update: async (id: number, title: string): Promise<void> => {
         await fetchApi(`/v1/sections/${id}`, 'PATCH', { title })
       },
