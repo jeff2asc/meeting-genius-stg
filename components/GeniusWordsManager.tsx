@@ -11,7 +11,7 @@ interface GeniusWord {
   shortcode: string
   description: string
   created_at: string
-  user_id: number
+  user_id: number | null
 }
 
 interface GeniusWordsManagerProps {
@@ -64,7 +64,17 @@ export default function GeniusWordsManager({ onBack }: GeniusWordsManagerProps) 
         return
       }
 
-      setGeniusWords(data || [])
+      // Deduplicate by shortcode (case-insensitive) — keeps the first occurrence.
+      // Guards against any duplicate rows that may already exist in the DB.
+      const seen = new Set<string>()
+      const unique = (data || []).filter((w) => {
+        const key = w.shortcode.toLowerCase()
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+
+      setGeniusWords(unique)
     } catch (err) {
       console.error('Unexpected error:', err)
       alert('An unexpected error occurred')
@@ -120,6 +130,16 @@ export default function GeniusWordsManager({ onBack }: GeniusWordsManagerProps) 
           return
         }
 
+        // Client-side duplicate check to prevent duplicate entries
+        const duplicate = geniusWords.find(
+          (w) => w.shortcode.toLowerCase() === shortcode.toLowerCase()
+        )
+        if (duplicate) {
+          alert('This shortcode already exists in your collection')
+          setSaving(false)
+          return
+        }
+
         const { error } = await supabase
           .from('genius_words')
           .insert({
@@ -142,6 +162,16 @@ export default function GeniusWordsManager({ onBack }: GeniusWordsManagerProps) 
 
         alert('GeniusWord created successfully')
       } else if (editingId) {
+        // Client-side duplicate check when editing (exclude current record)
+        const duplicate = geniusWords.find(
+          (w) => w.shortcode.toLowerCase() === shortcode.toLowerCase() && w.id !== editingId
+        )
+        if (duplicate) {
+          alert('This shortcode already exists in your collection')
+          setSaving(false)
+          return
+        }
+
         const { error } = await supabase
           .from('genius_words')
           .update({

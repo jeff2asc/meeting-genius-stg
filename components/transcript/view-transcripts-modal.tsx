@@ -50,86 +50,51 @@ export function ViewTranscriptsModal({ isOpen, meetingId, onClose }: ViewTranscr
   const fetchData = async () => {
     setLoading(true)
     try {
-      // 1. Fetch meeting info
-      const { data: meetingData, error: mError } = await supabase
-        .from("meetings")
-        .select("audio_filename, audio_file, audio_duration, recording_ended_at, meeting_transcript")
-        .eq("id", meetingId)
-        .single()
+      const apiKey = process.env.NEXT_PUBLIC_API_KEY || ""
 
-      // Parse audio_file (may be a Postgres bytea hex string or a JSON object)
-      if (meetingData?.audio_filename || meetingData?.audio_file) {
-        let parsedAudioFile: { url: string; path: string } | null = null
+      // 1. Fetch meeting info via server API (bypasses RLS)
+      const meetingRes = await fetch(`/api/v1/meetings/${meetingId}`, {
+        headers: { "x-api-key": apiKey }
+      })
+      const meetingJson = meetingRes.ok ? await meetingRes.json() : null
+      const meetingData = meetingJson?.data || null
 
-        if (typeof meetingData.audio_file === 'string') {
-          try {
-            let jsonString = meetingData.audio_file.trim()
-            // Decode Postgres bytea hex literal (\x followed by continuous hex pairs)
-            if (jsonString.startsWith('\\x')) {
-              const hexBody = jsonString.replace(/^\\x/, '')
-              jsonString = hexBody.replace(/([0-9a-fA-F]{2})/g, (_: string, hex: string) =>
-                String.fromCharCode(parseInt(hex, 16))
-              )
-            }
-            if (jsonString.startsWith('{')) {
-              parsedAudioFile = JSON.parse(jsonString)
-            }
-          } catch (e) {
-            console.warn("Failed to parse audio_file in modal:", e)
-          }
-        } else if (typeof meetingData.audio_file === 'object' && meetingData.audio_file !== null) {
-          parsedAudioFile = meetingData.audio_file as { url: string; path: string }
-        }
-
-        // Fallback: build URL from audio_filename
-        if (!parsedAudioFile && meetingData.audio_filename) {
-          const { data: urlData } = supabase.storage
-            .from("meeting-recordings")
-            .getPublicUrl(`meeting-recordings/${meetingData.audio_filename}`)
-          parsedAudioFile = {
-            url: urlData.publicUrl,
-            path: `meeting-recordings/${meetingData.audio_filename}`,
-          }
-        }
-
-        if (parsedAudioFile) {
-          setMeetingRecording({
-            audio_filename: meetingData.audio_filename || "",
-            audio_file: parsedAudioFile,
-            audio_duration: meetingData.audio_duration || 0,
-            recording_ended_at: meetingData.recording_ended_at || "",
-          })
-        }
+      // Set recording state from meeting data
+      if (meetingData?.audio_filename) {
+        const fn = meetingData.audio_filename
+        const storagePath = fn.includes('meeting-recordings/') ? fn : `meeting-recordings/${fn}`
+        setMeetingRecording({
+          audio_filename: fn,
+          audio_file: { url: "", path: storagePath },
+          audio_duration: meetingData.audio_duration || 0,
+          recording_ended_at: meetingData.recording_ended_at || "",
+        })
       }
 
-      // 2. Fetch transcripts from table
-      const { data: dbTranscripts, error: tError } = await supabase
-        .from("meeting_transcripts")
-        .select("*")
-        .eq("meeting_id", meetingId)
-        .order("created_at", { ascending: false })
-
-      if (tError) throw tError
+      // 2. Fetch transcripts from table via server API
+      const transcriptRes = await fetch(`/api/transcripts/list?meeting_id=${meetingId}`, {
+        headers: { "x-api-key": apiKey }
+      })
+      const transcriptJson = transcriptRes.ok ? await transcriptRes.json() : {}
+      const dbTranscripts = transcriptJson?.transcripts || []
 
       // Combine with direct transcript from meetings table
       const allTranscripts = [
         ...(meetingData?.meeting_transcript ? [{
-           id: 'main',
-           filename: 'Main Transcript',
-           transcript_text: meetingData.meeting_transcript,
-           created_at: meetingData.recording_ended_at || new Date().toISOString()
+          id: 'main',
+          filename: 'Main Transcript',
+          transcript_text: meetingData.meeting_transcript,
+          created_at: meetingData.recording_ended_at || new Date().toISOString()
         }] : []),
-        ...(dbTranscripts || [])
+        ...(Array.isArray(dbTranscripts) ? dbTranscripts : (dbTranscripts?.transcripts || []))
       ]
 
-      // Fetch content for each transcript
+      // Map transcript_text to transcript_content for display
       const transcriptsWithContent = await Promise.all(allTranscripts.map(async (t: any) => {
-        // ⭐ NEW: If the text is already in the row, use it!
         if (t.transcript_text) {
           return { ...t, transcript_content: t.transcript_text }
         }
-        
-        // Old way: fetch from file_url
+        // Fetch from file_url if not internal
         if (t.file_url && t.file_url !== 'internal') {
           try {
             const res = await fetch(t.file_url)
@@ -154,7 +119,7 @@ export function ViewTranscriptsModal({ isOpen, meetingId, onClose }: ViewTranscr
   }
 
   const handleManualTranscribe = async () => {
-    if (!meetingRecording?.audio_file?.path && !meetingRecording?.audio_file?.url) {
+    if (!meetingRecording?.audio_file?.path && !meetingRecording?.audio_filename) {
       toast.error("No recording found to transcribe")
       return
     }
@@ -163,18 +128,21 @@ export function ViewTranscriptsModal({ isOpen, meetingId, onClose }: ViewTranscr
     const apiKey = process.env.NEXT_PUBLIC_API_KEY || ""
 
     try {
-      // Get a fresh signed URL via server to avoid RLS issues
-      let audioUrl = meetingRecording.audio_file.url
-      if (meetingRecording.audio_file.path) {
-        const urlRes = await fetch(
-          `/api/transcripts/recording-url?path=${encodeURIComponent(meetingRecording.audio_file.path)}`,
-          { headers: { "x-api-key": apiKey } }
-        )
-        if (urlRes.ok) {
-          const urlJson = await urlRes.json()
-          audioUrl = urlJson.signed_url || audioUrl
-        }
+      // Always get a fresh signed URL via server (bypasses RLS)
+      const storagePath = meetingRecording.audio_file?.path ||
+        `meeting-recordings/${meetingRecording.audio_filename}`
+
+      const urlRes = await fetch(
+        `/api/transcripts/recording-url?path=${encodeURIComponent(storagePath)}`,
+        { headers: { "x-api-key": apiKey } }
+      )
+
+      if (!urlRes.ok) {
+        const urlErr = await urlRes.json().catch(() => ({}))
+        throw new Error(urlErr.error || "Could not get audio URL")
       }
+
+      const { signed_url } = await urlRes.json()
 
       const transRes = await fetch("/api/transcripts/transcribe-recording", {
         method: "POST",
@@ -184,7 +152,7 @@ export function ViewTranscriptsModal({ isOpen, meetingId, onClose }: ViewTranscr
         },
         body: JSON.stringify({
           meeting_id: String(meetingId),
-          audio_url: audioUrl,
+          audio_url: signed_url,
           user_id: currentUser?.id,
           mime_type: "audio/webm",
         }),

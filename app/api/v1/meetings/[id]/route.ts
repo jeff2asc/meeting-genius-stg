@@ -127,7 +127,7 @@ export async function GET(
       }
   
       const { id } = await params
-      const supabase = createClient()
+      const supabase = createAdminClient()
       const { data, error } = await supabase
         .from('meetings')
         .select('*, buildings(name, company_id)')

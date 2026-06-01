@@ -609,20 +609,20 @@ export default function Dashboard({
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted">
-      {/* HEADER - Only MG Logo */}
+      {/* HEADER - MG Logo + Clock */}
       <header className="border-b border-border bg-card shadow-sm sticky top-0 z-40 sm:static">
         <div className="mx-auto max-w-7xl px-4 py-3 sm:py-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <img
-                src="/MG2 logo.png"
-                alt="Meeting Genius Logo"
-                className="h-8 sm:h-10 w-auto object-contain"
-              />
-            </div>
-            <div className="flex items-center gap-4">
-              <UserClock />
-            </div>
+          <div className="flex items-center gap-3 sm:gap-4">
+            <img
+              src="/MG2 logo.png"
+              alt="Meeting Genius Logo"
+              className="h-8 sm:h-10 w-auto object-contain flex-shrink-0"
+            />
+            <UserClock
+              compact
+              className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm font-medium text-muted-foreground bg-muted/50 px-2 sm:px-3 py-1 sm:py-1.5 rounded-full border border-border/50"
+              iconClassName="h-3 sm:h-3.5 w-3 sm:w-3.5 text-primary animate-pulse"
+            />
           </div>
         </div>
       </header>

@@ -15,19 +15,22 @@ export async function POST(request: NextRequest) {
 
     const { meeting_id, audio_url, audio_data, user_id, mime_type } = await request.json();
 
-    if (!meeting_id || (!audio_url && !audio_data) || !user_id) {
-      return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+    if (!meeting_id || (!audio_url && !audio_data)) {
+      return NextResponse.json({ error: "Missing required fields: meeting_id and audio source" }, { status: 400 });
     }
 
     // ── Step 1: Get Audio Base64 ──────────────────────────────────────────
     let audioBase64: string;
     if (audio_data) {
       audioBase64 = audio_data;
-    } else {
+    } else if (audio_url) {
+      // Fetch the audio — works for both signed URLs and direct storage URLs
       const audioRes = await fetch(audio_url);
-      if (!audioRes.ok) throw new Error("Failed to fetch audio from storage");
+      if (!audioRes.ok) throw new Error(`Failed to fetch audio: ${audioRes.status} ${audioRes.statusText}`);
       const buffer = await audioRes.arrayBuffer();
       audioBase64 = Buffer.from(buffer).toString('base64');
+    } else {
+      throw new Error("No audio source provided");
     }
 
     // ── Step 2: Get Company LLM Settings ──────────────────────────────────
@@ -53,29 +56,19 @@ export async function POST(request: NextRequest) {
       company?.llm_model || undefined
     );
 
-    // ── Step 4: Save to DB ──────────────────────────────────────────────
+    // ── Step 4: Save transcript text directly to DB ──────────────────────
     const filename = `transcript_${Date.now()}.txt`;
-    const fileBuffer = Buffer.from(transcriptText, 'utf-8');
-    
-    const { error: uploadError } = await supabase.storage
-      .from("meeting-recordings")
-      .upload(`transcripts/${meeting_id}/${filename}`, fileBuffer, {
-        contentType: 'text/plain',
-        upsert: true
-      });
-
-    if (uploadError) throw uploadError;
-
-    const { data: urlData } = supabase.storage
-      .from("meeting-recordings")
-      .getPublicUrl(`transcripts/${meeting_id}/${filename}`);
 
     const { data: record, error: dbError } = await supabase
       .from("meeting_transcripts")
       .insert({
         meeting_id: parseInt(meeting_id),
         filename: filename,
-        file_url: urlData.publicUrl
+        file_url: "internal",           // marks it as DB-stored, not file-stored
+        transcript_text: transcriptText, // store text directly
+        file_size: transcriptText.length,
+        mime_type: "text/plain",
+        uploaded_by: user_id ? parseInt(user_id) : null,
       })
       .select()
       .single();
