@@ -613,15 +613,16 @@ export default function MeetingView({
 
   const checkForTranscripts = async () => {
     try {
-      const adminClient = supabase
-      const { data, error } = await adminClient
-        .from("meeting_transcripts")
-        .select("id")
-        .eq("meeting_id", parseInt(meetingId))
-        .limit(1)
-
-      if (!error && data && data.length > 0) {
-        setHasTranscript(true)
+      // ⭐ Use server-side API to bypass RLS — the anon client cannot see
+      // rows inserted by the service-role key on production.
+      const apiKey = process.env.NEXT_PUBLIC_API_KEY || ""
+      const res = await fetch(`/api/transcripts/list?meeting_id=${meetingId}`, {
+        headers: { "x-api-key": apiKey }
+      })
+      if (res.ok) {
+        const json = await res.json()
+        const count = json?.count || json?.transcripts?.length || 0
+        setHasTranscript(count > 0)
       } else {
         setHasTranscript(false)
       }
@@ -1050,7 +1051,7 @@ export default function MeetingView({
     setTimerInterval(interval)
   }
 
-  const handleStopRecording = () => {
+  const handleStopRecording = async () => {
     setIsRecording(false)
     if (timerInterval) {
       clearInterval(timerInterval)
@@ -1069,20 +1070,27 @@ export default function MeetingView({
       const fullText = `${speakerName}: ${rawText}`
       const apiKey = process.env.NEXT_PUBLIC_API_KEY || ""
 
-      // Fire-and-forget: save to meeting_transcripts table so it's
-      // visible in the Transcripts modal instantly, before audio finishes uploading.
-      fetch("/api/transcripts/upload-manual", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": apiKey,
-        },
-        body: JSON.stringify({
-          meeting_id: meetingId,
-          content: fullText,
-        }),
-      }).catch((err) => console.error("Failed to save live transcript:", err))
+      // ⭐ Await the save so we can immediately refresh the transcript indicator.
+      try {
+        await fetch("/api/transcripts/upload-manual", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": apiKey,
+          },
+          body: JSON.stringify({
+            meeting_id: meetingId,
+            content: fullText,
+          }),
+        })
+      } catch (err) {
+        console.error("Failed to save live transcript:", err)
+      }
     }
+
+    // ⭐ Refresh transcript button state after stop — whether or not there was
+    // speech text. The audio blob may also get saved shortly after.
+    await checkForTranscripts()
   }
 
   // ⭐ Handle recording completion and upload (NO auto transcript)
@@ -1123,6 +1131,7 @@ export default function MeetingView({
       setHasTranscript(true)
 
       await fetchMeetingData()
+      await checkForTranscripts()
     } catch (error) {
       console.error("❌ Unexpected error:", error)
       alert("Failed to save recording. Please try again.")
