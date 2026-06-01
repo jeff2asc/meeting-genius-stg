@@ -68,6 +68,8 @@ export default function VotingTab() {
   const [newLinkedVotingType, setNewLinkedVotingType] = useState("")
   const [editCalculationFormula, setEditCalculationFormula] = useState("")
   const [newCalculationFormula, setNewCalculationFormula] = useState("")
+  // Formula UI mode: 'simple' = percentage slider, 'custom' = expression builder
+  const [formulaMode, setFormulaMode] = useState<'simple' | 'custom'>('simple')
   const [companyUsers, setCompanyUsers] = useState<any[]>([])
   const [userLoading, setUserLoading] = useState(false)
   const [showUserModal, setShowUserModal] = useState(false)
@@ -359,6 +361,7 @@ export default function VotingTab() {
                 setNewLinkedVotingType("")
                 setNewCalculationFormula("")
                 setEditingId(null)
+                setFormulaMode('simple')
                 setParamModalOpen(true)
               }}
               className="h-8 rounded-lg font-bold border-primary/20 text-primary hover:bg-primary/5"
@@ -423,9 +426,11 @@ export default function VotingTab() {
                                 .join(',')
                             )
                             setEditCalculationFormula(param.calculation_formula || "")
+                            // Auto-detect mode: simple if it's just a number, custom otherwise
+                            const f = param.calculation_formula || ""
+                            setFormulaMode(/^\d+(\.\d+)?$/.test(f.trim()) || f.trim() === "" ? 'simple' : 'custom')
                             setIsAdding(null)
-                            setParamModalOpen(true)
-                          }}
+                            setParamModalOpen(true)                          }}
                         >
                           <Edit2 className="h-3.5 w-3.5" />
                         </Button>
@@ -916,26 +921,210 @@ export default function VotingTab() {
               </div>
             )}
 
-            {(isAdding === 'voting_type' || (editingId && parameters.find(p => p.id === editingId)?.parameter_type === 'voting_type')) && (
-              <div className="space-y-2">
-                <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Calculation Formula / Passing Threshold</Label>
-                <Input
-                  type="text"
-                  className="w-full h-11 rounded-xl bg-muted/20 font-mono text-sm"
-                  value={editingId ? editCalculationFormula : newCalculationFormula}
-                  onChange={(e) => {
-                    const val = e.target.value
-                    if (editingId) setEditCalculationFormula(val)
-                    else setNewCalculationFormula(val)
-                  }}
-                  placeholder="e.g. 75, PERCENTAGE >= 75, WEIGHT_PERCENTAGE >= 75"
-                />
-                <p className="text-[10px] text-muted-foreground leading-normal mt-1">
-                  Enter a simple percentage number (e.g. <strong>75</strong>) or a custom expression using:<br/>
-                  <code className="bg-muted px-1 py-0.5 rounded font-mono">PERCENTAGE</code>, <code className="bg-muted px-1 py-0.5 rounded font-mono">WEIGHT_PERCENTAGE</code>, <code className="bg-muted px-1 py-0.5 rounded font-mono">FOR</code>, <code className="bg-muted px-1 py-0.5 rounded font-mono">AGAINST</code>, <code className="bg-muted px-1 py-0.5 rounded font-mono">ABSTAIN</code>, <code className="bg-muted px-1 py-0.5 rounded font-mono">ACTIVE</code>, <code className="bg-muted px-1 py-0.5 rounded font-mono">TOTAL</code>, <code className="bg-muted px-1 py-0.5 rounded font-mono">WEIGHT_FOR</code>, <code className="bg-muted px-1 py-0.5 rounded font-mono">WEIGHT_AGAINST</code>, <code className="bg-muted px-1 py-0.5 rounded font-mono">WEIGHT_ACTIVE</code>.
-                </p>
-              </div>
-            )}
+            {(isAdding === 'voting_type' || (editingId && parameters.find(p => p.id === editingId)?.parameter_type === 'voting_type')) && (() => {
+              const formula = editingId ? editCalculationFormula : newCalculationFormula
+              const setFormula = (val: string) => editingId ? setEditCalculationFormula(val) : setNewCalculationFormula(val)
+
+              // Parse simple % value from formula string
+              const simplePercent = /^\d+(\.\d+)?$/.test(formula.trim())
+                ? parseFloat(formula.trim())
+                : 50
+
+              // Validate custom expression
+              const VALID_TOKENS = ['PERCENTAGE','WEIGHT_PERCENTAGE','FOR','AGAINST','ABSTAIN','ACTIVE','TOTAL','WEIGHT_FOR','WEIGHT_AGAINST','WEIGHT_ACTIVE']
+              const isValidExpression = (expr: string): boolean => {
+                if (!expr.trim()) return true
+                if (/^\d+(\.\d+)?$/.test(expr.trim())) return true
+                // Replace all valid tokens with a number placeholder, then check if it's a valid comparison
+                let sanitized = expr.trim()
+                VALID_TOKENS.forEach(t => { sanitized = sanitized.replace(new RegExp(t, 'g'), '1') })
+                // Should look like: 1 >= 1, 1 > 1, etc.
+                return /^[\d\s\+\-\*\/\.\(\)>=<!&|]+$/.test(sanitized)
+              }
+
+              const isCustomValid = isValidExpression(formula)
+
+              // Plain-English preview for simple mode
+              const previewText = (pct: number) => {
+                if (pct === 50) return `Passes when FOR votes exceed 50% of active votes (simple majority)`
+                if (pct === 100) return `Requires unanimous support — all active votes must be FOR`
+                if (pct > 66 && pct < 68) return `Passes when FOR votes reach a two-thirds (≈67%) majority`
+                if (pct === 75) return `Passes when FOR votes reach a three-quarter (75%) majority`
+                return `Passes when FOR votes reach ${pct}% of active votes`
+              }
+
+              const TOKENS = [
+                { label: 'PERCENTAGE', desc: '% of active votes' },
+                { label: 'WEIGHT_%', insert: 'WEIGHT_PERCENTAGE', desc: 'weighted %' },
+                { label: 'FOR', desc: 'votes for' },
+                { label: 'AGAINST', desc: 'votes against' },
+                { label: 'ABSTAIN', desc: 'abstentions' },
+                { label: 'ACTIVE', desc: 'total active' },
+                { label: 'TOTAL', desc: 'all voters' },
+                { label: 'W_FOR', insert: 'WEIGHT_FOR', desc: 'weighted for' },
+                { label: 'W_AGAINST', insert: 'WEIGHT_AGAINST', desc: 'weighted against' },
+                { label: 'W_ACTIVE', insert: 'WEIGHT_ACTIVE', desc: 'weighted active' },
+              ]
+
+              return (
+                <div className="space-y-3">
+                  <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                    Calculation Formula / Passing Threshold
+                  </Label>
+
+                  {/* Mode toggle */}
+                  <div className="flex rounded-xl overflow-hidden border border-border bg-muted/20 p-0.5 gap-0.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFormulaMode('simple')
+                        // When switching to simple, reset to a clean number
+                        if (!/^\d+(\.\d+)?$/.test(formula.trim())) setFormula('50')
+                      }}
+                      className={`flex-1 text-xs font-semibold py-2 rounded-lg transition-all ${
+                        formulaMode === 'simple'
+                          ? 'bg-background shadow text-foreground'
+                          : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      Simple %
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFormulaMode('custom')}
+                      className={`flex-1 text-xs font-semibold py-2 rounded-lg transition-all ${
+                        formulaMode === 'custom'
+                          ? 'bg-background shadow text-foreground'
+                          : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      Custom Expression
+                    </button>
+                  </div>
+
+                  {formulaMode === 'simple' ? (
+                    <div className="space-y-3 p-4 bg-muted/20 rounded-xl border border-border">
+                      {/* Number + slider row */}
+                      <div className="flex items-center gap-3">
+                        <div className="relative">
+                          <input
+                            type="number"
+                            min={1}
+                            max={100}
+                            step={1}
+                            value={simplePercent}
+                            onChange={e => {
+                              const v = Math.min(100, Math.max(1, parseFloat(e.target.value) || 1))
+                              setFormula(String(v))
+                            }}
+                            className="w-20 h-10 text-center font-black text-lg bg-background border border-border rounded-xl outline-none focus:ring-2 focus:ring-primary/30 pr-1"
+                          />
+                          <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-sm font-bold text-muted-foreground pointer-events-none">%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min={1}
+                          max={100}
+                          step={1}
+                          value={simplePercent}
+                          onChange={e => setFormula(String(e.target.value))}
+                          className="flex-1 accent-primary h-2 cursor-pointer"
+                        />
+                      </div>
+                      {/* Quick presets */}
+                      <div className="flex gap-1.5 flex-wrap">
+                        {[50, 67, 75, 100].map(pct => (
+                          <button
+                            key={pct}
+                            type="button"
+                            onClick={() => setFormula(String(pct))}
+                            className={`text-[11px] font-bold px-2.5 py-1 rounded-lg border transition-all ${
+                              simplePercent === pct
+                                ? 'bg-primary text-white border-primary shadow-sm'
+                                : 'bg-background border-border text-muted-foreground hover:border-primary/40 hover:text-foreground'
+                            }`}
+                          >
+                            {pct === 50 ? '50% Majority' : pct === 67 ? '67% Super' : pct === 75 ? '75% Three-Quarter' : '100% Unanimous'}
+                          </button>
+                        ))}
+                      </div>
+                      {/* Preview */}
+                      <div className="flex items-start gap-2 p-2.5 bg-primary/5 border border-primary/20 rounded-lg">
+                        <span className="text-primary text-sm mt-0.5">✓</span>
+                        <p className="text-[11px] text-muted-foreground leading-relaxed">{previewText(simplePercent)}</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-3 p-4 bg-muted/20 rounded-xl border border-border">
+                      {/* Expression input */}
+                      <div className="relative">
+                        <input
+                          type="text"
+                          spellCheck={false}
+                          value={formula}
+                          onChange={e => setFormula(e.target.value)}
+                          placeholder="e.g. WEIGHT_PERCENTAGE >= 75"
+                          className={`w-full h-11 px-3 font-mono text-sm bg-background border rounded-xl outline-none focus:ring-2 transition-all ${
+                            formula && !isCustomValid
+                              ? 'border-red-400 focus:ring-red-400/30 text-red-600'
+                              : formula && isCustomValid
+                              ? 'border-green-400 focus:ring-green-400/30'
+                              : 'border-border focus:ring-primary/30'
+                          }`}
+                        />
+                        {formula && (
+                          <span className={`absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold ${isCustomValid ? 'text-green-500' : 'text-red-500'}`}>
+                            {isCustomValid ? '✓ Valid' : '✗ Invalid'}
+                          </span>
+                        )}
+                      </div>
+                      {/* Token chips */}
+                      <div className="space-y-1.5">
+                        <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Insert variable:</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {TOKENS.map(tok => (
+                            <button
+                              key={tok.label}
+                              type="button"
+                              title={tok.desc}
+                              onClick={() => {
+                                const insert = tok.insert ?? tok.label
+                                setFormula(formula ? `${formula} ${insert}` : insert)
+                              }}
+                              className="text-[11px] font-mono font-bold px-2 py-1 rounded-lg bg-background border border-border hover:border-primary/50 hover:bg-primary/5 hover:text-primary transition-all"
+                            >
+                              {tok.label}
+                            </button>
+                          ))}
+                          {/* Operator shortcuts */}
+                          {['>=', '>', '<=', '<', '&&', '||'].map(op => (
+                            <button
+                              key={op}
+                              type="button"
+                              onClick={() => setFormula(formula ? `${formula} ${op} ` : `${op} `)}
+                              className="text-[11px] font-mono font-bold px-2 py-1 rounded-lg bg-background border border-dashed border-border hover:border-primary/50 hover:bg-primary/5 hover:text-primary transition-all text-muted-foreground"
+                            >
+                              {op}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      {/* Validation message */}
+                      {formula && !isCustomValid && (
+                        <p className="text-[11px] text-red-500 font-medium">
+                          ✗ Expression contains unrecognized tokens. Use the chips above or a plain number.
+                        </p>
+                      )}
+                      {!formula && (
+                        <p className="text-[10px] text-muted-foreground">
+                          Leave blank to use no threshold, or type a number (e.g. <code className="bg-muted px-1 rounded">75</code>) for a simple percentage.
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
           </div>
 
           <DialogFooter className="gap-3 pt-4">
