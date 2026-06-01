@@ -36,51 +36,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Missing transcript_id" }, { status: 400 });
     }
 
-    // 1. Fetch current transcript record to get the file path
-    const { data: transcript, error: fetchError } = await supabase
-      .from("meeting_transcripts")
-      .select("*")
-      .eq("id", transcript_id)
-      .single();
-
-    if (fetchError || !transcript) {
-      return NextResponse.json({ error: "Transcript not found" }, { status: 404 });
-    }
-
-    // 2. Extract path from URL (or we could have stored it separately)
-    // The URL is usually: .../meeting-transcripts/meetingId/filename
-    if (!transcript.file_url) {
-      return NextResponse.json({ error: "Transcript file URL missing" }, { status: 400 });
-    }
-    const urlParts = transcript.file_url.split('/');
-    const filename = urlParts[urlParts.length - 1];
-    const meetingId = transcript.meeting_id;
-    const filePath = `${meetingId}/${filename}`;
-
-    // 3. Re-upload to storage (overwriting)
-    const { error: uploadError } = await supabase.storage
-      .from("meeting-transcripts")
-      .upload(filePath, content, {
-        contentType: "text/plain",
-        upsert: true,
-      });
-
-    if (uploadError) {
-      throw uploadError;
-    }
-
-    // 4. Update file_size in DB
+    // Single DB update — content is stored directly in transcript_text so
+    // there is no need to fetch the record first or re-upload to Storage.
+    // This makes the save instant instead of waiting on two network round-trips.
     const { error: updateError } = await supabase
       .from("meeting_transcripts")
-      .update({ 
+      .update({
+        transcript_text: content,
         file_size: content.length,
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
       })
       .eq("id", transcript_id);
 
-    if (updateError) {
-      throw updateError;
-    }
+    if (updateError) throw updateError;
 
     return NextResponse.json({ success: true });
 

@@ -1060,6 +1060,29 @@ export default function MeetingView({
       recognition.stop()
       setRecognition(null)
     }
+
+    // ⭐ Save the live transcript immediately — don't wait for the audio upload.
+    // transcriptRef.current has the full final text right now.
+    const rawText = (transcriptRef.current + " " + interimTranscript).trim()
+    if (rawText) {
+      const speakerName = currentUser?.name || "Attendee"
+      const fullText = `${speakerName}: ${rawText}`
+      const apiKey = process.env.NEXT_PUBLIC_API_KEY || ""
+
+      // Fire-and-forget: save to meeting_transcripts table so it's
+      // visible in the Transcripts modal instantly, before audio finishes uploading.
+      fetch("/api/transcripts/upload-manual", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+        },
+        body: JSON.stringify({
+          meeting_id: meetingId,
+          content: fullText,
+        }),
+      }).catch((err) => console.error("Failed to save live transcript:", err))
+    }
   }
 
   // ⭐ Handle recording completion and upload (NO auto transcript)
@@ -1068,7 +1091,8 @@ export default function MeetingView({
       setUploadingRecording(true)
       console.log("📤 Uploading recording...")
 
-      // 🎙️ Capture the Live Transcript and add the Speaker Name
+      // The live transcript was already saved in handleStopRecording.
+      // We still send it here so the meetings row also has it as a backup.
       const rawText = (transcriptRef.current + " " + interimTranscript).trim()
       const speakerName = currentUser?.name || "Attendee"
       const fullBrowserText = rawText ? `${speakerName}: ${rawText}` : null
@@ -1096,10 +1120,7 @@ export default function MeetingView({
       }
 
       console.log("✅ Recording uploaded and meeting saved successfully!")
-      if (fullBrowserText) {
-        toast.success("Transcript captured successfully!")
-        setHasTranscript(true)
-      }
+      setHasTranscript(true)
 
       await fetchMeetingData()
     } catch (error) {

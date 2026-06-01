@@ -1,25 +1,17 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { FileText, Download, Edit2, Check, X, Loader2, Save, RefreshCw, Music } from "lucide-react"
+import { FileText, Download, Edit2, X, Loader2, Save } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { supabase, getCurrentUser } from "@/lib/supabase"
 import { toast } from "sonner"
 
 interface Transcript {
-  id: number
+  id: number | string
   filename: string
   file_url: string
   created_at: string
   transcript_content?: string
-}
-
-interface Recording {
-  audio_filename: string
-  audio_file: { url: string; path: string }
-  audio_duration: number
-  recording_ended_at: string
 }
 
 interface ViewTranscriptsModalProps {
@@ -30,14 +22,10 @@ interface ViewTranscriptsModalProps {
 
 export function ViewTranscriptsModal({ isOpen, meetingId, onClose }: ViewTranscriptsModalProps) {
   const [transcripts, setTranscripts] = useState<Transcript[]>([])
-  const [meetingRecording, setMeetingRecording] = useState<Recording | null>(null)
   const [loading, setLoading] = useState(true)
   const [editingId, setEditingId] = useState<number | string | null>(null)
   const [editContent, setEditContent] = useState("")
   const [saving, setSaving] = useState(false)
-  const [transcribing, setTranscribing] = useState(false)
-
-  const currentUser = getCurrentUser()
 
   useEffect(() => {
     if (isOpen) {
@@ -59,18 +47,6 @@ export function ViewTranscriptsModal({ isOpen, meetingId, onClose }: ViewTranscr
       const meetingJson = meetingRes.ok ? await meetingRes.json() : null
       const meetingData = meetingJson?.data || null
 
-      // Set recording state from meeting data
-      if (meetingData?.audio_filename) {
-        const fn = meetingData.audio_filename
-        const storagePath = fn.includes('meeting-recordings/') ? fn : `meeting-recordings/${fn}`
-        setMeetingRecording({
-          audio_filename: fn,
-          audio_file: { url: "", path: storagePath },
-          audio_duration: meetingData.audio_duration || 0,
-          recording_ended_at: meetingData.recording_ended_at || "",
-        })
-      }
-
       // 2. Fetch transcripts from table via server API
       const transcriptRes = await fetch(`/api/transcripts/list?meeting_id=${meetingId}`, {
         headers: { "x-api-key": apiKey }
@@ -89,15 +65,18 @@ export function ViewTranscriptsModal({ isOpen, meetingId, onClose }: ViewTranscr
         ...(Array.isArray(dbTranscripts) ? dbTranscripts : (dbTranscripts?.transcripts || []))
       ]
 
-      // Map transcript_text to transcript_content for display
+      // Map transcript_text to transcript_content for display.
+      // Prefer transcript_text (DB column) over file_url to avoid CDN cache
+      // serving stale content after an edit.
       const transcriptsWithContent = await Promise.all(allTranscripts.map(async (t: any) => {
         if (t.transcript_text) {
           return { ...t, transcript_content: t.transcript_text }
         }
-        // Fetch from file_url if not internal
+        // Fall back to fetching from file_url only when transcript_text is absent.
+        // Append a cache-busting param so the CDN doesn't serve stale content.
         if (t.file_url && t.file_url !== 'internal') {
           try {
-            const res = await fetch(t.file_url)
+            const res = await fetch(`${t.file_url}?t=${Date.now()}`)
             if (res.ok) {
               const content = await res.text()
               return { ...t, transcript_content: content }
@@ -118,73 +97,14 @@ export function ViewTranscriptsModal({ isOpen, meetingId, onClose }: ViewTranscr
     }
   }
 
-  const handleManualTranscribe = async () => {
-    if (!meetingRecording?.audio_file?.path && !meetingRecording?.audio_filename) {
-      toast.error("No recording found to transcribe")
-      return
-    }
-
-    setTranscribing(true)
-    const apiKey = process.env.NEXT_PUBLIC_API_KEY || ""
-
-    try {
-      // Always get a fresh signed URL via server (bypasses RLS)
-      const storagePath = meetingRecording.audio_file?.path ||
-        `meeting-recordings/${meetingRecording.audio_filename}`
-
-      const urlRes = await fetch(
-        `/api/transcripts/recording-url?path=${encodeURIComponent(storagePath)}`,
-        { headers: { "x-api-key": apiKey } }
-      )
-
-      if (!urlRes.ok) {
-        const urlErr = await urlRes.json().catch(() => ({}))
-        throw new Error(urlErr.error || "Could not get audio URL")
-      }
-
-      const { signed_url } = await urlRes.json()
-
-      const transRes = await fetch("/api/transcripts/transcribe-recording", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": apiKey,
-        },
-        body: JSON.stringify({
-          meeting_id: String(meetingId),
-          audio_url: signed_url,
-          user_id: currentUser?.id,
-          mime_type: "audio/webm",
-        }),
-      })
-
-      const resData = await transRes.json()
-
-      if (!transRes.ok) {
-        throw new Error(resData.error || "Transcription failed")
-      }
-
-      toast.success("AI Transcript generated successfully!")
-      fetchData()
-    } catch (err: any) {
-      console.error("Manual transcription error:", err)
-      toast.error(`Transcription failed: ${err.message}`)
-    } finally {
-      setTranscribing(false)
-    }
-  }
-
   const handleEdit = (transcript: Transcript) => {
-    setEditingId(transcript.id as number | string)
+    setEditingId(transcript.id)
     setEditContent(transcript.transcript_content || "")
   }
 
   const handleSave = async (id: number | string) => {
     setSaving(true)
     try {
-      const transcript = transcripts.find(t => t.id === id)
-      if (!transcript) return
-
       const apiKey = process.env.NEXT_PUBLIC_API_KEY || ""
       const res = await fetch("/api/transcripts/update", {
         method: "POST",
@@ -195,7 +115,7 @@ export function ViewTranscriptsModal({ isOpen, meetingId, onClose }: ViewTranscr
         body: JSON.stringify({
           transcript_id: id,
           content: editContent,
-          meeting_id: meetingId, // needed for 'main' transcript
+          meeting_id: meetingId,
         }),
       })
 
@@ -220,7 +140,7 @@ export function ViewTranscriptsModal({ isOpen, meetingId, onClose }: ViewTranscr
 
   const handleDownload = (transcript: Transcript) => {
     const element = document.createElement("a")
-    const file = new Blob([transcript.transcript_content || ""], {type: 'text/plain'})
+    const file = new Blob([transcript.transcript_content || ""], { type: "text/plain" })
     element.href = URL.createObjectURL(file)
     element.download = transcript.filename
     document.body.appendChild(element)
@@ -228,11 +148,10 @@ export function ViewTranscriptsModal({ isOpen, meetingId, onClose }: ViewTranscr
     document.body.removeChild(element)
   }
 
-  const showRetryButton = meetingRecording && transcripts.length === 0
-
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
       <Card className="w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col rounded-3xl shadow-2xl border-border/50 bg-card/95">
+        {/* Header */}
         <div className="p-6 border-b border-border flex items-center justify-between bg-muted/30">
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 bg-primary/10 rounded-xl flex items-center justify-center">
@@ -240,57 +159,33 @@ export function ViewTranscriptsModal({ isOpen, meetingId, onClose }: ViewTranscr
             </div>
             <div>
               <h2 className="text-xl font-black text-foreground">Meeting Transcripts</h2>
-              <p className="text-xs text-muted-foreground italic">AI-generated records from Gemini 1.5 Flash</p>
+              <p className="text-xs text-muted-foreground italic">Live-captured speech records</p>
             </div>
           </div>
-          <Button variant="ghost" size="icon" onClick={onClose} className="rounded-full hover:bg-red-50 hover:text-red-500 transition-colors">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onClose}
+            className="rounded-full hover:bg-red-50 hover:text-red-500 transition-colors"
+          >
             <X className="h-5 w-5" />
           </Button>
         </div>
 
+        {/* Body */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           {loading ? (
             <div className="flex flex-col items-center justify-center py-20 gap-4">
               <Loader2 className="h-10 w-10 text-primary animate-spin" />
-              <p className="text-sm text-muted-foreground animate-pulse">Fetching transcripts from the vault...</p>
+              <p className="text-sm text-muted-foreground animate-pulse">Loading transcripts...</p>
             </div>
           ) : transcripts.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-center">
-              <div className="relative mb-6">
-                 <FileText className="h-20 w-20 text-muted-foreground/10" />
-                 {meetingRecording && (
-                    <div className="absolute inset-0 flex items-center justify-center">
-                        <Music className="h-8 w-8 text-primary/40 animate-pulse" />
-                    </div>
-                 )}
-              </div>
-              
-              <h3 className="text-xl font-black text-foreground mb-2">
-                {meetingRecording ? "Recording Found, No Transcript" : "No Transcripts Yet"}
-              </h3>
-              <p className="text-sm text-muted-foreground max-w-sm mx-auto mb-8">
-                {meetingRecording 
-                  ? "We found a meeting recording but the AI transcript hasn't been generated yet. You can try generating it now."
-                  : "Record some audio during the meeting to generate AI transcripts."}
+              <FileText className="h-20 w-20 text-muted-foreground/10 mb-6" />
+              <h3 className="text-xl font-black text-foreground mb-2">No Transcripts Yet</h3>
+              <p className="text-sm text-muted-foreground max-w-sm mx-auto">
+                Start a recording during the meeting — the live transcript will appear here automatically when you stop.
               </p>
-
-              {meetingRecording && (
-                <Button 
-                    onClick={handleManualTranscribe} 
-                    disabled={transcribing}
-                    className="bg-primary hover:bg-primary/90 text-white rounded-2xl px-8 py-6 h-auto shadow-lg shadow-primary/20 gap-3 group"
-                >
-                    {transcribing ? (
-                        <Loader2 className="h-5 w-5 animate-spin" />
-                    ) : (
-                        <RefreshCw className="h-5 w-5 group-hover:rotate-180 transition-transform duration-500" />
-                    )}
-                    <div className="text-left">
-                        <div className="font-bold">Generate AI Transcript</div>
-                        <div className="text-[10px] opacity-70">Using Gemini 1.5 Flash</div>
-                    </div>
-                </Button>
-              )}
             </div>
           ) : (
             <div className="space-y-8">
@@ -298,17 +193,17 @@ export function ViewTranscriptsModal({ isOpen, meetingId, onClose }: ViewTranscr
                 <div key={t.id} className="group relative">
                   <div className="flex items-center justify-between mb-3 px-1">
                     <div className="flex items-center gap-3">
-                      <Badge variant="secondary" className="bg-primary/10 text-primary font-black text-[10px] uppercase">
-                        {new Date(t.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      <Badge className="bg-primary/10 text-primary font-black text-[10px] uppercase">
+                        {new Date(t.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                       </Badge>
                       <span className="text-xs font-medium text-muted-foreground truncate max-w-[200px]">
                         {t.filename}
                       </span>
                     </div>
                     <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Button 
-                        size="sm" 
-                        variant="ghost" 
+                      <Button
+                        size="sm"
+                        variant="ghost"
                         className="h-8 gap-2 text-xs"
                         onClick={() => handleDownload(t)}
                       >
@@ -316,9 +211,9 @@ export function ViewTranscriptsModal({ isOpen, meetingId, onClose }: ViewTranscr
                         Download
                       </Button>
                       {editingId !== t.id && (
-                        <Button 
-                          size="sm" 
-                          variant="ghost" 
+                        <Button
+                          size="sm"
+                          variant="ghost"
                           className="h-8 gap-2 text-xs text-primary"
                           onClick={() => handleEdit(t)}
                         >
@@ -343,7 +238,10 @@ export function ViewTranscriptsModal({ isOpen, meetingId, onClose }: ViewTranscr
                             Cancel
                           </Button>
                           <Button size="sm" onClick={() => handleSave(t.id)} disabled={saving}>
-                            {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-2" /> : <Save className="h-3.5 w-3.5 mr-2" />}
+                            {saving
+                              ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-2" />
+                              : <Save className="h-3.5 w-3.5 mr-2" />
+                            }
                             Save Changes
                           </Button>
                         </div>
@@ -364,9 +262,9 @@ export function ViewTranscriptsModal({ isOpen, meetingId, onClose }: ViewTranscr
   )
 }
 
-function Badge({ children, className, variant = "secondary" }: any) {
+function Badge({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
-    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 ${className}`}>
+    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${className}`}>
       {children}
     </span>
   )
