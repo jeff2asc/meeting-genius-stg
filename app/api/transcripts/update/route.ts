@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase";
+import { createAdminClient } from "@/lib/supabase";
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = createClient();
+    const supabase = createAdminClient();
     
     // API Key verification
     const apiKey = request.headers.get('x-api-key');
@@ -12,10 +12,28 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { transcript_id, content } = await request.json();
+    const { transcript_id, content, meeting_id } = await request.json();
 
-    if (!transcript_id || content === undefined) {
-      return NextResponse.json({ error: "Missing transcript_id or content" }, { status: 400 });
+    if (content === undefined) {
+      return NextResponse.json({ error: "Missing content" }, { status: 400 });
+    }
+
+    // ── "Main Transcript" — stored in meetings.meeting_transcript column ──
+    if (transcript_id === 'main') {
+      if (!meeting_id) {
+        return NextResponse.json({ error: "Missing meeting_id for main transcript" }, { status: 400 });
+      }
+      const { error: updateError } = await supabase
+        .from("meetings")
+        .update({ meeting_transcript: content })
+        .eq("id", meeting_id);
+
+      if (updateError) throw updateError;
+      return NextResponse.json({ success: true });
+    }
+
+    if (!transcript_id) {
+      return NextResponse.json({ error: "Missing transcript_id" }, { status: 400 });
     }
 
     // 1. Fetch current transcript record to get the file path

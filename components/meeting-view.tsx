@@ -1068,59 +1068,34 @@ export default function MeetingView({
       setUploadingRecording(true)
       console.log("📤 Uploading recording...")
 
-      const timestamp = new Date().toISOString().replace(/[:.]/g, "-")
-      const filename = `${meetingId}_${timestamp}.webm`
-      const filePath = `meeting-recordings/${filename}`
-
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from("meeting-recordings")
-        .upload(filePath, audioBlob, {
-          contentType: "audio/webm",
-          upsert: false,
-        })
-
-      if (uploadError) {
-        console.error("❌ Upload error:", uploadError)
-        alert("Failed to upload recording. Please try again.")
-        return
-      }
-
-      console.log("✅ Recording uploaded to storage")
-
-      const { data: urlData } = supabase.storage
-        .from("meeting-recordings")
-        .getPublicUrl(filePath)
-
-      const publicUrl = urlData.publicUrl
-
       // 🎙️ Capture the Live Transcript and add the Speaker Name
       const rawText = (transcriptRef.current + " " + interimTranscript).trim()
       const speakerName = currentUser?.name || "Attendee"
       const fullBrowserText = rawText ? `${speakerName}: ${rawText}` : null
 
-      console.log("💾 Saving everything to database...")
-      
-      const { data: updateResult, error: updateError } = await supabase
-        .from("meetings")
-        .update({
-          audio_filename: filename,
-          audio_file: { url: publicUrl, path: filePath },
-          audio_duration: duration,
-          recording_ended_at: new Date().toISOString(),
-          status: "minutes",
-          meeting_transcript: fullBrowserText // ⭐ Now includes speaker name!
-        })
-        .eq("id", parseInt(meetingId))
-        .select()
-        .single()
+      // Route upload through server-side API to bypass storage RLS
+      const formData = new FormData()
+      formData.append("file", audioBlob, `recording.webm`)
+      formData.append("meeting_id", meetingId)
+      if (currentUser?.id) formData.append("user_id", String(currentUser.id))
+      formData.append("duration", String(duration))
+      if (fullBrowserText) formData.append("browser_transcript", fullBrowserText)
 
-      if (updateError) {
-        console.error("❌ Database update error:", updateError)
-        alert(`Failed to save: ${updateError.message}`)
+      const apiKey = process.env.NEXT_PUBLIC_API_KEY || ""
+      const response = await fetch("/api/transcripts/upload-recording", {
+        method: "POST",
+        headers: { "x-api-key": apiKey },
+        body: formData,
+      })
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}))
+        console.error("❌ Upload error:", err)
+        alert("Failed to upload recording. Please try again.")
         return
       }
 
-      console.log("✅ Meeting and Transcript saved successfully!")
+      console.log("✅ Recording uploaded and meeting saved successfully!")
       if (fullBrowserText) {
         toast.success("Transcript captured successfully!")
         setHasTranscript(true)
@@ -1636,11 +1611,12 @@ export default function MeetingView({
           try {
             let jsonString = meeting.audio_file.trim()
 
-            if (jsonString.startsWith('\\x') || jsonString.includes('\\x')) {
-              const hexPattern = /\\x([0-9a-fA-F]{2})/g
-              jsonString = jsonString.replace(hexPattern, (match: string, hex: string): string => {
-                return String.fromCharCode(parseInt(hex, 16))
-              })
+            // Handle Postgres bytea hex literal: \x followed by continuous hex pairs
+            if (jsonString.startsWith('\\x') || jsonString.startsWith('\x5cx')) {
+              const hexBody = jsonString.replace(/^\\x/, '')
+              jsonString = hexBody.replace(/([0-9a-fA-F]{2})/g, (_: string, hex: string) =>
+                String.fromCharCode(parseInt(hex, 16))
+              )
             }
 
             if (jsonString.startsWith('{') || jsonString.startsWith('[')) {
@@ -1653,23 +1629,19 @@ export default function MeetingView({
           } catch (parseError) {
             console.warn("⚠️ Failed to parse audio_file JSON:", parseError)
             if (meeting?.audio_filename) {
-              audioPath = `meeting-recordings/${meeting.audio_filename}`
+              audioPath = meeting.audio_filename
             }
           }
         } else if (typeof meeting.audio_file === 'object' && meeting.audio_file !== null) {
-          audioPath = meeting.audio_file.path || null
-          audioUrl = meeting.audio_file.url || null
+          audioPath = (meeting.audio_file as any).path || null
+          audioUrl = (meeting.audio_file as any).url || null
         }
       }
 
       if (!audioPath && meeting?.audio_filename) {
-        audioPath = meeting.audio_filename.includes('meeting-recordings/')
-          ? meeting.audio_filename
-          : `meeting-recordings/${meeting.audio_filename}`
-      }
-
-      if (!audioPath && meeting?.audio_filename) {
-        audioPath = meeting.audio_filename
+        // audio_filename stores just the filename; the object key in the bucket includes the subfolder
+        const fn = meeting.audio_filename
+        audioPath = fn.includes('meeting-recordings/') ? fn : `meeting-recordings/${fn}`
       }
 
       console.log("🔍 Audio download - Path:", audioPath, "URL:", audioUrl, "Filename:", meeting?.audio_filename)
@@ -1677,42 +1649,37 @@ export default function MeetingView({
 
       if (audioPath) {
         try {
-          let pathsToTry = [audioPath]
-
-          if (audioPath.includes('meeting-recordings/')) {
-            pathsToTry.push(audioPath.replace('meeting-recordings/', ''))
-          } else {
-            pathsToTry.push(`meeting-recordings/${audioPath}`)
-          }
+          // The object key inside the bucket is exactly audioPath (e.g. "meeting-recordings/filename.webm")
+          // Don't strip or double the prefix — try the stored path first, then bare filename as fallback
+          const filename = audioPath.replace(/^meeting-recordings\//, '')
+          const pathsToTry = Array.from(new Set([audioPath, filename]))
 
           console.log("🔍 Trying paths for signed URL:", pathsToTry)
 
-          let signedUrlData = null
-          let signedUrlError = null
+          // Use server-side endpoint to generate signed URL (bypasses storage RLS)
+          const apiKey = process.env.NEXT_PUBLIC_API_KEY || ""
+          const urlRes = await fetch(
+            `/api/transcripts/recording-url?path=${encodeURIComponent(audioPath)}`,
+            { headers: { "x-api-key": apiKey } }
+          )
 
-          for (const tryPath of pathsToTry) {
-            const result = await supabase.storage
-              .from('meeting-recordings')
-              .createSignedUrl(tryPath, 3600)
-
-            if (result.data?.signedUrl && !result.error) {
-              signedUrlData = result.data
-              console.log("✅ Signed URL created for path:", tryPath)
-              break
-            } else {
-              signedUrlError = result.error
-              console.log("⚠️ Failed for path:", tryPath, result.error)
-            }
+          let signedUrl: string | null = null
+          if (urlRes.ok) {
+            const urlJson = await urlRes.json()
+            signedUrl = urlJson.signed_url || null
+            console.log("✅ Signed URL created via server for path:", urlJson.path_used)
+          } else {
+            console.warn("⚠️ Server signed URL failed:", await urlRes.text())
           }
 
-          if (!signedUrlData?.signedUrl) {
-            throw signedUrlError || new Error("Failed to create signed URL")
+          if (!signedUrl) {
+            throw new Error("Failed to create signed URL")
           }
 
-          if (signedUrlData?.signedUrl) {
+          if (signedUrl) {
             console.log("✅ Using signed URL for download")
 
-            const downloadUrl = signedUrlData.signedUrl
+            const downloadUrl = signedUrl
             const response = await fetch(downloadUrl, {
               cache: 'no-cache',
             })

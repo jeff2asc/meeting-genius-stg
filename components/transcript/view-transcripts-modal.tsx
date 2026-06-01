@@ -32,7 +32,7 @@ export function ViewTranscriptsModal({ isOpen, meetingId, onClose }: ViewTranscr
   const [transcripts, setTranscripts] = useState<Transcript[]>([])
   const [meetingRecording, setMeetingRecording] = useState<Recording | null>(null)
   const [loading, setLoading] = useState(true)
-  const [editingId, setEditingId] = useState<number | null>(null)
+  const [editingId, setEditingId] = useState<number | string | null>(null)
   const [editContent, setEditContent] = useState("")
   const [saving, setSaving] = useState(false)
   const [transcribing, setTranscribing] = useState(false)
@@ -149,30 +149,39 @@ export function ViewTranscriptsModal({ isOpen, meetingId, onClose }: ViewTranscr
   }
 
   const handleEdit = (transcript: Transcript) => {
-    setEditingId(transcript.id)
+    setEditingId(transcript.id as number | string)
     setEditContent(transcript.transcript_content || "")
   }
 
-  const handleSave = async (id: number) => {
+  const handleSave = async (id: number | string) => {
     setSaving(true)
     try {
       const transcript = transcripts.find(t => t.id === id)
       if (!transcript) return
 
-      const path = `${meetingId}/${transcript.filename}`
-      const { error: uploadError } = await supabase.storage
-        .from("meeting-transcripts")
-        .upload(path, editContent, {
-          contentType: "text/plain",
-          upsert: true
-        })
+      const apiKey = process.env.NEXT_PUBLIC_API_KEY || ""
+      const res = await fetch("/api/transcripts/update", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+        },
+        body: JSON.stringify({
+          transcript_id: id,
+          content: editContent,
+          meeting_id: meetingId, // needed for 'main' transcript
+        }),
+      })
 
-      if (uploadError) throw uploadError
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.error || "Save failed")
+      }
 
-      setTranscripts(prev => prev.map(t => 
+      setTranscripts(prev => prev.map(t =>
         t.id === id ? { ...t, transcript_content: editContent } : t
       ))
-      
+
       setEditingId(null)
       toast.success("Transcript updated")
     } catch (err: any) {
