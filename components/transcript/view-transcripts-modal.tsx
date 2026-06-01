@@ -57,6 +57,51 @@ export function ViewTranscriptsModal({ isOpen, meetingId, onClose }: ViewTranscr
         .eq("id", meetingId)
         .single()
 
+      // Parse audio_file (may be a Postgres bytea hex string or a JSON object)
+      if (meetingData?.audio_filename || meetingData?.audio_file) {
+        let parsedAudioFile: { url: string; path: string } | null = null
+
+        if (typeof meetingData.audio_file === 'string') {
+          try {
+            let jsonString = meetingData.audio_file.trim()
+            // Decode Postgres bytea hex literal (\x followed by continuous hex pairs)
+            if (jsonString.startsWith('\\x')) {
+              const hexBody = jsonString.replace(/^\\x/, '')
+              jsonString = hexBody.replace(/([0-9a-fA-F]{2})/g, (_: string, hex: string) =>
+                String.fromCharCode(parseInt(hex, 16))
+              )
+            }
+            if (jsonString.startsWith('{')) {
+              parsedAudioFile = JSON.parse(jsonString)
+            }
+          } catch (e) {
+            console.warn("Failed to parse audio_file in modal:", e)
+          }
+        } else if (typeof meetingData.audio_file === 'object' && meetingData.audio_file !== null) {
+          parsedAudioFile = meetingData.audio_file as { url: string; path: string }
+        }
+
+        // Fallback: build URL from audio_filename
+        if (!parsedAudioFile && meetingData.audio_filename) {
+          const { data: urlData } = supabase.storage
+            .from("meeting-recordings")
+            .getPublicUrl(`meeting-recordings/${meetingData.audio_filename}`)
+          parsedAudioFile = {
+            url: urlData.publicUrl,
+            path: `meeting-recordings/${meetingData.audio_filename}`,
+          }
+        }
+
+        if (parsedAudioFile) {
+          setMeetingRecording({
+            audio_filename: meetingData.audio_filename || "",
+            audio_file: parsedAudioFile,
+            audio_duration: meetingData.audio_duration || 0,
+            recording_ended_at: meetingData.recording_ended_at || "",
+          })
+        }
+      }
+
       // 2. Fetch transcripts from table
       const { data: dbTranscripts, error: tError } = await supabase
         .from("meeting_transcripts")
@@ -109,37 +154,50 @@ export function ViewTranscriptsModal({ isOpen, meetingId, onClose }: ViewTranscr
   }
 
   const handleManualTranscribe = async () => {
-    if (!meetingRecording || !meetingRecording.audio_file?.url) {
+    if (!meetingRecording?.audio_file?.path && !meetingRecording?.audio_file?.url) {
       toast.error("No recording found to transcribe")
       return
     }
 
     setTranscribing(true)
-    const documentedSecret = process.env.NEXT_PUBLIC_API_KEY || ""
+    const apiKey = process.env.NEXT_PUBLIC_API_KEY || ""
 
     try {
+      // Get a fresh signed URL via server to avoid RLS issues
+      let audioUrl = meetingRecording.audio_file.url
+      if (meetingRecording.audio_file.path) {
+        const urlRes = await fetch(
+          `/api/transcripts/recording-url?path=${encodeURIComponent(meetingRecording.audio_file.path)}`,
+          { headers: { "x-api-key": apiKey } }
+        )
+        if (urlRes.ok) {
+          const urlJson = await urlRes.json()
+          audioUrl = urlJson.signed_url || audioUrl
+        }
+      }
+
       const transRes = await fetch("/api/transcripts/transcribe-recording", {
         method: "POST",
-        headers: { 
+        headers: {
           "Content-Type": "application/json",
-          "x-api-key": documentedSecret
+          "x-api-key": apiKey,
         },
         body: JSON.stringify({
           meeting_id: String(meetingId),
-          audio_url: meetingRecording.audio_file.url,
+          audio_url: audioUrl,
           user_id: currentUser?.id,
-          mime_type: "audio/webm"
-        })
+          mime_type: "audio/webm",
+        }),
       })
 
       const resData = await transRes.json()
-      
+
       if (!transRes.ok) {
         throw new Error(resData.error || "Transcription failed")
       }
 
       toast.success("AI Transcript generated successfully!")
-      fetchData() // Refresh list
+      fetchData()
     } catch (err: any) {
       console.error("Manual transcription error:", err)
       toast.error(`Transcription failed: ${err.message}`)
