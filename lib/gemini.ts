@@ -12,12 +12,12 @@ export async function transcribeAudio(
 
   const genAI = new GoogleGenerativeAI(apiKey);
   
-  // Try models in order of preference
+  // Try models in order of preference (updated June 2026)
   const modelsToTry = [
-    "gemini-1.5-flash-latest",
-    "gemini-1.5-flash",
-    "gemini-1.5-flash-002",
+    "gemini-2.5-flash",
     "gemini-2.0-flash",
+    "gemini-2.0-flash-lite",
+    "gemini-1.5-flash-latest",
   ];
 
   let lastError = "";
@@ -48,8 +48,11 @@ export async function transcribeAudio(
       console.error(`❌ [Official SDK] Error with ${modelName}:`, err.message);
       lastError = err.message;
       if (err.message.includes("404")) continue; // Try next model
+      if (err.message.includes("503") || err.message.includes("Service Unavailable") || err.message.includes("high demand")) {
+        console.log(`⏳ ${modelName} overloaded, trying next model...`);
+        continue; // Try next model in list
+      }
       if (err.message.includes("quota") || err.message.includes("limit")) {
-        // Wait and retry once if it's a quota issue
         await new Promise(r => setTimeout(r, 2000));
         continue;
       }
@@ -70,22 +73,62 @@ export async function extractTasksFromTranscript(
   if (!apiKey) throw new Error("Missing Gemini API Key");
 
   const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({ 
-    model: customModel || "gemini-1.5-flash-latest",
-    generationConfig: { responseMimeType: "application/json" }
-  });
 
-  const prompt = `Extract action items from this transcript as JSON: ${transcriptText}`;
-  
-  const result = await model.generateContent(prompt);
-  const response = await result.response;
-  const text = response.text();
-  
-  try {
-    const parsed = JSON.parse(text);
-    return parsed.tasks || [];
-  } catch (e) {
-    console.error("Failed to parse JSON from Gemini", e);
-    return [];
+  // Try models in order — fall back if overloaded or unavailable
+  // If a custom model is provided, try it first then fall back to defaults
+  const defaultModels = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash-latest"]
+  const modelsToTry = customModel
+    ? [customModel, ...defaultModels.filter(m => m !== customModel)]
+    : defaultModels
+
+  const sectionsContext = sections && sections.length > 0
+    ? `\n\nMeeting sections and topics:\n${sections.map(s => `Section: ${s.title}\n${s.topics?.map((t: any) => `  - Topic: ${t.title}`).join('\n') || ''}`).join('\n')}`
+    : ''
+
+  const prompt = `You are analyzing a meeting transcript to extract action items and tasks.
+
+Extract all action items, tasks, and assignments from this transcript. For each task found, return:
+- description: what needs to be done
+- assigned_name: who is responsible (null if not specified)  
+- due_date: deadline in YYYY-MM-DD format (null if not specified)
+- confidence: 0.0 to 1.0 how confident you are this is a real task
+- suggested_topic_id: null (leave as null)
+- suggested_topic_title: the most relevant topic/section this belongs to (or null)
+
+Return ONLY a JSON object with a "tasks" array. No other text.
+
+Example: {"tasks": [{"description": "Send report to board", "assigned_name": "Sarah", "due_date": "2026-06-15", "confidence": 0.9, "suggested_topic_id": null, "suggested_topic_title": "Financial Report"}]}
+${sectionsContext}
+
+Transcript:
+${transcriptText}`
+
+  let lastError = ""
+  for (const modelName of modelsToTry) {
+    try {
+      console.log(`🤖 [Gemini] Trying model: ${modelName} for task extraction...`)
+      const model = genAI.getGenerativeModel({
+        model: modelName,
+        generationConfig: { responseMimeType: "application/json" }
+      })
+      const result = await model.generateContent(prompt)
+      const response = await result.response
+      const text = response.text()
+      const parsed = JSON.parse(text)
+      console.log(`✅ [Gemini] Task extraction successful with ${modelName}`)
+      return parsed.tasks || []
+    } catch (err: any) {
+      console.error(`❌ [Gemini] Error with ${modelName}:`, err.message)
+      lastError = err.message
+      if (err.message.includes("404") ||
+          err.message.includes("503") ||
+          err.message.includes("Service Unavailable") ||
+          err.message.includes("high demand")) {
+        continue // Try next model
+      }
+      throw err // Non-retryable error
+    }
   }
+
+  throw new Error(`All Gemini models failed for task extraction. Last error: ${lastError}`)
 }

@@ -15,11 +15,13 @@ import {
   Briefcase,
   ArrowLeft,
   Trash2,
+  HelpCircle,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { 
   Dialog, 
   DialogContent, 
@@ -507,10 +509,20 @@ export default function IntegrationsPage({ onBack }: { onBack: () => void }) {
                       <ExternalLink className="h-4 w-4 mr-2" />
                       View
                     </Button>
-                    <Button onClick={handleInstallJanus} variant="outline" className="flex-1 min-w-[120px] border-indigo-200 text-indigo-700 hover:bg-indigo-50">
-                      <Settings className="h-4 w-4 mr-2" />
-                      Sync Settings
-                    </Button>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button onClick={handleInstallJanus} variant="outline" className="flex-1 min-w-[120px] border-indigo-200 text-indigo-700 hover:bg-indigo-50">
+                            <Settings className="h-4 w-4 mr-2" />
+                            Sync Settings
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="max-w-xs text-xs">
+                          <p className="font-semibold mb-1">Live Sync with Janus</p>
+                          <p>Keeps your Meeting Genius data synchronized with Janus in real time. When you add or update companies, buildings, users, or tickets, those changes are pushed to Janus automatically — so both systems stay in sync without manual effort.</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
                     <Button onClick={handleUninstallJanus} variant="outline" size="icon" className="border-destructive text-destructive hover:bg-destructive/10" title="Disconnect">
                       <Trash2 className="h-4 w-4" />
                     </Button>

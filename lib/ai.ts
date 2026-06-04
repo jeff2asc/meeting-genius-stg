@@ -66,7 +66,7 @@ export async function extractTasksFromTranscript(
              const { data } = await supabase
                .from("system_settings")
                .select("key, value")
-               .in("key", ["primary_llm", "primary_llm_model", "global_llm_api_key", "ollama_host", "ollama_api_key"]);
+               .in("key", ["primary_llm", "primary_llm_model", "global_llm_api_key", "ollama_host", "ollama_api_key"]).order("updated_at", { ascending: false });
               
             if (data) {
               data.forEach(setting => {
@@ -83,7 +83,7 @@ export async function extractTasksFromTranscript(
         const { data } = await supabase
           .from("system_settings")
           .select("key, value")
-          .in("key", ["primary_llm", "primary_llm_model", "global_llm_api_key", "ollama_host", "ollama_api_key"]);
+          .in("key", ["primary_llm", "primary_llm_model", "global_llm_api_key", "ollama_host", "ollama_api_key"]).order("updated_at", { ascending: false });
 
        if (data) {
           data.forEach(setting => {
@@ -111,7 +111,7 @@ export async function extractTasksFromTranscript(
           user_id: loggingContext.userId,
           company_id: loggingContext.companyId,
           action_type: "llm_task_extraction",
-          model_name: primaryAi === "openai" ? (llmModel || "openai-gpt-4o-mini") : (primaryAi === "gemini" ? (llmModel || "gemini-1.5-flash") : "ollama-llama3.2"),
+          model_name: primaryAi === "openai" ? (llmModel || "openai-gpt-4o-mini") : (primaryAi === "gemini" ? (llmModel || "gemini-2.5-flash") : "ollama-llama3.2"),
           status,
           duration_ms: Date.now() - startTime,
           error_message: error ? (error?.message || String(error)) : undefined,
@@ -122,17 +122,30 @@ export async function extractTasksFromTranscript(
     }
   };
 
+  // Sanitize model names — prevent Ollama model names or bare provider names from being sent to Gemini/OpenAI
+  const GEMINI_PREFIXES = ['gemini']
+  const OPENAI_PREFIXES = ['gpt']
+
+  // If the model name is just "gemini" or "openai" (the provider name, not a real model), clear it
+  const sanitizedModel = llmModel === 'gemini' || llmModel === 'openai' || llmModel === 'ollama'
+    ? undefined : llmModel
+
+  const geminiModel = (sanitizedModel && GEMINI_PREFIXES.some(p => (sanitizedModel as string).startsWith(p)))
+    ? sanitizedModel : undefined
+  const openaiModel = (sanitizedModel && OPENAI_PREFIXES.some(p => (sanitizedModel as string).startsWith(p)))
+    ? sanitizedModel : undefined
+
   try {
     console.log(`🤖 Attempting extraction with provider: ${primaryAi}, model: ${llmModel || 'default'}`);
     if (primaryAi === "openai") {
-      console.log(`🌟 Extracting tasks with OpenAI (${llmModel || 'default-mini'})...`);
-      const result = await openaiExtract(transcriptText, sections, llmApiKey, llmModel);
+      console.log(`🌟 Extracting tasks with OpenAI (${openaiModel || 'default-mini'})...`);
+      const result = await openaiExtract(transcriptText, sections, llmApiKey, openaiModel);
       await logUsage("success");
       return result;
     } else if (primaryAi === "gemini") {
-      console.log(`✨ Extracting tasks with Gemini (${llmModel || 'default-flash'})...`);
+      console.log(`✨ Extracting tasks with Gemini (${geminiModel || 'gemini-2.5-flash'})...`);
       try {
-        const result = await googleGeminiExtract(transcriptText, sections, llmApiKey, llmModel);
+        const result = await googleGeminiExtract(transcriptText, sections, llmApiKey, geminiModel);
         await logUsage("success");
         return result;
       } catch (geminiError: any) {
@@ -142,7 +155,7 @@ export async function extractTasksFromTranscript(
         if (process.env.OPENAI_API_KEY || llmApiKey) {
           try {
             console.log("✨ Fallback: Attempting extraction with OpenAI...");
-            const result = await openaiExtract(transcriptText, sections, llmApiKey, llmModel);
+            const result = await openaiExtract(transcriptText, sections, process.env.OPENAI_API_KEY || llmApiKey, undefined);
             primaryAi = "openai";
             await logUsage("success");
             return result;
@@ -172,7 +185,8 @@ export async function extractTasksFromTranscript(
         if (process.env.OPENAI_API_KEY || llmApiKey) {
           try {
             console.log("✨ Attempting extraction with OpenAI...");
-            const result = await openaiExtract(transcriptText, sections, llmApiKey, llmModel);
+            // Don't pass llmModel — it may be an Ollama model name
+            const result = await openaiExtract(transcriptText, sections, process.env.OPENAI_API_KEY || llmApiKey, undefined);
             primaryAi = "openai";
             await logUsage("success");
             return result;
@@ -185,13 +199,13 @@ export async function extractTasksFromTranscript(
         if (process.env.GEMINI_API_KEY || llmApiKey) {
           try {
             console.log("✨ Fallback: Attempting extraction with Google Gemini...");
-            const result = await googleGeminiExtract(transcriptText, sections, llmApiKey, llmModel);
+            // Don't pass llmModel here — it may be an Ollama model name which Gemini won't accept
+            const result = await googleGeminiExtract(transcriptText, sections, process.env.GEMINI_API_KEY || llmApiKey, undefined);
             primaryAi = "gemini";
             await logUsage("success");
             return result;
           } catch (geminiError: any) {
             console.error("❌ Gemini extraction failed:", geminiError);
-            // If we get here, it means both OpenAI and Gemini failed
             throw new Error(`AI extraction failed. OpenAI: Quota exceeded. Gemini: ${geminiError.message || 'Unknown error'}`);
           }
         }
@@ -282,7 +296,7 @@ export async function transcribeAudio(
           user_id: loggingContext.userId,
           company_id: loggingContext.companyId,
           action_type: "llm_transcription",
-          model_name: primaryAi === "openai" ? "openai-whisper-1" : (llmModel || "gemini-1.5-flash"),
+          model_name: primaryAi === "openai" ? "openai-whisper-1" : (llmModel || "gemini-2.5-flash"),
           status,
           duration_ms: Date.now() - startTime,
           error_message: error ? (error?.message || String(error)) : undefined,
@@ -353,7 +367,7 @@ export async function extractOnboardingFromMinutes(
 
   const genAI = new GoogleGenerativeAI(apiKey);
   const model = genAI.getGenerativeModel({
-    model: "gemini-1.5-flash",
+    model: "gemini-2.5-flash",
     generationConfig: { responseMimeType: "application/json" }
   });
 
@@ -424,6 +438,8 @@ Minutes text:
     throw new Error("Failed to parse extracted onboarding details from minutes");
   }
 }
+
+
 
 
 

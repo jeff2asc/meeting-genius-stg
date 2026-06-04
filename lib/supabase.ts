@@ -1289,6 +1289,71 @@ export interface Company {
   llm_provider?: string | null
   llm_api_key?: string | null
   llm_model?: string | null
+  // Configurable ticket/Janus settings
+  ticket_number_format?: string | null
+  ticket_tags?: TicketTag[] | null
+  risk_levels?: RiskLevel[] | null
+}
+
+export interface RiskLevel {
+  value: string
+  label: string
+  color: string
+}
+
+export interface TicketTag {
+  label: string
+  color: string
+  hide_on_closed: boolean
+}
+
+export interface SupplierCategory {
+  id: number
+  company_id: number | null
+  name: string
+  description: string | null
+  sort_order: number
+  created_at: string
+  updated_at: string
+}
+
+export interface Supplier {
+  id: number
+  company_id: number | null
+  category_id: number | null
+  name: string
+  email: string | null
+  phone: string | null
+  address: string | null
+  contact_person: string | null
+  limit_amount: number | null
+  approval_gate: string | null
+  notes: string | null
+  user_id: number | null
+  created_at: string
+  updated_at: string
+  // Joined
+  category?: SupplierCategory | null
+}
+
+export interface PartnerType {
+  id: number
+  company_id: number | null
+  name: string
+  description: string | null
+  sort_order: number
+  created_at: string
+  updated_at: string
+}
+
+export interface CustomRole {
+  id: number
+  company_id: number | null
+  name: string
+  label: string
+  description: string | null
+  created_at: string
+  updated_at: string
 }
 
 export interface User {

@@ -7,15 +7,17 @@ import {
 } from "@/components/ui/dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { formatUtcToLocalLong } from "@/lib/timezone"
-import { getCurrentUser } from "@/lib/supabase"
+import { getCurrentUser, supabase } from "@/lib/supabase"
+import type { TicketTag, RiskLevel } from "@/lib/supabase"
 import {
   formatJanusTicketDisplayLabel,
   getJanusTicketRef,
   openJanusTicketSSO,
 } from "@/lib/janus"
-import { ExternalLink, Calendar, Building, DollarSign, AlertCircle, CheckCircle2, Clock, User, Shield, Info } from "lucide-react"
-import { useState } from "react"
+import { ExternalLink, Calendar, Building, DollarSign, AlertCircle, CheckCircle2, Clock, User, Shield, Info, Tag } from "lucide-react"
+import { useState, useEffect } from "react"
 
 interface TicketDetailsModalProps {
   isOpen: boolean
@@ -36,8 +38,37 @@ export default function TicketDetailsModal({
 
   const currentUser = getCurrentUser()
   const [isOpeningJanus, setIsOpeningJanus] = useState(false)
+  const [companyTicketTags, setCompanyTicketTags] = useState<TicketTag[]>([])
+  const [companyRiskLevels, setCompanyRiskLevels] = useState<RiskLevel[]>([])
 
   const ticketRef = getJanusTicketRef(ticket)
+
+  // Load company-level ticket tags and risk levels
+  useEffect(() => {
+    const companyId = ticket?.company_id
+    if (!companyId) return
+    supabase
+      .from('companies')
+      .select('ticket_tags, risk_levels')
+      .eq('id', companyId)
+      .single()
+      .then(({ data }) => {
+        if (data) {
+          const d = data as any
+          if (d.ticket_tags) setCompanyTicketTags(d.ticket_tags as TicketTag[])
+          if (d.risk_levels) setCompanyRiskLevels(d.risk_levels as RiskLevel[])
+        }
+      })
+  }, [ticket?.company_id])
+
+  // Context-sensitive tags: hide tags marked hide_on_closed when ticket is closed
+  const isClosed = ['closed', 'resolved', 'completed'].includes(ticket?.status?.toLowerCase() || '')
+  const visibleTags = companyTicketTags.filter(tag => !(tag.hide_on_closed && isClosed))
+
+  // Resolve risk level display
+  const riskLevel = ticket?.risk_level
+    ? companyRiskLevels.find(r => r.value === ticket.risk_level)
+    : null
 
   const openInJanus = async () => {
     if (!currentUser?.email) return
@@ -74,8 +105,21 @@ export default function TicketDetailsModal({
                 </Badge>
               </div>
               <DialogTitle className="text-2xl font-bold pt-2">{ticket.title}</DialogTitle>
+              <p className="sr-only">{isComplaint ? 'Complaint' : 'Repair'} ticket details for {ticket.title}</p>
             </div>
           </div>
+          {/* Context-sensitive ticket tags */}
+          {visibleTags.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mt-2">
+              {visibleTags.map(tag => (
+                <span key={tag.label}
+                  className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full"
+                  style={{ background: tag.color + '20', color: tag.color, border: `1px solid ${tag.color}40` }}>
+                  <Tag className="h-2.5 w-2.5" />{tag.label}
+                </span>
+              ))}
+            </div>
+          )}
         </DialogHeader>
 
         <div className="px-6 pb-6 space-y-6 max-h-[70vh] overflow-y-auto scrollbar-hide">
@@ -142,6 +186,18 @@ export default function TicketDetailsModal({
               </span>
               <p className="text-xs font-medium">{ticket.updated_at ? formatUtcToLocalLong(ticket.updated_at) : "N/A"}</p>
             </div>
+            {riskLevel && (
+              <div className="space-y-1.5">
+                <span className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
+                  <AlertCircle className="h-3.5 w-3.5" />
+                  Risk Level
+                </span>
+                <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full"
+                  style={{ background: riskLevel.color + '20', color: riskLevel.color }}>
+                  {riskLevel.label}
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Description */}

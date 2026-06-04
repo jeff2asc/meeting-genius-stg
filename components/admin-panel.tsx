@@ -436,7 +436,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
       let buildingsQuery = supabase
         .from("buildings")
         .select(
-          "id, name, address, manager_id, company_id, building_type, created_at, board_meeting_notice_days, general_meeting_notice_days, notification_recipient_type, timezone, logo_url, companies(logo_url)"
+          "id, name, address, manager_id, company_id, building_type, created_at, board_meeting_notice_days, general_meeting_notice_days, notification_recipient_type, logo_url, companies(logo_url)"
         )
         .order("name")
 
@@ -735,6 +735,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
             </div>
           </div>
 
+          {/* ── Row 1: Core Navigation ── */}
           <div className="flex gap-4 mt-4 overflow-x-auto scrollbar-hide pb-1">
             <button
               onClick={() => setActiveTab("users")}
@@ -800,7 +801,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
                     : "text-muted-foreground hover:text-foreground"
                   }`}
               >
-                🔍 Audit
+                🔍 Audit Logs
               </button>
             )}
             {isMaster && (
@@ -811,10 +812,12 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
                     : "text-muted-foreground hover:text-foreground"
                   }`}
               >
-                ⚙️ Settings
+                ⚙️ AI Settings
               </button>
             )}
           </div>
+
+          {/* ── Row 2: removed — Audit Logs and AI Settings moved to Row 1 ── */}
         </div>
       </header>
 
@@ -883,6 +886,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
         {activeTab === "voting" && (
           <VotingTab />
         )}
+
       </div>
 
       <CreateUserModal

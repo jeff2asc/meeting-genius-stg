@@ -43,7 +43,11 @@ export async function GET(request: NextRequest) {
       .in('meeting_id', meetingIds)
     if (topicsError) throw topicsError
 
-    const topicIds = topics?.map(t => t.id) || []
+    // Deduplicate topics by id (a topic could appear under multiple meeting joins)
+    const uniqueTopics = Array.from(
+      new Map((topics || []).map(t => [t.id, t])).values()
+    )
+    const topicIds = uniqueTopics.map(t => t.id)
     if (topicIds.length === 0) return withCors(request, NextResponse.json({ data: [], success: true }))
 
     // 3. Get Tasks
@@ -54,19 +58,26 @@ export async function GET(request: NextRequest) {
       .order('created_at', { ascending: false })
     if (tasksError) throw tasksError
 
-    // 4. Transform for return
-    const formattedTasks = (tasks || []).map(task => {
-      const topic = topics?.find(t => t.id === task.topic_id)
-      const meeting = topic?.meetings as any
-      const building = meeting?.buildings as any
+    // 4. Transform for return — deduplicate tasks by id
+    const seenTaskIds = new Set<number>()
+    const formattedTasks = (tasks || [])
+      .filter(task => {
+        if (seenTaskIds.has(task.id)) return false
+        seenTaskIds.add(task.id)
+        return true
+      })
+      .map(task => {
+        const topic = uniqueTopics.find(t => t.id === task.topic_id)
+        const meeting = topic?.meetings as any
+        const building = meeting?.buildings as any
 
-      return {
-        ...task,
-        building_name: building?.name || 'Unknown',
-        meeting_title: meeting?.title || 'Unknown',
-        topic_title: topic?.title || 'Unknown'
-      }
-    })
+        return {
+          ...task,
+          building_name: building?.name || 'Unknown',
+          meeting_title: meeting?.title || 'Unknown',
+          topic_title: topic?.title || 'Unknown'
+        }
+      })
 
     return withCors(request, NextResponse.json({ data: formattedTasks, success: true }))
   } catch (err: any) {

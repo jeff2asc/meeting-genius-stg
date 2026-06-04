@@ -159,6 +159,8 @@ export default function TopicCard({
   const [decisions, setDecisions] = useState<Decision[]>([])
   const [loadingDecisions, setLoadingDecisions] = useState(false)
 
+  const fetchHistoryRunning = useRef(false)
+
   const [isIncamera, setIsIncamera] = useState(topic.is_incamera || false)
   const [incameraStartTime, setIncameraStartTime] = useState(topic.incamera_start_time || "")
   const [incameraEndTime, setIncameraEndTime] = useState(topic.incamera_end_time || "")
@@ -542,6 +544,8 @@ export default function TopicCard({
   }
 
   const fetchHistory = async () => {
+    if (fetchHistoryRunning.current) return
+    fetchHistoryRunning.current = true
     setLoadingHistory(true)
     try {
       const historyItems: HistoryItem[] = []
@@ -637,11 +641,22 @@ export default function TopicCard({
       }
 
       historyItems.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-      setHistory(historyItems)
+
+      // Deduplicate by type+id — a task can appear for both current and rolled-over topic
+      const seen = new Set<string>()
+      const dedupedHistory = historyItems.filter(item => {
+        const key = `${item.type}-${item.id}`
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+
+      setHistory(dedupedHistory)
     } catch (err) {
       console.error('Error fetching history:', err)
     } finally {
       setLoadingHistory(false)
+      fetchHistoryRunning.current = false
     }
   }
 
@@ -1380,7 +1395,7 @@ export default function TopicCard({
 
                   {history.map(item => (
                     <div
-                      key={`${item.type}-${item.id}`}
+                      key={`${item.type}-${item.id}-${topic.id}`}
                       className="flex flex-col gap-1 rounded bg-background border border-border px-2 py-1.5 cursor-pointer hover:border-primary/50 transition-colors"
                       onClick={() => {
                         if (item.type === 'task') {

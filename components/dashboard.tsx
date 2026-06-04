@@ -99,6 +99,9 @@ export default function Dashboard({
     }
   }, [activeTab])
 
+  // Stable key from building IDs — avoids re-firing effect on every array reference change
+  const buildingIdsKey = buildings.map(b => b.id).sort().join(',')
+
   useEffect(() => {
     if (selectedBuilding) {
       fetchMeetings()
@@ -108,7 +111,7 @@ export default function Dashboard({
         fetchJanusData()
       }
     }
-  }, [selectedBuilding, selectedMeetingType, buildings, isJanusIntegrated])
+  }, [selectedBuilding, selectedMeetingType, buildingIdsKey, isJanusIntegrated])
 
   const fetchJanusData = async (forceResync = false) => {
     const currentUser = getCurrentUser()
@@ -160,6 +163,16 @@ export default function Dashboard({
       
       // Fallback to payload.data.buildings if component buildings state is still empty on initial mount
       const currentBuildings = buildings.length > 0 ? buildings : (payload.data?.buildings || [])
+
+      // ✅ Override building_name with the authoritative MG name to prevent Janus/MG name mismatches
+      const resolveBuildingName = (ticket: any) => {
+        if (!ticket.building_id) return ticket
+        const match = currentBuildings.find((b: any) => String(b.id) === String(ticket.building_id))
+        if (match) return { ...ticket, building_name: match.name }
+        return ticket
+      }
+      repairs = repairs.map(resolveBuildingName)
+      complaints = complaints.map(resolveBuildingName)
 
       if (selectedBuilding !== "All" && selectedBuilding) {
         const building = currentBuildings.find((b: any) => b.name === selectedBuilding)
@@ -407,7 +420,17 @@ export default function Dashboard({
         }
       })
 
-      setTasks(formattedTasks)
+      // Deduplicate by id to prevent duplicate key warnings from concurrent fetches
+      // Use string comparison to handle mixed number/string id types
+      const seen = new Set<string>()
+      const dedupedTasks = formattedTasks.filter(t => {
+        const key = String(t.id)
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+
+      setTasks(dedupedTasks)
     } catch (err) {
       console.error('Unexpected error:', err)
     }
@@ -483,30 +506,34 @@ export default function Dashboard({
   })
   const uniqueAssigneeNames = Array.from(new Set(allAssigneeNames)).sort()
 
-  // Filter tasks by search and assignee
-  const filteredTasks = tasks.filter((task) => {
-    const q = searchQuery.toLowerCase()
+  // Filter tasks by search and assignee — deduplicate by id as final safety net
+  const filteredTasks = Array.from(
+    new Map(
+      tasks.filter((task) => {
+        const q = searchQuery.toLowerCase()
 
-    const matchesSearch =
-      (task.description || "").toLowerCase().includes(q) ||
-      (task.building || "").toLowerCase().includes(q) ||
-      (task.assigned_name || "").toLowerCase().includes(q)
+        const matchesSearch =
+          (task.description || "").toLowerCase().includes(q) ||
+          (task.building || "").toLowerCase().includes(q) ||
+          (task.assigned_name || "").toLowerCase().includes(q)
 
-    const assigneeNames =
-      task.assignees && task.assignees.length > 0
-        ? task.assignees
-          .map((a: any) => a?.name?.toLowerCase())
-          .filter(Boolean)
-        : task.assigned_name
-          ? [task.assigned_name.toLowerCase()]
-          : []
+        const assigneeNames =
+          task.assignees && task.assignees.length > 0
+            ? task.assignees
+              .map((a: any) => a?.name?.toLowerCase())
+              .filter(Boolean)
+            : task.assigned_name
+              ? [task.assigned_name.toLowerCase()]
+              : []
 
-    const matchesAssignee =
-      assigneeFilter === "All" ||
-      assigneeNames.includes(assigneeFilter.toLowerCase())
+        const matchesAssignee =
+          assigneeFilter === "All" ||
+          assigneeNames.includes(assigneeFilter.toLowerCase())
 
-    return matchesSearch && matchesAssignee
-  })
+        return matchesSearch && matchesAssignee
+      }).map(task => [task.id, task])
+    ).values()
+  )
 
   type MeetingStatus = "Draft" | "In Progress" | "Finalized"
 
@@ -707,42 +734,6 @@ export default function Dashboard({
           </div>
 
           <div className="flex flex-col sm:flex-row md:flex-col items-stretch sm:items-center md:items-end gap-2 w-full md:w-auto">
-            <div className="relative w-full sm:w-auto">
-              <Button
-                variant="outline"
-                className="flex items-center gap-2 bg-card w-full sm:min-w-[180px] justify-between sm:justify-center"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setShowBuildingDropdown(!showBuildingDropdown)
-                }}
-              >
-                <span className="truncate">{selectedBuilding || "Select Building"}</span>
-                <ChevronDown className="h-4 w-4 flex-shrink-0" />
-              </Button>
-              {showBuildingDropdown && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setShowBuildingDropdown(false)} />
-                  <div className="absolute right-0 mt-2 w-full sm:w-56 bg-card border border-border rounded-lg shadow-lg z-50 max-h-[60vh] overflow-y-auto">
-                    <button
-                      onClick={() => handleBuildingSelect("All")}
-                      className={`w-full px-4 py-2 text-left hover:bg-muted transition-colors first:rounded-t-lg ${selectedBuilding === "All" ? "bg-muted font-semibold" : ""}`}
-                    >
-                      All Buildings
-                    </button>
-                    {buildings.map((building) => (
-                      <button
-                        key={building.id}
-                        onClick={() => handleBuildingSelect(building.name)}
-                        className={`w-full px-4 py-2 text-left hover:bg-muted transition-colors last:rounded-b-lg ${building.name === selectedBuilding ? "bg-muted font-semibold" : ""}`}
-                      >
-                        {building.name}
-                      </button>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
-
             {userCanCreateMeeting && (
               <Button
                 onClick={onCreateMeeting}
@@ -757,61 +748,101 @@ export default function Dashboard({
         </div>
 
         <div className="mb-6 border-b border-border overflow-x-auto scrollbar-hide">
-          <div className="flex gap-4 min-w-max">
-            <button
-              onClick={() => setActiveTab("meetings")}
-              className={`pb-3 px-1 font-medium text-sm transition-colors ${activeTab === "meetings"
-                  ? "border-b-2 border-primary text-primary"
-                  : "text-muted-foreground hover:text-foreground"
-                }`}
-            >
-              <Calendar className="h-4 w-4 inline mr-2" />
-              Meetings
-            </button>
-            <button
-              onClick={() => setActiveTab("tasks")}
-              className={`pb-3 px-1 font-medium text-sm transition-colors ${activeTab === "tasks"
-                  ? "border-b-2 border-primary text-primary"
-                  : "text-muted-foreground hover:text-foreground"
-                }`}
-            >
-              <CheckSquare className="h-4 w-4 inline mr-2" />
-              Tasks
-            </button>
-            <button
-              onClick={() => setActiveTab("all")}
-              className={`pb-3 px-1 font-medium text-sm transition-colors ${activeTab === "all"
-                  ? "border-b-2 border-primary text-primary"
-                  : "text-muted-foreground hover:text-foreground"
-                }`}
-            >
-              <FileText className="h-4 w-4 inline mr-2" />
-              All
-            </button>
-            {isJanusIntegrated && (
-              <>
-                <button
-                  onClick={() => setActiveTab("repairs")}
-                  className={`pb-3 px-1 font-medium text-sm transition-colors ${activeTab === "repairs"
-                      ? "border-b-2 border-primary text-primary"
-                      : "text-muted-foreground hover:text-foreground"
-                    }`}
-                >
-                  <Wrench className="h-4 w-4 inline mr-2" />
-                  Repairs
-                </button>
-                <button
-                  onClick={() => setActiveTab("complaints")}
-                  className={`pb-3 px-1 font-medium text-sm transition-colors ${activeTab === "complaints"
-                      ? "border-b-2 border-primary text-primary"
-                      : "text-muted-foreground hover:text-foreground"
-                    }`}
-                >
-                  <AlertTriangle className="h-4 w-4 inline mr-2" />
-                  Complaints
-                </button>
-              </>
-            )}
+          <div className="flex items-end justify-between gap-4 min-w-max">
+            <div className="flex gap-4">
+              <button
+                onClick={() => setActiveTab("meetings")}
+                className={`pb-3 px-1 font-medium text-sm transition-colors ${activeTab === "meetings"
+                    ? "border-b-2 border-primary text-primary"
+                    : "text-muted-foreground hover:text-foreground"
+                  }`}
+              >
+                <Calendar className="h-4 w-4 inline mr-2" />
+                Meetings
+              </button>
+              <button
+                onClick={() => setActiveTab("tasks")}
+                className={`pb-3 px-1 font-medium text-sm transition-colors ${activeTab === "tasks"
+                    ? "border-b-2 border-primary text-primary"
+                    : "text-muted-foreground hover:text-foreground"
+                  }`}
+              >
+                <CheckSquare className="h-4 w-4 inline mr-2" />
+                Tasks
+              </button>
+              <button
+                onClick={() => setActiveTab("all")}
+                className={`pb-3 px-1 font-medium text-sm transition-colors ${activeTab === "all"
+                    ? "border-b-2 border-primary text-primary"
+                    : "text-muted-foreground hover:text-foreground"
+                  }`}
+              >
+                <FileText className="h-4 w-4 inline mr-2" />
+                All
+              </button>
+              {isJanusIntegrated && (
+                <>
+                  <button
+                    onClick={() => setActiveTab("repairs")}
+                    className={`pb-3 px-1 font-medium text-sm transition-colors ${activeTab === "repairs"
+                        ? "border-b-2 border-primary text-primary"
+                        : "text-muted-foreground hover:text-foreground"
+                      }`}
+                  >
+                    <Wrench className="h-4 w-4 inline mr-2" />
+                    Repairs
+                  </button>
+                  <button
+                    onClick={() => setActiveTab("complaints")}
+                    className={`pb-3 px-1 font-medium text-sm transition-colors ${activeTab === "complaints"
+                        ? "border-b-2 border-primary text-primary"
+                        : "text-muted-foreground hover:text-foreground"
+                      }`}
+                  >
+                    <AlertTriangle className="h-4 w-4 inline mr-2" />
+                    Complaints
+                  </button>
+                </>
+              )}
+            </div>
+
+            {/* Building filter — inline with tabs */}
+            <div className="relative pb-2 flex-shrink-0">
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex items-center gap-2 bg-card text-sm h-8 px-3"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setShowBuildingDropdown(!showBuildingDropdown)
+                }}
+              >
+                <span className="truncate max-w-[140px]">{selectedBuilding || "Select Building"}</span>
+                <ChevronDown className="h-3.5 w-3.5 flex-shrink-0" />
+              </Button>
+              {showBuildingDropdown && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowBuildingDropdown(false)} />
+                  <div className="absolute right-0 mt-2 w-56 bg-card border border-border rounded-lg shadow-lg z-50 max-h-[60vh] overflow-y-auto">
+                    <button
+                      onClick={() => handleBuildingSelect("All")}
+                      className={`w-full px-4 py-2 text-left text-sm hover:bg-muted transition-colors first:rounded-t-lg ${selectedBuilding === "All" ? "bg-muted font-semibold" : ""}`}
+                    >
+                      All Buildings
+                    </button>
+                    {buildings.map((building) => (
+                      <button
+                        key={building.id}
+                        onClick={() => handleBuildingSelect(building.name)}
+                        className={`w-full px-4 py-2 text-left text-sm hover:bg-muted transition-colors last:rounded-b-lg ${building.name === selectedBuilding ? "bg-muted font-semibold" : ""}`}
+                      >
+                        {building.name}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
 
@@ -1094,7 +1125,7 @@ export default function Dashboard({
                         
                       return (
                         <tr 
-                          key={task.id} 
+                          key={`desktop-task-${task.id}`} 
                           className={`border-b border-border transition-colors ${
                             isOverdue ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-muted/50'
                           }`}
@@ -1175,7 +1206,7 @@ export default function Dashboard({
 
                   return (
                     <div
-                      key={task.id}
+                      key={`mobile-task-${task.id}`}
                       className={`bg-white dark:bg-card rounded-2xl shadow-sm border p-4 ${isOverdue ? 'border-red-200 bg-red-50/30 dark:bg-red-900/10' : 'border-border'}`}
                     >
                       {/* Title row */}
@@ -1262,72 +1293,124 @@ export default function Dashboard({
                 <p className="text-muted-foreground font-medium">No active Janus repair tickets found for this building.</p>
               </Card>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {janusData.repairs
-                  .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-                  .map((ticket: any) => (
-                    <Card 
-                      key={`repair-${ticket.id}`} 
-                      className="group relative overflow-hidden p-5 rounded-2xl border-border/50 hover:border-primary/50 hover:shadow-xl hover:shadow-primary/5 transition-all duration-500 bg-card/50 backdrop-blur-sm flex flex-col h-full min-h-[180px] cursor-pointer"
-                      onClick={() => {
-                        setSelectedTicketDetails({...ticket, _type: 'repair'})
-                        setIsTicketDetailsModalOpen(true)
-                      }}
-                    >
-                      <div className="absolute top-0 left-0 w-1 h-full bg-primary" />
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-2">
-                          <Badge variant="secondary" className={`text-[10px] uppercase font-black tracking-wider ${
-                            ticket.priority?.toUpperCase() === 'HIGH' ? 'bg-red-50 text-red-700 border-red-100' :
-                            ticket.priority?.toUpperCase() === 'MEDIUM' ? 'bg-yellow-50 text-yellow-700 border-yellow-100' :
-                            'bg-primary/10 text-primary'
-                          }`}>
-                            {ticket.priority || 'MEDIUM'} PRIORITY
-                          </Badge>
-                          {(ticket.budget || ticket.estimated_cost) && (
-                            <div className="flex gap-1">
-                              {ticket.budget && (
-                                <span className="text-[9px] bg-green-50 text-green-700 px-1.5 py-0.5 rounded border border-green-100 font-bold">
-                                  ${ticket.budget}
-                                </span>
+              <Card className="border-0 bg-card shadow-md">
+                {/* Desktop table */}
+                <div className="hidden md:block overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="border-b border-border">
+                      <tr className="text-left">
+                        <th className="px-6 py-4 text-sm font-semibold text-muted-foreground">Ticket</th>
+                        {selectedBuilding === "All" && (
+                          <th className="px-6 py-4 text-sm font-semibold text-muted-foreground">Building</th>
+                        )}
+                        <th className="px-6 py-4 text-sm font-semibold text-muted-foreground">Priority</th>
+                        <th className="px-6 py-4 text-sm font-semibold text-muted-foreground">Status</th>
+                        <th className="px-6 py-4 text-sm font-semibold text-muted-foreground">Budget / Est.</th>
+                        <th className="px-6 py-4 text-sm font-semibold text-muted-foreground">Date</th>
+                        <th className="px-6 py-4 text-sm font-semibold text-muted-foreground">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {janusData.repairs
+                        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+                        .map((ticket: any) => (
+                          <tr
+                            key={`repair-${ticket.id}`}
+                            className={`border-b border-border hover:bg-muted/50 transition-colors cursor-pointer ${ticket.status?.toLowerCase() === 'closed' ? 'opacity-60' : ''}`}
+                            onClick={() => { setSelectedTicketDetails({...ticket, _type: 'repair'}); setIsTicketDetailsModalOpen(true) }}
+                          >
+                            <td className="px-6 py-4">
+                              <div className="flex items-center gap-3">
+                                <div className={`h-2 w-2 rounded-full flex-shrink-0 ${ticket.status?.toLowerCase() === 'closed' ? 'bg-muted-foreground/40' : 'bg-primary'}`} />
+                                <div>
+                                  <p className="font-medium text-foreground text-sm line-clamp-1">{ticket.title}</p>
+                                  {ticket.description && (
+                                    <p className="text-xs text-muted-foreground line-clamp-1 italic mt-0.5">{ticket.description}</p>
+                                  )}
+                                  <p className="text-[10px] font-mono text-muted-foreground mt-0.5">{formatJanusTicketDisplayLabel(ticket, "repair")}</p>
+                                </div>
+                              </div>
+                            </td>
+                            {selectedBuilding === "All" && (
+                              <td className="px-6 py-4 text-sm text-muted-foreground">{ticket.building_name || '—'}</td>
+                            )}
+                            <td className="px-6 py-4">
+                              <Badge variant="secondary" className={`text-[10px] uppercase font-black tracking-wider ${
+                                ticket.priority?.toUpperCase() === 'HIGH' ? 'bg-red-50 text-red-700 border-red-100' :
+                                ticket.priority?.toUpperCase() === 'MEDIUM' ? 'bg-yellow-50 text-yellow-700 border-yellow-100' :
+                                'bg-primary/10 text-primary'
+                              }`}>
+                                {ticket.priority || 'MEDIUM'}
+                              </Badge>
+                            </td>
+                            <td className="px-6 py-4">
+                              <span className={`px-2.5 py-1 rounded-full text-xs font-medium border ${
+                                ticket.status?.toLowerCase() === 'closed' ? 'bg-muted text-muted-foreground border-border' :
+                                ticket.status?.toLowerCase() === 'in_progress' ? 'bg-blue-50 text-blue-700 border-blue-100' :
+                                'bg-green-50 text-green-700 border-green-100'
+                              }`}>
+                                {ticket.status || 'Open'}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="flex flex-col gap-0.5">
+                                {ticket.budget && <span className="text-xs text-green-700 font-bold">${ticket.budget}</span>}
+                                {ticket.estimated_cost && <span className="text-xs text-blue-600">Est: ${ticket.estimated_cost}</span>}
+                                {!ticket.budget && !ticket.estimated_cost && <span className="text-xs text-muted-foreground">—</span>}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 text-sm text-muted-foreground whitespace-nowrap">
+                              {ticket.created_at ? new Date(ticket.created_at).toLocaleDateString() : '—'}
+                            </td>
+                            <td className="px-6 py-4">
+                              {ticket.status?.toLowerCase() !== 'closed' && (
+                                <Button
+                                  size="sm" variant="ghost"
+                                  className="h-7 text-[10px] gap-1 text-primary hover:bg-primary/10"
+                                  onClick={(e) => { e.stopPropagation(); setSelectedTicketToImport({...ticket, _type: 'repair'}); setIsImportModalOpen(true) }}
+                                >
+                                  <Plus className="h-3 w-3" /> Import
+                                </Button>
                               )}
-                              {ticket.estimated_cost && (
-                                <span className="text-[9px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded border border-blue-100 font-bold">
-                                  Est: ${ticket.estimated_cost}
-                                </span>
-                              )}
-                            </div>
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+                {/* Mobile card view */}
+                <div className="md:hidden p-3 space-y-3">
+                  {janusData.repairs
+                    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+                    .map((ticket: any) => (
+                      <div
+                        key={`mobile-repair-${ticket.id}`}
+                        className={`bg-white dark:bg-card rounded-2xl shadow-sm border border-border p-4 cursor-pointer ${ticket.status?.toLowerCase() === 'closed' ? 'opacity-60' : ''}`}
+                        onClick={() => { setSelectedTicketDetails({...ticket, _type: 'repair'}); setIsTicketDetailsModalOpen(true) }}
+                      >
+                        <div className="flex justify-between items-start gap-2 mb-2">
+                          <p className="font-semibold text-sm line-clamp-2 flex-1">{ticket.title}</p>
+                          <Badge variant="secondary" className={`text-[10px] uppercase font-black flex-shrink-0 ${
+                            ticket.priority?.toUpperCase() === 'HIGH' ? 'bg-red-50 text-red-700' : 'bg-yellow-50 text-yellow-700'
+                          }`}>{ticket.priority || 'MEDIUM'}</Badge>
+                        </div>
+                        {ticket.description && <p className="text-xs text-muted-foreground italic mb-2 line-clamp-1">{ticket.description}</p>}
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <span className="font-mono">{formatJanusTicketDisplayLabel(ticket, "repair")}</span>
+                            {ticket.building_name && selectedBuilding === "All" && <span>· {ticket.building_name}</span>}
+                          </div>
+                          {ticket.status?.toLowerCase() !== 'closed' && (
+                            <Button size="sm" variant="ghost" className="h-6 text-[10px] gap-1 text-primary"
+                              onClick={(e) => { e.stopPropagation(); setSelectedTicketToImport({...ticket, _type: 'repair'}); setIsImportModalOpen(true) }}>
+                              <Plus className="h-3 w-3" /> Import
+                            </Button>
                           )}
                         </div>
-                        <Badge variant="outline" className="text-[10px] uppercase font-black bg-background/50">
-                          repair
-                        </Badge>
                       </div>
-                      <h4 className="text-base font-bold text-foreground mb-2 line-clamp-2">{ticket.title}</h4>
-                      {ticket.description && (
-                        <p className="text-xs text-muted-foreground line-clamp-2 italic mb-4">"{ticket.description}"</p>
-                      )}
-                      <div className="flex items-center justify-between mt-auto pt-4 border-t border-border">
-                        <span className="text-[10px] font-mono text-muted-foreground font-semibold">
-                          {formatJanusTicketDisplayLabel(ticket, "repair")}
-                        </span>
-                        <Button 
-                          size="sm" 
-                          variant="ghost" 
-                          className="h-7 text-[10px] gap-1 text-primary hover:bg-primary/10"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setSelectedTicketToImport({...ticket, _type: 'repair'})
-                            setIsImportModalOpen(true)
-                          }}
-                        >
-                          <Plus className="h-3 w-3" />
-                          Import to Meeting
-                        </Button>
-                      </div>
-                    </Card>
-                  ))}
-              </div>
+                    ))}
+                </div>
+              </Card>
             )}
           </div>
         )}
@@ -1353,71 +1436,123 @@ export default function Dashboard({
                 <p className="text-muted-foreground font-medium">No active Janus complaint tickets found for this building.</p>
               </Card>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {janusData.complaints
-                  .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-                  .map((ticket: any) => (
-                    <Card 
-                      key={`complaint-${ticket.id}`} 
-                      className="group relative overflow-hidden p-5 rounded-2xl border-border/50 hover:border-amber-500/50 hover:shadow-xl hover:shadow-amber-500/5 transition-all duration-500 bg-card/50 backdrop-blur-sm flex flex-col h-full min-h-[180px] cursor-pointer"
-                      onClick={() => {
-                        setSelectedTicketDetails({...ticket, _type: 'complaint'})
-                        setIsTicketDetailsModalOpen(true)
-                      }}
-                    >
-                      <div className="absolute top-0 left-0 w-1 h-full bg-amber-500" />
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-2">
-                          <Badge variant="secondary" className={`text-[10px] uppercase font-black tracking-wider ${
-                            ticket.priority?.toUpperCase() === 'HIGH' ? 'bg-red-50 text-red-700 border-red-100' :
-                            'bg-amber-100 text-amber-700'
-                          }`}>
-                            {ticket.priority || 'MEDIUM'} PRIORITY
-                          </Badge>
-                          {(ticket.budget || ticket.estimated_cost) && (
-                            <div className="flex gap-1">
-                              {ticket.budget && (
-                                <span className="text-[9px] bg-green-50 text-green-700 px-1.5 py-0.5 rounded border border-green-100 font-bold">
-                                  ${ticket.budget}
-                                </span>
+              <Card className="border-0 bg-card shadow-md">
+                {/* Desktop table */}
+                <div className="hidden md:block overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="border-b border-border">
+                      <tr className="text-left">
+                        <th className="px-6 py-4 text-sm font-semibold text-muted-foreground">Ticket</th>
+                        {selectedBuilding === "All" && (
+                          <th className="px-6 py-4 text-sm font-semibold text-muted-foreground">Building</th>
+                        )}
+                        <th className="px-6 py-4 text-sm font-semibold text-muted-foreground">Priority</th>
+                        <th className="px-6 py-4 text-sm font-semibold text-muted-foreground">Status</th>
+                        <th className="px-6 py-4 text-sm font-semibold text-muted-foreground">Budget / Est.</th>
+                        <th className="px-6 py-4 text-sm font-semibold text-muted-foreground">Date</th>
+                        <th className="px-6 py-4 text-sm font-semibold text-muted-foreground">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {janusData.complaints
+                        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+                        .map((ticket: any) => (
+                          <tr
+                            key={`complaint-${ticket.id}`}
+                            className={`border-b border-border hover:bg-muted/50 transition-colors cursor-pointer ${ticket.status?.toLowerCase() === 'closed' ? 'opacity-60' : ''}`}
+                            onClick={() => { setSelectedTicketDetails({...ticket, _type: 'complaint'}); setIsTicketDetailsModalOpen(true) }}
+                          >
+                            <td className="px-6 py-4">
+                              <div className="flex items-center gap-3">
+                                <div className={`h-2 w-2 rounded-full flex-shrink-0 ${ticket.status?.toLowerCase() === 'closed' ? 'bg-muted-foreground/40' : 'bg-amber-500'}`} />
+                                <div>
+                                  <p className="font-medium text-foreground text-sm line-clamp-1">{ticket.title}</p>
+                                  {ticket.description && (
+                                    <p className="text-xs text-muted-foreground line-clamp-1 italic mt-0.5">{ticket.description}</p>
+                                  )}
+                                  <p className="text-[10px] font-mono text-muted-foreground mt-0.5">{formatJanusTicketDisplayLabel(ticket, "complaint")}</p>
+                                </div>
+                              </div>
+                            </td>
+                            {selectedBuilding === "All" && (
+                              <td className="px-6 py-4 text-sm text-muted-foreground">{ticket.building_name || '—'}</td>
+                            )}
+                            <td className="px-6 py-4">
+                              <Badge variant="secondary" className={`text-[10px] uppercase font-black tracking-wider ${
+                                ticket.priority?.toUpperCase() === 'HIGH' ? 'bg-red-50 text-red-700 border-red-100' :
+                                'bg-amber-100 text-amber-700'
+                              }`}>
+                                {ticket.priority || 'MEDIUM'}
+                              </Badge>
+                            </td>
+                            <td className="px-6 py-4">
+                              <span className={`px-2.5 py-1 rounded-full text-xs font-medium border ${
+                                ticket.status?.toLowerCase() === 'closed' ? 'bg-muted text-muted-foreground border-border' :
+                                ticket.status?.toLowerCase() === 'in_progress' ? 'bg-blue-50 text-blue-700 border-blue-100' :
+                                'bg-amber-50 text-amber-700 border-amber-100'
+                              }`}>
+                                {ticket.status || 'Open'}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="flex flex-col gap-0.5">
+                                {ticket.budget && <span className="text-xs text-green-700 font-bold">${ticket.budget}</span>}
+                                {ticket.estimated_cost && <span className="text-xs text-blue-600">Est: ${ticket.estimated_cost}</span>}
+                                {!ticket.budget && !ticket.estimated_cost && <span className="text-xs text-muted-foreground">—</span>}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 text-sm text-muted-foreground whitespace-nowrap">
+                              {ticket.created_at ? new Date(ticket.created_at).toLocaleDateString() : '—'}
+                            </td>
+                            <td className="px-6 py-4">
+                              {ticket.status?.toLowerCase() !== 'closed' && (
+                                <Button
+                                  size="sm" variant="ghost"
+                                  className="h-7 text-[10px] gap-1 text-amber-600 hover:bg-amber-50"
+                                  onClick={(e) => { e.stopPropagation(); setSelectedTicketToImport({...ticket, _type: 'complaint'}); setIsImportModalOpen(true) }}
+                                >
+                                  <Plus className="h-3 w-3" /> Import
+                                </Button>
                               )}
-                              {ticket.estimated_cost && (
-                                <span className="text-[9px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded border border-blue-100 font-bold">
-                                  Est: ${ticket.estimated_cost}
-                                </span>
-                              )}
-                            </div>
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+                {/* Mobile card view */}
+                <div className="md:hidden p-3 space-y-3">
+                  {janusData.complaints
+                    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+                    .map((ticket: any) => (
+                      <div
+                        key={`mobile-complaint-${ticket.id}`}
+                        className={`bg-white dark:bg-card rounded-2xl shadow-sm border border-border p-4 cursor-pointer ${ticket.status?.toLowerCase() === 'closed' ? 'opacity-60' : ''}`}
+                        onClick={() => { setSelectedTicketDetails({...ticket, _type: 'complaint'}); setIsTicketDetailsModalOpen(true) }}
+                      >
+                        <div className="flex justify-between items-start gap-2 mb-2">
+                          <p className="font-semibold text-sm line-clamp-2 flex-1">{ticket.title}</p>
+                          <Badge variant="secondary" className={`text-[10px] uppercase font-black flex-shrink-0 ${
+                            ticket.priority?.toUpperCase() === 'HIGH' ? 'bg-red-50 text-red-700' : 'bg-amber-100 text-amber-700'
+                          }`}>{ticket.priority || 'MEDIUM'}</Badge>
+                        </div>
+                        {ticket.description && <p className="text-xs text-muted-foreground italic mb-2 line-clamp-1">{ticket.description}</p>}
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <span className="font-mono">{formatJanusTicketDisplayLabel(ticket, "complaint")}</span>
+                            {ticket.building_name && selectedBuilding === "All" && <span>· {ticket.building_name}</span>}
+                          </div>
+                          {ticket.status?.toLowerCase() !== 'closed' && (
+                            <Button size="sm" variant="ghost" className="h-6 text-[10px] gap-1 text-amber-600"
+                              onClick={(e) => { e.stopPropagation(); setSelectedTicketToImport({...ticket, _type: 'complaint'}); setIsImportModalOpen(true) }}>
+                              <Plus className="h-3 w-3" /> Import
+                            </Button>
                           )}
                         </div>
-                        <Badge variant="outline" className="text-[10px] uppercase font-black bg-background/50">
-                          complaint
-                        </Badge>
                       </div>
-                      <h4 className="text-base font-bold text-foreground mb-2 line-clamp-2">{ticket.title}</h4>
-                      {ticket.description && (
-                        <p className="text-xs text-muted-foreground line-clamp-2 italic mb-4">"{ticket.description}"</p>
-                      )}
-                      <div className="flex items-center justify-between mt-auto pt-4 border-t border-border">
-                        <span className="text-[10px] font-mono text-muted-foreground font-semibold">
-                          {formatJanusTicketDisplayLabel(ticket, "complaint")}
-                        </span>
-                        <Button 
-                          size="sm" 
-                          variant="ghost" 
-                          className="h-7 text-[10px] gap-1 text-amber-600 hover:bg-amber-50"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setSelectedTicketToImport({...ticket, _type: 'complaint'})
-                            setIsImportModalOpen(true)
-                          }}
-                        >
-                          <Plus className="h-3 w-3" />
-                          Import to Meeting
-                        </Button>
-                      </div>
-                    </Card>
-                  ))}
-              </div>
+                    ))}
+                </div>
+              </Card>
             )}
           </div>
         )}
@@ -1479,7 +1614,7 @@ export default function Dashboard({
                     .filter(m => m.status !== 'Finalized')
                     .map(m => (
                       <option key={m.id} value={m.id}>
-                        {m.title} ({formatFloatingDate(m.meeting_date, 'short')})
+                        [{m.building}] {m.title} ({formatFloatingDate(m.meeting_date, 'short')})
                       </option>
                     ))}
                 </select>

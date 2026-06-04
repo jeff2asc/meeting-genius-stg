@@ -26,18 +26,18 @@ export const janusClient = createClient(janusUrl, janusKey, {
  */
 export async function fetchJanusTicketsDirect(companyId?: number | null) {
   let query = janusClient.from('tickets').select('*');
-  
+
   if (companyId) {
     query = query.eq('company_id', companyId);
   }
 
   const { data, error } = await query.order('created_at', { ascending: false });
-  
+
   if (error) {
     console.error("❌ Failed to fetch tickets from Janus:", error.message);
     throw error;
   }
-  
+
   return data;
 }
 

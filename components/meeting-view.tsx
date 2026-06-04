@@ -191,7 +191,7 @@ export default function MeetingView({
   const [showRolloverModal, setShowRolloverModal] = useState(false)
   
   // ⭐ JANUS INTEGRATION STATES
-  const [isJanusIntegrated, setIsJanusIntegrated] = useState(false)
+  const [isJanusIntegrated, setIsJanusIntegrated] = useState(true)
   const [sidebarTab, setSidebarTab] = useState<"agenda" | "repairs" | "complaints">("agenda")
   const [janusData, setJanusData] = useState<{ repairs: any[], complaints: any[] }>({ repairs: [], complaints: [] })
   const [isResyncing, setIsResyncing] = useState(false)
@@ -355,54 +355,49 @@ export default function MeetingView({
       isIntegrated = installed ? JSON.parse(installed).includes("janus") : false
     }
 
-    setIsJanusIntegrated(isIntegrated)
-    
-    if (!isIntegrated) return
+    // Tabs always show in every meeting — data only loads when company has Janus active
+    setIsJanusIntegrated(true)
 
     if (forceResync) setIsResyncing(true)
+
+    // Resolve the meeting's building scope — used for filtering tickets
+    const buildingId = meeting?.building_id
+    const buildingName = meeting?.buildings?.name?.toLowerCase()
     
     try {
       const documentedSecret = process.env.NEXT_PUBLIC_API_KEY || ""
-      const companyParam = currentUser?.id ? `?user_id=${currentUser.id}` : ""
-      const res = await fetch(`${window.location.origin}/api/janus/v1/sync${companyParam}`, {
+      // Always scope the sync to the meeting's company — never fetch all tickets
+      const syncParams = new URLSearchParams()
+      if (currentUser?.id) syncParams.set("user_id", String(currentUser.id))
+      if (companyId) syncParams.set("company_id", String(companyId))
+      // Master users are scoped to the meeting's company when inside a meeting
+      const res = await fetch(`${window.location.origin}/api/janus/v1/sync?${syncParams.toString()}`, {
         headers: { "x-api-key": documentedSecret }
       })
       if (!res.ok) throw new Error("Could not fetch Janus data")
       
       const payload = await res.json()
       
-      // ⭐ FILTER BY BUILDING AND STATUS
-      const buildingId = meeting?.building_id
-      const buildingName = meeting?.buildings?.name?.toLowerCase()
-      const companyId = meeting?.buildings?.company_id
-      const isMaster = currentUser ? checkIsMaster(currentUser) : false
-      
+      // ⭐ FILTER BY BUILDING — always enforce building scope regardless of role
       const filteredRepairs = (payload.data.repairs || []).filter((r: any) => {
-        if (isMaster) return true;
-        
-        // 1. MUST match company if both have it
-        if (companyId && r.company_id && String(r.company_id) !== String(companyId)) return false;
-
-        // 2. Match building
-        const rBuildingName = r.building_name?.toLowerCase() || ""
-        const matchesBuildingId = (buildingId && String(r.building_id) === String(buildingId))
-        const matchesBuildingName = (buildingName && rBuildingName && rBuildingName.includes(buildingName))
-        
-        return matchesBuildingId || matchesBuildingName
+        // If we have a buildingId, match strictly by ID
+        if (buildingId) return String(r.building_id) === String(buildingId)
+        // Fallback: match by building name if no ID available
+        if (buildingName) {
+          const rBuildingName = r.building_name?.toLowerCase() || ""
+          return rBuildingName.includes(buildingName)
+        }
+        // No building context at all — don't show anything
+        return false
       })
 
       const filteredComplaints = (payload.data.complaints || []).filter((c: any) => {
-        if (isMaster) return true;
-        
-        // 1. MUST match company if both have it
-        if (companyId && c.company_id && String(c.company_id) !== String(companyId)) return false;
-
-        // 2. Match building
-        const cBuildingName = c.building_name?.toLowerCase() || ""
-        const matchesBuildingId = (buildingId && String(c.building_id) === String(buildingId))
-        const matchesBuildingName = (buildingName && cBuildingName && cBuildingName.includes(buildingName))
-        
-        return matchesBuildingId || matchesBuildingName
+        if (buildingId) return String(c.building_id) === String(buildingId)
+        if (buildingName) {
+          const cBuildingName = c.building_name?.toLowerCase() || ""
+          return cBuildingName.includes(buildingName)
+        }
+        return false
       })
 
       setJanusData({
@@ -1132,6 +1127,45 @@ export default function MeetingView({
 
       await fetchMeetingData()
       await checkForTranscripts()
+
+      // ⭐ Auto-extract tasks from the live transcript after recording
+      if (fullBrowserText && fullBrowserText.trim().length > 50) {
+        try {
+          toast.loading("Extracting tasks from recording transcript…", { id: "extract-tasks" })
+          const apiKey = process.env.NEXT_PUBLIC_API_KEY || ""
+
+          // Use the existing upload endpoint which handles AI extraction
+          const extractFormData = new FormData()
+          const transcriptBlob = new Blob([fullBrowserText], { type: "text/plain" })
+          extractFormData.append("file", transcriptBlob, "recording-transcript.txt")
+          extractFormData.append("meeting_id", meetingId)
+          if (currentUser?.id) extractFormData.append("user_id", String(currentUser.id))
+
+          const extractRes = await fetch("/api/transcripts/upload", {
+            method: "POST",
+            headers: { "x-api-key": apiKey },
+            body: extractFormData,
+          })
+
+          if (extractRes.ok) {
+            const extractData = await extractRes.json()
+            const tasks = extractData.extracted_tasks || []
+            if (tasks.length > 0) {
+              toast.success(`Found ${tasks.length} task(s) in your recording`, { id: "extract-tasks" })
+              setTranscriptId(extractData.transcript_id)
+              setExtractedTasks(tasks)
+              setShowPreviewTasks(true)
+            } else {
+              toast.dismiss("extract-tasks")
+            }
+          } else {
+            toast.dismiss("extract-tasks")
+          }
+        } catch (extractErr) {
+          console.error("Task extraction from recording failed:", extractErr)
+          toast.dismiss("extract-tasks")
+        }
+      }
     } catch (error) {
       console.error("❌ Unexpected error:", error)
       alert("Failed to save recording. Please try again.")
@@ -1964,7 +1998,6 @@ export default function MeetingView({
               >
                 <FileText className="h-4 w-4 sm:h-5 sm:w-5" />
               </Button>
-              <CurrentTime />
             </div>
 
             <div className="flex-1 min-w-0">
@@ -1973,6 +2006,7 @@ export default function MeetingView({
                   <h1 className="text-sm sm:text-lg font-bold text-foreground truncate">
                     {meeting.title}
                   </h1>
+                  <CurrentTime />
                   {meeting.is_incamera && meeting.status === "working_minutes" && (
                     <Badge
                       variant="outline"
@@ -2334,7 +2368,7 @@ export default function MeetingView({
                   </div>
                 </div>
                 
-                {isJanusIntegrated && (janusData.repairs.length > 0 || janusData.complaints.length > 0) && (
+                {isJanusIntegrated && (
                   <div className="flex gap-1 p-0.5 bg-muted rounded-lg">
                     <button
                       onClick={() => setSidebarTab("agenda")}
@@ -2342,22 +2376,18 @@ export default function MeetingView({
                     >
                       Agenda
                     </button>
-                    {janusData.repairs.length > 0 && (
-                      <button
-                        onClick={() => setSidebarTab("repairs")}
-                        className={`flex-1 text-[10px] py-1 rounded-md transition-all ${sidebarTab === "repairs" ? "bg-white shadow-sm font-bold text-primary" : "text-muted-foreground hover:bg-white/50"}`}
-                      >
-                        Repairs
-                      </button>
-                    )}
-                    {janusData.complaints.length > 0 && (
-                      <button
-                        onClick={() => setSidebarTab("complaints")}
-                        className={`flex-1 text-[10px] py-1 rounded-md transition-all ${sidebarTab === "complaints" ? "bg-white shadow-sm font-bold text-primary" : "text-muted-foreground hover:bg-white/50"}`}
-                      >
-                        Complaints
-                      </button>
-                    )}
+                    <button
+                      onClick={() => setSidebarTab("repairs")}
+                      className={`flex-1 text-[10px] py-1 rounded-md transition-all ${sidebarTab === "repairs" ? "bg-white shadow-sm font-bold text-primary" : "text-muted-foreground hover:bg-white/50"}`}
+                    >
+                      Repairs {janusData.repairs.length > 0 && <span className="ml-0.5 opacity-60">({janusData.repairs.length})</span>}
+                    </button>
+                    <button
+                      onClick={() => setSidebarTab("complaints")}
+                      className={`flex-1 text-[10px] py-1 rounded-md transition-all ${sidebarTab === "complaints" ? "bg-white shadow-sm font-bold text-primary" : "text-muted-foreground hover:bg-white/50"}`}
+                    >
+                      Complaints {janusData.complaints.length > 0 && <span className="ml-0.5 opacity-60">({janusData.complaints.length})</span>}
+                    </button>
                   </div>
                 )}
               </div>
@@ -2420,7 +2450,7 @@ export default function MeetingView({
                       </div>
                       <span className="text-[10px] font-black text-foreground uppercase tracking-wider">Active Repairs</span>
                     </div>
-                    {userCanEdit && (janusData.repairs.length > 0 || janusData.complaints.length > 0) && (
+                    {userCanEdit && isJanusIntegrated && (
                       <Button 
                         variant="outline" 
                         size="sm" 
@@ -2638,7 +2668,7 @@ export default function MeetingView({
                 )}
               </div>
               
-              {isJanusIntegrated && (janusData.repairs.length > 0 || janusData.complaints.length > 0) && (
+              {isJanusIntegrated && (
                 <div className="flex gap-1 p-0.5 bg-muted rounded-lg">
                   <button
                     onClick={() => setSidebarTab("agenda")}
@@ -2646,22 +2676,18 @@ export default function MeetingView({
                   >
                     Agenda
                   </button>
-                  {janusData.repairs.length > 0 && (
-                    <button
-                      onClick={() => setSidebarTab("repairs")}
-                      className={`flex-1 text-[10px] py-1 rounded-md transition-all ${sidebarTab === "repairs" ? "bg-white shadow-sm font-bold text-primary" : "text-muted-foreground hover:bg-white/50"}`}
-                    >
-                      Repairs
-                    </button>
-                  )}
-                  {janusData.complaints.length > 0 && (
-                    <button
-                      onClick={() => setSidebarTab("complaints")}
-                      className={`flex-1 text-[10px] py-1 rounded-md transition-all ${sidebarTab === "complaints" ? "bg-white shadow-sm font-bold text-primary" : "text-muted-foreground hover:bg-white/50"}`}
-                    >
-                      Complaints
-                    </button>
-                  )}
+                  <button
+                    onClick={() => setSidebarTab("repairs")}
+                    className={`flex-1 text-[10px] py-1 rounded-md transition-all ${sidebarTab === "repairs" ? "bg-white shadow-sm font-bold text-primary" : "text-muted-foreground hover:bg-white/50"}`}
+                  >
+                    Repairs {janusData.repairs.length > 0 && <span className="ml-0.5 opacity-60">({janusData.repairs.length})</span>}
+                  </button>
+                  <button
+                    onClick={() => setSidebarTab("complaints")}
+                    className={`flex-1 text-[10px] py-1 rounded-md transition-all ${sidebarTab === "complaints" ? "bg-white shadow-sm font-bold text-primary" : "text-muted-foreground hover:bg-white/50"}`}
+                  >
+                    Complaints {janusData.complaints.length > 0 && <span className="ml-0.5 opacity-60">({janusData.complaints.length})</span>}
+                  </button>
                 </div>
               )}
             </div>
