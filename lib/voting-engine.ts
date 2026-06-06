@@ -42,6 +42,8 @@ export interface VotingContext {
   eligibleHeadcount: number
   /** Total weighted eligible votes in the corporation/building */
   eligibleWeight: number
+  /** Total lots/units in the building (for absolute majority and bypass) */
+  totalLots: number
 }
 
 /**
@@ -57,8 +59,8 @@ export interface JurisdictionRule {
   threshold_percent: number
   /** 'exclude' = abstentions don't count in denominator; 'against' = they do */
   abstention_treatment: "exclude" | "against"
-  /** 'active' = FOR+AGAINST; 'eligible' = total eligible headcount/weight */
-  denominator_source: "active" | "eligible"
+  /** 'active' = FOR+AGAINST; 'eligible' = total eligible weight; 'all_units' = count of units */
+  denominator_source: "active" | "eligible" | "all_units"
   /** Whether passing this vote can trigger the reconsideration hold */
   reconsideration_trigger: boolean
   /**
@@ -90,6 +92,8 @@ export interface VotingResult {
   reconsiderationTriggered: boolean
   /** Days of hold (0 unless reconsiderationTriggered) */
   holdDays: number
+  /** True if the BC Unanimous court bypass is eligible */
+  courtBypassEligible: boolean
   /** Human-readable description of the rule applied */
   formulaDescription: string
   /** Whether weighted votes were used in this evaluation */
@@ -124,14 +128,19 @@ export function evaluateVoting(
       : context.votesFor + context.votesAgainst
     const pct = denom > 0 ? new Decimal(numer).div(denom).times(100) : new Decimal(0)
     const thr = new Decimal(customThreshold)
+    
+    // Majority (50.00) must be strictly greater than
+    const passed = customThreshold === 50 ? pct.gt(thr) : pct.gte(thr)
+
     return {
-      passed: pct.gte(thr),
+      passed,
       percentage: pct,
       threshold: thr,
       denominatorUsed: denom,
       numeratorUsed: numer,
       reconsiderationTriggered: false,
       holdDays: 0,
+      courtBypassEligible: false,
       formulaDescription: `Custom ${customThreshold}% threshold (votes cast)`,
       useWeighted,
     }
@@ -143,9 +152,13 @@ export function evaluateVoting(
     let denom: number
 
     if (rule.denominator_source === "eligible") {
-      // 80% / Unanimous: denominator = ALL eligible voters
+      // 80% / Unanimous: denominator = ALL eligible weight
       numer = useWeighted ? context.weightedFor : context.votesFor
       denom = useWeighted ? context.eligibleWeight : context.eligibleHeadcount
+    } else if (rule.denominator_source === "all_units") {
+      // Ontario s.56/s.33: denominator = ALL units (regardless of weighted mode, it's typically units)
+      numer = useWeighted ? context.weightedFor : context.votesFor
+      denom = context.totalLots
     } else {
       // 'active' denominator
       if (rule.abstention_treatment === "against") {
@@ -168,7 +181,15 @@ export function evaluateVoting(
     const dDenom = new Decimal(denom)
     const pct = dDenom.gt(0) ? dNumer.div(dDenom).times(100) : new Decimal(0)
     const thr = new Decimal(rule.threshold_percent)
-    const passed = pct.gte(thr)
+    
+    // Majority (50.00) must be strictly greater than
+    // Unanimous (100.00) must have zero dissenting or abstaining votes
+    let passed = rule.threshold_percent === 50 ? pct.gt(thr) : pct.gte(thr)
+    
+    if (rule.threshold_percent === 100 && rule.denominator_source === "eligible") {
+      const hasDissent = context.votesAgainst > 0 || context.votesAbstain > 0 || (useWeighted && (context.weightedAgainst > 0 || context.weightedAbstain > 0))
+      if (hasDissent) passed = false
+    }
 
     // ── BC 3/4 Reconsideration Check ─────────────────────────────────────
     let reconsiderationTriggered = false
@@ -177,9 +198,34 @@ export function evaluateVoting(
       const eligPct =
         eligDenom > 0 ? dNumer.div(new Decimal(eligDenom)).times(100) : new Decimal(0)
       const reconThr = new Decimal(rule.reconsideration_threshold_percent)
-      // Hold is triggered if motion passed the vote threshold BUT
-      // did NOT reach the required % of all eligible corporation votes
       reconsiderationTriggered = !eligPct.gte(reconThr)
+    }
+
+    // ── BC Unanimous Court Bypass Check ──────────────────────────────────
+    let courtBypassEligible = false
+    if (
+      !passed &&
+      rule.province_code === "BC" &&
+      rule.threshold_percent === 100 &&
+      context.totalLots >= 10
+    ) {
+      const eligWeight = useWeighted ? context.eligibleWeight : context.eligibleHeadcount
+      const dissentingWeight = eligWeight - numer
+      const nWeight = useWeighted ? context.weightedAgainst : context.votesAgainst
+      const aWeight = useWeighted ? context.weightedAbstain : context.votesAbstain
+      
+      // Bypass condition (a): only one lot failed
+      // Note: check for exactly one lot might be complex with weighted voting, 
+      // but if we use headcount (useWeighted=false), it's N+A === 1.
+      // If weighted, we check if dissenting weight matches approx one lot.
+      const oneLotFail = useWeighted 
+        ? (dissentingWeight > 0 && dissentingWeight <= (eligWeight / context.totalLots) * 1.01)
+        : (context.votesAgainst + context.votesAbstain === 1)
+        
+      // Bypass condition (b): lots representing less than 5% of E
+      const fivePctFail = dissentingWeight < (eligWeight * 0.05)
+      
+      courtBypassEligible = oneLotFail || fivePctFail
     }
 
     return {
@@ -189,7 +235,8 @@ export function evaluateVoting(
       denominatorUsed: denom,
       numeratorUsed: numer,
       reconsiderationTriggered,
-      holdDays: rule.reconsideration_hold_days ?? 0,
+      holdDays: reconsiderationTriggered ? (rule.reconsideration_hold_days ?? 7) : 0,
+      courtBypassEligible,
       formulaDescription:
         rule.description ||
         `${rule.threshold_percent}% (${rule.abstention_treatment} abstentions, ${rule.denominator_source} denominator)`,
@@ -214,6 +261,7 @@ export function evaluateVoting(
       numeratorUsed: numer,
       reconsiderationTriggered: false,
       holdDays: 0,
+      courtBypassEligible: false,
       formulaDescription: "Advisory vote (always passes)",
       useWeighted,
     }
@@ -222,19 +270,22 @@ export function evaluateVoting(
   // Infer legislative-style rule from voting type label
   const isUnanimous = name.includes("100") || name.includes("unanimous")
   const is80 = name.includes("80")
+  const is90 = name.includes("90")
+  const isS107 = name.includes("s.107") || name.includes("declaration amendment")
   const isThreeQuarter =
     name.includes("75") || name.includes("three-quarter") || name.includes("special")
-  const isEligibleDenom = isUnanimous || is80
+  
+  // S.107 and Unanimous/80 often use eligible or all_units denominator
+  const isEligibleDenom = isUnanimous || (is80 && !isS107)
+  const isAllUnitsDenom = isS107
 
   const numer = useWeighted ? context.weightedFor : context.votesFor
   let denom: number
 
   if (isEligibleDenom) {
     denom = useWeighted ? context.eligibleWeight : context.eligibleHeadcount
-  } else if (isThreeQuarter || name.includes("majority") || name.includes("ordinary")) {
-    denom = useWeighted
-      ? context.weightedFor + context.weightedAgainst
-      : context.votesFor + context.votesAgainst
+  } else if (isAllUnitsDenom) {
+    denom = context.totalLots
   } else {
     denom = useWeighted
       ? context.weightedFor + context.weightedAgainst
@@ -243,21 +294,25 @@ export function evaluateVoting(
 
   const pct = denom > 0 ? new Decimal(numer).div(denom).times(100) : new Decimal(0)
 
-  let thr = new Decimal(50)
+  let thrValue = 50
   let desc = "Majority (votes cast, abstentions excluded)"
 
   if (isUnanimous) {
-    thr = new Decimal(100)
+    thrValue = 100
     desc = "Unanimous (100% of all eligible; abstentions count against)"
+  } else if (is90) {
+    thrValue = 90
+    desc = "90% of all registered units (Ontario s.107)"
   } else if (is80) {
-    thr = new Decimal(80)
-    desc = "80% of all eligible voters (abstentions count against)"
+    thrValue = 80
+    desc = isS107 ? "80% of all registered units (Ontario s.107)" : "80% of all eligible voters (abstentions count against)"
   } else if (isThreeQuarter) {
-    thr = new Decimal(75)
+    thrValue = 75
     desc = "Three-Quarter (75% of votes cast, abstentions excluded)"
   }
 
-  const passed = pct.gte(thr)
+  const thr = new Decimal(thrValue)
+  const passed = thrValue === 50 ? pct.gt(thr) : pct.gte(thr)
 
   let reconsiderationTriggered = false
   if (passed && isThreeQuarter) {
@@ -275,6 +330,7 @@ export function evaluateVoting(
     numeratorUsed: numer,
     reconsiderationTriggered,
     holdDays: reconsiderationTriggered ? 7 : 0,
+    courtBypassEligible: false, // Legacy fallback doesn't support complex bypass logic
     formulaDescription: desc,
     useWeighted,
   }

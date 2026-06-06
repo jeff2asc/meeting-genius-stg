@@ -691,17 +691,6 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
             <div className="flex items-center gap-2 flex-shrink-0">
               {activeTab === "users" && canCreateUser && (
                 <div className="flex gap-2">
-                  {isMaster && (
-                    <Button
-                      onClick={() => setShowCreateBuildingModal(true)}
-                      size="sm"
-                      variant="outline"
-                      className="text-[10px] sm:text-sm px-2 sm:px-4 border-primary/20 hover:border-primary/50"
-                    >
-                      <Plus className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
-                      <span className="truncate">Create Building</span>
-                    </Button>
-                  )}
                   <Button
                     onClick={() => setShowCreateUserModal(true)}
                     size="sm"

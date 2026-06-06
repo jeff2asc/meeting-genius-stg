@@ -13,6 +13,7 @@ interface TaskDetailsModalProps {
   taskId: number
   onClose: () => void
   onUpdate?: () => void
+  initialData?: any
 }
 
 interface Assignee {
@@ -42,7 +43,7 @@ interface TaskData {
   creator_name?: string
 }
 
-export default function TaskDetailsModal({ taskId, onClose, onUpdate }: TaskDetailsModalProps) {
+export default function TaskDetailsModal({ taskId, onClose, onUpdate, initialData }: TaskDetailsModalProps) {
   const [task, setTask] = useState<TaskData | null>(null)
   const [notes, setNotes] = useState<TaskNote[]>([])
   const [attachments, setAttachments] = useState<TaskAttachment[]>([])
@@ -67,11 +68,23 @@ export default function TaskDetailsModal({ taskId, onClose, onUpdate }: TaskDeta
   ]
 
   useEffect(() => {
-    fetchTaskDetails()
+    if (initialData) {
+      setTask({
+        ...initialData,
+        creator_name: initialData.created_by ? ('User #' + initialData.created_by) : 'System'
+      } as unknown as TaskData)
+      setSelectedStatus(initialData.status || 'open')
+      // Even if we have initial data, we still try to fetch the latest details
+      // but we don't block the UI with a full loading screen if we have something to show
+      setLoading(false)
+      fetchTaskDetails()
+    } else {
+      fetchTaskDetails()
+    }
     fetchTaskNotes()
     fetchTaskAttachments()
     fetchAIAnalysis()
-  }, [taskId])
+  }, [taskId, initialData])
 
   const fetchTaskDetails = async () => {
     try {
@@ -79,21 +92,33 @@ export default function TaskDetailsModal({ taskId, onClose, onUpdate }: TaskDeta
       const { data, error } = await supabase
         .from('tasks')
         .select(`
-          *,
-          creator:created_by(name)
+          *
         `)
         .eq('id', taskId)
-        .single()
+        .maybeSingle()
 
       if (error) {
-        console.error('Error fetching task:', error)
+        if (initialData) {
+          console.log('Background task fetch suppressed (using initial data)', error)
+        } else {
+          console.error('Error fetching task:', error)
+        }
+        return
+      }
+
+      if (!data) {
+        if (!initialData) {
+          console.error('Task not found (possibly due to RLS restrictions)')
+        } else {
+          console.log('Using initial task data (direct fetch restricted by RLS)')
+        }
         return
       }
 
       console.log('Task data:', data)
       setTask({
         ...data,
-        creator_name: (data as any).creator?.name || 'Unknown'
+        creator_name: (data as any).created_by ? ('User #' + (data as any).created_by) : 'System'
       } as unknown as TaskData)
       setSelectedStatus(data.status || 'open')
     } catch (err) {
@@ -108,8 +133,7 @@ export default function TaskDetailsModal({ taskId, onClose, onUpdate }: TaskDeta
       const { data, error } = await supabase
         .from('task_notes')
         .select(`
-          *,
-          creator:created_by(name)
+          *
         `)
         .eq('task_id', taskId)
         .order('created_at', { ascending: false })
@@ -121,7 +145,7 @@ export default function TaskDetailsModal({ taskId, onClose, onUpdate }: TaskDeta
 
       setNotes((data as any[]).map(note => ({
         ...note,
-        creator_name: note.creator?.name || 'Unknown'
+        creator_name: 'User #' + note.created_by
       })))
     } catch (err) {
       console.error('Unexpected error:', err)
@@ -155,7 +179,7 @@ export default function TaskDetailsModal({ taskId, onClose, onUpdate }: TaskDeta
         .eq('task_id', taskId)
         .order('created_at', { ascending: false })
         .limit(1)
-        .single()
+        .maybeSingle()
 
       if (error && error.code !== 'PGRST116') {
         console.error('Error fetching AI analysis:', error)
@@ -514,11 +538,12 @@ export default function TaskDetailsModal({ taskId, onClose, onUpdate }: TaskDeta
     return option?.label || status
   }
 
-  if (loading) {
+  if (loading && !task) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-        <Card className="w-full max-w-2xl p-6">
-          <p className="text-center text-muted-foreground">Loading task details...</p>
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <Card className="w-full max-w-lg p-12 flex flex-col items-center justify-center bg-card border-border shadow-2xl rounded-3xl">
+          <div className="h-10 w-10 border-4 border-primary/20 border-t-primary rounded-full animate-spin mb-4" />
+          <p className="text-muted-foreground font-medium">Loading task details...</p>
         </Card>
       </div>
     )
@@ -526,10 +551,18 @@ export default function TaskDetailsModal({ taskId, onClose, onUpdate }: TaskDeta
 
   if (!task) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-        <Card className="w-full max-w-2xl p-6">
-          <p className="text-center text-muted-foreground">Task not found</p>
-          <Button onClick={onClose} className="mt-4 w-full">Close</Button>
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <Card className="w-full max-w-lg p-10 flex flex-col items-center justify-center bg-card border-border shadow-2xl rounded-3xl text-center">
+          <div className="h-16 w-16 bg-red-50 text-red-500 rounded-full flex items-center justify-center mb-6">
+            <X className="h-8 w-8" />
+          </div>
+          <h2 className="text-xl font-bold text-foreground mb-2">Task Not Found</h2>
+          <p className="text-muted-foreground mb-8 max-w-xs mx-auto">
+            This task could not be found or you may not have permission to view its details.
+          </p>
+          <Button onClick={onClose} className="w-full h-11 bg-primary hover:bg-primary/90 text-white rounded-xl font-bold">
+            Close
+          </Button>
         </Card>
       </div>
     )

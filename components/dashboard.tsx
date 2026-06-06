@@ -1711,6 +1711,7 @@ export default function Dashboard({
       {selectedTaskId && (
         <TaskDetailsModal
           taskId={selectedTaskId}
+          initialData={tasks.find(t => t.id === selectedTaskId)}
           onClose={() => setSelectedTaskId(null)}
           onUpdate={() => {
             fetchTasks()

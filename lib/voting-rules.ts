@@ -141,6 +141,7 @@ export interface DecisionVoteInput {
   getWeight: (name: string) => number
   eligibleHeadcount: number
   eligibleWeight: number
+  totalLots: number
   jurisdictionRules: JurisdictionRule[]
   votingParameters: VotingParameterRow[]
   building: BuildingVotingContext
@@ -181,6 +182,7 @@ export function buildVotingContext(input: DecisionVoteInput): VotingContext {
         : abstainCount,
     eligibleHeadcount: input.eligibleHeadcount,
     eligibleWeight: input.eligibleWeight,
+    totalLots: input.totalLots,
   }
 }
 
@@ -213,10 +215,27 @@ export interface DecisionVoteSnapshot {
   reconsideration_triggered: boolean
   reconsideration_hold_days: number
   reconsideration_hold_until: string | null
+  court_bypass_eligible: boolean
+  
+  // High-fidelity audit fields (§7)
+  formula_denominator: string | null
+  abstention_treatment: string | null
+  total_eligible_weight: number | null
+  total_votes_present: number | null
+  votes_cast_total: number | null
+  threshold_value: number | null
+  calculated_at: string | null
+  votes_for_weight: number | null
+  votes_against_weight: number | null
+  votes_abstain_weight: number | null
+  tie_broken_by_chair: boolean
 }
 
 export function toDecisionVoteSnapshot(
   result: VotingResult,
+  activeRule: JurisdictionRule | null,
+  context: VotingContext,
+  tieBrokenByChair: boolean = false
 ): DecisionVoteSnapshot {
   const holdUntil =
     result.reconsiderationTriggered && result.holdDays > 0
@@ -229,5 +248,20 @@ export function toDecisionVoteSnapshot(
     reconsideration_triggered: result.reconsiderationTriggered,
     reconsideration_hold_days: result.reconsiderationTriggered ? result.holdDays : 0,
     reconsideration_hold_until: holdUntil,
+    court_bypass_eligible: result.courtBypassEligible,
+    
+    formula_denominator: activeRule?.denominator_source || "active",
+    abstention_treatment: activeRule?.abstention_treatment || "exclude",
+    total_eligible_weight: context.eligibleWeight,
+    total_votes_present: result.useWeighted 
+      ? (context.weightedFor + context.weightedAgainst + context.weightedAbstain) 
+      : (context.votesFor + context.votesAgainst + context.votesAbstain),
+    votes_cast_total: result.denominatorUsed,
+    threshold_value: result.threshold.toNumber(),
+    calculated_at: new Date().toISOString(),
+    votes_for_weight: context.weightedFor,
+    votes_against_weight: context.weightedAgainst,
+    votes_abstain_weight: context.weightedAbstain,
+    tie_broken_by_chair: tieBrokenByChair
   }
 }

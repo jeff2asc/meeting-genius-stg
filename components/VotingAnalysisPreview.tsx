@@ -25,6 +25,7 @@ export interface VotingAnalysisPreviewProps {
   getWeight: (name: string) => number
   eligibleHeadcount: number
   eligibleWeight: number
+  totalLots: number
   customThreshold?: number
   className?: string
 }
@@ -38,6 +39,7 @@ export default function VotingAnalysisPreview({
   votesFor,
   votesAgainst,
   votesAbstain,
+  totalLots,
   userTypeWeights,
   jurisdictionRules,
   votingParameters,
@@ -68,6 +70,7 @@ export default function VotingAnalysisPreview({
     getWeight,
     eligibleHeadcount,
     eligibleWeight,
+    totalLots,
     jurisdictionRules,
     votingParameters,
     building,
@@ -160,13 +163,35 @@ export default function VotingAnalysisPreview({
                 : Number(votesAgainst) || 0}
             </div>
           </div>
-          <div className="bg-background/60 p-2 rounded-lg border border-border/30 text-center">
-            <div className="text-[9px] text-muted-foreground font-bold uppercase">Abstain</div>
+          <div
+            className="bg-background/60 p-2 rounded-lg border border-border/30 text-center"
+            title={abstainNote}
+          >
+            <div className="text-[9px] text-muted-foreground font-bold uppercase">
+              {activeRule?.denominator_source === "eligible"
+                ? "Abstain (= No)"
+                : activeRule?.abstention_treatment === "against"
+                  ? "Abstain (in denom.)"
+                  : "Abstain (excl.)"}
+            </div>
             <div className="text-xs font-black">
               {votersAbstain.length || Number(votesAbstain) || 0}
             </div>
           </div>
         </div>
+
+        {result.courtBypassEligible && (
+          <div className="bg-blue-50 border border-blue-200 dark:bg-blue-950/30 p-3 rounded-xl flex items-start gap-3">
+            <AlertCircle className="h-4 w-4 text-blue-600 mt-0.5" />
+            <div>
+              <div className="text-xs font-bold text-blue-800 dark:text-blue-400">Court Bypass Eligible (BC SPA s.52)</div>
+              <p className="text-[10px] text-blue-700/80 leading-relaxed">
+                Resolution failed by less than 5% or by only one lot. 
+                Strata may apply to Court to treat as passed.
+              </p>
+            </div>
+          </div>
+        )}
 
         <p className="text-[9px] text-muted-foreground italic text-center flex items-center justify-center gap-1">
           <AlertCircle className="h-3 w-3 shrink-0" />

@@ -21,6 +21,7 @@ import {
   evaluateDecisionVote,
   inferProvinceCode,
   toDecisionVoteSnapshot,
+  resolveVotingRule,
   type BuildingVotingContext,
   type VotingParameterRow,
 } from "@/lib/voting-rules"
@@ -119,6 +120,11 @@ export default function DecisionModal({
   const [topicNotes, setTopicNotes] = useState<any[]>([])
   const [topicTasks, setTopicTasks] = useState<any[]>([])
   const [showReferences, setShowReferences] = useState(false)
+
+  const [totalLots, setTotalLots] = useState(0)
+  const [totalUE, setTotalUE] = useState(0)
+  const [customThreshold, setCustomThreshold] = useState<number>(50)
+  const [tieBrokenByChair, setTieBrokenByChair] = useState(false)
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const suggestionsRef = useRef<HTMLDivElement>(null)
@@ -269,15 +275,29 @@ export default function DecisionModal({
 
       const allVTypes = Array.from(vtByName.values())
 
-      // meeting_type and voting_type are global-only (company_id = null).
-      // Just find the single global row for this meeting type.
-      const meetingTypeParam = params.find(
-        (p: RawParam) => p.parameter_type === 'meeting_type' &&
-                         p.value === currentMeetingType &&
-                         p.company_id === null
-      )
+      // Find the meeting type row whose linked_voting_type we need.
+      // Prefer the company-specific row (company_id = companyId) over the global
+      // fallback (company_id = null) — this mirrors how getVotingParameters merges them.
+      const meetingTypeParam =
+        params.find(
+          (p: RawParam) =>
+            p.parameter_type === 'meeting_type' &&
+            p.value === currentMeetingType &&
+            p.company_id === companyId,
+        ) ??
+        params.find(
+          (p: RawParam) =>
+            p.parameter_type === 'meeting_type' &&
+            p.value === currentMeetingType,
+        )
 
       const allowedTypesStr = meetingTypeParam?.linked_voting_type
+
+      // Debug: log what we found so you can verify the DB state in the browser console
+      console.debug('[VotingTypes] meeting type:', currentMeetingType)
+      console.debug('[VotingTypes] meetingTypeParam row:', meetingTypeParam)
+      console.debug('[VotingTypes] linked_voting_type value:', allowedTypesStr)
+      console.debug('[VotingTypes] all available voting types:', allVTypes)
 
       let filteredVTypes: string[]
       if (allowedTypesStr && allowedTypesStr.trim()) {
@@ -292,9 +312,11 @@ export default function DecisionModal({
         // Safety: if nothing matched (stale data) show all
         if (filteredVTypes.length === 0) filteredVTypes = allVTypes
       } else {
-        // No voting types marked for this meeting type — show nothing
-        // Voting Mechanism dropdown will be hidden
-        filteredVTypes = []
+        // No voting types linked for this meeting type (either no row exists, or
+        // linked_voting_type is null/empty). Show ALL available voting types rather
+        // than hiding the dropdown — an empty/unconfigured meeting type should not
+        // block the PM from recording a vote.
+        filteredVTypes = allVTypes
       }
 
       const finalVTypes = filteredVTypes
@@ -450,6 +472,9 @@ export default function DecisionModal({
         new Map(merged.map((u: any) => [u.id, u])).values()
       ).sort((a: any, b: any) => a.name.localeCompare(b.name))
 
+      const eligibleUsers = unique.filter(u => u.user_type === 'owner' || u.user_type === 'resident')
+      setTotalLots(eligibleUsers.length)
+      setTotalUE(eligibleUsers.reduce((sum, u) => sum + (u.voting_weight ?? 1), 0))
       setCompanyUsers(unique)
 
       const attendeeList: MeetingAttendeeRecord[] =
@@ -669,7 +694,10 @@ export default function DecisionModal({
       }
     }
 
-    const { result } = evaluateDecisionVote({
+    const currentEligibleWeight = getEligibleWeight(meetingVoters)
+    const currentEligibleHeadcount = getEligibleHeadcount(meetingVoters)
+
+    const { result: vr, activeRule } = evaluateDecisionVote({
       votingType: selectedVotingType,
       votersFor,
       votersAgainst,
@@ -679,15 +707,26 @@ export default function DecisionModal({
       votesAbstain,
       meetingVoters,
       getWeight: (name) => getVoterWeight(meetingVoters, name),
-      eligibleHeadcount: getEligibleHeadcount(meetingVoters),
-      eligibleWeight: getEligibleWeight(meetingVoters),
+      eligibleHeadcount: currentEligibleHeadcount,
+      eligibleWeight: currentEligibleWeight,
+      totalLots,
       jurisdictionRules,
       votingParameters: votingParametersData,
       building: buildingContext,
-      useWeighted: false,
+      customThreshold: selectedVotingType === "Custom Percentage (%)" ? customThreshold : undefined,
     })
 
-    return toDecisionVoteSnapshot(result)
+    return toDecisionVoteSnapshot(vr, activeRule, {
+      votesFor: votersFor.length || (typeof votesFor === 'number' ? votesFor : 0),
+      votesAgainst: votersAgainst.length || (typeof votesAgainst === 'number' ? votesAgainst : 0),
+      votesAbstain: votersAbstain.length || (typeof votesAbstain === 'number' ? votesAbstain : 0),
+      weightedFor: votersFor.reduce((s, n) => s + getVoterWeight(meetingVoters, n), 0),
+      weightedAgainst: votersAgainst.reduce((s, n) => s + getVoterWeight(meetingVoters, n), 0),
+      weightedAbstain: votersAbstain.reduce((s, n) => s + getVoterWeight(meetingVoters, n), 0),
+      eligibleHeadcount: currentEligibleHeadcount,
+      eligibleWeight: currentEligibleWeight,
+      totalLots,
+    }, tieBrokenByChair)
   }
 
   const handleSave = async () => {
@@ -714,6 +753,8 @@ export default function DecisionModal({
             voting_type: selectedVotingType || null,
             status: status as string,
             edited_at: new Date().toISOString(),
+            total_lots: totalLots,
+            total_ue: totalUE,
             ...voteSnapshot,
           })
           .eq('id', existingDecisionId)
@@ -740,6 +781,8 @@ export default function DecisionModal({
             parent_decision_id: parentDecisionId,
             status: status as string,
             recorded_at: new Date().toISOString(),
+            total_lots: totalLots,
+            total_ue: totalUE,
             ...voteSnapshot,
           })
 
@@ -836,9 +879,9 @@ export default function DecisionModal({
           type="button"
           onClick={() => setOpenDropdown(isOpen ? null : type)}
           disabled={saving || deleting}
-          className="w-full px-3 py-2 bg-background border border-border rounded-lg text-left flex justify-between items-center focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed"
+          className="w-full min-h-[44px] px-3 py-2 bg-background border-2 border-border rounded-xl text-left flex justify-between items-center focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all hover:bg-muted/50"
         >
-          <span className="truncate text-sm">
+          <span className="truncate text-sm font-medium text-foreground">
             {selected.length > 0 
               ? `${selected.length} selected` 
               : (type === 'for' ? votesFor : type === 'against' ? votesAgainst : votesAbstain) || "0"
@@ -848,7 +891,7 @@ export default function DecisionModal({
         </button>
         
         {isOpen && (
-          <div className="absolute z-50 w-64 bottom-full mb-1 bg-card border border-border rounded-lg shadow-xl max-h-44 overflow-y-auto">
+          <div className="absolute z-50 w-72 bottom-full mb-1 bg-card border-2 border-border rounded-xl shadow-2xl max-h-80 overflow-y-auto animate-in fade-in slide-in-from-bottom-2 duration-200">
             {meetingVoters.length === 0 && (
               <div className="p-3 text-sm text-muted-foreground text-center">
                 No voters — open <strong>Attendees</strong>, add people, click <strong>Save Attendees</strong>, then reopen this decision.
@@ -911,9 +954,9 @@ export default function DecisionModal({
 
   // ⭐ NEW: Form content (shared between embedded and modal)
   const formContent = (
-    <div className="flex flex-col max-h-[80vh]">
+    <div className="flex flex-col max-h-[85vh]">
       {/* ── Scrollable top section ── */}
-      <div className="p-6 pb-4 overflow-y-auto flex-1 min-h-0">
+      <div className="px-6 pt-2 pb-12 overflow-y-auto flex-1 min-h-0 custom-scrollbar">
         {parentDecision && (
           <div className="mb-4 p-3 bg-purple-50 border border-purple-200 rounded-lg">
             <div className="flex items-start gap-2">
@@ -1070,25 +1113,33 @@ export default function DecisionModal({
           )}
         </div>
 
-        <VotingAnalysisPreview
-          selectedVotingType={selectedVotingType}
-          meetingVoters={meetingVoters}
-          votersFor={votersFor}
-          votersAgainst={votersAgainst}
-          votersAbstain={votersAbstain}
-          votesFor={votesFor}
-          votesAgainst={votesAgainst}
-          votesAbstain={votesAbstain}
-          userTypeWeights={userTypeWeights}
-          jurisdictionRules={jurisdictionRules}
-          votingParameters={votingParametersData}
-          building={buildingContext}
-          getWeight={(name) => getVoterWeight(meetingVoters, name)}
-          eligibleHeadcount={getEligibleHeadcount(meetingVoters)}
-          eligibleWeight={getEligibleWeight(meetingVoters)}
-        />
+        <div className="rounded-xl border-2 border-primary/20 bg-primary/5 p-4 shadow-inner min-h-[100px] flex flex-col">
+          <div className="text-[10px] font-black text-primary uppercase mb-3 pr-1">Live Legislative Analysis</div>
+          <div className="flex-1 overflow-y-auto custom-scrollbar pr-1">
+            <VotingAnalysisPreview
+              selectedVotingType={selectedVotingType}
+              meetingVoters={meetingVoters}
+              votersFor={votersFor}
+              votersAgainst={votersAgainst}
+              votersAbstain={votersAbstain}
+              votesFor={votesFor}
+              votesAgainst={votesAgainst}
+              votesAbstain={votesAbstain}
+              userTypeWeights={userTypeWeights}
+              jurisdictionRules={jurisdictionRules}
+              votingParameters={votingParametersData}
+              building={buildingContext}
+              getWeight={(name) => getVoterWeight(meetingVoters, name)}
+              eligibleHeadcount={getEligibleHeadcount(meetingVoters)}
+              eligibleWeight={getEligibleWeight(meetingVoters)}
+              totalLots={totalLots}
+              customThreshold={selectedVotingType === "Custom Percentage (%)" ? customThreshold : undefined}
+              className="shadow-none border-0 p-0"
+            />
+          </div>
+        </div>
 
-        <div className={`grid ${votingTypes.length > 0 ? "grid-cols-2" : "grid-cols-1"} gap-4`}>
+        <div className={`grid ${votingTypes.length > 0 ? "grid-cols-2" : "grid-cols-1"} gap-6`}>
           <div>
             <label className="block text-sm font-medium text-foreground mb-1.5 flex items-center gap-2">
               Result
@@ -1127,20 +1178,36 @@ export default function DecisionModal({
               </select>
             </div>
           )}
-        </div>{/* close grid: result + voting mechanism */}
+        </div>
 
-        </div>{/* close space-y-4 */}
-      </div>{/* end scrollable section */}
-
-      {/* ── Non-clipping bottom section: vote dropdowns, preview, buttons ── */}
-      <div className="px-6 pt-2 pb-4 space-y-3">
-        <div className="space-y-2 animate-in slide-in-from-bottom-4 duration-300">
-          <div className="grid grid-cols-3 gap-4">
+        <div className="space-y-6 pt-6 pb-24">
+          <label className="block text-[10px] uppercase font-black tracking-widest text-muted-foreground px-1">
+            Voter Breakdown
+          </label>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {renderVotingDropdown("Votes For", "for", votersFor)}
             {renderVotingDropdown("Votes Against", "against", votersAgainst)}
-            {renderVotingDropdown("Abstentions", "abstain", votersAbstain)}
-          </div>
+            {renderVotingDropdown(
+              (() => {
+                if (!selectedVotingType) return "Abstentions"
+                const rule = resolveVotingRule(
+                  selectedVotingType,
+                  jurisdictionRules,
+                  votingParametersData,
+                  buildingContext,
+                )
+                if (!rule) return "Abstentions"
+                if (rule.denominator_source === "eligible")
+                  return "Abstentions (= No)"
+                if (rule.abstention_treatment === "against")
+                  return "Abstentions (in denom.)"
+                return "Abstentions (excluded)"
+              })(),
+              "abstain",
+              votersAbstain,
+            )}
         </div>
+      </div>
 
 
 
@@ -1160,43 +1227,10 @@ export default function DecisionModal({
             </select>
           </div>
         )}
-      </div>{/* end non-clipping section */}
-
-      {/* Action buttons — also outside the scroll zone */}
-      <div className="flex gap-3 px-6 pb-4 pt-1 border-t border-border/40">
-        {editMode && existingDecisionId && (
-          <Button
-            onClick={handleDelete}
-            variant="outline"
-            disabled={saving || deleting}
-            className="text-red-600 border-red-600 hover:bg-red-50"
-          >
-            <Trash2 className="h-4 w-4 mr-2" />
-            {deleting ? "Deleting..." : "Delete"}
-          </Button>
-        )}
-
-        <div className="flex-1"></div>
-
-        <Button
-          onClick={handleClose}
-          variant="outline"
-          className="flex-1"
-          disabled={saving || deleting}
-        >
-          Cancel
-        </Button>
-        <Button
-          type="button"
-          onClick={handleSave}
-          className="flex-1 bg-decision-purple hover:bg-decision-purple/90 text-white"
-          disabled={saving || deleting || !motionText.trim()}
-        >
-          {saving ? "Saving..." : editMode ? "Update Decision" : "Save Decision"}
-        </Button>
       </div>
     </div>
-  )
+  </div>
+)
 
   // ⭐ NEW: If embedded, return just the content
   if (embedded) {
@@ -1207,17 +1241,44 @@ export default function DecisionModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 animate-in fade-in">
       <Card className="w-full max-w-2xl m-4 max-h-[90vh] overflow-hidden">
-        <div className="flex items-center justify-between p-6 border-b border-border">
-          <h2 className="text-xl font-bold text-foreground">
-            {editMode ? "Edit Decision" : parentDecision ? "Add Threaded Decision" : "Record Decision"}
-          </h2>
-          <button
-            onClick={handleClose}
-            className="flex h-8 w-8 items-center justify-center rounded hover:bg-muted transition-colors"
-            disabled={saving || deleting}
-          >
-            <X className="h-5 w-5" />
-          </button>
+        <div className="flex items-center justify-between px-6 py-3 border-b border-border bg-muted/30">
+          <div className="flex flex-col">
+            <h2 className="text-xl font-bold text-foreground">
+              {editMode ? "Edit Decision" : parentDecision ? "Add Threaded Decision" : "Record Decision"}
+            </h2>
+            <div className="flex items-center gap-1.5 text-[10px] font-black text-green-600 uppercase tracking-widest">
+              <div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+              Compliance Engine v2.1
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-3">
+            <Button
+              onClick={handleClose}
+              variant="outline"
+              size="sm"
+              className="h-9 px-4 text-xs font-bold rounded-lg border-2"
+              disabled={saving || deleting}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={handleSave}
+              size="sm"
+              className="h-9 px-6 bg-decision-purple hover:bg-decision-purple/90 text-white text-xs font-bold rounded-lg shadow-md active:scale-95"
+              disabled={saving || deleting || !motionText.trim()}
+            >
+              {saving ? "Saving..." : editMode ? "Update Decision" : "Save Decision"}
+            </Button>
+            <button
+              onClick={handleClose}
+              className="flex h-9 w-9 items-center justify-center rounded-lg hover:bg-muted border border-border transition-colors"
+              disabled={saving || deleting}
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
         </div>
 
         {formContent}

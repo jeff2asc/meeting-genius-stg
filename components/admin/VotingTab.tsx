@@ -340,7 +340,15 @@ export default function VotingTab() {
   }
 
   const renderSection = (type: ParameterType, title: string, description: string) => {
-    const sectionParams = parameters.filter(p => p.parameter_type === type)
+    // Deduplicate: if a company-specific row and a global row share the same value,
+    // show only the company-specific one (mirrors getVotingParameters merge logic).
+    const raw = parameters.filter(p => p.parameter_type === type)
+    const seen = new Map<string, VotingParameter>()
+    // Global rows first (lower priority)
+    raw.filter(p => p.company_id === null).forEach(p => seen.set(p.value.trim().toLowerCase(), p))
+    // Company rows win
+    raw.filter(p => p.company_id !== null).forEach(p => seen.set(p.value.trim().toLowerCase(), p))
+    const sectionParams = Array.from(seen.values())
     
     return (
       <Card className="border-border shadow-sm hover:shadow-md transition-shadow duration-300 overflow-hidden rounded-2xl">
@@ -377,8 +385,8 @@ export default function VotingTab() {
                 No custom settings defined.
               </div>
             ) : (
-              sectionParams.map(param => (
-                <div key={param.id} className="p-4 flex items-center justify-between group hover:bg-muted/20 transition-colors">
+              sectionParams.map((param, index) => (
+                <div key={`${param.parameter_type}-${param.id}-${index}`} className="p-4 flex items-center justify-between group hover:bg-muted/20 transition-colors">
                   <div className="flex-1 min-w-0 mr-4">
                     <div>
                       <div className="flex items-center gap-2">
@@ -496,7 +504,7 @@ export default function VotingTab() {
                 <div>
                   <CardTitle className="text-lg font-bold">🌏 Jurisdiction &amp; Compliance Rules</CardTitle>
                   <CardDescription className="text-xs mt-1 max-w-lg">
-                    Province-specific legislative rules that automatically set the correct denominator, abstention treatment, and
+                    Location-specific legislative rules that automatically set the correct denominator, abstention treatment, and
                     reconsideration hold for each vote type. Apply the migration SQL first if this panel shows empty.
                   </CardDescription>
                 </div>
@@ -553,7 +561,7 @@ export default function VotingTab() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-border bg-muted/30">
-                      <th className="text-left text-[10px] font-bold uppercase tracking-wider text-muted-foreground px-4 py-3">Province</th>
+                      <th className="text-left text-[10px] font-bold uppercase tracking-wider text-muted-foreground px-4 py-3">Location</th>
                       <th className="text-left text-[10px] font-bold uppercase tracking-wider text-muted-foreground px-4 py-3">Building Type</th>
                       <th className="text-left text-[10px] font-bold uppercase tracking-wider text-muted-foreground px-4 py-3">Voting Type</th>
                       <th className="text-center text-[10px] font-bold uppercase tracking-wider text-muted-foreground px-4 py-3">Threshold</th>
@@ -640,16 +648,16 @@ export default function VotingTab() {
               {editingRule?.id ? 'Edit Jurisdiction Rule' : 'New Jurisdiction Rule'}
             </DialogTitle>
             <DialogDescription className="text-sm">
-              Configure how votes are counted for this province, building type, and vote type combination.
+              Configure how votes are counted for this location, building type, and vote type combination.
             </DialogDescription>
           </DialogHeader>
 
           {editingRule && (
             <div className="grid grid-cols-2 gap-4 py-4">
               <div className="space-y-1.5">
-                <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Province Code</Label>
+                <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Location Code</Label>
                 <Input
-                  placeholder="e.g. BC, ON"
+                  placeholder="e.g. BC, ON, WA"
                   className="h-10 rounded-xl bg-muted/20 font-mono"
                   value={editingRule.province_code || ''}
                   onChange={e => setEditingRule(r => r ? { ...r, province_code: e.target.value.toUpperCase() } : r)}
@@ -817,15 +825,15 @@ export default function VotingTab() {
                     <p className="text-[10px] text-muted-foreground mt-0.5">Select which voting types will be available during this meeting type.</p>
                   </div>
                   <div className="grid grid-cols-1 gap-2 mt-2">
-                    {votingTypeOptions.map(vt => (
-                      <div key={vt.id} className="flex items-center space-x-2 bg-background/50 p-2 rounded-lg border border-border/50 hover:border-primary/30 transition-colors">
+                    {votingTypeOptions.map((vt, idx) => (
+                      <div key={`vt-opt-${vt.id}-${idx}`} className="flex items-center space-x-2 bg-background/50 p-2 rounded-lg border border-border/50 hover:border-primary/30 transition-colors">
                         <Checkbox 
-                          id={`vt-${vt.id}`} 
+                          id={`vt-${vt.id}-${idx}`} 
                           checked={currentValues.includes(vt.value.trim().toLowerCase())}
                           onCheckedChange={() => toggleType(vt.value)}
                         />
                         <label 
-                          htmlFor={`vt-${vt.id}`}
+                          htmlFor={`vt-${vt.id}-${idx}`}
                           className="text-sm font-medium leading-none cursor-pointer flex-1"
                         >
                           {vt.value}

@@ -87,7 +87,7 @@ export default function TaskUpdatePage() {
           )
         `)
         .eq('external_update_token', token)
-        .single()
+        .maybeSingle()
 
       if (taskError || !taskData) {
         setError('Task not found or link expired')
