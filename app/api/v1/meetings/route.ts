@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
     const supabase = createClient()
     let query = supabase
       .from('meetings')
-      .select('*, buildings(name)')
+      .select('*, buildings(*)')
       .order('meeting_date', { ascending: false })
 
     if (buildingId) {

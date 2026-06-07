@@ -66,6 +66,7 @@ export default function Dashboard({
 
   // NEW: assignee filter state
   const [assigneeFilter, setAssigneeFilter] = useState<string>("All")
+  const [janusBuildingFilter, setJanusBuildingFilter] = useState<string>("All")
 
   // ⭐ JANUS INTEGRATION STATES
   const [isJanusIntegrated, setIsJanusIntegrated] = useState(false)
@@ -369,13 +370,14 @@ export default function Dashboard({
         building_id: meeting.building_id,
         title: meeting.title,
         date: formatFloatingDate(meeting.meeting_date, 'short') + (meeting.start_time ? ` at ${formatFloatingTimeWithZone(meeting.start_time, meeting.buildings?.timezone)}` : ''),
+        company_id: meeting.buildings?.company_id,
         meeting_date: meeting.meeting_date,
         location: meeting.location,
         start_time: meeting.start_time,
         meeting_type: meeting.meeting_type,
         strata_plan_number: meeting.strata_plan_number,
         status: meeting.status === 'working_agenda' ? 'Draft' :
-          meeting.status === 'agenda' ? 'In Progress' :
+          (meeting.status === 'working_minutes' || meeting.status === 'agenda') ? 'In Progress' :
             'Finalized'
       }))
 
@@ -481,6 +483,10 @@ export default function Dashboard({
     }
   }
 
+  const handleBuildingChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    handleBuildingSelect(e.target.value)
+  }
+
   const handleMeetingTypeSelect = (meetingType: string) => {
     setSelectedMeetingType(meetingType)
     setShowMeetingTypeDropdown(false)
@@ -492,7 +498,8 @@ export default function Dashboard({
       (meeting.date || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
       (meeting.building || "").toLowerCase().includes(searchQuery.toLowerCase())
     const matchesMeetingType = selectedMeetingType === "All" || meeting.meeting_type === selectedMeetingType
-    return matchesSearch && matchesMeetingType
+    const matchesBuilding = selectedBuilding === "All" || meeting.building === selectedBuilding
+    return matchesSearch && matchesMeetingType && matchesBuilding
   })
 
   // Build list of unique assignee names for filter
@@ -530,7 +537,11 @@ export default function Dashboard({
           assigneeFilter === "All" ||
           assigneeNames.includes(assigneeFilter.toLowerCase())
 
-        return matchesSearch && matchesAssignee
+        const matchesBuilding =
+          selectedBuilding === "All" ||
+          (task.building || "").toLowerCase() === selectedBuilding.toLowerCase()
+
+        return matchesSearch && matchesAssignee && matchesBuilding
       }).map(task => [task.id, task])
     ).values()
   )
@@ -567,16 +578,7 @@ export default function Dashboard({
         )
         break
       case "In Progress":
-        primaryButton = (
-          <Button
-            onClick={() => onStartMeeting(meeting.id)}
-            size="sm"
-            className="bg-task-green text-white hover:bg-task-green/90"
-          >
-            <Play className="h-4 w-4 mr-2" />
-            Continue
-          </Button>
-        )
+        primaryButton = null; // Removed 'Continue' button as requested; users can click the meeting title
         break
       case "Finalized":
         primaryButton = (
@@ -661,41 +663,19 @@ export default function Dashboard({
             {selectedBuilding === "All" ? "All Buildings" : selectedBuilding}
           </h2>
 
-          {/* Building Selector */}
           <div className="relative mb-3">
-            <Button
-              variant="outline"
-              className="flex items-center gap-2 bg-card w-full justify-between border border-border rounded-xl"
-              onClick={(e) => {
-                e.stopPropagation()
-                setShowBuildingDropdown(!showBuildingDropdown)
-              }}
+            <select
+              className="w-full px-4 py-3 bg-card border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground"
+              value={selectedBuilding}
+              onChange={handleBuildingChange}
             >
-              <span className="truncate text-sm">{selectedBuilding || "Select Building"}</span>
-              <ChevronDown className="h-4 w-4 flex-shrink-0" />
-            </Button>
-            {showBuildingDropdown && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setShowBuildingDropdown(false)} />
-                <div className="absolute left-0 right-0 mt-2 bg-card border border-border rounded-xl shadow-lg z-50 max-h-[60vh] overflow-y-auto">
-                  <button
-                    onClick={() => handleBuildingSelect("All")}
-                    className={`w-full px-4 py-3 text-left hover:bg-muted transition-colors first:rounded-t-xl text-sm ${selectedBuilding === "All" ? "bg-muted font-semibold" : ""}`}
-                  >
-                    All Buildings
-                  </button>
-                  {buildings.map((building) => (
-                    <button
-                      key={building.id}
-                      onClick={() => handleBuildingSelect(building.name)}
-                      className={`w-full px-4 py-3 text-left hover:bg-muted transition-colors last:rounded-b-xl text-sm ${building.name === selectedBuilding ? "bg-muted font-semibold" : ""}`}
-                    >
-                      {building.name}
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
+              <option value="All">All Buildings</option>
+              {buildings.map((building) => (
+                <option key={building.id} value={building.name}>
+                  {building.name}
+                </option>
+              ))}
+            </select>
           </div>
 
           {/* Full-width New Meeting Button */}
@@ -808,40 +788,18 @@ export default function Dashboard({
 
             {/* Building filter — inline with tabs */}
             <div className="relative pb-2 flex-shrink-0">
-              <Button
-                variant="outline"
-                size="sm"
-                className="flex items-center gap-2 bg-card text-sm h-8 px-3"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setShowBuildingDropdown(!showBuildingDropdown)
-                }}
+              <select
+                className="bg-card text-sm h-8 px-2 border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-primary/50 text-foreground"
+                value={selectedBuilding}
+                onChange={handleBuildingChange}
               >
-                <span className="truncate max-w-[140px]">{selectedBuilding || "Select Building"}</span>
-                <ChevronDown className="h-3.5 w-3.5 flex-shrink-0" />
-              </Button>
-              {showBuildingDropdown && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setShowBuildingDropdown(false)} />
-                  <div className="absolute right-0 mt-2 w-56 bg-card border border-border rounded-lg shadow-lg z-50 max-h-[60vh] overflow-y-auto">
-                    <button
-                      onClick={() => handleBuildingSelect("All")}
-                      className={`w-full px-4 py-2 text-left text-sm hover:bg-muted transition-colors first:rounded-t-lg ${selectedBuilding === "All" ? "bg-muted font-semibold" : ""}`}
-                    >
-                      All Buildings
-                    </button>
-                    {buildings.map((building) => (
-                      <button
-                        key={building.id}
-                        onClick={() => handleBuildingSelect(building.name)}
-                        className={`w-full px-4 py-2 text-left text-sm hover:bg-muted transition-colors last:rounded-b-lg ${building.name === selectedBuilding ? "bg-muted font-semibold" : ""}`}
-                      >
-                        {building.name}
-                      </button>
-                    ))}
-                  </div>
-                </>
-              )}
+                <option value="All">All Buildings</option>
+                {buildings.map((building) => (
+                  <option key={building.id} value={building.name}>
+                    {building.name}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
         </div>
@@ -914,6 +872,23 @@ export default function Dashboard({
                   {uniqueAssigneeNames.map((name) => (
                     <option key={name} value={name}>
                       {name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            
+            {(activeTab === "repairs" || activeTab === "complaints") && (
+              <div className="flex-1 sm:flex-initial min-w-0">
+                <select
+                  className="w-full px-3 py-2 bg-card border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground"
+                  value={janusBuildingFilter}
+                  onChange={(e) => setJanusBuildingFilter(e.target.value)}
+                >
+                  <option value="All">All buildings</option>
+                  {buildings.map((b) => (
+                    <option key={b.id} value={b.name}>
+                      {b.name}
                     </option>
                   ))}
                 </select>
@@ -1312,6 +1287,17 @@ export default function Dashboard({
                     </thead>
                     <tbody>
                       {janusData.repairs
+                        .filter(t => {
+                          const q = searchQuery.toLowerCase();
+                          const matchesSearch = !q || 
+                            (t.title || "").toLowerCase().includes(q) || 
+                            (t.description || "").toLowerCase().includes(q) ||
+                            (t.building_name || "").toLowerCase().includes(q) ||
+                            formatJanusTicketDisplayLabel(t, "repair").toLowerCase().includes(q);
+                          
+                          const matchesBuilding = janusBuildingFilter === "All" || t.building_name === janusBuildingFilter;
+                          return matchesSearch && matchesBuilding;
+                        })
                         .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
                         .map((ticket: any) => (
                           <tr
@@ -1381,6 +1367,17 @@ export default function Dashboard({
                 {/* Mobile card view */}
                 <div className="md:hidden p-3 space-y-3">
                   {janusData.repairs
+                    .filter(t => {
+                      const q = searchQuery.toLowerCase();
+                      const matchesSearch = !q || 
+                        (t.title || "").toLowerCase().includes(q) || 
+                        (t.description || "").toLowerCase().includes(q) ||
+                        (t.building_name || "").toLowerCase().includes(q) ||
+                        formatJanusTicketDisplayLabel(t, "repair").toLowerCase().includes(q);
+                      
+                      const matchesBuilding = janusBuildingFilter === "All" || t.building_name === janusBuildingFilter;
+                      return matchesSearch && matchesBuilding;
+                    })
                     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
                     .map((ticket: any) => (
                       <div
@@ -1455,6 +1452,17 @@ export default function Dashboard({
                     </thead>
                     <tbody>
                       {janusData.complaints
+                        .filter(t => {
+                          const q = searchQuery.toLowerCase();
+                          const matchesSearch = !q || 
+                            (t.title || "").toLowerCase().includes(q) || 
+                            (t.description || "").toLowerCase().includes(q) ||
+                            (t.building_name || "").toLowerCase().includes(q) ||
+                            formatJanusTicketDisplayLabel(t, "complaint").toLowerCase().includes(q);
+                          
+                          const matchesBuilding = janusBuildingFilter === "All" || t.building_name === janusBuildingFilter;
+                          return matchesSearch && matchesBuilding;
+                        })
                         .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
                         .map((ticket: any) => (
                           <tr
@@ -1612,6 +1620,16 @@ export default function Dashboard({
                   <option value="">-- Choose an upcoming meeting --</option>
                   {meetings
                     .filter(m => m.status !== 'Finalized')
+                    .filter(m => {
+                      const ticketCid = selectedTicketToImport?.company_id;
+                      const meetingCid = m.company_id;
+                      
+                      // If either is missing, allow the choice (safety fallback)
+                      if (ticketCid == null || meetingCid == null) return true;
+                      
+                      // Filter if both present
+                      return String(ticketCid) === String(meetingCid);
+                    })
                     .map(m => (
                       <option key={m.id} value={m.id}>
                         [{m.building}] {m.title} ({formatFloatingDate(m.meeting_date, 'short')})
