@@ -1128,43 +1128,53 @@ export default function MeetingView({
       await fetchMeetingData()
       await checkForTranscripts()
 
-      // ⭐ Auto-extract tasks from the live transcript after recording
-      if (fullBrowserText && fullBrowserText.trim().length > 50) {
-        try {
-          toast.loading("Extracting tasks from recording transcript…", { id: "extract-tasks" })
+      // ⭐ Always show the task preview modal after recording — mirrors the transcript upload flow.
+      // Try AI extraction if we have browser text, but always open the modal regardless.
+      try {
+        let extractedTasksList: any[] = []
+        let extractedTranscriptId: number | null = null
+
+        if (fullBrowserText && fullBrowserText.trim().length > 0) {
+          toast.loading("Analysing recording transcript…", { id: "extract-tasks" })
           const apiKey = process.env.NEXT_PUBLIC_API_KEY || ""
 
-          // Use the existing upload endpoint which handles AI extraction
           const extractFormData = new FormData()
           const transcriptBlob = new Blob([fullBrowserText], { type: "text/plain" })
           extractFormData.append("file", transcriptBlob, "recording-transcript.txt")
           extractFormData.append("meeting_id", meetingId)
           if (currentUser?.id) extractFormData.append("user_id", String(currentUser.id))
 
-          const extractRes = await fetch("/api/transcripts/upload", {
-            method: "POST",
-            headers: { "x-api-key": apiKey },
-            body: extractFormData,
-          })
+          try {
+            const extractRes = await fetch("/api/transcripts/upload", {
+              method: "POST",
+              headers: { "x-api-key": apiKey },
+              body: extractFormData,
+            })
 
-          if (extractRes.ok) {
-            const extractData = await extractRes.json()
-            const tasks = extractData.extracted_tasks || []
-            if (tasks.length > 0) {
-              toast.success(`Found ${tasks.length} task(s) in your recording`, { id: "extract-tasks" })
-              setTranscriptId(extractData.transcript_id)
-              setExtractedTasks(tasks)
-              setShowPreviewTasks(true)
+            if (extractRes.ok) {
+              const extractData = await extractRes.json()
+              extractedTasksList = extractData.extracted_tasks || []
+              extractedTranscriptId = extractData.transcript_id || null
+              if (extractedTasksList.length > 0) {
+                toast.success(`Found ${extractedTasksList.length} task(s) in your recording`, { id: "extract-tasks" })
+              } else {
+                toast.dismiss("extract-tasks")
+              }
             } else {
               toast.dismiss("extract-tasks")
             }
-          } else {
+          } catch (extractErr) {
+            console.error("Task extraction from recording failed:", extractErr)
             toast.dismiss("extract-tasks")
           }
-        } catch (extractErr) {
-          console.error("Task extraction from recording failed:", extractErr)
-          toast.dismiss("extract-tasks")
         }
+
+        // Always open the PreviewTasksModal so the user can review/add tasks, notes etc.
+        setTranscriptId(extractedTranscriptId)
+        setExtractedTasks(extractedTasksList)
+        setShowPreviewTasks(true)
+      } catch (modalErr) {
+        console.error("Failed to open review modal:", modalErr)
       }
     } catch (error) {
       console.error("❌ Unexpected error:", error)

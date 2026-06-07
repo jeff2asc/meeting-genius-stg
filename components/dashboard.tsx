@@ -66,7 +66,6 @@ export default function Dashboard({
 
   // NEW: assignee filter state
   const [assigneeFilter, setAssigneeFilter] = useState<string>("All")
-  const [janusBuildingFilter, setJanusBuildingFilter] = useState<string>("All")
 
   // ⭐ JANUS INTEGRATION STATES
   const [isJanusIntegrated, setIsJanusIntegrated] = useState(false)
@@ -877,23 +876,6 @@ export default function Dashboard({
                 </select>
               </div>
             )}
-            
-            {(activeTab === "repairs" || activeTab === "complaints") && (
-              <div className="flex-1 sm:flex-initial min-w-0">
-                <select
-                  className="w-full px-3 py-2 bg-card border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground"
-                  value={janusBuildingFilter}
-                  onChange={(e) => setJanusBuildingFilter(e.target.value)}
-                >
-                  <option value="All">All buildings</option>
-                  {buildings.map((b) => (
-                    <option key={b.id} value={b.name}>
-                      {b.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
           </div>
         </div>
 
@@ -947,7 +929,7 @@ export default function Dashboard({
                         </td>
                         <td className="px-6 py-4 text-muted-foreground">{meeting.date}</td>
                         <td className="px-6 py-4">
-                          <span className={`px-3 py-1 rounded-full text-xs font-medium border ${statusStyles[meeting.status as MeetingStatus]}`}>
+                          <span className={`px-3 py-1 rounded-full text-xs font-medium border whitespace-nowrap ${statusStyles[meeting.status as MeetingStatus]}`}>
                             {meeting.status}
                           </span>
                         </td>
@@ -1005,8 +987,8 @@ export default function Dashboard({
                           )}
                         </div>
                       </div>
-                      <span className={`flex-shrink-0 px-2.5 py-1 rounded-full text-[10px] font-semibold border ${statusStyles[meeting.status as MeetingStatus]}`}>
-                        {meeting.status === 'working_agenda' ? 'Draft' : meeting.status === 'working_minutes' ? 'In Progress' : meeting.status === 'minutes' ? 'Finalized' : meeting.status}
+                      <span className={`flex-shrink-0 px-2.5 py-1 rounded-full text-[10px] font-semibold border whitespace-nowrap ${statusStyles[meeting.status as MeetingStatus]}`}>
+                        {meeting.status}
                       </span>
                     </div>
 
@@ -1295,7 +1277,7 @@ export default function Dashboard({
                             (t.building_name || "").toLowerCase().includes(q) ||
                             formatJanusTicketDisplayLabel(t, "repair").toLowerCase().includes(q);
                           
-                          const matchesBuilding = janusBuildingFilter === "All" || t.building_name === janusBuildingFilter;
+                          const matchesBuilding = selectedBuilding === "All" || t.building_name === selectedBuilding;
                           return matchesSearch && matchesBuilding;
                         })
                         .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
@@ -1375,7 +1357,7 @@ export default function Dashboard({
                         (t.building_name || "").toLowerCase().includes(q) ||
                         formatJanusTicketDisplayLabel(t, "repair").toLowerCase().includes(q);
                       
-                      const matchesBuilding = janusBuildingFilter === "All" || t.building_name === janusBuildingFilter;
+                      const matchesBuilding = selectedBuilding === "All" || t.building_name === selectedBuilding;
                       return matchesSearch && matchesBuilding;
                     })
                     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
@@ -1460,7 +1442,7 @@ export default function Dashboard({
                             (t.building_name || "").toLowerCase().includes(q) ||
                             formatJanusTicketDisplayLabel(t, "complaint").toLowerCase().includes(q);
                           
-                          const matchesBuilding = janusBuildingFilter === "All" || t.building_name === janusBuildingFilter;
+                          const matchesBuilding = selectedBuilding === "All" || t.building_name === selectedBuilding;
                           return matchesSearch && matchesBuilding;
                         })
                         .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())

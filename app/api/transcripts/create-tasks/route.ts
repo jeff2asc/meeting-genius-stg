@@ -17,9 +17,11 @@ export async function POST(request: NextRequest) {
 
     const { transcript_id, tasks, user_id } = body;
 
-    if (!transcript_id || !tasks || !Array.isArray(tasks)) {
+    // transcript_id is optional — tasks can be created without a linked transcript record
+    // (e.g. after a short recording where no browser STT text was captured)
+    if (!tasks || !Array.isArray(tasks)) {
       return NextResponse.json(
-        { error: "Missing required fields: transcript_id or tasks" },
+        { error: "Missing required field: tasks" },
         { status: 400 }
       );
     }
@@ -31,17 +33,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate that all tasks have topic_id
-    const invalidTasks = tasks.filter((task: TaskToCreate) => !task.topic_id);
-    if (invalidTasks.length > 0) {
+    // Filter out tasks without a topic_id (cannot be inserted without one)
+    // rather than blocking the entire batch
+    const validTasks = tasks.filter((task: TaskToCreate) => !!task.topic_id)
+
+    if (validTasks.length === 0) {
       return NextResponse.json(
-        { error: "All tasks must have a topic_id assigned" },
+        { error: "No tasks with a valid topic assigned" },
         { status: 400 }
       );
     }
 
     // Prepare tasks for insertion
-    const tasksToInsert = tasks.map((task: TaskToCreate) => ({
+    const tasksToInsert = validTasks.map((task: TaskToCreate) => ({
       topic_id: task.topic_id as number,
       description: task.description,
       assigned_name: task.assigned_name || null,
@@ -65,15 +69,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Update transcript record with task count
-    const { error: updateError } = await supabase
-      .from("meeting_transcripts")
-      .update({ tasks_created_count: tasks.length })
-      .eq("id", transcript_id);
+    // Update transcript record with task count (only if a transcript record exists)
+    if (transcript_id) {
+      const { error: updateError } = await supabase
+        .from("meeting_transcripts")
+        .update({ tasks_created_count: tasks.length })
+        .eq("id", transcript_id);
 
-    if (updateError) {
-      console.error("Error updating transcript:", updateError);
-      // Don't fail the request, tasks were created successfully
+      if (updateError) {
+        console.error("Error updating transcript:", updateError);
+        // Don't fail the request, tasks were created successfully
+      }
     }
 
     return NextResponse.json({
