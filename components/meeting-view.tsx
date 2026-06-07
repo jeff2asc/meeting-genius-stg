@@ -1088,19 +1088,17 @@ export default function MeetingView({
     await checkForTranscripts()
   }
 
-  // ⭐ Handle recording completion and upload (NO auto transcript)
+  // ⭐ Handle recording completion and upload
   const handleRecordingComplete = async (audioBlob: Blob, duration: number) => {
     try {
       setUploadingRecording(true)
       console.log("📤 Uploading recording...")
 
-      // The live transcript was already saved in handleStopRecording.
-      // We still send it here so the meetings row also has it as a backup.
       const rawText = (transcriptRef.current + " " + interimTranscript).trim()
       const speakerName = currentUser?.name || "Attendee"
       const fullBrowserText = rawText ? `${speakerName}: ${rawText}` : null
 
-      // Route upload through server-side API to bypass storage RLS
+      // ── Step 1: Upload audio (non-blocking — modal opens regardless of outcome) ──
       const formData = new FormData()
       formData.append("file", audioBlob, `recording.webm`)
       formData.append("meeting_id", meetingId)
@@ -1109,76 +1107,79 @@ export default function MeetingView({
       if (fullBrowserText) formData.append("browser_transcript", fullBrowserText)
 
       const apiKey = process.env.NEXT_PUBLIC_API_KEY || ""
-      const response = await fetch("/api/transcripts/upload-recording", {
-        method: "POST",
-        headers: { "x-api-key": apiKey },
-        body: formData,
-      })
 
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({}))
-        console.error("❌ Upload error:", err)
-        alert("Failed to upload recording. Please try again.")
-        return
+      try {
+        const response = await fetch("/api/transcripts/upload-recording", {
+          method: "POST",
+          headers: { "x-api-key": apiKey },
+          body: formData,
+        })
+
+        if (response.ok) {
+          console.log("✅ Recording uploaded successfully!")
+          setHasTranscript(true)
+          await fetchMeetingData()
+          await checkForTranscripts()
+        } else {
+          const err = await response.json().catch(() => ({}))
+          console.error("❌ Audio upload failed (modal will still open):", err)
+          toast.error("Audio file could not be saved to the server, but you can still create tasks from the transcript.")
+        }
+      } catch (uploadErr) {
+        console.error("❌ Audio upload network error (modal will still open):", uploadErr)
+        toast.error("Audio upload failed, but you can still create tasks from the transcript.")
       }
 
-      console.log("✅ Recording uploaded and meeting saved successfully!")
-      setHasTranscript(true)
+      // ── Step 2: Extract tasks from browser transcript ──
+      // Always runs, and always opens the modal — even if audio upload failed
+      let extractedTasksList: any[] = []
+      let extractedTranscriptId: number | null = null
 
-      await fetchMeetingData()
-      await checkForTranscripts()
+      if (fullBrowserText && fullBrowserText.trim().length > 0) {
+        toast.loading("Analysing recording transcript…", { id: "extract-tasks" })
 
-      // ⭐ Always show the task preview modal after recording — mirrors the transcript upload flow.
-      // Try AI extraction if we have browser text, but always open the modal regardless.
-      try {
-        let extractedTasksList: any[] = []
-        let extractedTranscriptId: number | null = null
-
-        if (fullBrowserText && fullBrowserText.trim().length > 0) {
-          toast.loading("Analysing recording transcript…", { id: "extract-tasks" })
-          const apiKey = process.env.NEXT_PUBLIC_API_KEY || ""
-
+        try {
           const extractFormData = new FormData()
           const transcriptBlob = new Blob([fullBrowserText], { type: "text/plain" })
           extractFormData.append("file", transcriptBlob, "recording-transcript.txt")
           extractFormData.append("meeting_id", meetingId)
           if (currentUser?.id) extractFormData.append("user_id", String(currentUser.id))
 
-          try {
-            const extractRes = await fetch("/api/transcripts/upload", {
-              method: "POST",
-              headers: { "x-api-key": apiKey },
-              body: extractFormData,
-            })
+          const extractRes = await fetch("/api/transcripts/upload", {
+            method: "POST",
+            headers: { "x-api-key": apiKey },
+            body: extractFormData,
+          })
 
-            if (extractRes.ok) {
-              const extractData = await extractRes.json()
-              extractedTasksList = extractData.extracted_tasks || []
-              extractedTranscriptId = extractData.transcript_id || null
-              if (extractedTasksList.length > 0) {
-                toast.success(`Found ${extractedTasksList.length} task(s) in your recording`, { id: "extract-tasks" })
-              } else {
-                toast.dismiss("extract-tasks")
-              }
+          if (extractRes.ok) {
+            const extractData = await extractRes.json()
+            extractedTasksList = extractData.extracted_tasks || []
+            extractedTranscriptId = extractData.transcript_id || null
+            if (extractedTasksList.length > 0) {
+              toast.success(`Found ${extractedTasksList.length} task(s) in your recording`, { id: "extract-tasks" })
             } else {
               toast.dismiss("extract-tasks")
             }
-          } catch (extractErr) {
-            console.error("Task extraction from recording failed:", extractErr)
+          } else {
             toast.dismiss("extract-tasks")
           }
+        } catch (extractErr) {
+          console.error("Task extraction failed:", extractErr)
+          toast.dismiss("extract-tasks")
         }
-
-        // Always open the PreviewTasksModal so the user can review/add tasks, notes etc.
-        setTranscriptId(extractedTranscriptId)
-        setExtractedTasks(extractedTasksList)
-        setShowPreviewTasks(true)
-      } catch (modalErr) {
-        console.error("Failed to open review modal:", modalErr)
       }
+
+      // ── Step 3: Always open the preview modal ──
+      setTranscriptId(extractedTranscriptId)
+      setExtractedTasks(extractedTasksList)
+      setShowPreviewTasks(true)
+
     } catch (error) {
-      console.error("❌ Unexpected error:", error)
-      alert("Failed to save recording. Please try again.")
+      console.error("❌ Unexpected error in handleRecordingComplete:", error)
+      // Even on unexpected error, try to open the modal
+      setExtractedTasks([])
+      setTranscriptId(null)
+      setShowPreviewTasks(true)
     } finally {
       setUploadingRecording(false)
     }
