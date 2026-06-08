@@ -8,9 +8,9 @@
 // Auto-detect environment
 const isLocal = typeof window !== 'undefined' && window.location.hostname === 'localhost';
 
-const JANUS_API_BASE = isLocal
+const JANUS_API_BASE = (isLocal
   ? "http://localhost:3001"
-  : (process.env.NEXT_PUBLIC_JANUS_URL || "https://janusapp.meetinggenius.ca");
+  : (process.env.NEXT_PUBLIC_JANUS_URL || "https://janusapp.meetinggenius.ca")).replace(/\/$/, "");
 
 const JANUS_API_KEY  = process.env.NEXT_PUBLIC_API_KEY || ""
 const JANUS_SYNC_ENDPOINT = "/api/janus/v1/sync"
@@ -169,7 +169,10 @@ export async function openJanusTicketSSO(
   const ticketPath = buildJanusTicketPath(ref, ticket)
 
   try {
-    const res = await fetch("/api/janus/v1/bridge", {
+    const janusBase = (process.env.NEXT_PUBLIC_JANUS_URL || "https://janusapp.meetinggenius.ca").replace(/\/$/, "");
+    const apiKey = process.env.NEXT_PUBLIC_API_KEY || "meeting-genius-secret-key-2026";
+
+    const res = await fetch("/api/bridge-sso", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email: email.toLowerCase().trim(), redirect_to: ticketPath }),

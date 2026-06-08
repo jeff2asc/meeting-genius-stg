@@ -64,6 +64,44 @@ function cleanupRateLimitStore() {
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
+  // ── 0. Inline Bridge SSO Handler ──────────────────────────────────────────
+  // Process the /api/bridge-sso request directly in middleware to bypass 404s.
+  if (pathname === '/api/bridge-sso' && req.method === 'POST') {
+    return (async () => {
+      try {
+        const body = await req.json();
+        const { email, redirect_to = "/dashboard" } = body;
+
+        if (!email || typeof email !== "string") {
+          return NextResponse.json({ error: "email is required" }, { status: 400 });
+        }
+
+        const janusBase = (process.env.NEXT_PUBLIC_JANUS_URL || "https://janusapp.meetinggenius.ca").replace(/\/$/, "");
+        const apiKey = process.env.NEXT_PUBLIC_API_KEY || "meeting-genius-secret-key-2026";
+
+        const ssoRes = await fetch(`${janusBase}/api/auth/sso`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-api-key": apiKey },
+          body: JSON.stringify({ email: email.toLowerCase().trim(), redirect_to }),
+        });
+
+        if (!ssoRes.ok) {
+          const errBody = await ssoRes.json().catch(() => ({}));
+          return NextResponse.json({
+            error: errBody?.error || "Janus SSO request failed",
+            code: errBody?.code || "sso_error",
+          }, { status: ssoRes.status });
+        }
+
+        const data = await ssoRes.json();
+        return NextResponse.json({ redirect_url: data.redirect_url, expires_in: data.expires_in });
+      } catch (err) {
+        console.error("[SSO Bridge Middleware] Error:", err);
+        return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+      }
+    })();
+  }
+
   // Clean up stale rate limit entries on each request
   cleanupRateLimitStore();
 
@@ -126,6 +164,7 @@ export default middleware;
 export const config = {
   matcher: [
     '/api/login',
+    '/api/bridge-sso',
     '/dashboard/:path*',
   ],
 };

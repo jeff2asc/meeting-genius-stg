@@ -276,7 +276,7 @@ export default function IntegrationsPage({ onBack }: { onBack: () => void }) {
       const isLocal = window.location.hostname === "localhost"
       const JANUS_SYNC_URL = isLocal
         ? "http://localhost:3001/api/janus/v1/sync"
-        : (process.env.NEXT_PUBLIC_JANUS_URL || "https://janusapp.meetinggenius.ca/api/janus/v1/sync")
+        : `${(process.env.NEXT_PUBLIC_JANUS_URL || "https://janusapp.meetinggenius.ca").replace(/\/$/, "")}/api/janus/v1/sync`
 
       const janusRes = await fetch(JANUS_SYNC_URL, {
         method: "POST",
@@ -325,48 +325,9 @@ export default function IntegrationsPage({ onBack }: { onBack: () => void }) {
     setSyncStep(3)
   }
 
-  const handleOpenJanus = async () => {
-    const user = getCurrentUser()
-    const email = user?.email || ""
-
-    if (!email) {
-      toast.error("Could not determine your email address. Please log in again.")
-      return
-    }
-
-    const toastId = "janus-sso"
-    toast.loading("Opening Janus…", { id: toastId })
-
-    try {
-      // Server-side bridge: MG backend calls Janus /api/auth/sso and returns
-      // a signed redirect URL. The API key never touches the browser.
-      const res = await fetch("/api/janus/v1/bridge", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, redirect_to: "/dashboard" }),
-      })
-
-      const data = await res.json()
-
-      if (!res.ok || !data.redirect_url) {
-        // Surface friendly messages for known Janus error codes
-        const msg =
-          data.code === "uninstalled"
-            ? "Your Janus account is disabled. Please re-install the integration."
-            : data.code === "user_not_found"
-            ? "Your account was not found in Janus. Try re-syncing from the Integrations page."
-            : data.error || "Could not open Janus. Please try again."
-        toast.error(msg, { id: toastId })
-        return
-      }
-
-      toast.dismiss(toastId)
-      // Step 2 — redirect the browser to Janus with the signed token
-      window.open(data.redirect_url, "_blank", "noopener,noreferrer")
-    } catch (err) {
-      console.error("[handleOpenJanus]", err)
-      toast.error("Failed to connect to Janus. Check your network and try again.", { id: toastId })
-    }
+  const handleOpenJanus = () => {
+    const janusUrl = (process.env.NEXT_PUBLIC_JANUS_URL || "https://janusapp.meetinggenius.ca").replace(/\/$/, "")
+    window.open(`${janusUrl}/dashboard`, "_blank", "noopener,noreferrer")
   }
 
   const handleUninstallJanus = async () => {
