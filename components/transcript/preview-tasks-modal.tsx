@@ -30,12 +30,18 @@ interface Topic {
   title: string
 }
 
+interface Attendee {
+  name: string
+  email?: string
+}
+
 interface PreviewTasksModalProps {
   isOpen: boolean
   onClose: () => void
   transcriptId: number | null
   extractedTasks: ExtractedTask[]
   sections: Section[]
+  attendees?: Attendee[]
   onTasksCreated: () => void
 }
 
@@ -45,6 +51,7 @@ export function PreviewTasksModal({
   transcriptId,
   extractedTasks,
   sections,
+  attendees = [],
   onTasksCreated,
 }: PreviewTasksModalProps) {
   const [tasks, setTasks] = useState<ExtractedTask[]>([])
@@ -289,14 +296,35 @@ export function PreviewTasksModal({
                         <div className="grid grid-cols-2 gap-3">
                           <div className="space-y-1.5">
                             <Label className="text-xs font-semibold">Assigned To</Label>
-                            <Input
-                              value={task.assigned_name || ""}
-                              onChange={(e) =>
-                                handleTaskChange(index, "assigned_name", e.target.value || null)
-                              }
-                              placeholder="Not specified"
-                              className="h-9 text-sm"
-                            />
+                            {attendees.length > 0 ? (
+                              <Select
+                                value={task.assigned_name || ""}
+                                onValueChange={(value) =>
+                                  handleTaskChange(index, "assigned_name", value === "__none__" ? null : value)
+                                }
+                              >
+                                <SelectTrigger className="h-9 text-sm">
+                                  <SelectValue placeholder="Not specified" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="__none__">Not specified</SelectItem>
+                                  {attendees.map((a) => (
+                                    <SelectItem key={a.email || a.name} value={a.name}>
+                                      {a.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              <Input
+                                value={task.assigned_name || ""}
+                                onChange={(e) =>
+                                  handleTaskChange(index, "assigned_name", e.target.value || null)
+                                }
+                                placeholder="Not specified"
+                                className="h-9 text-sm"
+                              />
+                            )}
                           </div>
                           <div className="space-y-1.5">
                             <Label className="text-xs font-semibold">Due Date</Label>

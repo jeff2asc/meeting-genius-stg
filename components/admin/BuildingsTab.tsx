@@ -25,13 +25,14 @@ interface Building {
 }
 
 interface BuildingsTabProps {
-  buildings: Building[]  // ✅ Changed from 'building'
+  buildings: Building[]
   buildingDocuments: Record<number, boolean>
   loading: boolean
   isMaster: boolean
   onViewDetails: (building: Building) => void
   onViewDocument: (building: Building) => void
   onManageDocuments: (building: Building) => void
+  onDeleteBuilding?: (buildingId: number) => Promise<void>
   currentUser?: any
   canManage?: boolean
 }
@@ -44,23 +45,26 @@ export default function BuildingsTab({
   onViewDetails,
   onViewDocument,
   onManageDocuments,
+  onDeleteBuilding,
   currentUser,
   canManage = false
 }: BuildingsTabProps) {
+  const [searchQuery, setSearchQuery] = useState('')
   const [typeFilter, setTypeFilter] = useState<string>('all')
   const [companyFilter, setCompanyFilter] = useState<string>('all')
   const [buildingsWithCompany, setBuildingsWithCompany] = useState<Building[]>([])
   const [companies, setCompanies] = useState<Array<{ id: number; name: string }>>([])
   const [buildingTypes, setBuildingTypes] = useState<string[]>([])
+  const [deletingId, setDeletingId] = useState<number | null>(null)
 
   useEffect(() => {
     const fetchBuildingTypes = async () => {
       const params = await getVotingParameters(currentUser?.company_id)
-      const types = params
+      const types = (params as Array<{ parameter_type: string; value: string }>)
         .filter(p => p.parameter_type === 'building_type')
         .map(p => p.value)
       
-      setBuildingTypes([...new Set(types)])
+      setBuildingTypes([...new Set(types)] as string[])
     }
     fetchBuildingTypes()
   }, [currentUser])
@@ -117,9 +121,28 @@ export default function BuildingsTab({
         return false
       }
     }
+
+    if (searchQuery.trim() !== '') {
+      const q = searchQuery.toLowerCase()
+      const nameMatch = (building.name || '').toLowerCase().includes(q)
+      const addressMatch = (building.address || '').toLowerCase().includes(q)
+      if (!nameMatch && !addressMatch) {
+        return false
+      }
+    }
     
     return true
   })
+
+  const handleDeleteBuilding = async (building: Building) => {
+    if (!confirm(`Delete "${building.name}"? This cannot be undone.`)) return
+    setDeletingId(building.id)
+    try {
+      await onDeleteBuilding?.(building.id)
+    } finally {
+      setDeletingId(null)
+    }
+  }
 
   return (
     <>
@@ -133,6 +156,16 @@ export default function BuildingsTab({
       </div>
 
       <div className="mb-4 flex items-center gap-4 flex-wrap">
+        <div className="flex-1 min-w-[200px]">
+          <input
+            type="text"
+            placeholder="Search by name or address..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full px-3 py-2 bg-card border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground"
+          />
+        </div>
+
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium text-foreground">Type:</span>
           <Select value={typeFilter} onValueChange={setTypeFilter}>
@@ -168,7 +201,7 @@ export default function BuildingsTab({
           </div>
         )}
 
-        {(typeFilter !== 'all' || companyFilter !== 'all') && (
+        {(typeFilter !== 'all' || companyFilter !== 'all' || searchQuery.trim() !== '') && (
           <span className="text-sm text-muted-foreground">
             Showing {filteredBuildings.length} of {buildings.length}
           </span>
@@ -186,10 +219,12 @@ export default function BuildingsTab({
             
             return (
               <BuildingCard
-              key={building.id}
-              building={building}
-              onViewDetails={onViewDetails}  // ✅ Keep only this
-            />
+                key={building.id}
+                building={building}
+                onViewDetails={onViewDetails}
+                isMaster={isMaster}
+                onDelete={isMaster ? handleDeleteBuilding : undefined}
+              />
             
             )
           })}

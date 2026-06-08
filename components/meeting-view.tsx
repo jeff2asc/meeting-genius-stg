@@ -3317,6 +3317,7 @@ export default function MeetingView({
         transcriptId={transcriptId || 0}
         extractedTasks={extractedTasks}
         sections={sections}
+        attendees={(meeting.attendees as Attendee[]) || []}
         onTasksCreated={handleTasksCreated}
       />
 

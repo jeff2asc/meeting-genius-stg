@@ -1,14 +1,12 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { X, Plus, Trash2, Edit2, Save, Loader2, Globe, GripVertical, Tag, AlertTriangle, Hash } from "lucide-react"
-import type { RiskLevel, TicketTag } from "@/lib/supabase"
+import { X, Plus, Trash2, Edit2, Save, Loader2, GripVertical } from "lucide-react"
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { supabase, Company, getVotingParameters, getCurrentUser } from "@/lib/supabase"
-import { isMaster } from "@/lib/permissions"
+import { Company, getVotingParameters } from "@/lib/supabase"
 import { triggerJanusResync } from "@/lib/janus"
 import { toast } from "sonner"
 import { apiClient } from "@/lib/api-client"
@@ -61,26 +59,15 @@ export default function EditCompanyModal({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // ─── Ticket configuration ────────────────────────────────────────────────────
-  const [ticketNumberFormat, setTicketNumberFormat] = useState("")
-  const [riskLevels, setRiskLevels] = useState<RiskLevel[]>([])
-  const [addingRisk, setAddingRisk] = useState(false)
-  const [newRiskValue, setNewRiskValue] = useState("")
-  const [newRiskLabel, setNewRiskLabel] = useState("")
-  const [newRiskColor, setNewRiskColor] = useState("#6b7280")
-  const [ticketTags, setTicketTags] = useState<TicketTag[]>([])
-  const [addingTag, setAddingTag] = useState(false)
-  const [newTagLabel, setNewTagLabel] = useState("")
-  const [newTagColor, setNewTagColor] = useState("#f59e0b")
-  const [newTagHideOnClosed, setNewTagHideOnClosed] = useState(false)
-
   // ─── Fetch voting_parameters meeting types for this company ─────────────────
   const fetchMeetingTypes = async (companyId: number) => {
     setLoadingTypes(true)
     try {
       const allParams = await getVotingParameters(companyId)
-      setMeetingTypeParams(allParams.filter((p: any) => p.parameter_type === 'meeting_type'))
-      setVotingTypeOptions(allParams.filter((p: any) => p.parameter_type === 'voting_type'))
+      const dedup = <T extends { id: number }>(arr: T[]): T[] =>
+        arr.filter((item, idx, self) => self.findIndex(x => x.id === item.id) === idx)
+      setMeetingTypeParams(dedup(allParams.filter((p: any) => p.parameter_type === 'meeting_type')))
+      setVotingTypeOptions(dedup(allParams.filter((p: any) => p.parameter_type === 'voting_type')))
     } catch (err) {
       console.error("Error fetching meeting types:", err)
     } finally {
@@ -112,11 +99,6 @@ export default function EditCompanyModal({
         "Deferred",
       ])
       fetchMeetingTypes(company.id)
-      
-      // Initialize ticket config fields
-      setTicketNumberFormat(company.ticket_number_format || "")
-      setRiskLevels(company.risk_levels || [])
-      setTicketTags(company.ticket_tags || [])
     }
   }, [company])
 
@@ -163,7 +145,7 @@ export default function EditCompanyModal({
         weight: 1.0,
       })
 
-      setMeetingTypeParams(prev => [...prev, data as VotingParameter])
+      await fetchMeetingTypes(company.id)
       setNewTypeValue("")
       setNewTypeLinkedVotingType("")
       setAddingNewType(false)
@@ -265,9 +247,6 @@ export default function EditCompanyModal({
           name: companyName.trim(),
           default_meeting_sections: sectionsArray,
           default_decision_results: decisionResults,
-          ticket_number_format: ticketNumberFormat.trim() || null,
-          risk_levels: riskLevels.length > 0 ? riskLevels : null,
-          ticket_tags: ticketTags.length > 0 ? ticketTags : null,
         })
       } catch (err: any) {
         console.error('Error updating company:', err)
@@ -455,7 +434,7 @@ export default function EditCompanyModal({
                   <div className="space-y-1.5 max-h-[160px] overflow-y-auto pr-2 custom-scrollbar">
                     {meetingTypeParams.map((param) =>
                       editingTypeId === param.id ? (
-                        <div key={param.id} className="flex flex-col gap-1.5 p-2 bg-primary/5 border border-primary/20 rounded-lg">
+                        <div key={`edit-type-${param.id}`} className="flex flex-col gap-1.5 p-2 bg-primary/5 border border-primary/20 rounded-lg">
                           <input
                             type="text"
                             value={editingTypeValue}
@@ -502,7 +481,7 @@ export default function EditCompanyModal({
                           </div>
                         </div>
                       ) : (
-                        <div key={param.id} className="flex items-center justify-between gap-2 px-3 py-1.5 bg-muted/30 hover:bg-muted/60 rounded-md border border-border/40 group transition-all">
+                        <div key={`view-type-${param.id}`} className="flex items-center justify-between gap-2 px-3 py-1.5 bg-muted/30 hover:bg-muted/60 rounded-md border border-border/40 group transition-all">
                           <div className="flex flex-col flex-1 min-w-0">
                             <div className="flex items-center gap-2">
                               <span className="flex-1 text-xs font-medium truncate">{param.value}</span>
@@ -616,7 +595,7 @@ export default function EditCompanyModal({
                 <div className="flex flex-wrap gap-2">
                   {decisionResults.map((result, idx) =>
                     editingResultIdx === idx ? (
-                      <div key={idx} className="flex items-center gap-2 p-1 bg-primary/5 border border-primary/20 rounded-lg">
+                      <div key={`edit-${idx}`} className="flex items-center gap-2 p-1 bg-primary/5 border border-primary/20 rounded-lg">
                         <input
                           type="text"
                           value={editingValue}
@@ -629,7 +608,7 @@ export default function EditCompanyModal({
                         </Button>
                       </div>
                     ) : (
-                      <div key={idx} className="flex items-center gap-1.5 px-2.5 py-1 bg-primary/5 text-primary border border-primary/10 rounded-full group hover:bg-primary/10 transition-colors">
+                      <div key={`view-${idx}`} className="flex items-center gap-1.5 px-2.5 py-1 bg-primary/5 text-primary border border-primary/10 rounded-full group hover:bg-primary/10 transition-colors">
                         <span className="text-[11px] font-bold">{result}</span>
                         <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                           <button type="button" onClick={() => handleEditResult(idx)} className="hover:text-primary-foreground">
@@ -645,124 +624,6 @@ export default function EditCompanyModal({
                 </div>
               </div>
             </div>
-          </div>
-
-          {/* ── Ticket Number Format ── */}
-          <div className="space-y-3 pt-4 border-t border-border/50">
-            <label className="block text-sm font-semibold text-foreground flex items-center gap-2">
-              <Hash className="h-4 w-4 text-muted-foreground" />
-              Ticket Number Format
-            </label>
-            <p className="text-xs text-muted-foreground">
-              Tokens: <code className="bg-muted px-1 rounded">{'{PREFIX}'}</code> <code className="bg-muted px-1 rounded">{'{SEQ}'}</code> <code className="bg-muted px-1 rounded">{'{YYYY}'}</code> <code className="bg-muted px-1 rounded">{'{MM}'}</code> <code className="bg-muted px-1 rounded">{'{DD}'}</code>
-              {" "}— example: <code className="bg-muted px-1 rounded">ALPHA-{'{SEQ}'}</code> → ALPHA-1000
-            </p>
-            <input
-              type="text"
-              value={ticketNumberFormat}
-              onChange={e => setTicketNumberFormat(e.target.value)}
-              placeholder="e.g. ALPHA-{SEQ} or {PREFIX}-{YYYY}-{SEQ}"
-              disabled={saving}
-              className="w-full px-4 py-2 bg-background text-foreground rounded-lg border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 font-mono text-sm"
-            />
-          </div>
-
-          {/* ── Risk Levels ── */}
-          <div className="space-y-3 pt-4 border-t border-border/50">
-            <label className="block text-sm font-semibold text-foreground flex items-center justify-between">
-              <span className="flex items-center gap-2"><AlertTriangle className="h-4 w-4 text-muted-foreground" />Risk Levels</span>
-              <Button variant="ghost" size="sm" type="button" onClick={() => setAddingRisk(true)}
-                className="h-6 px-2 text-[10px] uppercase tracking-wider font-bold hover:bg-primary/10">
-                <Plus className="h-3 w-3 mr-1" />Add
-              </Button>
-            </label>
-            <div className="flex flex-wrap gap-2">
-              {riskLevels.map((r, i) => (
-                <div key={i} className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border group transition-all"
-                  style={{ borderColor: r.color, background: r.color + '20' }}>
-                  <span className="h-2 w-2 rounded-full flex-shrink-0" style={{ background: r.color }} />
-                  <span className="text-xs font-bold" style={{ color: r.color }}>{r.label}</span>
-                  <button type="button" onClick={() => setRiskLevels(riskLevels.filter((_, idx) => idx !== i))}
-                    className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-500 ml-0.5">
-                    <X className="h-2.5 w-2.5" />
-                  </button>
-                </div>
-              ))}
-            </div>
-            {addingRisk && (
-              <div className="flex items-end gap-2 p-3 bg-primary/5 border border-primary/20 rounded-lg">
-                <div>
-                  <label className="block text-[10px] text-muted-foreground mb-1">Value (internal)</label>
-                  <input value={newRiskValue} onChange={e => setNewRiskValue(e.target.value.toLowerCase())} placeholder="e.g. high"
-                    className="px-2 py-1 text-xs rounded border border-border bg-background w-24 focus:ring-1 focus:ring-primary" autoFocus />
-                </div>
-                <div>
-                  <label className="block text-[10px] text-muted-foreground mb-1">Display Label</label>
-                  <input value={newRiskLabel} onChange={e => setNewRiskLabel(e.target.value)} placeholder="e.g. High"
-                    className="px-2 py-1 text-xs rounded border border-border bg-background w-24 focus:ring-1 focus:ring-primary" />
-                </div>
-                <div>
-                  <label className="block text-[10px] text-muted-foreground mb-1">Color</label>
-                  <input type="color" value={newRiskColor} onChange={e => setNewRiskColor(e.target.value)}
-                    className="h-7 w-12 rounded cursor-pointer border border-border" />
-                </div>
-                <Button variant="default" size="sm" type="button" className="h-7 px-2"
-                  onClick={() => { if (newRiskValue && newRiskLabel) { setRiskLevels([...riskLevels, { value: newRiskValue, label: newRiskLabel, color: newRiskColor }]); setNewRiskValue(""); setNewRiskLabel(""); setNewRiskColor("#6b7280"); setAddingRisk(false) } }}>
-                  <Save className="h-3 w-3 mr-1" />Add
-                </Button>
-                <Button variant="ghost" size="sm" type="button" onClick={() => setAddingRisk(false)} className="h-7 w-7 p-0"><X className="h-3 w-3" /></Button>
-              </div>
-            )}
-          </div>
-
-          {/* ── Ticket Tags ── */}
-          <div className="space-y-3 pt-4 border-t border-border/50">
-            <label className="block text-sm font-semibold text-foreground flex items-center justify-between">
-              <span className="flex items-center gap-2"><Tag className="h-4 w-4 text-muted-foreground" />Ticket Tags</span>
-              <Button variant="ghost" size="sm" type="button" onClick={() => setAddingTag(true)}
-                className="h-6 px-2 text-[10px] uppercase tracking-wider font-bold hover:bg-primary/10">
-                <Plus className="h-3 w-3 mr-1" />Add
-              </Button>
-            </label>
-            <p className="text-xs text-muted-foreground">"Hide on closed" prevents the tag showing on tickets with a closed status.</p>
-            <div className="space-y-1.5">
-              {ticketTags.map((tag, i) => (
-                <div key={i} className="flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg border border-border/40 bg-muted/20 group">
-                  <div className="flex items-center gap-2">
-                    <span className="h-3 w-3 rounded-full flex-shrink-0" style={{ background: tag.color }} />
-                    <span className="text-xs font-medium">{tag.label}</span>
-                    {tag.hide_on_closed && <span className="text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded">hides on closed</span>}
-                  </div>
-                  <button type="button" onClick={() => setTicketTags(ticketTags.filter((_, idx) => idx !== i))}
-                    className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-500">
-                    <Trash2 className="h-3 w-3" />
-                  </button>
-                </div>
-              ))}
-            </div>
-            {addingTag && (
-              <div className="flex flex-wrap items-end gap-2 p-3 bg-primary/5 border border-primary/20 rounded-lg">
-                <div>
-                  <label className="block text-[10px] text-muted-foreground mb-1">Tag Label</label>
-                  <input value={newTagLabel} onChange={e => setNewTagLabel(e.target.value)} placeholder="e.g. Waiting for Resident"
-                    className="px-2 py-1 text-xs rounded border border-border bg-background w-44 focus:ring-1 focus:ring-primary" autoFocus />
-                </div>
-                <div>
-                  <label className="block text-[10px] text-muted-foreground mb-1">Color</label>
-                  <input type="color" value={newTagColor} onChange={e => setNewTagColor(e.target.value)}
-                    className="h-7 w-12 rounded cursor-pointer border border-border" />
-                </div>
-                <label className="flex items-center gap-1.5 text-xs cursor-pointer">
-                  <input type="checkbox" checked={newTagHideOnClosed} onChange={e => setNewTagHideOnClosed(e.target.checked)} className="rounded" />
-                  Hide on closed
-                </label>
-                <Button variant="default" size="sm" type="button" className="h-7 px-2"
-                  onClick={() => { if (newTagLabel) { setTicketTags([...ticketTags, { label: newTagLabel, color: newTagColor, hide_on_closed: newTagHideOnClosed }]); setNewTagLabel(""); setNewTagColor("#f59e0b"); setNewTagHideOnClosed(false); setAddingTag(false) } }}>
-                  <Save className="h-3 w-3 mr-1" />Add
-                </Button>
-                <Button variant="ghost" size="sm" type="button" onClick={() => setAddingTag(false)} className="h-7 w-7 p-0"><X className="h-3 w-3" /></Button>
-              </div>
-            )}
           </div>
 
           {/* Save/Cancel buttons */}

@@ -579,6 +579,24 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
     triggerJanusResync('building_updated')
   }
 
+  const handleDeleteBuilding = async (buildingId: number) => {
+    try {
+      const res = await fetch(`/api/v1/buildings/${buildingId}`, {
+        method: 'DELETE',
+        headers: { 'x-api-key': process.env.NEXT_PUBLIC_API_KEY || '' }
+      })
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error || 'Failed to delete building')
+      }
+      fetchBuildings()
+      fetchUsers()
+      triggerJanusResync('building_deleted')
+    } catch (err: any) {
+      console.error('Error deleting building:', err)
+      alert(err.message || 'Failed to delete building')
+    }
+  }
   const handleCreateCompanySuccess = () => {
     fetchCompanies()
     triggerJanusResync('company_created')
@@ -845,6 +863,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
             onViewDetails={handleViewBuildingDetails}
             onViewDocument={handleViewDocument}
             onManageDocuments={handleManageDocuments}
+            onDeleteBuilding={isMaster ? handleDeleteBuilding : undefined}
             currentUser={currentUser}
             canManage={userCanManageBuildings}
           />

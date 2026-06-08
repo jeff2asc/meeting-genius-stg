@@ -1,6 +1,6 @@
 "use client"
 
-import { Building2, MapPin } from "lucide-react"
+import { Building2, MapPin, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -20,6 +20,8 @@ interface Building {
 interface BuildingCardProps {
   building: Building
   onViewDetails: (building: Building) => void
+  isMaster?: boolean
+  onDelete?: (building: Building) => void
 }
 
 const getBuildingTypeColor = (type: string) => {
@@ -37,7 +39,9 @@ const getBuildingTypeColor = (type: string) => {
 
 export default function BuildingCard({
   building,
-  onViewDetails
+  onViewDetails,
+  isMaster = false,
+  onDelete
 }: BuildingCardProps) {
   return (
     <Card className="p-4 hover:shadow-md transition-shadow">
@@ -92,7 +96,6 @@ export default function BuildingCard({
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {/* View Details Button - Opens BuildingDetailsModal with Documents tab */}
           <Button
             size="sm"
             variant="outline"
@@ -102,7 +105,18 @@ export default function BuildingCard({
             <Building2 className="h-4 w-4 mr-2" />
             View Details
           </Button>
-          
+
+          {isMaster && onDelete && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => onDelete(building)}
+              className="border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300"
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          )}
+
           <p className="text-sm text-muted-foreground whitespace-nowrap ml-2">
             {new Date(building.created_at).toLocaleDateString()}
           </p>
