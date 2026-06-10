@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { X, Building2, Users, FileText, Trash2, ExternalLink, Loader2, Link as LinkIcon, Bell, Upload } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -18,6 +18,7 @@ import {
 import { supabase, getVotingParameters } from "@/lib/supabase"
 import { triggerJanusResync } from "@/lib/janus"
 import { toast } from "sonner"
+import { apiClient } from "@/lib/api-client"
 
 import { isPropertyManager as checkIsPropertyManager, isCorporateAdmin as checkIsCorporateAdmin, isMaster as checkIsMaster } from "@/lib/permissions"
 
@@ -79,6 +80,10 @@ export default function BuildingDetailsModal({
   const [selectedCompanyId, setSelectedCompanyId] = useState<number | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
+  // PM search combobox
+  const [pmSearch, setPmSearch] = useState("")
+  const [showPmDropdown, setShowPmDropdown] = useState(false)
+
   const [boardMeetingNoticeDays, setBoardMeetingNoticeDays] = useState(7)
   const [generalMeetingNoticeDays, setGeneralMeetingNoticeDays] = useState(7)
   const [notificationRecipientTypes, setNotificationRecipientTypes] = useState<string[]>(["owner"])
@@ -86,6 +91,8 @@ export default function BuildingDetailsModal({
 
   const [assignedUsers, setAssignedUsers] = useState<any[]>([])
 
+  // Ref to hold DocumentsTab's auto-save function for unsaved URL
+  const pendingUrlSaveRef = useRef<(() => Promise<void>) | null>(null)
 
   const [buildingTypes, setBuildingTypes] = useState<string[]>([])
   const [userBuildingTypes, setUserBuildingTypes] = useState<string[]>([])
@@ -128,7 +135,7 @@ export default function BuildingDetailsModal({
       fetchCompanies()
       fetchDynamicParams()
     }
-  }, [isOpen, building?.id, currentUser])
+  }, [isOpen, building?.id, currentUser?.id])
 
   const fetchCompanies = async () => {
     try {
@@ -142,7 +149,14 @@ export default function BuildingDetailsModal({
         return
       }
 
-      setCompanies(data || [])
+      // Deduplicate by id in case the DB has duplicate rows
+      const seen = new Set<number>()
+      const unique = (data || []).filter(c => {
+        if (seen.has(c.id)) return false
+        seen.add(c.id)
+        return true
+      })
+      setCompanies(unique)
     } catch (err) {
       console.error("Unexpected error:", err)
     }
@@ -182,12 +196,16 @@ export default function BuildingDetailsModal({
     if (!building) return
   
     try {
+      const isMasterUser = currentUser?.user_type === "master" || currentUser?.roles?.includes("master")
+
+      // Fetch users who are property managers via user_type OR roles array
+      // We fetch from the company and filter client-side to support both conventions
       let query = supabase
         .from("users")
-        .select("id, name, email, user_type, company_id")
+        .select("id, name, email, user_type, company_id, roles")
         .order("name")
   
-      if (!(currentUser?.user_type === "master" || currentUser?.roles?.includes("master"))) {
+      if (!isMasterUser) {
         if (building.company_id) {
           query = query.eq("company_id", building.company_id)
         } else {
@@ -202,12 +220,20 @@ export default function BuildingDetailsModal({
         console.error("Error fetching property managers:", error)
         return
       }
+
+      // Filter client-side: include users who are PMs by user_type OR by roles array
+      const pms = (data || []).filter((u: any) =>
+        u.user_type === "property_manager" ||
+        u.user_type === "corporate_administrator" ||
+        u.user_type === "master" ||
+        (Array.isArray(u.roles) && u.roles.includes("property_manager"))
+      )
   
-      setPropertyManagers((data || []) as User[])
+      setPropertyManagers(pms as User[])
     } catch (err) {
       console.error("Unexpected error:", err)
     }
-  }  
+  }
 
 
 
@@ -237,9 +263,8 @@ export default function BuildingDetailsModal({
               ? province.trim().toUpperCase()
               : null
 
-      const { error: updateError } = await supabase
-        .from("buildings")
-        .update({
+      try {
+        await apiClient.v1.buildings.update(building.id, {
           name: buildingName.trim(),
           address: combinedAddress || null,
           building_type: buildingType,
@@ -251,13 +276,20 @@ export default function BuildingDetailsModal({
           notification_recipient_type: notificationRecipientTypes.length > 0 ? notificationRecipientTypes.join(',') : null,
           timezone: buildingTimezone || null,
         })
-        .eq("id", building.id)
-
-      if (updateError) {
-        console.error("Error updating building:", updateError)
-        console.error("Error details:", JSON.stringify(updateError, null, 2))
-        alert(`Failed to update building: ${updateError.message || updateError.code || 'Unknown error'}`)
+      } catch (err: any) {
+        console.error("Error updating building:", err)
+        alert(`Failed to update building: ${err.message || 'Unknown error'}`)
         return
+      }
+
+      // Auto-save any unsaved URL form data in DocumentsTab before closing
+      if (activeTab === "documents" && pendingUrlSaveRef.current) {
+        try {
+          await pendingUrlSaveRef.current()
+        } catch (err) {
+          console.error("Error auto-saving URL:", err)
+          // Don't block the close on URL save failure
+        }
       }
 
       // We no longer need to diff here because assignments are handled individually now.
@@ -593,22 +625,71 @@ export default function BuildingDetailsModal({
 
               <div>
                 <Label htmlFor="manager">Link Registered Property Manager *</Label>
-                <Select
-                  value={managerId?.toString() || ""}
-                  onValueChange={(value) => setManagerId(parseInt(value))}
-                  disabled={!(checkIsMaster(currentUser) || checkIsCorporateAdmin(currentUser) || checkIsPropertyManager(currentUser))}
-                >
-                  <SelectTrigger className={!(checkIsMaster(currentUser) || checkIsCorporateAdmin(currentUser) || checkIsPropertyManager(currentUser)) ? "bg-muted cursor-not-allowed" : ""}>
-                    <SelectValue placeholder="Select property manager" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {propertyManagers.map((pm) => (
-                      <SelectItem key={pm.id} value={pm.id.toString()}>
-                        {pm.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                {/* Searchable PM Combobox */}
+                <div className="relative mt-1.5">
+                  <input
+                    id="manager"
+                    type="text"
+                    autoComplete="off"
+                    disabled={!(checkIsMaster(currentUser) || checkIsCorporateAdmin(currentUser) || checkIsPropertyManager(currentUser))}
+                    placeholder="Search property manager..."
+                    value={showPmDropdown ? pmSearch : (propertyManagers.find(pm => pm.id === managerId)?.name || pmSearch)}
+                    onChange={(e) => {
+                      setPmSearch(e.target.value)
+                      setShowPmDropdown(true)
+                    }}
+                    onFocus={() => {
+                      setPmSearch("")
+                      setShowPmDropdown(true)
+                    }}
+                    onBlur={() => {
+                      // Delay to allow click on dropdown item to register
+                      setTimeout(() => setShowPmDropdown(false), 180)
+                    }}
+                    className={`w-full px-3 py-2 text-sm border border-border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-primary/30 transition-shadow ${
+                      !(checkIsMaster(currentUser) || checkIsCorporateAdmin(currentUser) || checkIsPropertyManager(currentUser))
+                        ? "bg-muted cursor-not-allowed opacity-60"
+                        : ""
+                    }`}
+                  />
+                  {showPmDropdown && (
+                    <div className="absolute z-50 w-full mt-1 bg-card border border-border rounded-lg shadow-xl max-h-52 overflow-y-auto">
+                      {propertyManagers
+                        .filter(pm =>
+                          !pmSearch ||
+                          pm.name.toLowerCase().includes(pmSearch.toLowerCase()) ||
+                          (pm.email || "").toLowerCase().includes(pmSearch.toLowerCase())
+                        )
+                        .map(pm => (
+                          <button
+                            key={pm.id}
+                            type="button"
+                            onMouseDown={() => {
+                              setManagerId(pm.id)
+                              setPmSearch(pm.name)
+                              setShowPmDropdown(false)
+                            }}
+                            className={`w-full text-left px-3 py-2.5 text-sm hover:bg-primary/5 transition-colors border-b border-border/40 last:border-0 ${
+                              pm.id === managerId ? "bg-primary/10 text-primary font-semibold" : ""
+                            }`}
+                          >
+                            <span className="font-medium">{pm.name}</span>
+                            {pm.email && <span className="text-xs text-muted-foreground ml-2">{pm.email}</span>}
+                          </button>
+                        ))
+                      }
+                      {propertyManagers.filter(pm =>
+                        !pmSearch ||
+                        pm.name.toLowerCase().includes(pmSearch.toLowerCase()) ||
+                        (pm.email || "").toLowerCase().includes(pmSearch.toLowerCase())
+                      ).length === 0 && (
+                        <div className="px-3 py-4 text-sm text-muted-foreground text-center italic">
+                          No matching property managers found
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
                 {managerId && (() => {
                   const selectedPm = propertyManagers.find(pm => pm.id === managerId)
                   return selectedPm ? (
@@ -751,7 +832,7 @@ export default function BuildingDetailsModal({
           )}
 
           {activeTab === "documents" && (
-            <DocumentsTab key={building.id} building={building} onSuccess={onSuccess} />
+            <DocumentsTab key={building.id} building={building} onSuccess={onSuccess} pendingUrlSaveRef={pendingUrlSaveRef} />
           )}
 
           {activeTab === "notifications" && (
@@ -1000,6 +1081,7 @@ function NotificationsTab({
 interface DocumentsTabProps {
   building: Building
   onSuccess: () => void
+  pendingUrlSaveRef?: React.MutableRefObject<(() => Promise<void>) | null>
 }
 
 interface DocumentURL {
@@ -1012,7 +1094,7 @@ interface DocumentURL {
   created_at: string
 }
 
-function DocumentsTab({ building, onSuccess }: DocumentsTabProps) {
+function DocumentsTab({ building, onSuccess, pendingUrlSaveRef }: DocumentsTabProps) {
   const [documents, setDocuments] = useState<any[]>([])
   const [documentUrls, setDocumentUrls] = useState<DocumentURL[]>([])
   const [uploading, setUploading] = useState(false)
@@ -1025,6 +1107,23 @@ function DocumentsTab({ building, onSuccess }: DocumentsTabProps) {
   const [urlType, setUrlType] = useState("legislation")
   const [urlDescription, setUrlDescription] = useState("")
   const [savingUrl, setSavingUrl] = useState(false)
+
+  // Expose auto-save function to parent via ref
+  useEffect(() => {
+    if (pendingUrlSaveRef) {
+      pendingUrlSaveRef.current = async () => {
+        // Only save if there's actual data in the URL form
+        if (urlTitle.trim() && urlLink.trim()) {
+          await handleSaveUrl()
+        }
+      }
+    }
+    return () => {
+      if (pendingUrlSaveRef) {
+        pendingUrlSaveRef.current = null
+      }
+    }
+  }, [urlTitle, urlLink, urlType, urlDescription])
 
   useEffect(() => {
     fetchDocuments()
@@ -1045,7 +1144,18 @@ function DocumentsTab({ building, onSuccess }: DocumentsTabProps) {
         return
       }
 
-      setDocuments(data || [])
+      // Deduplicate by id
+      const seen = new Set<number>()
+      const unique = (data || []).filter(d => {
+        if (seen.has(d.id)) {
+          console.warn(`[DocumentsTab] Duplicate document ID: ${d.id}`)
+          return false
+        }
+        seen.add(d.id)
+        return true
+      })
+      console.log(`[DocumentsTab] fetchDocuments: ${data?.length || 0} raw → ${unique.length} unique`)
+      setDocuments(unique)
     } catch (err) {
       console.error("Unexpected error fetching documents:", err)
     } finally {
@@ -1066,7 +1176,18 @@ function DocumentsTab({ building, onSuccess }: DocumentsTabProps) {
         return
       }
 
-      setDocumentUrls(data || [])
+      // Deduplicate by id
+      const seen = new Set<number>()
+      const unique = (data || []).filter(d => {
+        if (seen.has(d.id)) {
+          console.warn(`[DocumentsTab] Duplicate documentUrl ID: ${d.id}`)
+          return false
+        }
+        seen.add(d.id)
+        return true
+      })
+      console.log(`[DocumentsTab] fetchDocumentUrls: ${data?.length || 0} raw → ${unique.length} unique`)
+      setDocumentUrls(unique)
     } catch (err) {
       console.error("Unexpected error fetching URLs:", err)
     }

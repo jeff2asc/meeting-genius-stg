@@ -19,6 +19,7 @@ interface Building {
   manager_id: number
   company_id: number | null
   building_type?: string
+  is_archived: boolean
   created_at: string
   users?: Array<{ id: number; name: string; email: string; user_type: string }>
   company?: { id: number; name: string } | null
@@ -32,9 +33,12 @@ interface BuildingsTabProps {
   onViewDetails: (building: Building) => void
   onViewDocument: (building: Building) => void
   onManageDocuments: (building: Building) => void
-  onDeleteBuilding?: (buildingId: number) => Promise<void>
+  onDeleteBuilding?: (building: Building) => Promise<void>
+  onArchiveBuilding?: (building: Building) => Promise<void>
+  onUnarchiveBuilding?: (building: Building) => Promise<void>
   currentUser?: any
   canManage?: boolean
+  mode?: 'active' | 'archive'
 }
 
 export default function BuildingsTab({
@@ -46,12 +50,15 @@ export default function BuildingsTab({
   onViewDocument,
   onManageDocuments,
   onDeleteBuilding,
+  onArchiveBuilding,
+  onUnarchiveBuilding,
   currentUser,
-  canManage = false
+  canManage = false,
+  mode = 'active'
 }: BuildingsTabProps) {
   const [searchQuery, setSearchQuery] = useState('')
-  const [typeFilter, setTypeFilter] = useState<string>('all')
-  const [companyFilter, setCompanyFilter] = useState<string>('all')
+  const [typeFilter, setTypeFilter] = useState('all')
+  const [companyFilter, setCompanyFilter] = useState('all')
   const [buildingsWithCompany, setBuildingsWithCompany] = useState<Building[]>([])
   const [companies, setCompanies] = useState<Array<{ id: number; name: string }>>([])
   const [buildingTypes, setBuildingTypes] = useState<string[]>([])
@@ -60,11 +67,12 @@ export default function BuildingsTab({
   useEffect(() => {
     const fetchBuildingTypes = async () => {
       const params = await getVotingParameters(currentUser?.company_id)
-      const types = (params as Array<{ parameter_type: string; value: string }>)
-        .filter(p => p.parameter_type === 'building_type')
-        .map(p => p.value)
-      
-      setBuildingTypes([...new Set(types)] as string[])
+      if (Array.isArray(params)) {
+        const types = params
+          .filter(p => p.parameter_type === 'building_type')
+          .map(p => p.value)
+        setBuildingTypes([...new Set(types)])
+      }
     }
     fetchBuildingTypes()
   }, [currentUser])
@@ -83,7 +91,9 @@ export default function BuildingsTab({
       const uniqueCompanyIds = [...new Set(companyIds)]
       
       if (uniqueCompanyIds.length === 0) {
-        setBuildingsWithCompany(buildings)
+        setBuildingsWithCompany(
+          buildings.filter((b, idx, self) => self.findIndex(x => x.id === b.id) === idx)
+        )
         return
       }
 
@@ -94,21 +104,27 @@ export default function BuildingsTab({
 
       setCompanies(companiesData || [])
 
-      const buildingsWithCompanyData = buildings.map(building => ({
-        ...building,
-        company: building.company_id 
-          ? companiesData?.find(c => c.id === building.company_id) || null
-          : null
-      }))
+      const buildingsWithCompanyData = buildings
+        .filter((building, idx, self) => self.findIndex(b => b.id === building.id) === idx) // deduplicate
+        .map(building => ({
+          ...building,
+          company: building.company_id 
+            ? companiesData?.find(c => c.id === building.company_id) || null
+            : null
+        }))
 
       setBuildingsWithCompany(buildingsWithCompanyData)
     } catch (error) {
       console.error('Error fetching company data:', error)
-      setBuildingsWithCompany(buildings)
+      setBuildingsWithCompany(
+        buildings.filter((b, idx, self) => self.findIndex(x => x.id === b.id) === idx)
+      )
     }
   }
 
-  const filteredBuildings = buildingsWithCompany.filter(building => {
+  const filteredBuildings = buildingsWithCompany
+    .filter((b, idx, self) => self.findIndex(x => x.id === b.id) === idx) // final dedup guard
+    .filter(building => {
     if (typeFilter !== 'all' && building.building_type !== typeFilter) {
       return false
     }
@@ -135,10 +151,9 @@ export default function BuildingsTab({
   })
 
   const handleDeleteBuilding = async (building: Building) => {
-    if (!confirm(`Delete "${building.name}"? This cannot be undone.`)) return
     setDeletingId(building.id)
     try {
-      await onDeleteBuilding?.(building.id)
+      await onDeleteBuilding?.(building)
     } finally {
       setDeletingId(null)
     }
@@ -147,11 +162,14 @@ export default function BuildingsTab({
   return (
     <>
       <div className="mb-6">
-        <h2 className="text-2xl font-bold text-foreground mb-2">Building Management</h2>
+        <h2 className="text-2xl font-bold text-foreground mb-2">
+          {mode === 'active' ? 'Building Management' : 'Archive Storage'}
+        </h2>
         <p className="text-muted-foreground">
-          {isMaster
-            ? 'Manage all buildings in the system'
-            : 'Manage your assigned buildings'}
+          {mode === 'active' 
+            ? (isMaster ? 'Manage all buildings in the system' : 'Manage your assigned buildings')
+            : (isMaster ? 'View and restore archived buildings across all companies' : 'View and restore archived buildings for your company')
+          }
         </p>
       </div>
 
@@ -223,7 +241,9 @@ export default function BuildingsTab({
                 building={building}
                 onViewDetails={onViewDetails}
                 isMaster={isMaster}
-                onDelete={isMaster ? handleDeleteBuilding : undefined}
+                onDelete={isMaster && mode === 'archive' ? handleDeleteBuilding : undefined}
+                onArchive={mode === 'active' && canManage ? (b) => onArchiveBuilding?.(b) : undefined}
+                onUnarchive={mode === 'archive' && canManage ? (b) => onUnarchiveBuilding?.(b) : undefined}
               />
             
             )

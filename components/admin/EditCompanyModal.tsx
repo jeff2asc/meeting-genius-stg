@@ -500,8 +500,7 @@ export default function EditCompanyModal({
                                 setEditingTypeLinkedVotingType((param as any).linked_voting_type || "")
                               }}
                               className="h-6 w-6 p-0"
-                              disabled={param.is_default === true}
-                              title={param.is_default ? "Cannot edit global defaults" : "Edit"}
+                              title="Edit"
                             >
                               <Edit2 className="h-3 w-3" />
                             </Button>
@@ -509,8 +508,7 @@ export default function EditCompanyModal({
                               variant="ghost" size="sm" type="button"
                               onClick={() => handleDeleteMeetingType(param.id)}
                               className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
-                              disabled={param.is_default === true}
-                              title={param.is_default ? "Cannot delete global defaults" : "Delete"}
+                              title="Delete"
                             >
                               <Trash2 className="h-3 w-3" />
                             </Button>

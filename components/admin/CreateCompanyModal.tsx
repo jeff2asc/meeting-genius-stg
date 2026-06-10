@@ -4,7 +4,6 @@ import { useState } from "react"
 import { X, Plus, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { supabase } from "@/lib/supabase"
 import { triggerJanusResync } from "@/lib/janus"
 
 interface CreateCompanyModalProps {
@@ -19,25 +18,6 @@ interface NewUser {
   password: string
   role: 'corporate_administrator' | 'property_manager'
 }
-
-const DEFAULT_SECTIONS = [
-  "Call to Order",
-  "Approval of Agenda",
-  "Old Business / Business Arising",
-  "New Business",
-  "Financial Report",
-  "Maintenance & Operations",
-  "Correspondence",
-  "Council Roundtable",
-  "Adjournment",
-]
-const DEFAULT_TYPES = [
-  "Council Meeting",
-  "AGM",
-  "SGM",
-  "Special Meeting",
-  "Emergency Meeting",
-]
 
 export default function CreateCompanyModal({
   isOpen,
@@ -94,31 +74,12 @@ export default function CreateCompanyModal({
     setSaving(true)
 
     try {
-      // 1. Create company with meeting section/type defaults
-      const { data: newCompany, error: companyError } = await supabase
-        .from('companies')
-        .insert({
-          name: companyName.trim(),
-          default_meeting_sections: DEFAULT_SECTIONS,
-          default_meeting_types: DEFAULT_TYPES
-        })
-        .select()
-        .single()
-
-      if (companyError) {
-        console.error('Error creating company:', companyError)
-        setError('Failed to create company.')
-        setSaving(false)
-        return
-      }
-      console.log('✅ Company created:', newCompany.id)
-
-      // 2. Create users (Deduplicate by email and handle multiple roles)
-      const uniqueUsersMap = new Map<string, { 
-        name: string, 
-        email: string, 
-        password: string, 
-        roles: Set<string> 
+      // Deduplicate users by email and merge roles
+      const uniqueUsersMap = new Map<string, {
+        name: string
+        email: string
+        password: string
+        roles: Set<string>
       }>()
 
       for (const u of newUsers) {
@@ -126,7 +87,7 @@ export default function CreateCompanyModal({
         if (!uniqueUsersMap.has(email)) {
           uniqueUsersMap.set(email, {
             name: u.name.trim(),
-            email: email,
+            email,
             password: u.password.trim(),
             roles: new Set([u.role])
           })
@@ -135,46 +96,58 @@ export default function CreateCompanyModal({
         }
       }
 
-      for (const [email, u] of uniqueUsersMap.entries()) {
+      const usersPayload = Array.from(uniqueUsersMap.values()).map(u => {
         const rolesArray = Array.from(u.roles)
-        const primaryRole = rolesArray[0]
-        const extraRoles = rolesArray.slice(1)
-
-        const { error: userError } = await supabase
-          .from('users')
-          .upsert({
-            name: u.name,
-            email: u.email,
-            password_hash: '$2a$10$rXqvFZnPzAMcLzCP2L4dxu7L6Y3Y5KjGNQQF6xZ4Y5Y5Y5Y5Y5Y5Y5', // Replace with secure hash logic
-            user_type: primaryRole,
-            roles: rolesArray,
-            company_id: newCompany.id
-          }, { onConflict: 'email' })
-
-        if (userError) {
-          console.error('Error creating/updating user:', userError)
-          setError(`Failed to process user: ${email}. ${userError.message}`)
-          setSaving(false)
-          return
+        return {
+          name: u.name,
+          email: u.email,
+          password: u.password,
+          roles: rolesArray,
+          user_type: rolesArray[0],
         }
+      })
 
-        console.log('✅ User processed:', email)
+      // Call server-side API route to handle hashing + DB writes
+      const apiKey = process.env.NEXT_PUBLIC_API_KEY || ''
+      const response = await fetch('/api/v1/companies/create-with-users', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+        },
+        body: JSON.stringify({
+          companyName: companyName.trim(),
+          users: usersPayload,
+        }),
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        console.error('Error creating company/users:', result)
+        setError(result.error || 'Failed to create company.')
+        setSaving(false)
+        return
       }
+
+      const newCompany = result.company
+      console.log('✅ Company created:', newCompany.id)
+      console.log('✅ Users processed:', result.users)
 
       setCompanyName("")
       setNewUsers([])
-      // 🔄 Notify Janus of new company + initial users
-      const usersToSync = Array.from(uniqueUsersMap.values()).map(u => ({
-        name: u.name,
-        email: u.email,
-        roles: Array.from(u.roles),
-        company_id: newCompany.id
-      }))
 
+      // 🔄 Notify Janus of new company + initial users
       triggerJanusResync("company_created", {
         ...newCompany,
-        users: usersToSync
+        users: usersPayload.map(u => ({
+          name: u.name,
+          email: u.email,
+          roles: u.roles,
+          company_id: newCompany.id,
+        }))
       }, "company")
+
       onSuccess()
       onClose()
     } catch (err) {

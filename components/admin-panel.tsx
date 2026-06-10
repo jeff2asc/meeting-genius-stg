@@ -62,6 +62,10 @@ interface Building {
   building_type?: string
   created_at: string
   logo_url?: string | null
+  is_archived: boolean
+  archived_at?: string | null
+  archived_by?: string | null
+  archive_reason?: string | null
   companies?: { logo_url: string | null } | null
   users?: Array<{ id: number; name: string; email: string; user_type: string; unit_number?: string | null }>
   company?: { id: number; name: string } | null
@@ -71,7 +75,7 @@ interface Building {
   timezone?: string | null
 }
 
-type TabType = "users" | "buildings" | "companies" | "minutes" | "agenda" | "voting" | "audit" | "settings"
+type TabType = "users" | "buildings" | "companies" | "minutes" | "agenda" | "voting" | "audit" | "settings" | "archive"
 
 export default function AdminPanel({ onBack }: AdminPanelProps) {
   const [activeTab, setActiveTab] = useState<TabType>("users")
@@ -79,6 +83,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
   const [propertyManagers, setPropertyManagers] = useState<PropertyManager[]>([])
   const [filteredUsers, setFilteredUsers] = useState<UserRow[]>([])
   const [buildings, setBuildings] = useState<Building[]>([])
+  const [archivedBuildings, setArchivedBuildings] = useState<Building[]>([])
   const [companies, setCompanies] = useState<Company[]>([])
   const [loading, setLoading] = useState(true)
   const [showCreateUserModal, setShowCreateUserModal] = useState(false)
@@ -124,6 +129,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
 
   const [dbUser, setDbUser] = useState<any>(null)
   const [isIdentityLoaded, setIsIdentityLoaded] = useState(false)
+  const [deleteConfirmBuilding, setDeleteConfirmBuilding] = useState<Building | null>(null)
 
   const isMaster = checkIsMaster(dbUser || currentUser)
   const isCorporateAdmin = checkIsCorporateAdmin(dbUser || currentUser)
@@ -433,43 +439,39 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
 
   const fetchBuildings = async () => {
     try {
-      let buildingsQuery = supabase
-        .from("buildings")
-        .select(
-          "id, name, address, manager_id, company_id, building_type, created_at, board_meeting_notice_days, general_meeting_notice_days, notification_recipient_type, logo_url, companies(logo_url)"
-        )
-        .order("name")
-
       const activeUser = dbUser || currentUser
-      // Re-derive roles inside the function to avoid stale closure issues
       const userIsMaster = checkIsMaster(activeUser)
       const userIsCorporateAdmin = checkIsCorporateAdmin(activeUser)
       const userIsPropManager = checkIsPropertyManager(activeUser)
 
+      // 1. Fetch Active Buildings
+      let buildingsQuery = supabase
+        .from("buildings")
+        .select(
+          "id, name, address, manager_id, company_id, building_type, created_at, board_meeting_notice_days, general_meeting_notice_days, notification_recipient_type, logo_url, is_archived, companies(logo_url)"
+        )
+        .or('is_archived.eq.false,is_archived.is.null')
+        .order("name")
+
       if (userIsMaster) {
-        // Master sees ALL buildings across all companies — no filter applied
+        // Master sees ALL active buildings
       } else if (userIsCorporateAdmin) {
-        // Corporate Admin sees all buildings belonging to their company
         if (activeUser?.company_id) {
           buildingsQuery = buildingsQuery.eq("company_id", activeUser.company_id)
         } else {
-          // Corporate Admin with no company_id assigned — nothing to show
           setBuildings([])
           setLoading(false)
           return
         }
       } else if (userIsPropManager && currentUser?.id) {
-        // PMs see buildings in their company OR where they are manager_id OR where they are assigned in user_buildings
         const { data: myBuildings } = await supabase.from("user_buildings").select("building_id").eq("user_id", currentUser.id)
         const myIds = myBuildings?.map(b => b.building_id) || []
-
         if (activeUser?.company_id) {
           buildingsQuery = buildingsQuery.or(`company_id.eq.${activeUser.company_id},manager_id.eq.${currentUser.id}${myIds.length > 0 ? `,id.in.(${myIds.join(',')})` : ''}`)
         } else {
           buildingsQuery = buildingsQuery.or(`manager_id.eq.${currentUser.id}${myIds.length > 0 ? `,id.in.(${myIds.join(',')})` : ''}`)
         }
       } else if (currentUser?.id) {
-        // For other roles, they only see buildings they are assigned to in user_buildings
         const { data: myBuildings } = await supabase.from("user_buildings").select("building_id").eq("user_id", currentUser.id)
         const myIds = myBuildings?.map(b => b.building_id) || []
         if (myIds.length > 0) {
@@ -486,9 +488,34 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
       }
 
       const { data: buildingsData, error: buildingsError } = await buildingsQuery
+      if (buildingsError) console.error("Error fetching active buildings:", buildingsError)
 
-      if (buildingsError) {
-        console.error("Error fetching buildings:", buildingsError)
+      // 2. Fetch Archived Buildings (Only for Master and Corp Admin)
+      let archivedData: any[] = []
+      if (userIsMaster || userIsCorporateAdmin) {
+        let archivedQuery = supabase
+          .from("buildings")
+          .select(
+            "id, name, address, manager_id, company_id, building_type, created_at, board_meeting_notice_days, general_meeting_notice_days, notification_recipient_type, logo_url, is_archived, archived_at, archived_by, archive_reason, companies(logo_url)"
+          )
+          .eq("is_archived", true)
+          .order("archived_at", { ascending: false })
+
+        if (!userIsMaster && activeUser?.company_id) {
+          archivedQuery = archivedQuery.eq("company_id", activeUser.company_id)
+        }
+
+        const { data, error } = await archivedQuery
+        if (error) console.error("Error fetching archived buildings:", error)
+        archivedData = data || []
+      }
+
+      // 3. Fetch User Associations for all buildings
+      const allBuildingIds = [...new Set([...(buildingsData?.map(b => b.id) || []), ...archivedData.map(b => b.id)])]
+      
+      if (allBuildingIds.length === 0) {
+        setBuildings([])
+        setArchivedBuildings([])
         return
       }
 
@@ -499,6 +526,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
           unit_number,
           users!inner(id, name, email, user_type, roles, company_id)
         `)
+        .in("building_id", allBuildingIds)
 
       if (!userIsMaster && currentUser?.company_id) {
         ubQueryBuildings = ubQueryBuildings.eq("users.company_id", currentUser.company_id)
@@ -506,24 +534,38 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
 
       const { data: userBuildingsData } = await ubQueryBuildings
 
-      const buildingsWithUsers = (buildingsData || []).map((building) => {
-        const buildingUsers = (userBuildingsData || [])
-          .filter((ub: any) => ub.building_id === building.id)
-          .map((ub: any) => ({
-            ...ub.users,
-            unit_number: ub.unit_number
-          }))
-          .filter(Boolean)
+      const processBuildings = (data: any[]) => {
+        // Deduplicate by id first (OR queries can return the same building multiple times)
+        const seen = new Set<number>()
+        const unique = data.filter(b => {
+          if (seen.has(b.id)) {
+            console.warn(`[admin-panel] Duplicate building found: ${b.id} "${b.name}"`)
+            return false
+          }
+          seen.add(b.id)
+          return true
+        })
+        console.log(`[admin-panel] processBuildings: ${data.length} raw → ${unique.length} unique`)
+        return unique.map((building) => {
+          const buildingUsers = (userBuildingsData || [])
+            .filter((ub: any) => ub.building_id === building.id)
+            .map((ub: any) => ({
+              ...ub.users,
+              unit_number: ub.unit_number
+            }))
+            .filter(Boolean)
 
-        return {
-          ...building,
-          users: buildingUsers,
-        }
-      })
+          return {
+            ...building,
+            users: buildingUsers,
+          }
+        })
+      }
 
-      setBuildings(buildingsWithUsers)
+      setBuildings(processBuildings(buildingsData || []))
+      setArchivedBuildings(processBuildings(archivedData))
     } catch (err) {
-      console.error("Unexpected error:", err)
+      console.error("Unexpected error in fetchBuildings:", err)
     }
   }
 
@@ -579,9 +621,16 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
     triggerJanusResync('building_updated')
   }
 
-  const handleDeleteBuilding = async (buildingId: number) => {
+  const handleDeleteBuilding = async (building: Building) => {
+    setDeleteConfirmBuilding(building)
+  }
+
+  const confirmDeleteBuilding = async () => {
+    const building = deleteConfirmBuilding
+    if (!building) return
+    setDeleteConfirmBuilding(null)
     try {
-      const res = await fetch(`/api/v1/buildings/${buildingId}`, {
+      const res = await fetch(`/api/v1/buildings/${building.id}`, {
         method: 'DELETE',
         headers: { 'x-api-key': process.env.NEXT_PUBLIC_API_KEY || '' }
       })
@@ -597,6 +646,53 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
       alert(err.message || 'Failed to delete building')
     }
   }
+  const handleArchiveBuilding = async (building: Building) => {
+    if (!confirm(`Archive "${building.name}"? It will be removed from active lists and can be restored from Archive Storage.`)) return
+    try {
+      const res = await fetch(`/api/v1/buildings/${building.id}/archive`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-api-key': process.env.NEXT_PUBLIC_API_KEY || '' 
+        },
+        body: JSON.stringify({
+          archived_by: (dbUser || currentUser)?.name || (dbUser || currentUser)?.email || null,
+          archive_reason: 'Archived from admin panel'
+        })
+      })
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error || 'Failed to archive building')
+      }
+      fetchBuildings()
+      triggerJanusResync('building_archived')
+    } catch (err: any) {
+      console.error('Error archiving building:', err)
+      alert(err.message || 'Failed to archive building')
+    }
+  }
+
+  const handleUnarchiveBuilding = async (building: Building) => {
+    if (!confirm(`Restore "${building.name}" to active use?`)) return
+    try {
+      const res = await fetch(`/api/v1/buildings/${building.id}/unarchive`, {
+        method: 'POST',
+        headers: { 
+          'x-api-key': process.env.NEXT_PUBLIC_API_KEY || '' 
+        }
+      })
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error || 'Failed to restore building')
+      }
+      fetchBuildings()
+      triggerJanusResync('building_restored')
+    } catch (err: any) {
+      console.error('Error restoring building:', err)
+      alert(err.message || 'Failed to restore building')
+    }
+  }
+
   const handleCreateCompanySuccess = () => {
     fetchCompanies()
     triggerJanusResync('company_created')
@@ -791,6 +887,17 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
             >
               📋 Agenda
             </button>
+            {(isMaster || isCorporateAdmin) && (
+              <button
+                onClick={() => setActiveTab("archive")}
+                className={`pb-2 px-1 font-medium text-xs sm:text-sm transition-colors whitespace-nowrap flex-shrink-0 ${activeTab === "archive"
+                    ? "text-primary border-b-2 border-primary"
+                    : "text-muted-foreground hover:text-foreground"
+                  }`}
+              >
+                🗄️ Archive
+              </button>
+            )}
             <button
               onClick={() => setActiveTab("voting")}
               className={`pb-2 px-1 font-medium text-xs sm:text-sm transition-colors whitespace-nowrap flex-shrink-0 ${activeTab === "voting"
@@ -856,16 +963,37 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
 
         {activeTab === "buildings" && (
           <BuildingsTab
-            buildings={getBuildingsList()}
+            buildings={buildings}
             buildingDocuments={buildingDocuments}
             loading={loading}
             isMaster={isMaster}
             onViewDetails={handleViewBuildingDetails}
             onViewDocument={handleViewDocument}
             onManageDocuments={handleManageDocuments}
-            onDeleteBuilding={isMaster ? handleDeleteBuilding : undefined}
+            onDeleteBuilding={undefined} // No delete from active list
+            onArchiveBuilding={handleArchiveBuilding}
+            onUnarchiveBuilding={handleUnarchiveBuilding}
             currentUser={currentUser}
             canManage={userCanManageBuildings}
+            mode="active"
+          />
+        )}
+
+        {activeTab === "archive" && (isMaster || isCorporateAdmin) && (
+          <BuildingsTab
+            buildings={archivedBuildings}
+            buildingDocuments={buildingDocuments}
+            loading={loading}
+            isMaster={isMaster}
+            onViewDetails={handleViewBuildingDetails}
+            onViewDocument={handleViewDocument}
+            onManageDocuments={handleManageDocuments}
+            onDeleteBuilding={isMaster ? handleDeleteBuilding : undefined} // Delete allowed for master in archive
+            onArchiveBuilding={handleArchiveBuilding}
+            onUnarchiveBuilding={handleUnarchiveBuilding}
+            currentUser={currentUser}
+            canManage={true}
+            mode="archive"
           />
         )}
 
@@ -1016,6 +1144,31 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
         }}
         viewingDocument={viewingDocument}
       />
+
+      {deleteConfirmBuilding && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/60" onClick={() => setDeleteConfirmBuilding(null)} />
+          <div className="relative bg-popover border border-border rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6 z-10">
+            <h3 className="text-base font-semibold text-foreground mb-3">
+              Permanently delete &ldquo;{deleteConfirmBuilding.name}&rdquo;?
+            </h3>
+            <p className="text-sm text-muted-foreground mb-6">
+              This will erase all meetings, topics, documents, and transcripts associated with this building. This action is irreversible.
+            </p>
+            <div className="flex justify-end gap-3">
+              <Button variant="outline" onClick={() => setDeleteConfirmBuilding(null)}>
+                Cancel
+              </Button>
+              <Button
+                className="bg-red-600 hover:bg-red-700 text-white"
+                onClick={confirmDeleteBuilding}
+              >
+                OK
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 

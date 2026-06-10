@@ -201,6 +201,10 @@ export interface Database {
           rules_filename: string | null
           created_at: string
           updated_at: string
+          is_archived: boolean
+          archived_at: string | null
+          archived_by: string | null // text: stores user name or email
+          archive_reason: string | null
           board_meeting_notice_days: number | null
           general_meeting_notice_days: number | null
           notification_recipient_type: string | null
@@ -223,6 +227,11 @@ export interface Database {
           rules_filename?: string | null
           created_at?: string
           updated_at?: string
+          is_archived?: boolean
+          archived_at?: string | null
+          archived_by?: string | null
+          archive_reason?: string | null
+
           board_meeting_notice_days?: number | null
           general_meeting_notice_days?: number | null
           notification_recipient_type?: string | null
@@ -245,6 +254,11 @@ export interface Database {
           rules_filename?: string | null
           created_at?: string
           updated_at?: string
+          is_archived?: boolean
+          archived_at?: string | null
+          archived_by?: string | null
+          archive_reason?: string | null
+
           board_meeting_notice_days?: number | null
           general_meeting_notice_days?: number | null
           notification_recipient_type?: string | null
@@ -621,6 +635,7 @@ export interface Database {
           token_expires_at: string | null
           end_time: string | null
           minute_taker: string | null
+          is_archived: boolean
         }
         Insert: {
           id?: number
@@ -650,6 +665,7 @@ export interface Database {
           token_expires_at?: string | null
           end_time?: string | null
           minute_taker?: string | null
+          is_archived?: boolean
         }
         Update: {
           id?: number
@@ -677,6 +693,9 @@ export interface Database {
           finalized_at?: string | null
           external_update_token?: string | null
           token_expires_at?: string | null
+          end_time?: string | null
+          minute_taker?: string | null
+          is_archived?: boolean
         }
         Relationships: [
           {
