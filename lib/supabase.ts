@@ -1453,7 +1453,11 @@ export interface JanusComplaint {
 // CLIENT INITIALIZATION (SINGLETON)
 // ============================================
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+// Use internal URL on the server (no mixed-content restriction server-side)
+// Use the public URL (proxy) in the browser to avoid HTTP→HTTPS mixed content blocks
+const supabaseUrl = (typeof window === 'undefined'
+  ? (process.env.SUPABASE_INTERNAL_URL || process.env.NEXT_PUBLIC_SUPABASE_URL)
+  : process.env.NEXT_PUBLIC_SUPABASE_URL)!
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
 // Fix: Use globalThis for better compatibility and ensure client is stored
@@ -1487,7 +1491,11 @@ export function createAdminClient() {
   }
 
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY!
-  const client = createSupabaseClient<Database>(supabaseUrl, key, {
+  // Server-side: use internal URL directly; browser: use public proxy URL
+  const adminUrl = (typeof window === 'undefined'
+    ? (process.env.SUPABASE_INTERNAL_URL || process.env.NEXT_PUBLIC_SUPABASE_URL)
+    : process.env.NEXT_PUBLIC_SUPABASE_URL)!
+  const client = createSupabaseClient<Database>(adminUrl, key, {
     auth: { 
       persistSession: false, 
       autoRefreshToken: false,
