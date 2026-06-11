@@ -79,9 +79,9 @@ export default function CreateUserModal({
   }, [isOpen])
 
   const fetchUserTypes = async () => {
-    const params = await getVotingParameters(currentUser?.company_id)
-    const types = params.filter(p => p.parameter_type === 'user_type').map(p => p.value)
-    setUserTypes([...new Set(types)])
+    const params = await getVotingParameters(currentUser?.company_id) as Array<{ parameter_type: string; value: string }>
+    const types = params.filter((p: { parameter_type: string; value: string }) => p.parameter_type === 'user_type').map((p: { parameter_type: string; value: string }) => p.value)
+    setUserTypes([...new Set(types)] as string[])
   }
 
   const isMaster = checkIsMaster(currentUser)
@@ -353,24 +353,64 @@ export default function CreateUserModal({
           return
         }
 
-        await supabase.from("user_buildings").delete().eq("user_id", userId)
+        // ✅ SAFE DIFF-MERGE: do NOT delete all rows first.
+        // Instead, fetch current assignments, then only insert rows that are new
+        // and only delete rows that the editor explicitly removed from the list.
+        // This prevents editing one user from wiping building assignments that
+        // belong to other users or were added via a different flow (e.g. attendees).
+        const { data: existingAssignments } = await supabase
+          .from("user_buildings")
+          .select("building_id, unit_number")
+          .eq("user_id", userId)
 
-        if (selectedUserBuildings.length > 0) {
-          const buildingAssignments = selectedUserBuildings.map((b) => ({
-            user_id: userId,
-            building_id: b.id,
-            unit_number: b.unit_number.trim() || null,
-            voting_weight: parseFloat(b.voting_weight) ?? 1.00,
-            user_building_type: userFormData.userType
-          }))
+        const existingSet = new Set(
+          (existingAssignments || []).map(
+            (a: any) => `${a.building_id}::${a.unit_number ?? ""}`
+          )
+        )
+        const desiredSet = new Set(
+          selectedUserBuildings.map(
+            (b) => `${b.id}::${(b.unit_number.trim()) ?? ""}`
+          )
+        )
 
-          const { error: buildingsError } = await supabase
+        // Rows to ADD — in desired but not in existing
+        const toInsert = selectedUserBuildings.filter(
+          (b) => !existingSet.has(`${b.id}::${(b.unit_number.trim()) ?? ""}`)
+        )
+        // Rows to REMOVE — in existing but not in desired
+        const toDelete = (existingAssignments || []).filter(
+          (a: any) => !desiredSet.has(`${a.building_id}::${a.unit_number ?? ""}`)
+        )
+
+        if (toInsert.length > 0) {
+          const { error: insertError } = await supabase
             .from("user_buildings")
-            .insert(buildingAssignments)
+            .insert(
+              toInsert.map((b) => ({
+                user_id: userId,
+                building_id: b.id,
+                unit_number: b.unit_number.trim() || null,
+                voting_weight: parseFloat(b.voting_weight) ?? 1.00,
+                user_building_type: userFormData.userType,
+              }))
+            )
+          if (insertError) console.error("Error inserting new building assignments:", insertError)
+        }
 
-          if (buildingsError) {
-            console.error("Error updating buildings:", buildingsError)
+        for (const row of toDelete) {
+          let delQuery = supabase
+            .from("user_buildings")
+            .delete()
+            .eq("user_id", userId)
+            .eq("building_id", row.building_id)
+          if (row.unit_number) {
+            delQuery = delQuery.eq("unit_number", row.unit_number)
+          } else {
+            delQuery = delQuery.is("unit_number", null)
           }
+          const { error: delError } = await delQuery
+          if (delError) console.error("Error removing building assignment:", delError)
         }
       } else {
         if (isMaster) {
@@ -552,21 +592,21 @@ export default function CreateUserModal({
   ]
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 animate-in fade-in overflow-y-auto p-4">
-      <Card className="w-full max-w-2xl border-0 rounded-2xl shadow-2xl my-8 overflow-hidden">
-        <div className="bg-gradient-to-r from-primary/10 to-decision-purple/10 p-8 border-b border-border/50">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 animate-in fade-in overflow-y-auto">
+      <Card className="w-full sm:max-w-2xl border-0 rounded-t-2xl sm:rounded-2xl shadow-2xl sm:my-8 overflow-hidden">
+        <div className="bg-gradient-to-r from-primary/10 to-decision-purple/10 p-4 sm:p-8 border-b border-border/50">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-2xl font-bold text-foreground tracking-tight">
+              <h2 className="text-xl sm:text-2xl font-bold text-foreground tracking-tight">
                 {isEditMode ? "Edit User" : "Create New User"}
               </h2>
-              <p className="text-sm text-muted-foreground mt-1 font-medium">
+              <p className="text-xs sm:text-sm text-muted-foreground mt-1 font-medium">
                 {isEditMode ? "Update information and permissions" : "Add a new member to your team"}
               </p>
             </div>
             <button
               onClick={onClose}
-              className="h-10 w-10 flex items-center justify-center rounded-xl hover:bg-background/80 hover:shadow-sm transition-all duration-200"
+              className="h-9 w-9 flex items-center justify-center rounded-xl hover:bg-background/80 hover:shadow-sm transition-all duration-200"
               disabled={saving}
             >
               <X className="h-5 w-5" />
@@ -574,7 +614,7 @@ export default function CreateUserModal({
           </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-8 space-y-6 max-h-[70vh] overflow-y-auto custom-scrollbar">
+        <form onSubmit={handleSubmit} className="p-4 sm:p-8 space-y-5 max-h-[75vh] overflow-y-auto custom-scrollbar">
           {error && (
             <div className="bg-destructive/10 border border-destructive/20 text-destructive px-4 py-3 rounded-xl text-sm font-medium flex items-center gap-3">
               <span className="h-2 w-2 rounded-full bg-destructive animate-pulse" />
@@ -651,7 +691,7 @@ export default function CreateUserModal({
           {(isMaster || isCorporateAdmin) && (
             <div className="space-y-3 pt-2">
               <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground ml-1">Assign Roles (Primary first)</label>
-              <div className="bg-muted/10 border border-border rounded-2xl p-4 grid grid-cols-2 gap-3">
+              <div className="bg-muted/10 border border-border rounded-2xl p-3 sm:p-4 grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
                 {allRoleOptions.map((role) => (
                   <label key={role.value} className="flex items-center gap-3 cursor-pointer p-2 rounded-lg hover:bg-muted/50 transition-colors group">
                     <div className={`h-5 w-5 rounded border flex items-center justify-center transition-all ${userFormData.roles.includes(role.value) ? 'bg-primary border-primary' : 'border-border group-hover:border-primary/50'}`}>
@@ -795,22 +835,22 @@ export default function CreateUserModal({
             </div>
           )}
 
-          <div className="flex gap-4 pt-4 sticky bottom-0 bg-background pb-2">
+          <div className="flex gap-3 pt-4 sticky bottom-0 bg-background pb-2">
             <Button
               type="button"
               variant="ghost"
               onClick={onClose}
-              className="flex-1 h-12 rounded-xl font-bold hover:bg-muted"
+              className="flex-1 h-11 rounded-xl font-bold hover:bg-muted"
               disabled={saving}
             >
               Cancel
             </Button>
             <Button
               type="submit"
-              className="flex-[2] h-12 rounded-xl bg-gradient-to-r from-primary to-decision-purple text-white font-bold shadow-lg shadow-primary/20 hover:opacity-90 transition-all active:scale-[0.98]"
+              className="flex-[2] h-11 rounded-xl bg-gradient-to-r from-primary to-decision-purple text-white font-bold shadow-lg shadow-primary/20 hover:opacity-90 transition-all active:scale-[0.98]"
               disabled={saving}
             >
-              {saving ? "Processing..." : isEditMode ? "Save Changes" : "Create User Account"}
+              {saving ? "Processing..." : isEditMode ? "Save Changes" : "Create User"}
             </Button>
           </div>
         </form>

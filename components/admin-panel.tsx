@@ -272,11 +272,13 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
   const handleManageDocuments = (building: Building) => {
     const hasDocuments = buildingDocuments[building.id] || false
 
+    const rulesEngineBase = process.env.NEXT_PUBLIC_RULESENGINE_URL || "https://rulesengine.asccreative.com"
+    const updateFormId = process.env.NEXT_PUBLIC_DOC_UPDATE_FORM_ID || "8fe10f3e-bbb7-4ef0-8911-d43c27ad8666"
+    const createFormId = process.env.NEXT_PUBLIC_DOC_CREATE_FORM_ID || "6a4fe687-c1f7-43ea-b6e3-687e5e9a47fa"
+
     const formUrl = hasDocuments
-      ? `https://rulesengine.asccreative.com/form/8fe10f3e-bbb7-4ef0-8911-d43c27ad8666?Building Id=${building.id
-      }&Building Name=${encodeURIComponent(building.name)}`
-      : `https://rulesengine.asccreative.com/form/6a4fe687-c1f7-43ea-b6e3-687e5e9a47fa?Building Id=${building.id
-      }&Building Name=${encodeURIComponent(building.name)}`
+      ? `${rulesEngineBase}/form/${updateFormId}?Building Id=${building.id}&Building Name=${encodeURIComponent(building.name)}`
+      : `${rulesEngineBase}/form/${createFormId}?Building Id=${building.id}&Building Name=${encodeURIComponent(building.name)}`
 
     setDocumentFormUrl(formUrl)
     setShowDocumentModal(true)
@@ -524,13 +526,16 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
         .select(`
           building_id,
           unit_number,
-          users!inner(id, name, email, user_type, roles, company_id)
+          users(id, name, email, user_type, roles, company_id)
         `)
         .in("building_id", allBuildingIds)
 
-      if (!userIsMaster && currentUser?.company_id) {
-        ubQueryBuildings = ubQueryBuildings.eq("users.company_id", currentUser.company_id)
-      }
+      // NOTE: Do NOT filter by users.company_id here — attendee-only users
+      // legitimately have a null company_id and must remain visible in building
+      // assignment lists. Company scoping is already applied on the buildings
+      // query above, so only buildings belonging to the current company are in
+      // allBuildingIds. Filtering further by user.company_id silently drops any
+      // user (e.g. attendees) whose company_id is null.
 
       const { data: userBuildingsData } = await ubQueryBuildings
 
@@ -784,55 +789,53 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted">
       <header className="border-b border-border bg-card shadow-sm sticky top-0 z-40">
-        <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
+        <div className="mx-auto max-w-7xl px-3 py-3 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 sm:gap-4 min-w-0">
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={onBack}
-                className="hover:bg-muted"
+                className="hover:bg-muted flex-shrink-0"
               >
                 <ArrowLeft className="h-5 w-5" />
               </Button>
               <div className="min-w-0">
-                <h1 className="text-lg sm:text-xl font-bold text-foreground truncate">Admin Panel</h1>
-                <p className="text-[10px] sm:text-sm text-muted-foreground truncate sm:whitespace-normal">
+                <h1 className="text-base sm:text-xl font-bold text-foreground truncate">Admin Panel</h1>
+                <p className="hidden sm:block text-xs sm:text-sm text-muted-foreground">
                   Manage users, buildings, companies, minutes and agenda templates
                 </p>
               </div>
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
               {activeTab === "users" && canCreateUser && (
-                <div className="flex gap-2">
-                  <Button
-                    onClick={() => setShowCreateUserModal(true)}
-                    size="sm"
-                    className="bg-gradient-to-r from-primary to-decision-purple text-primary-foreground text-[10px] sm:text-sm px-2 sm:px-4"
-                  >
-                    <Plus className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
-                    <span className="truncate">Create User</span>
-                  </Button>
-                </div>
+                <Button
+                  onClick={() => setShowCreateUserModal(true)}
+                  size="sm"
+                  className="bg-gradient-to-r from-primary to-decision-purple text-primary-foreground text-xs px-2 sm:px-4 h-8 sm:h-9"
+                >
+                  <Plus className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-2" />
+                  <span className="hidden sm:inline">Create User</span>
+                </Button>
               )}
               {activeTab === "buildings" && canCreateBuilding && (
                 <Button
                   onClick={() => setShowCreateBuildingModal(true)}
                   size="sm"
-                  className="bg-gradient-to-r from-primary to-decision-purple text-primary-foreground text-[10px] sm:text-sm px-2 sm:px-4"
+                  className="bg-gradient-to-r from-primary to-decision-purple text-primary-foreground text-xs px-2 sm:px-4 h-8 sm:h-9"
                 >
-                  <Plus className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
-                  <span className="truncate">Create Building</span>
+                  <Plus className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-2" />
+                  <span className="hidden sm:inline">Create Building</span>
                 </Button>
               )}
               {activeTab === "companies" && isMaster && (
                 <Button
                   onClick={() => setShowCreateCompanyModal(true)}
                   size="sm"
-                  className="bg-gradient-to-r from-primary to-decision-purple text-primary-foreground text-[10px] sm:text-sm px-2 sm:px-4"
+                  className="bg-gradient-to-r from-primary to-decision-purple text-primary-foreground text-xs px-2 sm:px-4 h-8 sm:h-9"
                 >
-                  <Plus className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
-                  <span className="truncate">Create Company</span>
+                  <Plus className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-2" />
+                  <span className="hidden sm:inline">Create Company</span>
                 </Button>
               )}
             </div>

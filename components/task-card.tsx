@@ -227,8 +227,10 @@ export default function TopicCard({
         setAnalyzingAI(false)
         return
       }
+      const rulesEngineBase = process.env.NEXT_PUBLIC_RULESENGINE_URL || "https://rulesengine.asccreative.com"
+      const webhookId = process.env.NEXT_PUBLIC_AI_ANALYSIS_WEBHOOK_ID || "843afc5f-abe0-4bb4-bb9f-369d2657c4d0"
       const startTime = Date.now()
-      const response = await fetch('https://rulesengine.asccreative.com/webhook/843afc5f-abe0-4bb4-bb9f-369d2657c4d0', {
+      const response = await fetch(`${rulesEngineBase}/webhook/${webhookId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

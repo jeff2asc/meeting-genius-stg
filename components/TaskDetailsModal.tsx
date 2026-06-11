@@ -256,8 +256,10 @@ export default function TaskDetailsModal({ taskId, onClose, onUpdate, initialDat
 
       console.log('Sending payload to n8n webhook:', payload)
 
+      const rulesEngineBase = process.env.NEXT_PUBLIC_RULESENGINE_URL || "https://rulesengine.asccreative.com"
+      const webhookId = process.env.NEXT_PUBLIC_TASK_AI_ANALYSIS_WEBHOOK_ID || "ac3f411b-401a-4a97-ae07-f241dbc2d1ed"
       const startTime = Date.now()
-      const response = await fetch('https://rulesengine.asccreative.com/webhook/ac3f411b-401a-4a97-ae07-f241dbc2d1ed', {
+      const response = await fetch(`${rulesEngineBase}/webhook/${webhookId}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

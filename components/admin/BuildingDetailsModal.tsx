@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
-import { X, Building2, Users, FileText, Trash2, ExternalLink, Loader2, Link as LinkIcon, Bell, Upload } from "lucide-react"
+import { X, Building2, Users, FileText, Trash2, ExternalLink, Loader2, Link as LinkIcon, Bell, Upload, ChevronDown, UserPlus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -15,12 +15,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { supabase, getVotingParameters } from "@/lib/supabase"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { supabase, getVotingParameters, Company } from "@/lib/supabase"
 import { triggerJanusResync } from "@/lib/janus"
 import { toast } from "sonner"
 import { apiClient } from "@/lib/api-client"
 
 import { isPropertyManager as checkIsPropertyManager, isCorporateAdmin as checkIsCorporateAdmin, isMaster as checkIsMaster } from "@/lib/permissions"
+import AssignUsersToBuildingModal from "./AssignUsersToBuildingModal"
+import CreateUserModal from "./CreateUserModal"
 
 interface User {
   id: number
@@ -76,7 +84,7 @@ export default function BuildingDetailsModal({
   const [managerId, setManagerId] = useState<number | null>(null)
   const [selectedUsers, setSelectedUsers] = useState<number[]>([])
   const [propertyManagers, setPropertyManagers] = useState<User[]>([])
-  const [companies, setCompanies] = useState<Array<{ id: number; name: string }>>([])
+  const [companies, setCompanies] = useState<Company[]>([])
   const [selectedCompanyId, setSelectedCompanyId] = useState<number | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
@@ -91,11 +99,49 @@ export default function BuildingDetailsModal({
 
   const [assignedUsers, setAssignedUsers] = useState<any[]>([])
 
+  // Fetch assigned users directly from user_buildings — never rely on the
+  // building prop, which may have been filtered to exclude attendees.
+  const fetchAssignedUsers = async (buildingId: number) => {
+    try {
+      const { data, error } = await supabase
+        .from("user_buildings")
+        .select(`
+          unit_number,
+          users(id, name, email, user_type, roles)
+        `)
+        .eq("building_id", buildingId)
+
+      if (error) {
+        console.error("Error fetching assigned users:", error)
+        return
+      }
+
+      const formatted = (data || [])
+        .map((ub: any) => ({
+          id: ub.users?.id,
+          name: ub.users?.name,
+          email: ub.users?.email,
+          user_type: ub.users?.user_type,
+          roles: ub.users?.roles,
+          unit_number: ub.unit_number,
+        }))
+        .filter((u: any) => u.id)
+
+      setAssignedUsers(formatted)
+    } catch (err) {
+      console.error("Unexpected error fetching assigned users:", err)
+    }
+  }
+
   // Ref to hold DocumentsTab's auto-save function for unsaved URL
   const pendingUrlSaveRef = useRef<(() => Promise<void>) | null>(null)
 
   const [buildingTypes, setBuildingTypes] = useState<string[]>([])
   const [userBuildingTypes, setUserBuildingTypes] = useState<string[]>([])
+  
+  const [showAssignUserModal, setShowAssignUserModal] = useState(false)
+  const [showCreateUserModal, setShowCreateUserModal] = useState(false)
+  const [availableBuildings, setAvailableBuildings] = useState<Array<{ id: number; name: string; company_id?: number | null }>>([])
 
   useEffect(() => {
     if (isOpen && building && currentUser) {
@@ -116,10 +162,10 @@ export default function BuildingDetailsModal({
       }
       setBuildingType(building.building_type || "Strata/Condo")
       setManagerId(building.manager_id)
+      // Do NOT seed from building.users prop — it may exclude attendees due to
+      // company_id filtering in the parent query. Always fetch fresh from DB.
       setSelectedUsers(building.users?.map((u) => u.id) || [])
-      setAssignedUsers(building.users || [])
-      setSelectedCompanyId(building.company_id)
-      
+      setSelectedCompanyId(building.company_id)      
       setBoardMeetingNoticeDays(building.board_meeting_notice_days || 7)
       setGeneralMeetingNoticeDays(building.general_meeting_notice_days || 7)
       const savedRecipients = building.notification_recipient_type
@@ -134,6 +180,8 @@ export default function BuildingDetailsModal({
       fetchPropertyManagers()
       fetchCompanies()
       fetchDynamicParams()
+      fetchAvailableBuildings()
+      fetchAssignedUsers(building.id)
     }
   }, [isOpen, building?.id, currentUser?.id])
 
@@ -141,7 +189,7 @@ export default function BuildingDetailsModal({
     try {
       const { data, error } = await supabase
         .from("companies")
-        .select("id, name")
+        .select("id, name, created_at, updated_at")
         .order("name")
 
       if (error) {
@@ -232,6 +280,32 @@ export default function BuildingDetailsModal({
       setPropertyManagers(pms as User[])
     } catch (err) {
       console.error("Unexpected error:", err)
+    }
+  }
+
+  const fetchAvailableBuildings = async () => {
+    try {
+      const isMasterUser = currentUser?.user_type === "master" || currentUser?.roles?.includes("master")
+
+      let query = supabase
+        .from("buildings")
+        .select("id, name, company_id")
+        .order("name")
+
+      if (!isMasterUser && building?.company_id) {
+        query = query.eq("company_id", building.company_id)
+      }
+
+      const { data, error } = await query
+
+      if (error) {
+        console.error("Error fetching buildings:", error)
+        return
+      }
+
+      setAvailableBuildings(data || [])
+    } catch (err) {
+      console.error("Unexpected error fetching buildings:", err)
     }
   }
 
@@ -363,9 +437,10 @@ export default function BuildingDetailsModal({
       
       // 🔄 Notify Janus
       triggerJanusResync('user_removed_from_building')
-      
-      await onSuccess()
-    } catch (err) {
+
+      // Re-fetch from DB so the list stays accurate
+      await fetchAssignedUsers(building.id)
+      await onSuccess()    } catch (err) {
       console.error("Unexpected error:", err)
       toast.error("Failed to remove assignment")
     }
@@ -397,66 +472,66 @@ export default function BuildingDetailsModal({
   if (!isOpen || !building) return null
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <Card className="w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
-        <div className="p-6 border-b border-border flex items-center justify-between bg-gradient-to-r from-primary/10 to-decision-purple/10">
-          <div>
-            <h2 className="text-2xl font-bold text-foreground">Building Details</h2>
-            <p className="text-sm text-muted-foreground mt-1">{building.name}</p>
+    <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 sm:p-4">
+      <Card className="w-full sm:max-w-4xl h-[92vh] sm:max-h-[90vh] overflow-hidden flex flex-col rounded-t-2xl sm:rounded-2xl">
+        <div className="p-4 sm:p-6 border-b border-border flex items-center justify-between bg-gradient-to-r from-primary/10 to-decision-purple/10 flex-shrink-0">
+          <div className="min-w-0">
+            <h2 className="text-lg sm:text-2xl font-bold text-foreground">Building Details</h2>
+            <p className="text-xs sm:text-sm text-muted-foreground mt-0.5 truncate">{building.name}</p>
           </div>
-          <Button variant="ghost" size="icon" onClick={onClose}>
+          <Button variant="ghost" size="icon" onClick={onClose} className="flex-shrink-0">
             <X className="h-5 w-5" />
           </Button>
         </div>
 
-        <div className="flex gap-4 px-6 pt-4 border-b border-border overflow-x-auto">
+        <div className="flex gap-1 sm:gap-4 px-3 sm:px-6 pt-3 sm:pt-4 border-b border-border overflow-x-auto scrollbar-hide flex-shrink-0">
           <button
             onClick={() => setActiveTab("details")}
-            className={`pb-3 px-1 font-medium text-sm transition-colors flex items-center gap-2 whitespace-nowrap ${
+            className={`pb-3 px-1 sm:px-2 font-medium text-xs sm:text-sm transition-colors flex items-center gap-1 sm:gap-2 whitespace-nowrap flex-shrink-0 ${
               activeTab === "details"
                 ? "text-primary border-b-2 border-primary"
                 : "text-muted-foreground hover:text-foreground"
             }`}
           >
-            <Building2 className="h-4 w-4" />
+            <Building2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
             Details
           </button>
           <button
             onClick={() => setActiveTab("users")}
-            className={`pb-3 px-1 font-medium text-sm transition-colors flex items-center gap-2 whitespace-nowrap ${
+            className={`pb-3 px-1 sm:px-2 font-medium text-xs sm:text-sm transition-colors flex items-center gap-1 sm:gap-2 whitespace-nowrap flex-shrink-0 ${
               activeTab === "users"
                 ? "text-primary border-b-2 border-primary"
                 : "text-muted-foreground hover:text-foreground"
             }`}
           >
-            <Users className="h-4 w-4" />
-            Users ({selectedUsers.length})
+            <Users className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+            Users ({assignedUsers.length})
           </button>
           <button
             onClick={() => setActiveTab("documents")}
-            className={`pb-3 px-1 font-medium text-sm transition-colors flex items-center gap-2 whitespace-nowrap ${
+            className={`pb-3 px-1 sm:px-2 font-medium text-xs sm:text-sm transition-colors flex items-center gap-1 sm:gap-2 whitespace-nowrap flex-shrink-0 ${
               activeTab === "documents"
                 ? "text-primary border-b-2 border-primary"
                 : "text-muted-foreground hover:text-foreground"
             }`}
           >
-            <FileText className="h-4 w-4" />
-            Documents
+            <FileText className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+            Docs
           </button>
           <button
             onClick={() => setActiveTab("notifications")}
-            className={`pb-3 px-1 font-medium text-sm transition-colors flex items-center gap-2 whitespace-nowrap ${
+            className={`pb-3 px-1 sm:px-2 font-medium text-xs sm:text-sm transition-colors flex items-center gap-1 sm:gap-2 whitespace-nowrap flex-shrink-0 ${
               activeTab === "notifications"
                 ? "text-primary border-b-2 border-primary"
                 : "text-muted-foreground hover:text-foreground"
             }`}
           >
-            <Bell className="h-4 w-4" />
-            Notifications
+            <Bell className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+            Alerts
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6">
           {activeTab === "details" && (
             <div className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -743,18 +818,49 @@ export default function BuildingDetailsModal({
           )}
 
           {activeTab === "users" && (
-            <div className="space-y-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-lg font-bold text-foreground">Building Assignments</h3>
-                  <p className="text-sm text-muted-foreground">Users who have access to this building and their unit numbers</p>
+            <div className="space-y-4 sm:space-y-6">
+              <div className="flex items-start sm:items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <h3 className="text-base sm:text-lg font-bold text-foreground">Building Assignments</h3>
+                  <p className="text-xs sm:text-sm text-muted-foreground hidden sm:block">Users who have access to this building and their unit numbers</p>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-shrink-0">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button size="sm" className="bg-gradient-to-r from-primary to-decision-purple text-primary-foreground text-xs h-8 sm:h-9 px-2 sm:px-3">
+                        <UserPlus className="h-3.5 w-3.5 sm:mr-2" />
+                        <span className="hidden sm:inline">Add User</span>
+                        <ChevronDown className="h-3 w-3 ml-1" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-52">
+                      <DropdownMenuItem
+                        onClick={() => setShowCreateUserModal(true)}
+                        className="cursor-pointer"
+                      >
+                        <UserPlus className="h-4 w-4 mr-2" />
+                        <div>
+                          <p className="font-medium text-sm">Create New User</p>
+                          <p className="text-xs text-muted-foreground">Register and assign a new user</p>
+                        </div>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => setShowAssignUserModal(true)}
+                        className="cursor-pointer"
+                      >
+                        <Users className="h-4 w-4 mr-2" />
+                        <div>
+                          <p className="font-medium text-sm">Assign Existing User</p>
+                          <p className="text-xs text-muted-foreground">Add a registered user</p>
+                        </div>
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
               </div>
 
-              {/* Assignments Table */}
-              <div className="border border-border rounded-xl overflow-hidden bg-card">
+              {/* Desktop table */}
+              <div className="hidden sm:block border border-border rounded-xl overflow-hidden bg-card">
                 <table className="w-full text-left text-sm">
                   <thead className="bg-muted/50 border-b border-border">
                     <tr>
@@ -788,13 +894,13 @@ export default function BuildingDetailsModal({
                                     ...(Array.isArray(user.roles) ? user.roles : []),
                                   ]),
                                 ).map((role) => {
-                                  const userTypeDisplay = getUserTypeDisplay(role)
+                                  const roleDisplay = getUserTypeDisplay(role)
                                   return (
                                     <span
                                       key={role}
-                                      className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${userTypeDisplay.className}`}
+                                      className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${roleDisplay.className}`}
                                     >
-                                      {userTypeDisplay.label}
+                                      {roleDisplay.label}
                                     </span>
                                   )
                                 })}
@@ -827,7 +933,46 @@ export default function BuildingDetailsModal({
                 </table>
               </div>
 
-
+              {/* Mobile card list */}
+              <div className="sm:hidden space-y-2">
+                {assignedUsers.length === 0 ? (
+                  <p className="text-center text-sm text-muted-foreground py-8">No users assigned yet.</p>
+                ) : (
+                  assignedUsers.map((user, idx) => (
+                    <div key={`${user.id}-${user.unit_number}-${idx}`} className="border border-border rounded-xl p-3 bg-card">
+                      <div className="flex justify-between items-start gap-2">
+                        <div className="min-w-0 flex-1">
+                          <p className="font-semibold text-sm truncate">{user.name}</p>
+                          <p className="text-xs text-muted-foreground truncate">{user.email}</p>
+                          <div className="flex flex-wrap gap-1 mt-1.5">
+                            {Array.from(new Set([user.user_type, ...(Array.isArray(user.roles) ? user.roles : [])])).map((role) => {
+                              const roleDisplay = getUserTypeDisplay(role)
+                              return (
+                                <span key={role} className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${roleDisplay.className}`}>
+                                  {roleDisplay.label}
+                                </span>
+                              )
+                            })}
+                            {user.unit_number && (
+                              <Badge variant="secondary" className="text-[10px] bg-blue-50 text-blue-700 border-blue-100">
+                                Unit {user.unit_number}
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50 flex-shrink-0"
+                          onClick={() => handleRemoveAssignment(user.id, user.unit_number)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
           )}
 
@@ -848,19 +993,45 @@ export default function BuildingDetailsModal({
           )}
         </div>
 
-        <div className="p-6 border-t border-border flex justify-end gap-3">
-          <Button variant="outline" onClick={onClose} disabled={submitting}>
+        <div className="p-4 sm:p-6 border-t border-border flex justify-end gap-3 flex-shrink-0">
+          <Button variant="outline" onClick={onClose} disabled={submitting} className="h-9 sm:h-10">
             Cancel
           </Button>
           <Button
             onClick={handleSubmit}
             disabled={submitting}
-            className="bg-gradient-to-r from-primary to-decision-purple"
+            className="bg-gradient-to-r from-primary to-decision-purple h-9 sm:h-10"
           >
             {submitting ? "Saving..." : "Save Changes"}
           </Button>
         </div>
       </Card>
+
+      {/* Assign Users Modal */}
+      <AssignUsersToBuildingModal
+        isOpen={showAssignUserModal}
+        onClose={() => setShowAssignUserModal(false)}
+        onSuccess={async () => {
+          if (building) await fetchAssignedUsers(building.id)
+          onSuccess()
+        }}
+        building={building}
+        currentUser={currentUser}
+      />
+
+      {/* Create New User Modal */}
+      <CreateUserModal
+        isOpen={showCreateUserModal}
+        onClose={() => setShowCreateUserModal(false)}
+        onSuccess={async () => {
+          if (building) await fetchAssignedUsers(building.id)
+          onSuccess()
+        }}
+        currentUser={currentUser}
+        propertyManagers={propertyManagers}
+        buildings={availableBuildings}
+        companies={companies}
+      />
     </div>
   )
 }

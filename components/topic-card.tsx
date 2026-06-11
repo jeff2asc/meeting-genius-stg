@@ -731,8 +731,10 @@ export default function TopicCard({
       const topicAttachments = await fetchAndExtractTopicAttachments(topic.id)
       console.log(`Fetched ${topicAttachments.length} topic attachments`)
 
+      const rulesEngineBase = process.env.NEXT_PUBLIC_RULESENGINE_URL || "https://rulesengine.asccreative.com"
+      const webhookId = process.env.NEXT_PUBLIC_AI_ANALYSIS_WEBHOOK_ID || "843afc5f-abe0-4bb4-bb9f-369d2657c4d0"
       const startTime = Date.now()
-      const response = await fetch('https://rulesengine.asccreative.com/webhook/843afc5f-abe0-4bb4-bb9f-369d2657c4d0', {
+      const response = await fetch(`${rulesEngineBase}/webhook/${webhookId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1301,25 +1303,27 @@ export default function TopicCard({
                     onClick={handleAiAnalysis}
                     disabled={analyzingAI}
                     size="sm"
-                    className="bg-gradient-to-r from-purple-600 to-blue-600 text-white hover:opacity-90"
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold h-9 rounded-xl shadow-sm transition-all hover:scale-[1.02]"
                   >
                     {analyzingAI ? (
                       <>
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Analyzing...
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" /> 
+                        <span className="animate-pulse">Reasoning...</span>
                       </>
                     ) : (
                       <>
-                        <Sparkles className="h-4 w-4 mr-2" /> 🤖 Analyze with AI
+                        <Sparkles className="h-4 w-4 mr-2 text-indigo-200" /> Genius Analysis
                       </>
                     )}
                   </Button>
                   {aiAnalysis && (
                     <Button
                       onClick={() => setShowAiResult(!showAiResult)}
-                      variant="outline"
+                      variant="ghost"
                       size="sm"
+                      className="h-9 rounded-xl text-primary font-semibold hover:bg-primary/5"
                     >
-                      {showAiResult ? 'Hide' : 'Show'} Analysis
+                      {showAiResult ? 'Hide Genius' : 'View Genius Insight'}
                     </Button>
                   )}
                   {topic.is_archived && onRestore && (
@@ -1327,7 +1331,7 @@ export default function TopicCard({
                       onClick={handleRestoreTopic}
                       variant="outline"
                       size="sm"
-                      className="text-emerald-600 border-emerald-600 hover:bg-emerald-50"
+                      className="text-emerald-600 border-emerald-600 hover:bg-emerald-50 h-9 rounded-xl font-bold"
                     >
                       <Plus className="h-4 w-4 mr-2" /> Restore Topic
                     </Button>
@@ -1336,13 +1340,32 @@ export default function TopicCard({
               )}
 
               {showAiResult && aiAnalysis && (
-                <div className="mt-3 p-3 bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-200 rounded-lg">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Sparkles className="h-5 w-5 text-purple-600" />
-                    <h4 className="font-semibold text-purple-900">AI Analysis Result</h4>
+                <div className="mt-4 p-5 bg-gradient-to-br from-indigo-50/80 via-white to-purple-50/80 border border-indigo-100 rounded-2xl shadow-sm relative overflow-hidden">
+                  <div className="absolute top-0 right-0 p-3 opacity-10">
+                    <Sparkles className="h-16 w-16 text-indigo-600" />
                   </div>
-                  <div className="text-sm text-gray-800 whitespace-pre-wrap">
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="h-8 w-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white shadow-md">
+                      <Sparkles className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-indigo-900 leading-none">Genius Insight</h4>
+                      <p className="text-[10px] text-indigo-500 font-medium uppercase mt-1 tracking-wider">AI-Powered Context & Advice</p>
+                    </div>
+                  </div>
+                  <div className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap font-medium">
                     {aiAnalysis}
+                  </div>
+                  <div className="mt-4 pt-3 border-t border-indigo-100/50 flex justify-between items-center">
+                    <span className="text-[10px] text-muted-foreground italic">Insights are generated based on meeting description and building documents.</span>
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      onClick={() => setShowAiResult(false)}
+                      className="h-7 text-[10px] font-bold text-indigo-600"
+                    >
+                      Dismiss
+                    </Button>
                   </div>
                 </div>
               )}

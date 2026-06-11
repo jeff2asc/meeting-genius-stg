@@ -640,7 +640,8 @@ export default function Dashboard({
       {/* HEADER - MG Logo + Clock */}
       <header className="border-b border-border bg-card shadow-sm sticky top-0 z-40 sm:static">
         <div className="mx-auto max-w-7xl px-4 py-3 sm:py-4 sm:px-6 lg:px-8">
-          <div className="flex items-center gap-3 sm:gap-4">
+          {/* On mobile, reserve right-side space so the fixed Admin + user buttons don't overlap */}
+          <div className="flex items-center gap-3 sm:gap-4 pr-[160px] sm:pr-0">
             <img
               src="/MG2 logo.png"
               alt="Meeting Genius Logo"

@@ -257,7 +257,7 @@ export default function Home() {
         <ImpersonationBanner viewingAs={currentUser.name} />
       )}
       {/* Top Navigation */}
-      <div className={`fixed ${isImpersonating() ? "top-[42px]" : "top-2.5 sm:top-4"} right-2.5 sm:right-4 z-50 flex items-center gap-1.5 sm:gap-2`}>
+      <div className={`fixed ${isImpersonating() ? "top-[42px]" : "top-2 sm:top-4"} right-2 sm:right-4 z-50 flex items-center gap-1.5 sm:gap-2`}>
         {userCanAccessAdmin && currentScreen !== "admin" && (
           <Button
             onClick={handleAdminClick}
