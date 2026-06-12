@@ -21,6 +21,8 @@ const BLOCKED_RESPONSE_HEADERS = new Set([
   "transfer-encoding",
   "connection",
   "keep-alive",
+  "www-authenticate",
+  "proxy-authenticate",
 ])
 
 async function proxyRequest(request: NextRequest, params: { path: string[] }) {
