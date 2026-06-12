@@ -1,11 +1,31 @@
 "use client"
 
 import { useState, useEffect, useRef, useCallback } from "react"
-import { GripVertical, Save, FileText, Loader2, Undo } from "lucide-react"
+import { GripVertical, Save, FileText, Loader2, Undo, Plus, Trash2, AlignLeft, AlignCenter, AlignRight, ChevronUp, ChevronDown } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { supabase } from "@/lib/supabase"
 import { getCurrentLocalDate } from "@/lib/timezone"
+
+// ─── Rich Text Block (Feature 1 & 3) ───────────────────────────────────────
+interface RichTextBlock {
+  id: string
+  slot: 'header' | 'footer'
+  order: number
+  label: string
+  content: string
+  fontSize: number
+  bold: boolean
+  italic: boolean
+  textAlign: 'left' | 'center' | 'right'
+  meetingTypeFilter: string[]  // empty = all meeting types
+}
+
+const MEETING_TYPE_OPTIONS = ['Council Meeting', 'AGM', 'SGM', 'Special Meeting', 'Emergency Meeting']
+
+function generateBlockId(): string {
+  return `block-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`
+}
 
 interface Building {
   id: number
@@ -30,6 +50,11 @@ interface CoverPageElement {
   x: number
   y: number
   align: 'left' | 'center' | 'right'
+  fontSize?: number
+  bold?: boolean
+  italic?: boolean
+  uppercase?: boolean
+  letterSpacing?: number
 }
 
 interface TemplateField {
@@ -45,6 +70,8 @@ interface TemplateState {
   coverPageColor: string
   infoCardAccentColor: string
   agendaItemsColor: string
+  sectionHeaderTextColor: 'black' | 'white'
+  richTextBlocks: RichTextBlock[]
 }
 
 interface Template {
@@ -55,6 +82,8 @@ interface Template {
   coverpage_color: string
   infocard_accent_color: string
   agenda_items_color: string
+  section_header_text_color: string
+  rich_text_blocks: RichTextBlock[]
 }
 
 interface Meeting {
@@ -95,9 +124,9 @@ const COVER_PAGE_HEIGHT = 175 // ✅ Fixed at 175px
 
 const DEFAULT_COVERPAGE_ELEMENTS: CoverPageElement[] = [
   { id: "logo", label: "Company Logo", enabled: true, x: 10, y: 15, align: 'left' },
-  { id: "title", label: "MEETING AGENDA", enabled: true, x: 50, y: 40, align: 'center' },
-  { id: "building_name", label: "Building Name", enabled: true, x: 50, y: 60, align: 'center' },
-  { id: "meeting_type", label: "Meeting Type", enabled: true, x: 50, y: 70, align: 'center' },
+  { id: "title", label: "MEETING AGENDA", enabled: true, x: 50, y: 40, align: 'center', fontSize: 48, bold: true, uppercase: true, letterSpacing: 3 },
+  { id: "building_name", label: "Building Name", enabled: true, x: 50, y: 60, align: 'center', fontSize: 24, bold: false, uppercase: false, letterSpacing: 1 },
+  { id: "meeting_type", label: "Meeting Type", enabled: true, x: 50, y: 70, align: 'center', fontSize: 18, bold: false, uppercase: false, letterSpacing: 0.5 },
 ]
 
 const DEFAULT_INFOCARD_FIELDS: TemplateField[] = [
@@ -144,6 +173,10 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
   const [coverPageColor, setCoverPageColor] = useState("#1e3a8a")
   const [infoCardAccentColor, setInfoCardAccentColor] = useState("#2563eb")
   const [agendaItemsColor, setAgendaItemsColor] = useState("#2563eb")
+  // Feature 2 — section header text color
+  const [sectionHeaderTextColor, setSectionHeaderTextColor] = useState<'black' | 'white'>('white')
+  // Feature 1 — rich text blocks
+  const [richTextBlocks, setRichTextBlocks] = useState<RichTextBlock[]>([])
   const [saving, setSaving] = useState(false)
   const [hasChanges, setHasChanges] = useState(false)
   const [loadingTemplate, setLoadingTemplate] = useState(false)
@@ -155,6 +188,7 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
 
   // Free drag state
   const [draggingElementId, setDraggingElementId] = useState<string | null>(null)
+  const [selectedElementId, setSelectedElementId] = useState<string | null>(null)
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 })
   const coverPageRef = useRef<HTMLDivElement>(null)
 
@@ -176,6 +210,8 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
       coverPageColor,
       infoCardAccentColor,
       agendaItemsColor,
+      sectionHeaderTextColor,
+      richTextBlocks: [...richTextBlocks],
     }
 
     setHistory(prev => {
@@ -184,7 +220,7 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
       return newHistory.slice(-20)
     })
     setHistoryIndex(prev => Math.min(prev + 1, 19))
-  }, [coverPageElements, infoCardFields, coverPageColor, infoCardAccentColor, agendaItemsColor, historyIndex])
+  }, [coverPageElements, infoCardFields, coverPageColor, infoCardAccentColor, agendaItemsColor, sectionHeaderTextColor, richTextBlocks, historyIndex])
 
   // Undo function
   const handleUndo = () => {
@@ -195,6 +231,8 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
       setCoverPageColor(prevState.coverPageColor)
       setInfoCardAccentColor(prevState.infoCardAccentColor)
       setAgendaItemsColor(prevState.agendaItemsColor)
+      setSectionHeaderTextColor(prevState.sectionHeaderTextColor || 'white')
+      setRichTextBlocks(prevState.richTextBlocks || [])
       setHistoryIndex(prev => prev - 1)
       setHasChanges(true)
     }
@@ -341,7 +379,9 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
         .from('agendatemplates')
         .select('*')
         .eq('buildingid', selectedBuildingId)
-        .single()
+        .order('updatedat', { ascending: false })
+        .limit(1)
+        .maybeSingle()
 
       if (error) {
         if (error.code === 'PGRST116') {
@@ -350,15 +390,20 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
           setCoverPageColor("#1e3a8a")
           setInfoCardAccentColor("#2563eb")
           setAgendaItemsColor("#2563eb")
+          setSectionHeaderTextColor('white')
+          setRichTextBlocks([])
           setTemplateId(null)
         }
       } else if (data) {
-        setTemplateId(data.id)
-        setCoverPageColor(data.coverpage_color || "#1e3a8a")
-        setInfoCardAccentColor(data.infocard_accent_color || "#2563eb")
-        setAgendaItemsColor(data.agenda_items_color || "#2563eb")
-        setCoverPageElements((data.coverpage_elements as unknown as CoverPageElement[]) || DEFAULT_COVERPAGE_ELEMENTS)
-        setInfoCardFields((data.infocard_fields as unknown as TemplateField[]) || DEFAULT_INFOCARD_FIELDS)
+        const row = data as any
+        setTemplateId(row.id)
+        setCoverPageColor(row.coverpage_color || "#1e3a8a")
+        setInfoCardAccentColor(row.infocard_accent_color || "#2563eb")
+        setAgendaItemsColor(row.agenda_items_color || "#2563eb")
+        setSectionHeaderTextColor((row.section_header_text_color as 'black' | 'white') || 'white')
+        setRichTextBlocks((row.rich_text_blocks as unknown as RichTextBlock[]) || [])
+        setCoverPageElements((row.coverpage_elements as unknown as CoverPageElement[]) || DEFAULT_COVERPAGE_ELEMENTS)
+        setInfoCardFields((row.infocard_fields as unknown as TemplateField[]) || DEFAULT_INFOCARD_FIELDS)
       }
 
       setHasChanges(false)
@@ -446,12 +491,14 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
     try {
       const templateData = {
         buildingid: selectedBuildingId,
-        coverpage_elements: coverPageElements,
-        infocard_fields: infoCardFields,
+        coverpage_elements: coverPageElements as any,
+        infocard_fields: infoCardFields as any,
         coverpage_color: coverPageColor,
         infocard_accent_color: infoCardAccentColor,
         agenda_items_color: agendaItemsColor,
-        coverpage_height: COVER_PAGE_HEIGHT // ✅ Always saves 175
+        coverpage_height: COVER_PAGE_HEIGHT,
+        section_header_text_color: sectionHeaderTextColor,
+        rich_text_blocks: richTextBlocks as any,
       }
 
       if (templateId) {
@@ -459,8 +506,6 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
           .from('agendatemplates')
           .update({
             ...templateData,
-            coverpage_elements: coverPageElements as any,
-            infocard_fields: infoCardFields as any,
             updatedat: new Date().toISOString()
           })
           .eq('id', templateId)
@@ -469,11 +514,7 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
       } else {
         const { data, error } = await supabase
           .from('agendatemplates')
-          .insert({
-            ...templateData,
-            coverpage_elements: coverPageElements as any,
-            infocard_fields: infoCardFields as any
-          })
+          .insert(templateData)
           .select()
           .single()
 
@@ -637,7 +678,7 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
                   </Card>
 
                   <Card className="p-4">
-                    <h3 className="text-sm font-semibold mb-3">Agenda Items</h3>
+                    <h3 className="text-sm font-semibold mb-3">Agenda Items / Section Headers</h3>
                     <input
                       type="color"
                       value={agendaItemsColor}
@@ -655,8 +696,285 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
                         setAgendaItemsColor(e.target.value)
                         setHasChanges(true)
                       }}
-                      className="w-full px-2 py-1 border rounded text-sm"
+                      className="w-full px-2 py-1 border rounded text-sm mb-3"
                     />
+                    {/* Feature 2 — Section header text color toggle */}
+                    <div>
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Section Header Text</p>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => { saveToHistory(); setSectionHeaderTextColor('white'); setHasChanges(true) }}
+                          className={`flex-1 py-1.5 text-xs font-semibold rounded border transition-all ${
+                            sectionHeaderTextColor === 'white'
+                              ? 'bg-gray-800 text-white border-gray-800'
+                              : 'bg-white text-gray-700 border-gray-300 hover:border-gray-500'
+                          }`}
+                        >
+                          ◉ White
+                        </button>
+                        <button
+                          onClick={() => { saveToHistory(); setSectionHeaderTextColor('black'); setHasChanges(true) }}
+                          className={`flex-1 py-1.5 text-xs font-semibold rounded border transition-all ${
+                            sectionHeaderTextColor === 'black'
+                              ? 'bg-white text-black border-black ring-2 ring-black'
+                              : 'bg-white text-gray-700 border-gray-300 hover:border-gray-500'
+                          }`}
+                        >
+                          ○ Black
+                        </button>
+                      </div>
+                    </div>
+                  </Card>
+
+                  {/* Header Styles Sidebar Card */}
+                  {selectedElementId && coverPageElements.find(el => el.id === selectedElementId) && selectedElementId !== 'logo' && (
+                    <Card className="p-4 border-2 border-blue-500 shadow-md">
+                      <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-sm font-bold text-blue-900 uppercase tracking-tight">Element Styles</h3>
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          onClick={() => setSelectedElementId(null)}
+                          className="h-6 px-2 text-[10px]"
+                        >
+                          CLOSE
+                        </Button>
+                      </div>
+
+                      <div className="space-y-4">
+                        {/* Font Size Slider */}
+                        <div>
+                          <div className="flex justify-between mb-1">
+                            <label className="text-[10px] font-bold text-muted-foreground uppercase">Font Size</label>
+                            <span className="text-[10px] font-mono font-bold text-blue-600">{coverPageElements.find(el => el.id === selectedElementId)?.fontSize || 20}pt</span>
+                          </div>
+                          <input 
+                            type="range" min="10" max="100" 
+                            value={coverPageElements.find(el => el.id === selectedElementId)?.fontSize || 20}
+                            onChange={(e) => {
+                              saveToHistory();
+                              setCoverPageElements(prev => prev.map(el => 
+                                el.id === selectedElementId ? { ...el, fontSize: Number(e.target.value) } : el
+                              ));
+                              setHasChanges(true);
+                            }}
+                            className="w-full h-1.5 bg-blue-100 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                          />
+                        </div>
+
+                        {/* Letter Spacing Slider */}
+                        <div>
+                          <div className="flex justify-between mb-1">
+                            <label className="text-[10px] font-bold text-muted-foreground uppercase">Tracking</label>
+                            <span className="text-[10px] font-mono font-bold text-blue-600">{coverPageElements.find(el => el.id === selectedElementId)?.letterSpacing || 0}px</span>
+                          </div>
+                          <input 
+                            type="range" min="0" max="20" step="0.5"
+                            value={coverPageElements.find(el => el.id === selectedElementId)?.letterSpacing || 0}
+                            onChange={(e) => {
+                              saveToHistory();
+                              setCoverPageElements(prev => prev.map(el => 
+                                el.id === selectedElementId ? { ...el, letterSpacing: Number(e.target.value) } : el
+                              ));
+                              setHasChanges(true);
+                            }}
+                            className="w-full h-1.5 bg-blue-100 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                          />
+                        </div>
+
+                        {/* Style Toggles */}
+                        <div className="grid grid-cols-3 gap-2">
+                          <button
+                            onClick={() => {
+                              saveToHistory();
+                              setCoverPageElements(prev => prev.map(el => 
+                                el.id === selectedElementId ? { ...el, bold: !el.bold } : el
+                              ));
+                              setHasChanges(true);
+                            }}
+                            className={`py-1.5 text-[10px] font-bold rounded border transition-all ${
+                              coverPageElements.find(el => el.id === selectedElementId)?.bold 
+                                ? 'bg-blue-600 text-white border-blue-600 shadow-sm' 
+                                : 'bg-white text-blue-700 border-blue-100 hover:border-blue-300'
+                            }`}
+                          >
+                            BOLD
+                          </button>
+                          
+                          <button
+                            onClick={() => {
+                              saveToHistory();
+                              setCoverPageElements(prev => prev.map(el => 
+                                el.id === selectedElementId ? { ...el, italic: !el.italic } : el
+                              ));
+                              setHasChanges(true);
+                            }}
+                            className={`py-1.5 text-[10px] font-bold rounded border transition-all ${
+                              coverPageElements.find(el => el.id === selectedElementId)?.italic 
+                                ? 'bg-blue-600 text-white border-blue-600 shadow-sm' 
+                                : 'bg-white text-blue-700 border-blue-100 hover:border-blue-300'
+                            }`}
+                          >
+                            ITALIC
+                          </button>
+
+                          <button
+                            onClick={() => {
+                              saveToHistory();
+                              setCoverPageElements(prev => prev.map(el => 
+                                el.id === selectedElementId ? { ...el, uppercase: !el.uppercase } : el
+                              ));
+                              setHasChanges(true);
+                            }}
+                            className={`py-1.5 text-[10px] font-bold rounded border transition-all ${
+                              coverPageElements.find(el => el.id === selectedElementId)?.uppercase 
+                                ? 'bg-blue-600 text-white border-blue-600 shadow-sm' 
+                                : 'bg-white text-blue-700 border-blue-100 hover:border-blue-300'
+                            }`}
+                          >
+                            UPPER
+                          </button>
+                        </div>
+                      </div>
+                    </Card>
+                  )}
+
+                  {/* Feature 1 — Rich Text Blocks */}
+                  <Card className="p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-sm font-semibold">📝 Text Blocks</h3>
+                      <span className="text-[10px] text-muted-foreground">Header &amp; Footer</span>
+                    </div>
+
+                    {/* Header blocks */}
+                    <div className="mb-3">
+                      <div className="flex items-center justify-between mb-1">
+                        <p className="text-[11px] font-bold text-blue-700 uppercase tracking-wider">▲ Before Header</p>
+                        <button
+                          onClick={() => {
+                            saveToHistory()
+                            const headerBlocks = richTextBlocks.filter(b => b.slot === 'header')
+                            const newBlock: RichTextBlock = {
+                              id: generateBlockId(),
+                              slot: 'header',
+                              order: headerBlocks.length,
+                              label: `Header Block ${headerBlocks.length + 1}`,
+                              content: '',
+                              fontSize: 11,
+                              bold: false,
+                              italic: false,
+                              textAlign: 'left',
+                              meetingTypeFilter: [],
+                            }
+                            setRichTextBlocks(prev => [...prev, newBlock])
+                            setHasChanges(true)
+                          }}
+                          className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-semibold"
+                        >
+                          <Plus className="h-3 w-3" /> Add
+                        </button>
+                      </div>
+                      {richTextBlocks.filter(b => b.slot === 'header').sort((a,b) => a.order - b.order).map(block => (
+                        <RichTextBlockEditor
+                          key={block.id}
+                          block={block}
+                          allBlocks={richTextBlocks}
+                          onUpdate={(updated) => {
+                            setRichTextBlocks(prev => prev.map(b => b.id === updated.id ? updated : b))
+                            setHasChanges(true)
+                          }}
+                          onDelete={() => {
+                            saveToHistory()
+                            setRichTextBlocks(prev => prev.filter(b => b.id !== block.id))
+                            setHasChanges(true)
+                          }}
+                          onMove={(dir) => {
+                            saveToHistory()
+                            const slotBlocks = richTextBlocks.filter(b => b.slot === 'header').sort((a,b) => a.order - b.order)
+                            const idx = slotBlocks.findIndex(b => b.id === block.id)
+                            if (dir === 'up' && idx === 0) return
+                            if (dir === 'down' && idx === slotBlocks.length - 1) return
+                            const swapIdx = dir === 'up' ? idx - 1 : idx + 1
+                            const newSlotBlocks = [...slotBlocks]
+                            ;[newSlotBlocks[idx], newSlotBlocks[swapIdx]] = [newSlotBlocks[swapIdx], newSlotBlocks[idx]]
+                            newSlotBlocks.forEach((b, i) => { b.order = i })
+                            setRichTextBlocks(prev => [
+                              ...prev.filter(b => b.slot !== 'header'),
+                              ...newSlotBlocks,
+                            ])
+                            setHasChanges(true)
+                          }}
+                        />
+                      ))}
+                      {richTextBlocks.filter(b => b.slot === 'header').length === 0 && (
+                        <p className="text-xs text-muted-foreground italic py-2 text-center border border-dashed rounded">No header blocks</p>
+                      )}
+                    </div>
+
+                    {/* Footer blocks */}
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <p className="text-[11px] font-bold text-green-700 uppercase tracking-wider">▼ After Footer</p>
+                        <button
+                          onClick={() => {
+                            saveToHistory()
+                            const footerBlocks = richTextBlocks.filter(b => b.slot === 'footer')
+                            const newBlock: RichTextBlock = {
+                              id: generateBlockId(),
+                              slot: 'footer',
+                              order: footerBlocks.length,
+                              label: `Footer Block ${footerBlocks.length + 1}`,
+                              content: '',
+                              fontSize: 11,
+                              bold: false,
+                              italic: false,
+                              textAlign: 'left',
+                              meetingTypeFilter: [],
+                            }
+                            setRichTextBlocks(prev => [...prev, newBlock])
+                            setHasChanges(true)
+                          }}
+                          className="flex items-center gap-1 text-xs text-green-600 hover:text-green-800 font-semibold"
+                        >
+                          <Plus className="h-3 w-3" /> Add
+                        </button>
+                      </div>
+                      {richTextBlocks.filter(b => b.slot === 'footer').sort((a,b) => a.order - b.order).map(block => (
+                        <RichTextBlockEditor
+                          key={block.id}
+                          block={block}
+                          allBlocks={richTextBlocks}
+                          onUpdate={(updated) => {
+                            setRichTextBlocks(prev => prev.map(b => b.id === updated.id ? updated : b))
+                            setHasChanges(true)
+                          }}
+                          onDelete={() => {
+                            saveToHistory()
+                            setRichTextBlocks(prev => prev.filter(b => b.id !== block.id))
+                            setHasChanges(true)
+                          }}
+                          onMove={(dir) => {
+                            saveToHistory()
+                            const slotBlocks = richTextBlocks.filter(b => b.slot === 'footer').sort((a,b) => a.order - b.order)
+                            const idx = slotBlocks.findIndex(b => b.id === block.id)
+                            if (dir === 'up' && idx === 0) return
+                            if (dir === 'down' && idx === slotBlocks.length - 1) return
+                            const swapIdx = dir === 'up' ? idx - 1 : idx + 1
+                            const newSlotBlocks = [...slotBlocks]
+                            ;[newSlotBlocks[idx], newSlotBlocks[swapIdx]] = [newSlotBlocks[swapIdx], newSlotBlocks[idx]]
+                            newSlotBlocks.forEach((b, i) => { b.order = i })
+                            setRichTextBlocks(prev => [
+                              ...prev.filter(b => b.slot !== 'footer'),
+                              ...newSlotBlocks,
+                            ])
+                            setHasChanges(true)
+                          }}
+                        />
+                      ))}
+                      {richTextBlocks.filter(b => b.slot === 'footer').length === 0 && (
+                        <p className="text-xs text-muted-foreground italic py-2 text-center border border-dashed rounded">No footer blocks</p>
+                      )}
+                    </div>
                   </Card>
                 </div>
 
@@ -676,6 +994,29 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
                       className="border-4 border-gray-400 rounded-lg overflow-y-auto bg-white shadow-2xl"
                       style={{ maxHeight: '1000px' }}
                     >
+                      {/* PREVIEW: Before Header Rich Text Blocks */}
+                      <div className="bg-white px-6 py-2 space-y-2">
+                        {richTextBlocks
+                          .filter(b => b.slot === 'header')
+                          .filter(b => !meeting || b.meetingTypeFilter.length === 0 || b.meetingTypeFilter.some(mt => meeting.meeting_type?.includes(mt)))
+                          .sort((a,b) => a.order - b.order)
+                          .map(block => (
+                            <div 
+                              key={block.id}
+                              style={{
+                                fontSize: `${block.fontSize}px`,
+                                textAlign: block.textAlign as any,
+                                fontWeight: block.bold ? 'bold' : 'normal',
+                                fontStyle: block.italic ? 'italic' : 'normal',
+                                whiteSpace: 'pre-wrap',
+                                color: '#374151'
+                              }}
+                            >
+                              {block.content || <span className="text-gray-300 italic">(Empty {block.label})</span>}
+                            </div>
+                          ))}
+                      </div>
+
                       {/* COVER PAGE - FIXED 175px */}
                       <div
                         ref={coverPageRef}
@@ -702,7 +1043,10 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
                                   'translate(0, -50%)',
                               zIndex: draggingElementId === element.id ? 50 : 10
                             }}
-                            onMouseDown={(e) => handleCoverMouseDown(e, element.id)}
+                            onMouseDown={(e) => {
+                              handleCoverMouseDown(e, element.id);
+                              setSelectedElementId(element.id);
+                            }}
                           >
                             <div className="relative group">
                               <GripVertical className="absolute -left-7 top-1/2 -translate-y-1/2 h-5 w-5 opacity-50 group-hover:opacity-100" />
@@ -735,32 +1079,54 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
                               {element.id === 'title' && (
                                 <div className="text-center" style={{ width: '600px' }}>
                                   <div style={{
-                                    fontWeight: 800,
-                                    letterSpacing: '3px',
-                                    fontSize: '48px',
+                                    fontWeight: element.bold ? 800 : 400,
+                                    fontStyle: element.italic ? 'italic' : 'normal',
+                                    letterSpacing: `${element.letterSpacing || 3}px`,
+                                    fontSize: `${element.fontSize || 48}px`,
                                     lineHeight: '1.1',
-                                    textTransform: 'uppercase',
+                                    textTransform: element.uppercase !== false ? 'uppercase' : 'none',
                                     textShadow: '0 2px 4px rgba(0,0,0,0.3)'
                                   }}>MEETING</div>
                                   <div style={{
-                                    fontWeight: 800,
-                                    letterSpacing: '3px',
-                                    fontSize: '48px',
+                                    fontWeight: element.bold ? 800 : 400,
+                                    fontStyle: element.italic ? 'italic' : 'normal',
+                                    letterSpacing: `${element.letterSpacing || 3}px`,
+                                    fontSize: `${element.fontSize || 48}px`,
                                     lineHeight: '1.1',
-                                    textTransform: 'uppercase',
+                                    textTransform: element.uppercase !== false ? 'uppercase' : 'none',
                                     textShadow: '0 2px 4px rgba(0,0,0,0.3)'
                                   }}>AGENDA</div>
                                 </div>
                               )}
 
                               {element.id === 'building_name' && (
-                                <div className="text-2xl font-light tracking-wide text-center max-w-[80%]" style={{ color: 'rgba(200, 220, 255, 0.95)' }}>
+                                <div 
+                                  className="text-center max-w-[80%]" 
+                                  style={{ 
+                                    color: 'rgba(200, 220, 255, 0.95)',
+                                    fontSize: `${element.fontSize || 24}px`,
+                                    fontWeight: element.bold ? 'bold' : 'normal',
+                                    fontStyle: element.italic ? 'italic' : 'normal',
+                                    letterSpacing: `${element.letterSpacing || 1}px`,
+                                    textTransform: element.uppercase ? 'uppercase' : 'none'
+                                  }}
+                                >
                                   {meeting?.buildings?.name}
                                 </div>
                               )}
 
                               {element.id === 'meeting_type' && (
-                                <div className="text-lg font-normal tracking-wide text-center max-w-[80%]" style={{ color: 'rgba(200, 220, 255, 0.9)' }}>
+                                <div 
+                                  className="text-center max-w-[80%]" 
+                                  style={{ 
+                                    color: 'rgba(200, 220, 255, 0.9)',
+                                    fontSize: `${element.fontSize || 18}px`,
+                                    fontWeight: element.bold ? 'bold' : 'normal',
+                                    fontStyle: element.italic ? 'italic' : 'normal',
+                                    letterSpacing: `${element.letterSpacing || 0.5}px`,
+                                    textTransform: element.uppercase ? 'uppercase' : 'none'
+                                  }}
+                                >
                                   {meeting?.meeting_type || "Council Meeting"}
                                 </div>
                               )}
@@ -830,15 +1196,15 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
                             <div key={section.id} className="mb-6">
                               <div
                                 className="p-3 rounded-lg mb-3 flex items-center gap-3"
-                                style={{ backgroundColor: getLighterColor(agendaItemsColor) }}
+                                style={{ backgroundColor: agendaItemsColor }}
                               >
                                 <div
-                                  className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-sm"
-                                  style={{ backgroundColor: agendaItemsColor }}
+                                  className="w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm"
+                                  style={{ backgroundColor: agendaItemsColor === '#ffffff' || agendaItemsColor === 'white' ? '#000' : 'rgba(0,0,0,0.25)', color: sectionHeaderTextColor === 'black' ? '#000' : '#fff' }}
                                 >
                                   {sectionIdx + 1}
                                 </div>
-                                <span className="font-bold text-white uppercase">{section.title}</span>
+                                <span className="font-bold uppercase" style={{ color: sectionHeaderTextColor }}>{section.title}</span>
                               </div>
 
                               <div className="ml-6 space-y-3">
@@ -878,6 +1244,29 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
                           )
                         })}
                       </div>
+
+                      {/* PREVIEW: Footer Rich Text Blocks */}
+                      <div className="bg-white px-6 py-4 border-t space-y-2 mt-auto">
+                        {richTextBlocks
+                          .filter(b => b.slot === 'footer')
+                          .filter(b => !meeting || b.meetingTypeFilter.length === 0 || b.meetingTypeFilter.some(mt => meeting.meeting_type?.includes(mt)))
+                          .sort((a,b) => a.order - b.order)
+                          .map(block => (
+                            <div 
+                              key={block.id}
+                              style={{
+                                fontSize: `${block.fontSize}px`,
+                                textAlign: block.textAlign as any,
+                                fontWeight: block.bold ? 'bold' : 'normal',
+                                fontStyle: block.italic ? 'italic' : 'normal',
+                                whiteSpace: 'pre-wrap',
+                                color: '#374151'
+                              }}
+                            >
+                              {block.content || <span className="text-gray-300 italic">(Empty {block.label})</span>}
+                            </div>
+                          ))}
+                      </div>
                     </div>
                   </Card>
                 </div>
@@ -905,5 +1294,150 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
         </>
       )}
     </>
+  )
+}
+
+// ─── Sub-component: Rich Text Block Editor ─────────────────────────────────
+function RichTextBlockEditor({
+  block,
+  allBlocks,
+  onUpdate,
+  onDelete,
+  onMove,
+}: {
+  block: RichTextBlock
+  allBlocks: RichTextBlock[]
+  onUpdate: (updated: RichTextBlock) => void
+  onDelete: () => void
+  onMove: (dir: 'up' | 'down') => void
+}) {
+  const [expanded, setExpanded] = useState(false)
+
+  return (
+    <div className="border rounded-lg mb-2 overflow-hidden">
+      {/* Collapsed header row */}
+      <div
+        className="flex items-center gap-2 px-2 py-1.5 bg-gray-50 cursor-pointer hover:bg-gray-100 transition-colors"
+        onClick={() => setExpanded(e => !e)}
+      >
+        <GripVertical className="h-3 w-3 text-gray-400 flex-shrink-0" />
+        <span className="text-xs font-semibold text-gray-700 flex-1 truncate">{block.label || '(untitled)'}</span>
+        <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+          <button onClick={() => onMove('up')} className="p-0.5 hover:bg-gray-200 rounded"><ChevronUp className="h-3 w-3" /></button>
+          <button onClick={() => onMove('down')} className="p-0.5 hover:bg-gray-200 rounded"><ChevronDown className="h-3 w-3" /></button>
+          <button onClick={onDelete} className="p-0.5 hover:bg-red-100 rounded text-red-500"><Trash2 className="h-3 w-3" /></button>
+        </div>
+      </div>
+
+      {/* Expanded editor */}
+      {expanded && (
+        <div className="p-2 space-y-2 bg-white">
+          {/* Label */}
+          <div>
+            <label className="text-[10px] font-bold uppercase text-muted-foreground">Label</label>
+            <input
+              type="text"
+              value={block.label}
+              onChange={e => onUpdate({ ...block, label: e.target.value })}
+              className="w-full px-2 py-1 border rounded text-xs mt-0.5"
+              placeholder="e.g. Zoom Details"
+            />
+          </div>
+
+          {/* Content */}
+          <div>
+            <label className="text-[10px] font-bold uppercase text-muted-foreground">Text Content</label>
+            <textarea
+              value={block.content}
+              onChange={e => onUpdate({ ...block, content: e.target.value })}
+              className="w-full px-2 py-1 border rounded text-xs mt-0.5 resize-y min-h-[60px]"
+              placeholder="Enter text here. Use Enter for new lines."
+            />
+          </div>
+
+          {/* Style row */}
+          <div className="flex items-center gap-2">
+            <div>
+              <label className="text-[10px] font-bold uppercase text-muted-foreground block">Size</label>
+              <select
+                value={block.fontSize}
+                onChange={e => onUpdate({ ...block, fontSize: Number(e.target.value) })}
+                className="px-1.5 py-1 border rounded text-xs"
+              >
+                {[8,9,10,11,12,13,14].map(s => <option key={s} value={s}>{s}pt</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-[10px] font-bold uppercase text-muted-foreground block">Style</label>
+              <div className="flex gap-1">
+                <button
+                  onClick={() => onUpdate({ ...block, bold: !block.bold })}
+                  className={`px-2 py-1 text-xs font-bold rounded border transition-colors ${
+                    block.bold ? 'bg-gray-800 text-white border-gray-800' : 'bg-white border-gray-300 hover:border-gray-500'
+                  }`}
+                >
+                  B
+                </button>
+                <button
+                  onClick={() => onUpdate({ ...block, italic: !block.italic })}
+                  className={`px-2 py-1 text-xs italic rounded border transition-colors ${
+                    block.italic ? 'bg-gray-800 text-white border-gray-800' : 'bg-white border-gray-300 hover:border-gray-500'
+                  }`}
+                >
+                  I
+                </button>
+              </div>
+            </div>
+            <div>
+              <label className="text-[10px] font-bold uppercase text-muted-foreground block">Align</label>
+              <div className="flex gap-1">
+                {(['left','center','right'] as const).map(a => (
+                  <button
+                    key={a}
+                    onClick={() => onUpdate({ ...block, textAlign: a })}
+                    className={`px-1.5 py-1 rounded border transition-colors ${
+                      block.textAlign === a ? 'bg-gray-800 text-white border-gray-800' : 'bg-white border-gray-300 hover:border-gray-500'
+                    }`}
+                  >
+                    {a === 'left' ? <AlignLeft className="h-3 w-3" /> : a === 'center' ? <AlignCenter className="h-3 w-3" /> : <AlignRight className="h-3 w-3" />}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Feature 3 — Meeting Type Filter */}
+          <div>
+            <label className="text-[10px] font-bold uppercase text-muted-foreground">Show only for (leave empty = all)</label>
+            <div className="flex flex-wrap gap-1 mt-1">
+              {MEETING_TYPE_OPTIONS.map(mt => {
+                const active = block.meetingTypeFilter.includes(mt)
+                return (
+                  <button
+                    key={mt}
+                    onClick={() => {
+                      const next = active
+                        ? block.meetingTypeFilter.filter(x => x !== mt)
+                        : [...block.meetingTypeFilter, mt]
+                      onUpdate({ ...block, meetingTypeFilter: next })
+                    }}
+                    className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border transition-colors ${
+                      active
+                        ? 'bg-blue-600 text-white border-blue-600'
+                        : 'bg-white text-gray-600 border-gray-300 hover:border-blue-400'
+                    }`}
+                  >
+                    {mt}
+                  </button>
+                )
+              })}
+            </div>
+            {block.meetingTypeFilter.length > 0 && (
+              <p className="text-[10px] text-blue-600 mt-1">✓ Only in: {block.meetingTypeFilter.join(', ')}</p>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
   )
 }

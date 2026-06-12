@@ -59,6 +59,19 @@ export interface CanvasElement {
   locked?: boolean
 }
 
+export interface RichTextBlock {
+  id: string
+  slot: 'header' | 'footer'
+  order: number
+  label: string
+  content: string
+  fontSize: number
+  bold: boolean
+  italic: boolean
+  textAlign: 'left' | 'center' | 'right'
+  meetingTypeFilter: string[]
+}
+
 // ============== HELPER FUNCTIONS ==============
 
 export function createDefaultElement(

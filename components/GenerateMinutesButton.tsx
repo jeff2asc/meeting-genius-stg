@@ -41,6 +41,8 @@ interface MinutesTemplate {
   actionItemsColor: string
   voteResultsColor: string
   coverPageHeight: number
+  sectionHeaderTextColor: string
+  richTextBlocks: any[]
 }
 
 const COVER_PAGE_HEIGHT = 175
@@ -132,10 +134,14 @@ export default function GenerateMinutesButton({
           motion_boxes_color,
           action_items_color,
           vote_results_color,
-          coverpage_height
+          coverpage_height,
+          section_header_text_color,
+          rich_text_blocks
         `
         )
         .eq("building_id", buildingId)
+        .order("updated_at", { ascending: false })
+        .limit(1)
         .maybeSingle()
 
       if (templateError) {
@@ -199,39 +205,44 @@ export default function GenerateMinutesButton({
         actionItemsColor: "#f59e0b",
         voteResultsColor: "#8b5cf6",
         coverPageHeight: 500,
+        sectionHeaderTextColor: "white",
+        richTextBlocks: [],
       }
 
       let template: MinutesTemplate = defaultTemplate
 
       if (templateRow) {
+        const row = templateRow as any
         template = {
           ...defaultTemplate,
           coverPageColor:
-            templateRow.coverpage_color || defaultTemplate.coverPageColor,
+            row.coverpage_color || defaultTemplate.coverPageColor,
           infoCardAccentColor:
-            templateRow.infocard_accent_color ||
+            row.infocard_accent_color ||
             defaultTemplate.infoCardAccentColor,
           sectionHeadersColor:
-            templateRow.section_headers_color ||
+            row.section_headers_color ||
             defaultTemplate.sectionHeadersColor,
           motionBoxesColor:
-            templateRow.motion_boxes_color || defaultTemplate.motionBoxesColor,
+            row.motion_boxes_color || defaultTemplate.motionBoxesColor,
           actionItemsColor:
-            templateRow.action_items_color || defaultTemplate.actionItemsColor,
+            row.action_items_color || defaultTemplate.actionItemsColor,
           voteResultsColor:
-            templateRow.vote_results_color || defaultTemplate.voteResultsColor,
+            row.vote_results_color || defaultTemplate.voteResultsColor,
           coverPageHeight:
-            templateRow.coverpage_height || defaultTemplate.coverPageHeight,
+            row.coverpage_height || defaultTemplate.coverPageHeight,
           coverPageElements:
-            Array.isArray(templateRow.coverpage_elements) &&
-              templateRow.coverpage_elements.length > 0
-              ? (templateRow.coverpage_elements as unknown as CoverPageElement[])
+            Array.isArray(row.coverpage_elements) &&
+              row.coverpage_elements.length > 0
+              ? (row.coverpage_elements as unknown as CoverPageElement[])
               : defaultTemplate.coverPageElements,
           infoCardFields:
-            Array.isArray(templateRow.infocard_fields) &&
-              templateRow.infocard_fields.length > 0
-              ? (templateRow.infocard_fields as unknown as TemplateField[])
+            Array.isArray(row.infocard_fields) &&
+              row.infocard_fields.length > 0
+              ? (row.infocard_fields as unknown as TemplateField[])
               : defaultTemplate.infoCardFields,
+          sectionHeaderTextColor: row.section_header_text_color || defaultTemplate.sectionHeaderTextColor,
+          richTextBlocks: Array.isArray(row.rich_text_blocks) ? row.rich_text_blocks : defaultTemplate.richTextBlocks,
         }
       }
 
@@ -1098,12 +1109,46 @@ function buildMinutesHtml({
   // INFO CARD
   html += renderInfoCard(template, meeting, attendees)
 
+  // Feature 1 & 3: Render Header Text Blocks
+  let headerBlocksHtml = ""
+  const meetingType = meeting.meeting_type || ""
+  if (Array.isArray(template.richTextBlocks)) {
+    template.richTextBlocks
+      .filter(b => b.slot === 'header')
+      .filter(b => {
+        if (!b.meetingTypeFilter || b.meetingTypeFilter.length === 0) return true
+        return b.meetingTypeFilter.some((f: string) => 
+          meetingType.toLowerCase().includes(f.toLowerCase()) || 
+          f.toLowerCase().includes(meetingType.toLowerCase())
+        )
+      })
+      .sort((a, b) => a.order - b.order)
+      .forEach(block => {
+        headerBlocksHtml += `
+          <div style="
+            margin: 24px 0 16px 0;
+            padding: 0 4px;
+            font-size: ${block.fontSize}pt;
+            text-align: ${block.textAlign};
+            font-weight: ${block.bold ? 'bold' : 'normal'};
+            font-style: ${block.italic ? 'italic' : 'normal'};
+            white-space: pre-wrap;
+            color: #1f2937;
+            line-height: 1.4;
+          ">
+            ${escapeHtml(block.content)}
+          </div>`
+      })
+  }
+  // Removed headerBlocksHtml from here to move it to the beginning of the return
+  // html += headerBlocksHtml
+
   // ATTENDEES
   html += renderAttendeesSection(template, attendees)
 
   // TOPICS & DISCUSSION badge
   html += `
-    <div class="topics-badge" style="background:${template.sectionHeadersColor};">
+    <div class="topics-badge" style="background:${template.sectionHeadersColor}; color: ${template.sectionHeaderTextColor || 'white'};">
       📝 Topics &amp; Discussion
     </div>
   `
@@ -1111,7 +1156,39 @@ function buildMinutesHtml({
   // SECTIONS
   html += renderSectionsAndTopics(template, sections, isMinutes, topicTimings, fmtMinutes)
 
-  return html
+  // Feature 1 & 3: Render Footer Text Blocks
+  let footerBlocksHtml = ""
+  if (Array.isArray(template.richTextBlocks)) {
+    template.richTextBlocks
+      .filter(b => b.slot === 'footer')
+      .filter(b => {
+        if (!b.meetingTypeFilter || b.meetingTypeFilter.length === 0) return true
+        return b.meetingTypeFilter.some((f: string) => 
+          meetingType.toLowerCase().includes(f.toLowerCase()) || 
+          f.toLowerCase().includes(meetingType.toLowerCase())
+        )
+      })
+      .sort((a, b) => a.order - b.order)
+      .forEach(block => {
+        footerBlocksHtml += `
+          <div style="
+            margin: 32px 0 0 0;
+            padding: 16px 4px 0 4px;
+            border-top: 1.5px solid #e5e7eb;
+            font-size: ${block.fontSize}pt;
+            text-align: ${block.textAlign};
+            font-weight: ${block.bold ? 'bold' : 'normal'};
+            font-style: ${block.italic ? 'italic' : 'normal'};
+            white-space: pre-wrap;
+            color: #4b5563;
+            line-height: 1.4;
+          ">
+            ${escapeHtml(block.content)}
+          </div>`
+      })
+  }
+
+  return headerBlocksHtml + html + footerBlocksHtml
 }
 
 function renderCoverElements(
@@ -1306,7 +1383,7 @@ function renderSectionsAndTopics(
       /^\s*\d+(\.\d+)*\s*[\).\-\:]*\s*/,
       ""
     )
-    html += `<div class="section-header-bar" style="background:${template.sectionHeadersColor};">${escapeHtml(`${sectionIndex + 1}. ${(cleanedTitle || rawTitle).trim()}`)}</div>`
+    html += `<div class="section-header-bar" style="background:${template.sectionHeadersColor}; color: ${template.sectionHeaderTextColor || 'white'};">${escapeHtml(`${sectionIndex + 1}. ${(cleanedTitle || rawTitle).trim()}`)}</div>`
 
     // ⭐ FIX 3: One section card wrapping all topics
     html += `<div class="section-card">`

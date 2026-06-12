@@ -38,6 +38,8 @@ interface AgendaTemplate {
   infoCardAccentColor: string
   agendaItemsColor: string
   coverPageHeight: number
+  sectionHeaderTextColor: string
+  richTextBlocks: any[]
 }
 
 const COVER_PAGE_HEIGHT = 175
@@ -97,10 +99,14 @@ export default function GenerateAgendaButton({
           coverpage_color,
           infocard_accent_color,
           agenda_items_color,
+          section_header_text_color,
+          rich_text_blocks,
           updatedat
         `
         )
         .eq("buildingid", buildingId)
+        .order("updatedat", { ascending: false })
+        .limit(1)
         .maybeSingle()
 
       if (templateError) {
@@ -125,25 +131,30 @@ export default function GenerateAgendaButton({
         infoCardAccentColor: "#2563eb",
         agendaItemsColor: "#2563eb",
         coverPageHeight: COVER_PAGE_HEIGHT,
+        sectionHeaderTextColor: "white",
+        richTextBlocks: [],
       }
 
       let template: AgendaTemplate = defaultTemplate
 
       if (templateRow) {
+        const row = templateRow as any
         template = {
           ...defaultTemplate,
-          coverPageColor: templateRow.coverpage_color || defaultTemplate.coverPageColor,
-          infoCardAccentColor: templateRow.infocard_accent_color || defaultTemplate.infoCardAccentColor,
-          agendaItemsColor: templateRow.agenda_items_color || defaultTemplate.agendaItemsColor,
+          coverPageColor: row.coverpage_color || defaultTemplate.coverPageColor,
+          infoCardAccentColor: row.infocard_accent_color || defaultTemplate.infoCardAccentColor,
+          agendaItemsColor: row.agenda_items_color || defaultTemplate.agendaItemsColor,
           coverPageHeight: COVER_PAGE_HEIGHT,
           coverPageElements:
-            Array.isArray(templateRow.coverpage_elements) && templateRow.coverpage_elements.length > 0
-              ? (templateRow.coverpage_elements as unknown as CoverPageElement[])
+            Array.isArray(row.coverpage_elements) && row.coverpage_elements.length > 0
+              ? (row.coverpage_elements as unknown as CoverPageElement[])
               : defaultTemplate.coverPageElements,
           infoCardFields:
-            Array.isArray(templateRow.infocard_fields) && templateRow.infocard_fields.length > 0
-              ? (templateRow.infocard_fields as unknown as TemplateField[])
+            Array.isArray(row.infocard_fields) && row.infocard_fields.length > 0
+              ? (row.infocard_fields as unknown as TemplateField[])
               : defaultTemplate.infoCardFields,
+          sectionHeaderTextColor: row.section_header_text_color || defaultTemplate.sectionHeaderTextColor,
+          richTextBlocks: Array.isArray(row.rich_text_blocks) ? row.rich_text_blocks : defaultTemplate.richTextBlocks,
         }
       }
 
@@ -690,6 +701,38 @@ function buildAgendaHtml({
 
   infoCardHtml += "</div></div>"
 
+  // Feature 1 & 3: Render Header Text Blocks
+  let headerBlocksHtml = ""
+  const meetingType = meeting.meeting_type || ""
+  if (Array.isArray(template.richTextBlocks)) {
+    template.richTextBlocks
+      .filter(b => b.slot === 'header')
+      .filter(b => {
+        if (!b.meetingTypeFilter || b.meetingTypeFilter.length === 0) return true
+        return b.meetingTypeFilter.some((f: string) => 
+          meetingType.toLowerCase().includes(f.toLowerCase()) || 
+          f.toLowerCase().includes(meetingType.toLowerCase())
+        )
+      })
+      .sort((a, b) => a.order - b.order)
+      .forEach(block => {
+        headerBlocksHtml += `
+          <div style="
+            margin: 0 0 16px 0;
+            padding: 0 4px;
+            font-size: ${block.fontSize}pt;
+            text-align: ${block.textAlign};
+            font-weight: ${block.bold ? 'bold' : 'normal'};
+            font-style: ${block.italic ? 'italic' : 'normal'};
+            white-space: pre-wrap;
+            color: #1f2937;
+            line-height: 1.4;
+          ">
+            ${escapeHtml(block.content)}
+          </div>`
+      })
+  }
+
   let agendaHtml = `<div class="agenda-header" style="background-color: ${template.agendaItemsColor};">
     AGENDA ITEMS
   </div>`
@@ -720,7 +763,7 @@ function buildAgendaHtml({
       const sectionTopics = topicsBySection[section.id] || []
       const lighterColor = getLighterColor(template.agendaItemsColor)
 
-      agendaHtml += `<div class="section-header" style="background-color: ${lighterColor};">
+      agendaHtml += `<div class="section-header" style="background-color: ${lighterColor}; color: ${template.sectionHeaderTextColor || 'white'};">
         ${makeCircle(String(sectionIdx + 1), template.agendaItemsColor)}
         ${section.title.toUpperCase()}
       </div>`
@@ -759,5 +802,37 @@ function buildAgendaHtml({
       })
     })
 
-  return coverHtml + infoCardHtml + agendaHtml
+  // Feature 1 & 3: Render Footer Text Blocks
+  let footerBlocksHtml = ""
+  if (Array.isArray(template.richTextBlocks)) {
+    template.richTextBlocks
+      .filter(b => b.slot === 'footer')
+      .filter(b => {
+        if (!b.meetingTypeFilter || b.meetingTypeFilter.length === 0) return true
+        return b.meetingTypeFilter.some((f: string) => 
+          meetingType.toLowerCase().includes(f.toLowerCase()) || 
+          f.toLowerCase().includes(meetingType.toLowerCase())
+        )
+      })
+      .sort((a, b) => a.order - b.order)
+      .forEach(block => {
+        footerBlocksHtml += `
+          <div style="
+            margin: 24px 0 0 0;
+            padding: 12px 4px 0 4px;
+            border-top: 1px solid #e5e7eb;
+            font-size: ${block.fontSize}pt;
+            text-align: ${block.textAlign};
+            font-weight: ${block.bold ? 'bold' : 'normal'};
+            font-style: ${block.italic ? 'italic' : 'normal'};
+            white-space: pre-wrap;
+            color: #4b5563;
+            line-height: 1.4;
+          ">
+            ${escapeHtml(block.content)}
+          </div>`
+      })
+  }
+
+  return headerBlocksHtml + coverHtml + infoCardHtml + agendaHtml + footerBlocksHtml
 }
