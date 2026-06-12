@@ -1453,11 +1453,25 @@ export interface JanusComplaint {
 // CLIENT INITIALIZATION (SINGLETON)
 // ============================================
 
-// Use internal URL on the server (no mixed-content restriction server-side)
-// Use the public URL (proxy) in the browser to avoid HTTP→HTTPS mixed content blocks
-const supabaseUrl = (typeof window === 'undefined'
-  ? (process.env.SUPABASE_INTERNAL_URL || process.env.NEXT_PUBLIC_SUPABASE_URL)
-  : process.env.NEXT_PUBLIC_SUPABASE_URL)!
+// Determine the right Supabase URL at runtime:
+// - Server-side (SSR/API routes): use configured URL directly — HTTP→HTTP is fine, no browser restrictions
+// - Browser over HTTPS with HTTP Supabase URL: auto-route through /api/supabase-proxy to avoid mixed content block
+// - Browser over HTTP (localhost): use configured URL directly
+// This means the .env.local never needs to change — it always keeps the raw Supabase IP.
+function getRuntimeSupabaseUrl(): string {
+  const configuredUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+  if (typeof window === 'undefined') {
+    // Server-side: no mixed content restrictions, use directly
+    return configuredUrl
+  }
+  // Browser: if page is HTTPS but Supabase URL is HTTP, proxy through our own HTTPS app
+  if (window.location.protocol === 'https:' && configuredUrl.startsWith('http:')) {
+    return `${window.location.origin}/api/supabase-proxy`
+  }
+  return configuredUrl
+}
+
+const supabaseUrl = getRuntimeSupabaseUrl()
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
 // Fix: Use globalThis for better compatibility and ensure client is stored
@@ -1491,11 +1505,9 @@ export function createAdminClient() {
   }
 
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY!
-  // Server-side: use internal URL directly; browser: use public proxy URL
-  const adminUrl = (typeof window === 'undefined'
-    ? (process.env.SUPABASE_INTERNAL_URL || process.env.NEXT_PUBLIC_SUPABASE_URL)
-    : process.env.NEXT_PUBLIC_SUPABASE_URL)!
-  const client = createSupabaseClient<Database>(adminUrl, key, {
+  // createAdminClient is server-only (service role key has no NEXT_PUBLIC_ prefix)
+  // supabaseUrl on server always resolves to the direct configured URL
+  const client = createSupabaseClient<Database>(supabaseUrl, key, {
     auth: { 
       persistSession: false, 
       autoRefreshToken: false,
