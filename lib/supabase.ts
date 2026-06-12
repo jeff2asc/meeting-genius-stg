@@ -1471,6 +1471,22 @@ function getRuntimeSupabaseUrl(): string {
   return configuredUrl
 }
 
+// Custom fetch helper to resolve conflicts between browser Basic Auth (on the site) and Supabase Bearer Auth
+const customBrowserFetch = (url: URL | RequestInfo, options?: RequestInit) => {
+  if (typeof window !== 'undefined' && options && options.headers) {
+    const headers = new Headers(options.headers)
+    const authHeader = headers.get('authorization')
+    
+    // If there's a Bearer token, we map it to 'x-supabase-auth' to avoid overriding/colliding with Basic Auth in the browser
+    if (authHeader && authHeader.toLowerCase().startsWith('bearer ')) {
+      headers.set('x-supabase-auth', authHeader)
+      headers.delete('authorization')
+      options.headers = headers
+    }
+  }
+  return fetch(url, options)
+}
+
 const supabaseUrl = getRuntimeSupabaseUrl()
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
@@ -1482,7 +1498,8 @@ const globalForSupabase = globalThis as unknown as {
 
 export const supabase = globalForSupabase.supabase ?? createSupabaseClient<Database>(supabaseUrl, supabaseAnonKey, {
   global: {
-    headers: { 'x-application-name': 'meeting-genius' }
+    headers: { 'x-application-name': 'meeting-genius' },
+    fetch: customBrowserFetch
   },
   auth: {
     persistSession: true,

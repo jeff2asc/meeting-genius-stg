@@ -14,6 +14,7 @@ const BLOCKED_REQUEST_HEADERS = new Set([
   "proxy-authorization",
   "proxy-authenticate",
   "upgrade",
+  "x-supabase-auth",
 ])
 
 // Headers that should NOT be forwarded back to the client
@@ -37,6 +38,16 @@ async function proxyRequest(request: NextRequest, params: { path: string[] }) {
       forwardedHeaders[key] = value
     }
   })
+
+  // Handle Nginx Basic Auth conflict:
+  // If the browser sent a Bearer token in 'x-supabase-auth' (from custom browser fetch), restore it as 'authorization'.
+  // Otherwise, if the browser automatically attached the site's Basic Auth, delete it so it doesn't error on Supabase.
+  const customAuth = request.headers.get("x-supabase-auth")
+  if (customAuth) {
+    forwardedHeaders["authorization"] = customAuth
+  } else if (forwardedHeaders["authorization"]?.toLowerCase().startsWith("basic ")) {
+    delete forwardedHeaders["authorization"]
+  }
 
   // Ensure host header points to the internal Supabase server
   forwardedHeaders["host"] = new URL(SUPABASE_INTERNAL_URL).host
@@ -67,7 +78,7 @@ async function proxyRequest(request: NextRequest, params: { path: string[] }) {
     // Allow cross-origin requests from the same app
     responseHeaders.set("Access-Control-Allow-Origin", "*")
     responseHeaders.set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-    responseHeaders.set("Access-Control-Allow-Headers", "authorization, apikey, content-type, prefer, x-client-info")
+    responseHeaders.set("Access-Control-Allow-Headers", "authorization, apikey, content-type, prefer, x-client-info, x-supabase-auth")
 
     const responseBody = await response.arrayBuffer()
 
@@ -112,7 +123,7 @@ export async function OPTIONS(request: NextRequest) {
     headers: {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
-      "Access-Control-Allow-Headers": "authorization, apikey, content-type, prefer, x-client-info",
+      "Access-Control-Allow-Headers": "authorization, apikey, content-type, prefer, x-client-info, x-supabase-auth",
       "Access-Control-Max-Age": "86400",
     },
   })
