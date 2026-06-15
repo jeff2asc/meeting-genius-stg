@@ -737,6 +737,7 @@ export default function VotingTab({ initialCompanyId }: VotingTabProps) {
                           ) : (
                             <span className="text-[10px] text-muted-foreground">—</span>
                           )}
+                        </td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                             <Button
