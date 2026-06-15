@@ -1518,25 +1518,19 @@ export function createClient() {
 }
 
 export function createAdminClient() {
-  if (globalForSupabase.supabaseAdmin) {
-    return globalForSupabase.supabaseAdmin
-  }
-
+  // Server-side admin calls use the internal URL directly (bypass proxy to avoid loopback)
+  // SUPABASE_INTERNAL_URL = http://149.5.247.118:8000 (server-to-server, HTTP is fine)
+  // NEXT_PUBLIC_SUPABASE_URL = https://app.meetinggenius.ca/api/supabase-proxy (browser clients)
+  const adminUrl = process.env.SUPABASE_INTERNAL_URL || supabaseUrl
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY!
-  const client = createSupabaseClient<Database>(supabaseUrl, key, {
+
+  const client = createSupabaseClient<Database>(adminUrl, key, {
     auth: { 
       persistSession: false, 
       autoRefreshToken: false,
       detectSessionInUrl: false
     }
   })
-
-  if (process.env.NODE_ENV !== 'production') {
-    globalForSupabase.supabaseAdmin = client
-  } else {
-    // In production, we still want to cache it in the module at least
-    globalForSupabase.supabaseAdmin = client
-  }
 
   return client
 }
