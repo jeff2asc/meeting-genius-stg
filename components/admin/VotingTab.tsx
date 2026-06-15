@@ -1198,70 +1198,174 @@ export default function VotingTab({ initialCompanyId }: VotingTabProps) {
                       </div>
                     </div>
                   ) : (
-                    <div className="space-y-3 p-4 bg-muted/20 rounded-xl border border-border">
-                      {/* Expression input */}
-                      <div className="relative">
-                        <input
-                          type="text"
-                          spellCheck={false}
-                          value={formula}
-                          onChange={e => setFormula(e.target.value)}
-                          placeholder="e.g. WEIGHT_PERCENTAGE >= 75"
-                          className={`w-full h-11 px-3 font-mono text-sm bg-background border rounded-xl outline-none focus:ring-2 transition-all ${
-                            formula && !isCustomValid
-                              ? 'border-red-400 focus:ring-red-400/30 text-red-600'
-                              : formula && isCustomValid
-                              ? 'border-green-400 focus:ring-green-400/30'
-                              : 'border-border focus:ring-primary/30'
-                          }`}
-                        />
-                        {formula && (
-                          <span className={`absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold ${isCustomValid ? 'text-green-500' : 'text-red-500'}`}>
-                            {isCustomValid ? '✓ Valid' : '✗ Invalid'}
-                          </span>
-                        )}
+                    <div className="space-y-4">
+                      {/* ── HOW IT WORKS banner ── */}
+                      <div className="p-3 bg-indigo-500/8 border border-indigo-500/20 rounded-xl space-y-2">
+                        <p className="text-[11px] font-bold text-indigo-600 uppercase tracking-wider flex items-center gap-1.5">
+                          <span>💡</span> How Custom Expressions Work
+                        </p>
+                        <p className="text-[11px] text-muted-foreground leading-relaxed">
+                          Write a condition using the variables below. When a vote is cast, the system replaces each variable with the real vote counts, then checks if the condition is <strong className="text-foreground">true</strong> (= motion passes) or <strong className="text-foreground">false</strong> (= motion fails).
+                        </p>
+                        <div className="flex items-center gap-2 text-[11px] font-mono bg-background rounded-lg px-3 py-2 border border-border">
+                          <span className="text-blue-500 font-bold">PERCENTAGE</span>
+                          <span className="text-muted-foreground">&gt;=</span>
+                          <span className="text-green-600 font-bold">75</span>
+                          <span className="text-muted-foreground mx-1">→</span>
+                          <span className="text-[10px] text-muted-foreground">replaces with actual % →</span>
+                          <span className="text-orange-500 font-bold">82.5</span>
+                          <span className="text-muted-foreground">&gt;=</span>
+                          <span className="text-green-600 font-bold">75</span>
+                          <span className="text-muted-foreground mx-1">→</span>
+                          <span className="text-green-600 font-bold text-[10px]">✓ PASSES</span>
+                        </div>
                       </div>
-                      {/* Token chips */}
-                      <div className="space-y-1.5">
-                        <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Insert variable:</p>
-                        <div className="flex flex-wrap gap-1.5">
-                          {TOKENS.map(tok => (
-                            <button
-                              key={tok.label}
-                              type="button"
-                              title={tok.desc}
+
+                      {/* ── Variable reference ── */}
+                      <div className="space-y-2">
+                        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Variables you can use:</p>
+                        <div className="grid grid-cols-1 gap-1">
+                          {[
+                            { token: 'PERCENTAGE', color: 'text-blue-600', bg: 'bg-blue-500/8 border-blue-500/20', meaning: '% of active votes that are FOR  (e.g. 75 means 75%)' },
+                            { token: 'WEIGHT_PERCENTAGE', color: 'text-purple-600', bg: 'bg-purple-500/8 border-purple-500/20', meaning: 'Weighted % — same as above but uses owner voting weights' },
+                            { token: 'FOR', color: 'text-green-600', bg: 'bg-green-500/8 border-green-500/20', meaning: 'Number (or weight) of FOR votes' },
+                            { token: 'AGAINST', color: 'text-red-600', bg: 'bg-red-500/8 border-red-500/20', meaning: 'Number (or weight) of AGAINST votes' },
+                            { token: 'ABSTAIN', color: 'text-amber-600', bg: 'bg-amber-500/8 border-amber-500/20', meaning: 'Number (or weight) of ABSTAIN votes' },
+                            { token: 'ACTIVE', color: 'text-slate-600', bg: 'bg-slate-500/8 border-slate-500/20', meaning: 'Total active votes = FOR + AGAINST (abstentions excluded)' },
+                            { token: 'TOTAL', color: 'text-slate-600', bg: 'bg-slate-500/8 border-slate-500/20', meaning: 'Total voters present = FOR + AGAINST + ABSTAIN' },
+                            { token: 'W_FOR', color: 'text-green-700', bg: 'bg-green-500/8 border-green-500/20', meaning: 'Total weighted FOR votes (owners with weight > 1)' },
+                            { token: 'W_AGAINST', color: 'text-red-700', bg: 'bg-red-500/8 border-red-500/20', meaning: 'Total weighted AGAINST votes' },
+                            { token: 'W_ACTIVE', color: 'text-slate-700', bg: 'bg-slate-500/8 border-slate-500/20', meaning: 'Total weighted active (W_FOR + W_AGAINST)' },
+                          ].map(v => (
+                            <div key={v.token} className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg border ${v.bg} cursor-pointer hover:opacity-80 transition-opacity`}
                               onClick={() => {
-                                const insert = tok.insert ?? tok.label
+                                const insert = v.token === 'W_FOR' ? 'WEIGHT_FOR' : v.token === 'W_AGAINST' ? 'WEIGHT_AGAINST' : v.token === 'W_ACTIVE' ? 'WEIGHT_ACTIVE' : v.token
                                 setFormula(formula ? `${formula} ${insert}` : insert)
                               }}
-                              className="text-[11px] font-mono font-bold px-2 py-1 rounded-lg bg-background border border-border hover:border-primary/50 hover:bg-primary/5 hover:text-primary transition-all"
+                              title="Click to insert"
                             >
-                              {tok.label}
-                            </button>
+                              <span className={`font-mono font-bold text-[11px] min-w-[130px] ${v.color}`}>{v.token}</span>
+                              <span className="text-[10px] text-muted-foreground leading-tight">{v.meaning}</span>
+                            </div>
                           ))}
-                          {/* Operator shortcuts */}
-                          {['>=', '>', '<=', '<', '&&', '||'].map(op => (
+                        </div>
+                        <p className="text-[10px] text-muted-foreground italic">↑ Click any variable to insert it into your expression</p>
+                      </div>
+
+                      {/* ── Expression input ── */}
+                      <div className="space-y-2">
+                        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Your expression:</p>
+                        <div className="relative">
+                          <input
+                            type="text"
+                            spellCheck={false}
+                            value={formula}
+                            onChange={e => setFormula(e.target.value)}
+                            placeholder="e.g.  PERCENTAGE >= 75   or   FOR > AGAINST"
+                            className={`w-full h-11 px-3 font-mono text-sm bg-background border rounded-xl outline-none focus:ring-2 transition-all ${
+                              formula && !isCustomValid
+                                ? 'border-red-400 focus:ring-red-400/30 text-red-600'
+                                : formula && isCustomValid
+                                ? 'border-green-400 focus:ring-green-400/30'
+                                : 'border-border focus:ring-primary/30'
+                            }`}
+                          />
+                          {formula && (
+                            <span className={`absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold ${isCustomValid ? 'text-green-500' : 'text-red-500'}`}>
+                              {isCustomValid ? '✓ Valid' : '✗ Invalid'}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Operator shortcuts */}
+                        <div className="flex flex-wrap gap-1.5">
+                          {(['>=', '>', '<=', '<', '&&', '||'] as const).map(op => (
                             <button
                               key={op}
                               type="button"
                               onClick={() => setFormula(formula ? `${formula} ${op} ` : `${op} `)}
-                              className="text-[11px] font-mono font-bold px-2 py-1 rounded-lg bg-background border border-dashed border-border hover:border-primary/50 hover:bg-primary/5 hover:text-primary transition-all text-muted-foreground"
+                              className="text-[11px] font-mono font-bold px-2.5 py-1 rounded-lg bg-background border border-dashed border-border hover:border-primary/50 hover:bg-primary/5 hover:text-primary transition-all text-muted-foreground"
+                              title={op === '>=' ? 'Greater than or equal to' : op === '>' ? 'Greater than' : op === '<=' ? 'Less than or equal to' : op === '<' ? 'Less than' : op === '&&' ? 'AND (both conditions must be true)' : 'OR (either condition is true)'}
                             >
                               {op}
                             </button>
                           ))}
+                          <button type="button" onClick={() => setFormula('')} className="text-[11px] px-2.5 py-1 rounded-lg border border-dashed border-red-300 text-red-400 hover:bg-red-50 hover:text-red-600 transition-all">✕ Clear</button>
+                        </div>
+
+                        {formula && !isCustomValid && (
+                          <p className="text-[11px] text-red-500 font-medium">✗ Unknown token detected. Only use the variables listed above, numbers, and operators.</p>
+                        )}
+                      </div>
+
+                      {/* ── Live plain-English preview ── */}
+                      {formula && isCustomValid && (() => {
+                        const f = formula.trim()
+                        let preview = ''
+                        if (/^[\d.]+$/.test(f)) {
+                          preview = `Motion passes when FOR votes reach ${f}% of active votes (votes cast, abstentions excluded).`
+                        } else if (/WEIGHT_PERCENTAGE\s*>=\s*([\d.]+)/.test(f)) {
+                          const m = f.match(/WEIGHT_PERCENTAGE\s*>=\s*([\d.]+)/)
+                          preview = `Motion passes when weighted FOR votes reach ${m?.[1]}% or more of weighted active votes (owner weight applied).`
+                        } else if (/PERCENTAGE\s*>=\s*([\d.]+)/.test(f)) {
+                          const m = f.match(/PERCENTAGE\s*>=\s*([\d.]+)/)
+                          preview = `Motion passes when FOR votes reach ${m?.[1]}% or more of active votes cast.`
+                        } else if (/PERCENTAGE\s*>\s*([\d.]+)/.test(f)) {
+                          const m = f.match(/PERCENTAGE\s*>\s*([\d.]+)/)
+                          preview = `Motion passes when FOR votes exceed ${m?.[1]}% of active votes cast (strictly greater).`
+                        } else if (/^FOR\s*>\s*AGAINST$/.test(f)) {
+                          preview = `Motion passes when there are more FOR votes than AGAINST votes (simple majority by count).`
+                        } else if (/^FOR\s*>=\s*AGAINST$/.test(f)) {
+                          preview = `Motion passes when FOR votes are equal to or greater than AGAINST votes.`
+                        } else if (f.includes('&&')) {
+                          preview = `Motion passes only when ALL conditions in this expression are true simultaneously.`
+                        } else if (f.includes('||')) {
+                          preview = `Motion passes when ANY one of the conditions in this expression is true.`
+                        } else {
+                          preview = `Custom expression — the motion passes when this condition evaluates to true.`
+                        }
+                        return (
+                          <div className="flex items-start gap-2 p-3 bg-green-500/8 border border-green-500/20 rounded-xl">
+                            <span className="text-green-600 text-sm mt-0.5 shrink-0">✓</span>
+                            <div>
+                              <p className="text-[10px] font-bold text-green-600 uppercase tracking-wider mb-0.5">Plain-English Preview</p>
+                              <p className="text-[11px] text-muted-foreground leading-relaxed">{preview}</p>
+                            </div>
+                          </div>
+                        )
+                      })()}
+
+                      {/* ── Recipe examples ── */}
+                      <div className="space-y-2">
+                        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">📋 Click a recipe to use it:</p>
+                        <div className="grid gap-1.5">
+                          {[
+                            { label: 'Simple Majority (50%)', formula: 'PERCENTAGE >= 50', desc: 'More than half of votes cast are FOR' },
+                            { label: '¾ Three-Quarter Vote', formula: 'PERCENTAGE >= 75', desc: '75% of votes cast must be FOR' },
+                            { label: 'Unanimous (100%)', formula: 'PERCENTAGE >= 100', desc: 'Every single active vote must be FOR' },
+                            { label: 'More FOR than AGAINST', formula: 'FOR > AGAINST', desc: 'Simplest form of majority — any lead wins' },
+                            { label: 'Weighted 75% Majority', formula: 'WEIGHT_PERCENTAGE >= 75', desc: 'Uses owner voting weights instead of headcount' },
+                            { label: 'Weighted + Headcount (AGM)', formula: 'WEIGHT_PERCENTAGE >= 50 && PERCENTAGE >= 50', desc: 'Must pass BOTH by weight AND by headcount' },
+                          ].map(r => (
+                            <button
+                              key={r.formula}
+                              type="button"
+                              onClick={() => setFormula(r.formula)}
+                              className={`text-left px-3 py-2.5 rounded-xl border transition-all ${formula === r.formula ? 'bg-primary/10 border-primary/40 ring-1 ring-primary/20' : 'bg-background border-border hover:border-primary/30 hover:bg-primary/5'}`}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-[11px] font-bold text-foreground">{r.label}</span>
+                                {formula === r.formula && <span className="text-[10px] text-primary font-bold">● Selected</span>}
+                              </div>
+                              <span className="font-mono text-[10px] text-indigo-600">{r.formula}</span>
+                              <p className="text-[10px] text-muted-foreground mt-0.5">{r.desc}</p>
+                            </button>
+                          ))}
                         </div>
                       </div>
-                      {/* Validation message */}
-                      {formula && !isCustomValid && (
-                        <p className="text-[11px] text-red-500 font-medium">
-                          ✗ Expression contains unrecognized tokens. Use the chips above or a plain number.
-                        </p>
-                      )}
+
                       {!formula && (
-                        <p className="text-[10px] text-muted-foreground">
-                          Leave blank to use no threshold, or type a number (e.g. <code className="bg-muted px-1 rounded">75</code>) for a simple percentage.
-                        </p>
+                        <p className="text-[10px] text-muted-foreground italic">Leave blank for no threshold, or pick a recipe above to get started.</p>
                       )}
                     </div>
                   )}
