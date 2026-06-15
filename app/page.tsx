@@ -285,7 +285,7 @@ export default function Home() {
                 </div>
 
                 {/* User name */}
-                <span className="text-xs sm:text-sm font-medium max-w-[80px] sm:max-w-none truncate">
+                <span className="hidden md:inline-block text-xs sm:text-sm font-medium max-w-[80px] sm:max-w-none truncate">
                   {currentUser?.name || 'User'}
                 </span>
 

@@ -79,14 +79,14 @@ export default function UserCard({ user, onEdit, onDelete, onManageGeniusWords, 
 
   return (
     <Card className="p-4 hover:shadow-md transition-shadow">
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-4 flex-1">
-          <div className="flex items-center justify-center w-12 h-12 rounded-full bg-primary/10">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-start gap-4 flex-1 min-w-0">
+          <div className="flex items-center justify-center w-12 h-12 rounded-full bg-primary/10 flex-shrink-0">
             {getRoleIcon(primaryRole)}
           </div>
-          <div className="flex-1">
-            <h3 className="font-semibold text-foreground">{user.name}</h3>
-            <p className="text-sm text-muted-foreground">{user.email}</p>
+          <div className="flex-1 min-w-0">
+            <h3 className="font-semibold text-foreground truncate">{user.name}</h3>
+            <p className="text-sm text-muted-foreground truncate">{user.email}</p>
 
             {user.company_name && (
               <div className="mt-1">
@@ -126,13 +126,13 @@ export default function UserCard({ user, onEdit, onDelete, onManageGeniusWords, 
           </div>
         </div>
 
-        <div className="flex flex-col items-end gap-2">
-          <div className="flex items-center gap-4">
-            <div className="flex flex-wrap gap-1 justify-end">
+        <div className="flex flex-col items-start sm:items-end gap-2.5 w-full sm:w-auto">
+          <div className="flex flex-wrap items-center gap-2 w-full sm:justify-end">
+            <div className="flex flex-wrap gap-1">
               {roles.map((role) => (
                 <span
                   key={role}
-                  className={`text-xs font-medium px-3 py-1 rounded-full border ${getRoleBadge(
+                  className={`text-[10px] sm:text-xs font-medium px-2 py-0.5 sm:px-3 sm:py-1 rounded-full border ${getRoleBadge(
                     role
                   )}`}
                 >
@@ -140,13 +140,13 @@ export default function UserCard({ user, onEdit, onDelete, onManageGeniusWords, 
                 </span>
               ))}
             </div>
-            <p className="text-sm text-muted-foreground whitespace-nowrap">
+            <p className="text-xs sm:text-sm text-muted-foreground whitespace-nowrap ml-auto sm:ml-0">
               {new Date(user.created_at).toLocaleDateString()}
             </p>
           </div>
 
           {(onEdit || onDelete || onManageGeniusWords || onSetPassword || onImpersonate) && (
-            <div className="flex gap-1">
+            <div className="flex flex-wrap gap-1.5 mt-1">
               {onImpersonate && (
                 <button
                   type="button"

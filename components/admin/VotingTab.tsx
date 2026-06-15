@@ -497,10 +497,10 @@ export default function VotingTab({ initialCompanyId }: VotingTabProps) {
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="bg-gradient-to-r from-decision-purple to-primary p-8 rounded-3xl text-white shadow-xl flex flex-col md:flex-row justify-between items-center gap-6">
-        <div className="flex-1">
-          <div className="flex items-center gap-3 mb-2">
-            <h2 className="text-3xl font-bold tracking-tight">Voting & Meeting Rules</h2>
+      <div className="bg-gradient-to-r from-decision-purple to-primary p-6 sm:p-8 rounded-2xl sm:rounded-3xl text-white shadow-xl flex flex-col md:flex-row justify-between items-stretch md:items-center gap-6">
+        <div className="flex-1 min-w-0">
+          <div className="flex flex-wrap items-center gap-3 mb-2">
+            <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">Voting & Meeting Rules</h2>
             {isMasterUser && (
               <div className="bg-white/10 px-3 py-1 rounded-full border border-white/20 flex items-center gap-2">
                 <span className="text-[10px] font-black uppercase tracking-widest opacity-70">Master View</span>
@@ -517,24 +517,24 @@ export default function VotingTab({ initialCompanyId }: VotingTabProps) {
               </div>
             )}
           </div>
-          <p className="opacity-90 text-lg">
+          <p className="opacity-90 text-sm sm:text-base md:text-lg">
             {selectedCompanyId 
               ? `Customizing parameters for ${companies.find(c => c.id === selectedCompanyId)?.name || 'Selected Company'}`
               : "Configure global defaults and user voting power across the system."
             }
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
           <Button 
             variant="outline"
             onClick={() => setShowHelp(!showHelp)}
-            className="bg-white/10 border-white/20 text-white hover:bg-white/20 font-bold px-6 h-14 rounded-2xl"
+            className="bg-white/10 border-white/20 text-white hover:bg-white/20 font-bold px-4 sm:px-6 h-11 sm:h-14 rounded-xl sm:rounded-2xl text-xs sm:text-sm md:text-base flex-1 sm:flex-none justify-center"
           >
-            <BookOpen className="h-5 w-5 mr-2" /> {showHelp ? 'Hide Help' : 'Help & Formulas'}
+            <BookOpen className="h-4 sm:h-5 w-4 sm:w-5 mr-2 flex-shrink-0" /> {showHelp ? 'Hide Help' : 'Help & Formulas'}
           </Button>
           <Button 
             onClick={() => setShowUserModal(true)}
-            className="bg-white text-primary hover:bg-white/90 font-bold px-8 h-14 rounded-2xl shadow-lg transition-transform hover:scale-105"
+            className="bg-white text-primary hover:bg-white/90 font-bold px-5 sm:px-8 h-11 sm:h-14 rounded-xl sm:rounded-2xl shadow-lg transition-transform hover:scale-105 text-xs sm:text-sm md:text-base flex-1 sm:flex-none justify-center"
           >
             🎯 Individual Weights
           </Button>
@@ -737,9 +737,8 @@ export default function VotingTab({ initialCompanyId }: VotingTabProps) {
                           ) : (
                             <span className="text-[10px] text-muted-foreground">—</span>
                           )}
-                        </td>
                         <td className="px-4 py-3">
-                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <div className="flex items-center gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                             <Button
                               variant="ghost" size="icon"
                               className="h-7 w-7 text-muted-foreground hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 rounded-lg"
@@ -768,7 +767,7 @@ export default function VotingTab({ initialCompanyId }: VotingTabProps) {
 
       {/* ── Rule Edit / Create Modal ── */}
       <Dialog open={ruleModalOpen} onOpenChange={setRuleModalOpen}>
-        <DialogContent className="max-w-lg bg-background border-border rounded-2xl shadow-2xl">
+        <DialogContent className="max-w-lg bg-background border-border rounded-2xl shadow-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader className="space-y-2">
             <DialogTitle className="text-xl font-bold flex items-center gap-2">
               <Globe2 className="h-5 w-5 text-indigo-500" />
