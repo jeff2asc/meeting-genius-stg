@@ -26,7 +26,8 @@ const BLOCKED_RESPONSE_HEADERS = new Set([
   "proxy-authenticate",
 ])
 
-async function proxyRequest(request: NextRequest, params: { path: string[] }) {
+async function proxyRequest(request: NextRequest, paramsPromise: Promise<{ path: string[] }>) {
+  const params = await paramsPromise
   const path = params.path.join("/")
   const searchParams = request.nextUrl.searchParams.toString()
   const targetUrl = `${SUPABASE_INTERNAL_URL}/${path}${searchParams ? `?${searchParams}` : ""}`
@@ -96,27 +97,27 @@ async function proxyRequest(request: NextRequest, params: { path: string[] }) {
   }
 }
 
-export async function GET(request: NextRequest, { params }: { params: { path: string[] } }) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
   return proxyRequest(request, params)
 }
 
-export async function HEAD(request: NextRequest, { params }: { params: { path: string[] } }) {
+export async function HEAD(request: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
   return proxyRequest(request, params)
 }
 
-export async function POST(request: NextRequest, { params }: { params: { path: string[] } }) {
+export async function POST(request: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
   return proxyRequest(request, params)
 }
 
-export async function PUT(request: NextRequest, { params }: { params: { path: string[] } }) {
+export async function PUT(request: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
   return proxyRequest(request, params)
 }
 
-export async function PATCH(request: NextRequest, { params }: { params: { path: string[] } }) {
+export async function PATCH(request: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
   return proxyRequest(request, params)
 }
 
-export async function DELETE(request: NextRequest, { params }: { params: { path: string[] } }) {
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
   return proxyRequest(request, params)
 }
 

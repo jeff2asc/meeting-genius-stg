@@ -116,6 +116,12 @@ export const apiClient = {
       },
       delete: async (id: number): Promise<void> => {
         await fetchApi(`/v1/buildings/${id}`, 'DELETE')
+      },
+      addDocumentUrl: async (payload: { building_id: number; document_type: string; url: string; title: string; description?: string | null }): Promise<any> => {
+        return await fetchApi('/v1/buildings/document-urls', 'POST', payload)
+      },
+      deleteDocumentUrl: async (urlId: number): Promise<void> => {
+        await fetchApi(`/v1/buildings/document-urls?id=${urlId}`, 'DELETE')
       }
     },
     meetings: {

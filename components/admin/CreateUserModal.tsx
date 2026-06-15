@@ -25,6 +25,8 @@ interface CreateUserModalProps {
   onCreateBuilding?: (managerId: number, companyId: number) => void
   companies: Company[]
   userId?: number | null
+  /** Pre-select this building when creating a new user from within a building context */
+  defaultBuilding?: { id: number; name: string } | null
 }
 
 type UserType =
@@ -47,6 +49,7 @@ export default function CreateUserModal({
   companies,
   onCreateBuilding,
   userId = null,
+  defaultBuilding = null,
 }: CreateUserModalProps) {
   const [userFormData, setUserFormData] = useState<{
     name: string
@@ -157,7 +160,12 @@ export default function CreateUserModal({
       roles: ["user"],
       voting_weight: 1.0,
     })
-    setSelectedUserBuildings([])
+    // Pre-populate the building if we're creating from within a building context
+    if (defaultBuilding) {
+      setSelectedUserBuildings([{ id: defaultBuilding.id, unit_number: "", voting_weight: "1" }])
+    } else {
+      setSelectedUserBuildings([])
+    }
     setError(null)
   }
 
