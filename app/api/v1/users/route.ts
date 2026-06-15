@@ -3,6 +3,42 @@ import { createAdminClient } from '@/lib/supabase'
 import { isAuthorizedRequest } from '@/lib/auth-server'
 import bcrypt from 'bcryptjs'
 
+function getUniqueEmail(email: string | null | undefined, userType: string): string {
+  const trimmed = email ? email.toLowerCase().trim() : ""
+  const isEmailOptional = ["attendee", "owner", "resident"].includes(userType)
+
+  if (!trimmed) {
+    if (isEmailOptional) {
+      const randomString = Math.random().toString(36).substring(2, 11)
+      return `no-email-${Date.now()}-${randomString}@meetinggenius.ca`
+    }
+    return ""
+  }
+
+  // If they entered a generic dummy email, make it unique to prevent overwriting existing records
+  const dummyPatterns = [
+    'noreply@',
+    'no-reply@',
+    'dummy@',
+    'placeholder@',
+    'test@',
+    'nomail@',
+    'no-email@'
+  ]
+
+  const isDummy = dummyPatterns.some(pattern => trimmed.includes(pattern))
+
+  if (isDummy && isEmailOptional) {
+    const parts = trimmed.split('@')
+    const localPart = parts[0]
+    const domainPart = parts[1] || 'meetinggenius.ca'
+    const randomString = Math.random().toString(36).substring(2, 7)
+    return `${localPart}+${Date.now()}-${randomString}@${domainPart}`
+  }
+
+  return trimmed
+}
+
 export async function GET(request: NextRequest) {
   if (!isAuthorizedRequest(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -83,8 +119,16 @@ export async function POST(request: NextRequest) {
       buildings
     } = body
 
-    if (!name || !email) {
-      return NextResponse.json({ error: 'Name and email are required' }, { status: 400 })
+    const finalUserType = user_type || 'user'
+
+    if (!name) {
+      return NextResponse.json({ error: 'Name is required' }, { status: 400 })
+    }
+
+    const finalEmail = getUniqueEmail(email, finalUserType)
+
+    if (!finalEmail) {
+      return NextResponse.json({ error: 'Email is required' }, { status: 400 })
     }
 
     const supabase = createAdminClient()
@@ -93,12 +137,11 @@ export async function POST(request: NextRequest) {
     const { data: existingUser } = await supabase
       .from('users')
       .select('id, roles, user_type, company_id')
-      .eq('email', email.toLowerCase().trim())
+      .eq('email', finalEmail)
       .maybeSingle()
 
     let userId: number
-    const finalRoles = roles || [user_type || 'user']
-    const finalUserType = user_type || 'user'
+    const finalRoles = roles || [finalUserType]
     const finalVotingWeight = voting_weight ?? 1.0
 
     // Hash password if provided
@@ -139,7 +182,7 @@ export async function POST(request: NextRequest) {
       // Normal Insert
       const insertData: any = {
         name: name.trim(),
-        email: email.toLowerCase().trim(),
+        email: finalEmail,
         password_hash: passwordHash || "$2a$10$rXqvFZnPzAMcLzCP2L4dxu7L6Y3Y5KjGNQQF6xZ4Y5Y5Y5Y5Y5Y5Y5", // default if none provided
         user_type: finalUserType,
         roles: finalRoles,
@@ -224,7 +267,12 @@ export async function PATCH(request: NextRequest) {
 
     const updateData: any = {}
     if (name) updateData.name = name.trim()
-    if (email) updateData.email = email.toLowerCase().trim()
+    if (email !== undefined) {
+      const finalEmail = getUniqueEmail(email, user_type || 'user')
+      if (finalEmail) {
+        updateData.email = finalEmail
+      }
+    }
     if (user_type) updateData.user_type = user_type
     if (roles) updateData.roles = roles
     if (company_id !== undefined) updateData.company_id = company_id

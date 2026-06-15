@@ -92,6 +92,13 @@ export default function CreateUserModal({
   const isPropertyManager = checkIsPropertyManager(currentUser)
   const isEditMode = !!userId
 
+  const effectiveRoles =
+    userFormData.roles && userFormData.roles.length > 0
+      ? userFormData.roles
+      : [userFormData.userType]
+  const primaryRole = (effectiveRoles[0] || userFormData.userType) as UserType
+  const isEmailOptional = ["attendee", "owner", "resident"].includes(primaryRole)
+
   useEffect(() => {
     if (userId && isOpen) {
       fetchUserData()
@@ -281,22 +288,28 @@ export default function CreateUserModal({
     e.preventDefault()
     setError(null)
 
-    if (!userFormData.name.trim() || !userFormData.email.trim()) {
-      setError("Name and email are required")
-      return
-    }
-
-    if (!isEditMode && !userFormData.password.trim()) {
-      setError("Password is required for new users")
-      return
-    }
-
     const effectiveRoles =
       userFormData.roles && userFormData.roles.length > 0
         ? userFormData.roles
         : [userFormData.userType]
 
     const primaryRole = (effectiveRoles[0] || userFormData.userType) as UserType
+    const isEmailOptional = ["attendee", "owner", "resident"].includes(primaryRole)
+
+    if (!userFormData.name.trim()) {
+      setError("Name is required")
+      return
+    }
+
+    if (!isEmailOptional && !userFormData.email.trim()) {
+      setError("Email is required")
+      return
+    }
+
+    if (!isEditMode && !isEmailOptional && !userFormData.password.trim()) {
+      setError("Password is required for new users")
+      return
+    }
 
     if (isMaster && !isEditMode) {
       if (
@@ -462,7 +475,9 @@ export default function CreateUserModal({
             </div>
 
             <div className="space-y-2">
-              <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground ml-1">Email Address *</label>
+              <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground ml-1">
+                Email Address {isEmailOptional ? "" : "*"}
+              </label>
               <input
                 type="email"
                 name="email"
@@ -470,7 +485,7 @@ export default function CreateUserModal({
                 onChange={handleInputChange}
                 onBlur={handleEmailBlur}
                 placeholder="john@example.com"
-                required
+                required={!isEmailOptional}
                 disabled={saving}
                 className="w-full h-11 px-4 bg-muted/30 border border-border rounded-xl focus:ring-2 focus:ring-primary/20 outline-none transition-all placeholder:text-muted-foreground/50"
               />
@@ -480,7 +495,7 @@ export default function CreateUserModal({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             <div className="space-y-2">
               <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground ml-1">
-                {isEditMode ? "Change Password" : "Temporary Password *"}
+                {isEditMode ? "Change Password" : `Temporary Password ${isEmailOptional ? "" : "*"}`}
               </label>
               <input
                 type="text"
@@ -488,7 +503,7 @@ export default function CreateUserModal({
                 value={userFormData.password}
                 onChange={handleInputChange}
                 placeholder={isEditMode ? "Leave blank to keep" : "e.g., welcome123"}
-                required={!isEditMode}
+                required={!isEditMode && !isEmailOptional}
                 disabled={saving}
                 className="w-full h-11 px-4 bg-muted/30 border border-border rounded-xl focus:ring-2 focus:ring-primary/20 outline-none transition-all placeholder:text-muted-foreground/50"
               />

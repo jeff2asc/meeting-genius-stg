@@ -144,10 +144,41 @@ export async function POST(request: NextRequest) {
       try {
         const { name, email, user_type, password, row_number } = user
 
-
         // Determine final user type
         const finalUserType = user_type || getDefaultUserType(buildingType)
+        const isEmailOptional = ["attendee", "owner", "resident"].includes(finalUserType)
 
+        let finalEmail = email ? email.toLowerCase().trim() : ""
+
+        if (!finalEmail) {
+          if (isEmailOptional) {
+            const randomString = Math.random().toString(36).substring(2, 11)
+            finalEmail = `no-email-${Date.now()}-${randomString}@meetinggenius.ca`
+          } else {
+            results.skipped++
+            results.errors.push(`Row ${row_number}: Email is required`)
+            continue
+          }
+        } else {
+          // If they entered a generic dummy email, make it unique to prevent overwriting existing records
+          const dummyPatterns = [
+            'noreply@',
+            'no-reply@',
+            'dummy@',
+            'placeholder@',
+            'test@',
+            'nomail@',
+            'no-email@'
+          ]
+          const isDummy = dummyPatterns.some(pattern => finalEmail.includes(pattern))
+          if (isDummy && isEmailOptional) {
+            const parts = finalEmail.split('@')
+            const localPart = parts[0]
+            const domainPart = parts[1] || 'meetinggenius.ca'
+            const randomString = Math.random().toString(36).substring(2, 7)
+            finalEmail = `${localPart}+${Date.now()}-${randomString}@${domainPart}`
+          }
+        }
 
         // Determine password hash
         let passwordHash: string
@@ -164,7 +195,7 @@ export async function POST(request: NextRequest) {
         const { data: existingUser, error: checkError } = await supabase
           .from('users')
           .select('id, email')
-          .eq('email', email.toLowerCase())
+          .eq('email', finalEmail)
           .single()
 
 
@@ -211,7 +242,7 @@ export async function POST(request: NextRequest) {
           .from('users')
           .insert({
             name: name.trim(),
-            email: email.toLowerCase().trim(),
+            email: finalEmail,
             password_hash: passwordHash,
             user_type: finalUserType,
             company_id: companyId,
@@ -224,7 +255,7 @@ export async function POST(request: NextRequest) {
         if (createError || !newUser) {
           console.error('Create user error:', createError)
           results.skipped++
-          results.errors.push(`Row ${row_number}: Failed to create user ${email}`)
+          results.errors.push(`Row ${row_number}: Failed to create user ${finalEmail}`)
           continue
         }
 
