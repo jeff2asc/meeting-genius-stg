@@ -32,11 +32,11 @@ export default function CompanyCard({
 
   return (
     <Card className="p-4 hover:shadow-md transition-shadow">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4 flex-1">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-4 flex-1 min-w-0">
           {/* Company Logo or Default Icon */}
           {company.logo_url ? (
-            <div className="relative w-12 h-12 rounded-full overflow-hidden bg-white border-2 border-border">
+            <div className="relative w-12 h-12 rounded-full overflow-hidden bg-white border-2 border-border flex-shrink-0">
               <Image
                 src={company.logo_url}
                 alt={`${company.name} logo`}
@@ -46,36 +46,35 @@ export default function CompanyCard({
               />
             </div>
           ) : (
-            <div className="flex items-center justify-center w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-purple-600">
+            <div className="flex items-center justify-center w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex-shrink-0">
               <Building2 className="h-6 w-6 text-white" />
             </div>
           )}
 
-          <div className="flex-1">
-            <h3 className="font-semibold text-foreground text-lg">{company.name}</h3>
-            <div className="flex items-center gap-4 mt-1">
-              <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                <Users className="h-4 w-4" />
+          <div className="flex-1 min-w-0">
+            <h3 className="font-semibold text-foreground text-base sm:text-lg truncate">{company.name}</h3>
+            <div className="flex flex-wrap items-center gap-3 mt-1 sm:gap-4">
+              <div className="flex items-center gap-1 text-xs sm:text-sm text-muted-foreground">
+                <Users className="h-3.5 w-3.5" />
                 <span>{company.user_count || 0} users</span>
               </div>
-              <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                <Building2 className="h-4 w-4" />
+              <div className="flex items-center gap-1 text-xs sm:text-sm text-muted-foreground">
+                <Building2 className="h-3.5 w-3.5" />
                 <span>{company.building_count || 0} buildings</span>
               </div>
-              
-
             </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 sm:justify-end">
           <Button
             size="sm"
             variant="outline"
             onClick={() => onViewDetails(company)}
             title="View Details"
+            className="text-xs h-8 sm:h-9"
           >
-            <Info className="h-4 w-4 mr-2" />
+            <Info className="h-3.5 w-3.5 mr-1 sm:mr-2" />
             Details
           </Button>
 
@@ -86,8 +85,9 @@ export default function CompanyCard({
                 variant="outline"
                 onClick={() => onEdit(company)}
                 title="Edit Company"
+                className="h-8 w-8 p-0 sm:h-9 sm:w-9"
               >
-                <Edit2 className="h-4 w-4" />
+                <Edit2 className="h-3.5 w-3.5" />
               </Button>
 
               <Button
@@ -95,14 +95,14 @@ export default function CompanyCard({
                 variant="outline"
                 onClick={() => onDelete(company)}
                 title="Delete Company"
-                className="text-red-600 hover:bg-red-50"
+                className="text-red-600 hover:bg-red-50 h-8 w-8 p-0 sm:h-9 sm:w-9"
               >
-                <Trash2 className="h-4 w-4" />
+                <Trash2 className="h-3.5 w-3.5" />
               </Button>
             </>
           )}
 
-          <p className="text-sm text-muted-foreground whitespace-nowrap ml-2">
+          <p className="text-xs text-muted-foreground whitespace-nowrap ml-auto sm:ml-2">
             {new Date(company.created_at).toLocaleDateString()}
           </p>
         </div>

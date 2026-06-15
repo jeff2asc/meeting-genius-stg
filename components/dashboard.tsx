@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { ChevronDown, User, Plus, Search, Calendar, FileText, Eye, Play, Edit2, CheckSquare, Trash2, Wrench, AlertTriangle, RefreshCw } from "lucide-react"
+import { ChevronDown, User, Plus, Search, Calendar, FileText, Eye, Play, Edit2, CheckSquare, Trash2, Wrench, AlertTriangle, RefreshCw, Settings } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { supabase, getCurrentUser } from "@/lib/supabase"
@@ -40,6 +40,9 @@ interface DashboardProps {
   onBuildingsLoaded?: (buildings: any[]) => void
   onBuildingSelected?: (buildingName: string) => void
   userCanCreateMeeting?: boolean
+  onAdminClick?: () => void
+  onLogout?: () => void
+  currentUser?: any
 }
 
 type Tab = "meetings" | "tasks" | "all" | "repairs" | "complaints"
@@ -49,7 +52,10 @@ export default function Dashboard({
   onCreateMeeting,
   onBuildingsLoaded,
   onBuildingSelected,
-  userCanCreateMeeting = true
+  userCanCreateMeeting = true,
+  onAdminClick,
+  onLogout,
+  currentUser,
 }: DashboardProps) {
   const [selectedBuilding, setSelectedBuilding] = useState("")
   const [showBuildingDropdown, setShowBuildingDropdown] = useState(false)
@@ -639,18 +645,45 @@ export default function Dashboard({
       {/* HEADER - MG Logo + Clock */}
       <header className="border-b border-border bg-card shadow-sm sticky top-0 z-40 sm:static">
         <div className="mx-auto max-w-7xl px-4 py-3 sm:py-4 sm:px-6 lg:px-8">
-          {/* On mobile, reserve right-side space so the fixed Admin + user buttons don't overlap */}
-          <div className="flex items-center gap-3 sm:gap-4 pr-[160px] sm:pr-0">
-            <img
-              src="/MG2 logo.png"
-              alt="Meeting Genius Logo"
-              className="h-8 sm:h-10 w-auto object-contain flex-shrink-0"
-            />
-            <UserClock
-              compact
-              className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm font-medium text-muted-foreground bg-muted/50 px-2 sm:px-3 py-1 sm:py-1.5 rounded-full border border-border/50"
-              iconClassName="h-3 sm:h-3.5 w-3 sm:w-3.5 text-primary animate-pulse"
-            />
+          <div className="flex items-center justify-between gap-2">
+            {/* Left: Logo + Clock */}
+            <div className="flex items-center gap-3 min-w-0 flex-1">
+              <img
+                src="/MG2 logo.png"
+                alt="Meeting Genius Logo"
+                className="h-8 sm:h-10 w-auto object-contain flex-shrink-0"
+              />
+              <UserClock
+                compact
+                className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground bg-muted/50 px-2 py-1 rounded-full border border-border/50 truncate"
+                iconClassName="h-3 w-3 text-primary animate-pulse flex-shrink-0"
+              />
+            </div>
+            {/* Right: Admin + User */}
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              {onAdminClick && (
+                <Button
+                  onClick={onAdminClick}
+                  variant="outline"
+                  size="sm"
+                  className="h-8 px-2 sm:px-3 text-xs"
+                >
+                  <Settings className="h-3.5 w-3.5 sm:mr-1.5" />
+                  <span className="hidden sm:inline">Admin</span>
+                </Button>
+              )}
+              {onLogout && (
+                <Button
+                  onClick={onLogout}
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 w-8 p-0 rounded-full bg-primary text-primary-foreground font-semibold text-xs hover:bg-primary/90 flex-shrink-0"
+                  title={`Logout (${currentUser?.name})`}
+                >
+                  {currentUser?.name?.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2) || 'U'}
+                </Button>
+              )}
+            </div>
           </div>
         </div>
       </header>

@@ -155,29 +155,6 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-background">
-      {/* Top Navigation */}
-      <div className="fixed top-4 right-4 z-50 flex items-center gap-2">
-        {userCanAccessAdmin && currentScreen !== "admin" && (
-          <Button
-            onClick={handleAdminClick}
-            variant="outline"
-            size="sm"
-            className="bg-background/80 backdrop-blur"
-          >
-            <Settings className="h-4 w-4 mr-2" />
-            Admin
-          </Button>
-        )}
-        <Button
-          onClick={handleLogout}
-          variant="outline"
-          size="sm"
-          className="bg-background/80 backdrop-blur"
-        >
-          <LogOut className="h-4 w-4 mr-2" />
-          Logout ({currentUser?.name})
-        </Button>
-      </div>
 
       {/* Screen Router */}
       {currentScreen === "dashboard" && (
@@ -187,6 +164,9 @@ export default function Home() {
           onCreateMeeting={handleCreateMeeting}
           onBuildingsLoaded={setBuildings}
           userCanCreateMeeting={userCanCreateMeeting}
+          onAdminClick={userCanAccessAdmin ? handleAdminClick : undefined}
+          onLogout={handleLogout}
+          currentUser={currentUser}
         />
       )}
 

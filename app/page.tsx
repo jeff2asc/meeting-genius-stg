@@ -257,104 +257,106 @@ export default function Home() {
         <ImpersonationBanner viewingAs={currentUser.name} />
       )}
       {/* Top Navigation */}
-      <div className={`fixed ${isImpersonating() ? "top-[42px]" : "top-2 sm:top-4"} right-2 sm:right-4 z-50 flex items-center gap-1.5 sm:gap-2`}>
-        {userCanAccessAdmin && currentScreen !== "admin" && (
-          <Button
-            onClick={handleAdminClick}
-            variant="outline"
-            size="sm"
-            className="bg-background/80 backdrop-blur h-8 sm:h-9 px-2 sm:px-3"
-          >
-            <Settings className="h-4 w-4 sm:mr-2" />
-            <span className="hidden sm:inline">Admin</span>
-          </Button>
-        )}
-
-        {/* User Dropdown Menu */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
+      {currentScreen === "dashboard" && (
+        <div className={`fixed ${isImpersonating() ? "top-[42px]" : "top-2 sm:top-4"} right-2 sm:right-4 z-50 flex items-center gap-1.5 sm:gap-2`}>
+          {userCanAccessAdmin && currentScreen !== "admin" && (
             <Button
+              onClick={handleAdminClick}
               variant="outline"
               size="sm"
-              className="bg-background/80 backdrop-blur flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1 sm:py-2 h-8 sm:h-auto"
+              className="bg-background/80 backdrop-blur h-8 sm:h-9 px-2 sm:px-3"
             >
-              {/* Avatar */}
-              <div className="flex h-6 w-6 sm:h-7 sm:w-7 items-center justify-center rounded-full bg-primary text-primary-foreground font-semibold text-[10px] sm:text-xs">
-                {getInitials(currentUser?.name || 'User')}
-              </div>
-
-              {/* User name */}
-              <span className="text-xs sm:text-sm font-medium max-w-[80px] sm:max-w-none truncate">
-                {currentUser?.name || 'User'}
-              </span>
-
-              <ChevronDown className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
+              <Settings className="h-4 w-4 sm:mr-2" />
+              <span className="hidden sm:inline">Admin</span>
             </Button>
-          </DropdownMenuTrigger>
+          )}
 
-          <DropdownMenuContent align="end" className="w-56">
-            <DropdownMenuLabel className="font-normal">
-              <div className="flex flex-col space-y-1">
-                <p className="text-sm font-medium leading-none">{currentUser?.name}</p>
-                <p className="text-xs leading-none text-muted-foreground">
-                  {currentUser?.email}
-                </p>
-                <p className="text-xs leading-none text-muted-foreground">
-                  {getUserTypeDisplayName(currentUser?.user_type)}
-                </p>
-              </div>
-            </DropdownMenuLabel>
-
-            <DropdownMenuSeparator />
-
-            <DropdownMenuItem
-              onClick={() => setShowProfileModal(true)}
-              className="cursor-pointer"
-            >
-              <User className="mr-2 h-4 w-4" />
-              <span>Profile Settings</span>
-            </DropdownMenuItem>
-
-            {isMaster(currentUser) && (
-              <DropdownMenuItem
-                onClick={() => setCurrentScreen("analytics")}
-                className="cursor-pointer text-indigo-600 focus:text-indigo-600"
+          {/* User Dropdown Menu */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="bg-background/80 backdrop-blur flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1 sm:py-2 h-8 sm:h-auto"
               >
-                <Activity className="mr-2 h-4 w-4" />
-                <span>Master Control Panel</span>
-              </DropdownMenuItem>
-            )}
+                {/* Avatar */}
+                <div className="flex h-6 w-6 sm:h-7 sm:w-7 items-center justify-center rounded-full bg-primary text-primary-foreground font-semibold text-[10px] sm:text-xs">
+                  {getInitials(currentUser?.name || 'User')}
+                </div>
 
-            <DropdownMenuItem
-              onClick={handleGeniusWordsClick}
-              className="cursor-pointer"
-            >
-              <Sparkles className="mr-2 h-4 w-4" />
-              <span>GeniusWords</span>
-            </DropdownMenuItem>
+                {/* User name */}
+                <span className="text-xs sm:text-sm font-medium max-w-[80px] sm:max-w-none truncate">
+                  {currentUser?.name || 'User'}
+                </span>
 
-            {canAccessIntegrations(currentUser) && (
+                <ChevronDown className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
+              </Button>
+            </DropdownMenuTrigger>
+
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuLabel className="font-normal">
+                <div className="flex flex-col space-y-1">
+                  <p className="text-sm font-medium leading-none">{currentUser?.name}</p>
+                  <p className="text-xs leading-none text-muted-foreground">
+                    {currentUser?.email}
+                  </p>
+                  <p className="text-xs leading-none text-muted-foreground">
+                    {getUserTypeDisplayName(currentUser?.user_type)}
+                  </p>
+                </div>
+              </DropdownMenuLabel>
+
+              <DropdownMenuSeparator />
+
               <DropdownMenuItem
-                onClick={handleIntegrationsClick}
+                onClick={() => setShowProfileModal(true)}
                 className="cursor-pointer"
               >
-                <Share2 className="mr-2 h-4 w-4" />
-                <span>Integrations</span>
+                <User className="mr-2 h-4 w-4" />
+                <span>Profile Settings</span>
               </DropdownMenuItem>
-            )}
 
-            <DropdownMenuSeparator />
+              {isMaster(currentUser) && (
+                <DropdownMenuItem
+                  onClick={() => setCurrentScreen("analytics")}
+                  className="cursor-pointer text-indigo-600 focus:text-indigo-600"
+                >
+                  <Activity className="mr-2 h-4 w-4" />
+                  <span>Master Control Panel</span>
+                </DropdownMenuItem>
+              )}
 
-            <DropdownMenuItem
-              onClick={handleLogout}
-              className="cursor-pointer text-red-600 focus:text-red-600 focus:bg-red-50"
-            >
-              <LogOut className="mr-2 h-4 w-4" />
-              <span>Logout</span>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
+              <DropdownMenuItem
+                onClick={handleGeniusWordsClick}
+                className="cursor-pointer"
+              >
+                <Sparkles className="mr-2 h-4 w-4" />
+                <span>GeniusWords</span>
+              </DropdownMenuItem>
+
+              {canAccessIntegrations(currentUser) && (
+                <DropdownMenuItem
+                  onClick={handleIntegrationsClick}
+                  className="cursor-pointer"
+                >
+                  <Share2 className="mr-2 h-4 w-4" />
+                  <span>Integrations</span>
+                </DropdownMenuItem>
+              )}
+
+              <DropdownMenuSeparator />
+
+              <DropdownMenuItem
+                onClick={handleLogout}
+                className="cursor-pointer text-red-600 focus:text-red-600 focus:bg-red-50"
+              >
+                <LogOut className="mr-2 h-4 w-4" />
+                <span>Logout</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      )}
 
       {/* Screen Router */}
       {currentScreen === "dashboard" && (

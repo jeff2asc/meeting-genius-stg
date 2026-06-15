@@ -55,23 +55,23 @@ export default function BuildingCard({
 
   return (
     <Card className={`p-4 hover:shadow-md transition-shadow ${isArchived ? 'opacity-75 bg-muted/30 border-dashed' : ''}`}>
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4 flex-1">
-          <div className={`flex items-center justify-center w-12 h-12 rounded-full ${isArchived ? 'bg-slate-200' : 'bg-blue-100'}`}>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-start gap-4 flex-1 min-w-0">
+          <div className={`flex items-center justify-center w-12 h-12 rounded-full flex-shrink-0 ${isArchived ? 'bg-slate-200' : 'bg-blue-100'}`}>
             <Building2 className={`h-6 w-6 ${isArchived ? 'text-slate-500' : 'text-blue-600'}`} />
           </div>
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             <div className="flex flex-col mb-1">
               {building.company?.name && (
                 <span className="text-[10px] font-black text-indigo-600 uppercase tracking-[0.1em] mb-0.5">
                   {building.company.name}
                 </span>
               )}
-              <div className="flex items-center gap-2">
-                <h3 className={`font-bold tracking-tight ${isArchived ? 'text-slate-500' : 'text-slate-900'}`}>{building.name}</h3>
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className={`font-bold tracking-tight text-base sm:text-lg ${isArchived ? 'text-slate-500' : 'text-slate-900'}`}>{building.name}</h3>
                 <Badge 
                   variant="outline" 
-                  className={`text-[10px] font-black uppercase tracking-wider ${isArchived ? 'bg-slate-100 text-slate-500' : getBuildingTypeColor(building.building_type || 'Strata/Condo')}`}
+                  className={`text-[9px] sm:text-[10px] font-black uppercase tracking-wider py-0.5 ${isArchived ? 'bg-slate-100 text-slate-500' : getBuildingTypeColor(building.building_type || 'Strata/Condo')}`}
                 >
                   {building.building_type || 'Strata/Condo'}
                 </Badge>
@@ -83,9 +83,9 @@ export default function BuildingCard({
               </div>
             </div>
             {building.address && (
-              <p className="text-sm text-muted-foreground flex items-center gap-1">
-                <MapPin className="h-3 w-3" />
-                {building.address}
+              <p className="text-xs sm:text-sm text-muted-foreground flex items-center gap-1">
+                <MapPin className="h-3.5 w-3.5 flex-shrink-0" />
+                <span className="truncate">{building.address}</span>
               </p>
             )}
             {isArchived && building.archived_at && (
@@ -95,20 +95,20 @@ export default function BuildingCard({
               </p>
             )}
             {!isArchived && building.users && building.users.length > 0 && (
-              <div className="flex flex-wrap gap-1 mt-2">
-                <span className="text-xs text-muted-foreground">
+              <div className="flex flex-wrap items-center gap-1 mt-2">
+                <span className="text-xs text-muted-foreground mr-1">
                   Users ({building.users.length}):
                 </span>
                 {building.users.slice(0, 3).map((user, idx) => (
                   <span
                     key={idx}
-                    className="text-xs bg-muted px-2 py-0.5 rounded"
+                    className="text-xs bg-muted px-2 py-0.5 rounded truncate max-w-[120px]"
                   >
                     {user.name}
                   </span>
                 ))}
                 {building.users.length > 3 && (
-                  <span className="text-xs text-muted-foreground">
+                  <span className="text-xs text-muted-foreground font-medium">
                     +{building.users.length - 3} more
                   </span>
                 )}
@@ -116,15 +116,15 @@ export default function BuildingCard({
             )}
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 sm:justify-end">
           {!isArchived && (
             <Button
               size="sm"
               variant="outline"
               onClick={() => onViewDetails(building)}
-              className="border-primary/30 text-primary hover:bg-primary/10"
+              className="border-primary/30 text-primary hover:bg-primary/10 text-xs h-8 sm:h-9"
             >
-              <Building2 className="h-4 w-4 mr-2" />
+              <Building2 className="h-3.5 w-3.5 mr-1.5" />
               View Details
             </Button>
           )}
@@ -136,10 +136,10 @@ export default function BuildingCard({
                   size="sm"
                   variant="outline"
                   onClick={() => onUnarchive(building)}
-                  className="border-blue-200 text-blue-600 hover:bg-blue-50"
+                  className="border-blue-200 text-blue-600 hover:bg-blue-50 text-xs h-8 sm:h-9"
                   title="Restore Building"
                 >
-                  <RotateCcw className="h-4 w-4 mr-2" />
+                  <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
                   Restore
                 </Button>
               )}
@@ -148,10 +148,10 @@ export default function BuildingCard({
                   size="sm"
                   variant="outline"
                   onClick={() => onDelete(building)}
-                  className="border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300"
+                  className="border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300 text-xs h-8 sm:h-9"
                   title="Permanently Delete"
                 >
-                  <Trash2 className="h-4 w-4 mr-2" />
+                  <Trash2 className="h-3.5 w-3.5 mr-1.5" />
                   Delete
                 </Button>
               )}
@@ -163,10 +163,10 @@ export default function BuildingCard({
                   size="sm"
                   variant="outline"
                   onClick={() => onArchive(building)}
-                  className="border-amber-200 text-amber-600 hover:bg-amber-50"
+                  className="border-amber-200 text-amber-600 hover:bg-amber-50 text-xs h-8 sm:h-9"
                   title="Archive Building"
                 >
-                  <Archive className="h-4 w-4 mr-2" />
+                  <Archive className="h-3.5 w-3.5 mr-1.5" />
                   Archive
                 </Button>
               )}
@@ -174,7 +174,7 @@ export default function BuildingCard({
           )}
 
           {!isArchived && (
-            <p className="text-sm text-muted-foreground whitespace-nowrap ml-2">
+            <p className="text-xs text-muted-foreground whitespace-nowrap ml-auto sm:ml-2">
               {new Date(building.created_at).toLocaleDateString()}
             </p>
           )}
