@@ -6,9 +6,9 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { supabase, Company } from "@/lib/supabase"
 import { fetchVotingParametersAction } from "@/lib/api-actions"
-import { hashPassword } from "@/lib/auth"
 import { isMaster as checkIsMaster, isCorporateAdmin as checkIsCorporateAdmin, isPropertyManager as checkIsPropertyManager } from "@/lib/permissions"
 import { triggerJanusResync, fetchJanusUserByEmail } from "@/lib/janus-client"
+import { apiClient } from "@/lib/api-client"
 
 interface CreateUserModalProps {
   isOpen: boolean
@@ -300,7 +300,6 @@ export default function CreateUserModal({
           return
         }
       }
-
     }
 
     if (isCorporateAdmin && !isEditMode) {
@@ -312,268 +311,84 @@ export default function CreateUserModal({
     }
 
     setSaving(true)
-    
-    let userIdToAssign: number | null = userId
-    let finalUserType: UserType = primaryRole
-    let companyIdToAssign: number | null = null
 
     try {
-      // ✅ Hash the password properly using bcrypt
-      const hashedPassword = userFormData.password.trim()
-        ? await hashPassword(userFormData.password.trim())
-        : null
-
-      if (isEditMode) {
-        const updateData: any = {
-          name: userFormData.name.trim(),
-          email: userFormData.email.toLowerCase().trim(),
-          user_type: primaryRole,
-          roles: effectiveRoles,
-          company_id: userFormData.companyId || null,
-          assigned_pm_id: userFormData.assignedPmId || null,
-          voting_weight: userFormData.voting_weight ?? 1.0,
-        }
-        
-        companyIdToAssign = userFormData.companyId || null
-
-        // ✅ Only update password_hash if a new password was provided
-        if (hashedPassword) {
-          updateData.password_hash = hashedPassword
-        }
-
-        const { error: updateError } = await supabase
-          .from("users")
-          .update(updateData)
-          .eq("id", userId)
-
-        if (updateError) {
-          console.error("❌ Error updating user:", updateError)
-          setError("Failed to update user. Email may already exist.")
-          setSaving(false)
-          return
-        }
-
-        // ✅ SAFE DIFF-MERGE: do NOT delete all rows first.
-        // Instead, fetch current assignments, then only insert rows that are new
-        // and only delete rows that the editor explicitly removed from the list.
-        // This prevents editing one user from wiping building assignments that
-        // belong to other users or were added via a different flow (e.g. attendees).
-        const { data: existingAssignments } = await supabase
-          .from("user_buildings")
-          .select("building_id, unit_number")
-          .eq("user_id", userId)
-
-        const existingSet = new Set(
-          (existingAssignments || []).map(
-            (a: any) => `${a.building_id}::${a.unit_number ?? ""}`
+      let companyIdToAssign = null
+      if (isMaster) {
+        if (
+          primaryRole === "corporate_administrator" ||
+          primaryRole === "property_manager"
+        ) {
+          companyIdToAssign = userFormData.companyId
+        } else if (
+          (primaryRole === "user" || primaryRole === "owner") &&
+          userFormData.assignedPmId
+        ) {
+          const selectedPM = propertyManagers.find(
+            (pm) => pm.id === userFormData.assignedPmId,
           )
-        )
-        const desiredSet = new Set(
-          selectedUserBuildings.map(
-            (b) => `${b.id}::${(b.unit_number.trim()) ?? ""}`
-          )
-        )
-
-        // Rows to ADD — in desired but not in existing
-        const toInsert = selectedUserBuildings.filter(
-          (b) => !existingSet.has(`${b.id}::${(b.unit_number.trim()) ?? ""}`)
-        )
-        // Rows to REMOVE — in existing but not in desired
-        const toDelete = (existingAssignments || []).filter(
-          (a: any) => !desiredSet.has(`${a.building_id}::${a.unit_number ?? ""}`)
-        )
-
-        if (toInsert.length > 0) {
-          const { error: insertError } = await supabase
-            .from("user_buildings")
-            .insert(
-              toInsert.map((b) => ({
-                user_id: userId,
-                building_id: b.id,
-                unit_number: b.unit_number.trim() || null,
-                voting_weight: parseFloat(b.voting_weight) ?? 1.00,
-                user_building_type: userFormData.userType,
-              }))
-            )
-          if (insertError) console.error("Error inserting new building assignments:", insertError)
+          companyIdToAssign = selectedPM?.company_id || null
         }
-
-        for (const row of toDelete) {
-          let delQuery = supabase
-            .from("user_buildings")
-            .delete()
-            .eq("user_id", userId)
-            .eq("building_id", row.building_id)
-          if (row.unit_number) {
-            delQuery = delQuery.eq("unit_number", row.unit_number)
-          } else {
-            delQuery = delQuery.is("unit_number", null)
-          }
-          const { error: delError } = await delQuery
-          if (delError) console.error("Error removing building assignment:", delError)
-        }
-      } else {
-        if (isMaster) {
-          if (
-            primaryRole === "corporate_administrator" ||
-            primaryRole === "property_manager"
-          ) {
-            companyIdToAssign = userFormData.companyId
-          } else if (
-            (primaryRole === "user" || primaryRole === "owner") &&
-            userFormData.assignedPmId
-          ) {
-            const selectedPM = propertyManagers.find(
-              (pm) => pm.id === userFormData.assignedPmId,
-            )
-            companyIdToAssign = selectedPM?.company_id || null
-          }
-        } else if (isCorporateAdmin || isPropertyManager) {
-          companyIdToAssign = currentUser.company_id
-        }
-
-        finalUserType =
-          isMaster && primaryRole
-            ? primaryRole
-            : isCorporateAdmin && primaryRole === "property_manager"
-              ? "property_manager"
-              : primaryRole
-
-        // ⭐ NEW: Check if user already exists by email
-        const { data: existingUser } = await supabase
-          .from("users")
-          .select("id, roles, user_type, company_id")
-          .eq("email", userFormData.email.toLowerCase().trim())
-          .maybeSingle()
-
-        if (existingUser) {
-          console.log("ℹ️ User with this email already exists. Updating roles and company.")
-          
-          // Merge roles: existing roles + new roles
-          const existingRoles = Array.isArray(existingUser.roles) ? existingUser.roles : [existingUser.user_type]
-          const mergedRoles = Array.from(new Set([...existingRoles, ...effectiveRoles]))
-          
-          const { data: updatedUser, error: updateError } = await supabase
-            .from("users")
-            .update({
-              name: userFormData.name.trim(),
-              user_type: finalUserType,
-              roles: mergedRoles,
-              company_id: companyIdToAssign || existingUser.company_id, // Keep existing if not providing new
-              assigned_pm_id:
-                isMaster && (primaryRole === "user" || primaryRole === "owner")
-                  ? userFormData.assignedPmId
-                  : isPropertyManager && !isCorporateAdmin && !isMaster
-                    ? currentUser.id
-                    : null,
-            })
-            .eq("id", existingUser.id)
-            .select()
-            .single()
-
-          if (updateError) {
-            console.error("❌ Error updating existing user:", updateError)
-            setError("Failed to update existing user.")
-            setSaving(false)
-            return
-          }
-          userIdToAssign = existingUser.id
-        } else {
-          // Normal Insert
-          const { data: newUser, error: userError } = await supabase
-            .from("users")
-            .insert({
-              name: userFormData.name.trim(),
-              email: userFormData.email.toLowerCase().trim(),
-              password_hash: hashedPassword as string, // ✅ Real bcrypt hash
-              user_type: finalUserType,
-              roles: effectiveRoles,
-              company_id: companyIdToAssign,
-              assigned_pm_id:
-                isMaster && (primaryRole === "user" || primaryRole === "owner")
-                  ? userFormData.assignedPmId
-                  : isPropertyManager && !isCorporateAdmin && !isMaster
-                    ? currentUser.id
-                    : null,
-            })
-            .select()
-            .single()
-
-          if (userError) {
-            console.error("❌ Error creating user:", userError)
-            setError("Failed to create user. Email may already exist.")
-            setSaving(false)
-            return
-          }
-          userIdToAssign = newUser.id
-        }
-
-        if (selectedUserBuildings.length > 0) {
-          // For existing users, we might want to append buildings instead of just inserting
-          // But usually we want to assign them to these new ones.
-          // Let's check existing assignments
-          const { data: existingAssignments } = await supabase
-            .from("user_buildings")
-            .select("building_id, unit_number")
-            .eq("user_id", userIdToAssign)
-          
-          const existingKeys = (existingAssignments || []).map(a => `${a.building_id}-${a.unit_number || ''}`)
-          const newAssignments = selectedUserBuildings.filter(b => !existingKeys.includes(`${b.id}-${b.unit_number}`))
-
-          if (newAssignments.length > 0) {
-            const buildingAssignments = newAssignments.map((b) => ({
-              user_id: userIdToAssign as number,
-              building_id: b.id,
-              unit_number: b.unit_number.trim() || null,
-              voting_weight: parseFloat(b.voting_weight) ?? 1.00,
-              user_building_type: userFormData.userType as string
-            }))
-
-            const { error: buildingsError } = await supabase
-              .from("user_buildings")
-              .insert(buildingAssignments)
-
-            if (buildingsError) {
-              console.error("Error assigning buildings:", buildingsError)
-              setError("User created but failed to assign buildings")
-              setSaving(false)
-              return
-            }
-          }
-        }
-        
-        finalUserType = finalUserType // Already set in creation logic
-        companyIdToAssign = companyIdToAssign // Already set in creation logic
+      } else if (isCorporateAdmin || isPropertyManager) {
+        companyIdToAssign = currentUser.company_id
       }
 
-      resetForm()
-      
-      // 🔄 Notify Janus for real-time sync with actual data
-      const syncData = {
-        id: userIdToAssign,
-        name: userFormData.name.trim(),
-        email: userFormData.email.toLowerCase().trim(),
-        user_type: finalUserType,
-        roles: effectiveRoles,
-        company_id: companyIdToAssign,
-        assigned_pm_id: isMaster && (primaryRole === "user" || primaryRole === "owner")
+      const assignedPmIdToAssign =
+        isMaster && (primaryRole === "user" || primaryRole === "owner")
           ? userFormData.assignedPmId
           : isPropertyManager && !isCorporateAdmin && !isMaster
             ? currentUser.id
-            : null,
+            : null
+
+      const payload = {
+        name: userFormData.name.trim(),
+        email: userFormData.email.toLowerCase().trim(),
+        password: userFormData.password.trim() || undefined,
+        user_type: primaryRole,
+        roles: effectiveRoles,
+        company_id: companyIdToAssign || null,
+        assigned_pm_id: assignedPmIdToAssign,
+        voting_weight: userFormData.voting_weight ?? 1.0,
+        buildings: selectedUserBuildings.map(b => ({
+          id: b.id,
+          unit_number: b.unit_number.trim(),
+          voting_weight: b.voting_weight,
+        }))
+      }
+
+      let res
+      if (isEditMode) {
+        res = await apiClient.v1.users.update(userId!, payload)
+      } else {
+        res = await apiClient.v1.users.create(payload)
+      }
+
+      const returnedUserId = isEditMode ? userId : res.data.id
+
+      resetForm()
+
+      // 🔄 Notify Janus for real-time sync with actual data
+      const syncData = {
+        id: returnedUserId,
+        name: payload.name,
+        email: payload.email,
+        user_type: payload.user_type,
+        roles: payload.roles,
+        company_id: payload.company_id,
+        assigned_pm_id: payload.assigned_pm_id,
         units: selectedUserBuildings.map(b => ({
           building_id: b.id,
           unit_number: b.unit_number,
-          company_id: companyIdToAssign // Janus will fallback to this if not set per unit
+          company_id: payload.company_id
         }))
       }
       triggerJanusResync(isEditMode ? 'user_updated' : 'user_created', syncData, 'user')
-      
+
       onSuccess()
       onClose()
-    } catch (err) {
+    } catch (err: any) {
       console.error("Unexpected error:", err)
-      setError("An unexpected error occurred")
+      setError(err.message || "An unexpected error occurred")
     } finally {
       setSaving(false)
     }

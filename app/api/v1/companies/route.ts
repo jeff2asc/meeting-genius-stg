@@ -33,3 +33,33 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
 }
+
+export async function DELETE(request: NextRequest) {
+  if (!isAuthorizedRequest(request)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  try {
+    const { searchParams } = new URL(request.url)
+    const id = searchParams.get('id')
+
+    if (!id) {
+      return NextResponse.json({ error: 'Company ID is required' }, { status: 400 })
+    }
+
+    const supabase = createAdminClient()
+
+    const { error } = await supabase
+      .from('companies')
+      .delete()
+      .eq('id', parseInt(id))
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    return NextResponse.json({ success: true })
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 })
+  }
+}

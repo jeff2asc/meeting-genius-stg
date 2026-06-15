@@ -197,6 +197,15 @@ export const apiClient = {
       }
     },
     companies: {
+      list: async (companyId?: number): Promise<any[]> => {
+        let url = '/v1/companies'
+        if (companyId) url += `?id=${companyId}`
+        const response = await fetchApi<{ data: any[] }>(url)
+        return response.data
+      },
+      delete: async (id: number): Promise<void> => {
+        await fetchApi(`/v1/companies?id=${id}`, 'DELETE')
+      },
       getLogo: async (companyId: number): Promise<string | null> => {
         const response = await fetchApi<{ logo_url: string | null }>(`/v1/companies/${companyId}/logo`)
         return response.logo_url
@@ -275,6 +284,28 @@ export const apiClient = {
       }
     },
     users: {
+      list: async (filters?: { company_id?: number; user_type?: string; id?: number; include_buildings?: boolean; include_null_company?: boolean }): Promise<{ data: any[]; userBuildings?: any[] }> => {
+        let url = '/v1/users'
+        const params = new URLSearchParams()
+        if (filters?.company_id) params.append('company_id', String(filters.company_id))
+        if (filters?.user_type) params.append('user_type', filters.user_type)
+        if (filters?.id) params.append('id', String(filters.id))
+        if (filters?.include_buildings) params.append('include_buildings', 'true')
+        if (filters?.include_null_company) params.append('include_null_company', 'true')
+        
+        const qs = params.toString()
+        if (qs) url += `?${qs}`
+        return await fetchApi<{ data: any[]; userBuildings?: any[]; success: boolean }>(url)
+      },
+      create: async (userData: any): Promise<any> => {
+        return await fetchApi('/v1/users', 'POST', userData)
+      },
+      update: async (id: number, updates: any): Promise<any> => {
+        return await fetchApi('/v1/users', 'PATCH', { id, ...updates })
+      },
+      delete: async (id: number): Promise<void> => {
+        await fetchApi(`/v1/users?id=${id}`, 'DELETE')
+      },
       bulkImport: async (data: {
         users: any[]
         buildingId: number

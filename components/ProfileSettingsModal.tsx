@@ -5,7 +5,6 @@ import { X, User, Key, Check, Eye, EyeOff } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { supabase } from "@/lib/supabase"
-import { verifyPassword, hashPassword } from "@/lib/auth"
 import { triggerJanusResync, syncPasswordToJanus } from "@/lib/janus-client"
 
 
@@ -89,40 +88,20 @@ export default function ProfileSettingsModal({ user, onClose, onUpdate }: Profil
 
     setSavingPassword(true)
     try {
-      // Fetch stored password hash and user type for Janus sync
-      const { data: userData, error: verifyError } = await supabase
-        .from('users')
-        .select('password_hash, user_type')
-        .eq('id', user.id)
-        .single()
+      const response = await fetch('/api/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'change-password',
+          userId: user.id,
+          currentPassword,
+          newPassword
+        })
+      })
 
-
-      if (verifyError || !userData) {
-        alert('Failed to verify current password')
-        setSavingPassword(false)
-        return
-      }
-
-      // Use bcrypt to compare entered password against stored hash
-      const isCorrect = await verifyPassword(currentPassword, userData.password_hash)
-      if (!isCorrect) {
-        alert('Current password is incorrect')
-        setSavingPassword(false)
-        return
-      }
-
-      // Hash the new password before saving
-      const newHash = await hashPassword(newPassword)
-
-      // Update password_hash in the database
-      const { error: updateError } = await supabase
-        .from('users')
-        .update({ password_hash: newHash })
-        .eq('id', user.id)
-
-      if (updateError) {
-        console.error('Error updating password:', updateError)
-        alert('Failed to update password')
+      const res = await response.json()
+      if (!response.ok || !res.success) {
+        alert(res.error || 'Failed to update password')
         setSavingPassword(false)
         return
       }
@@ -131,22 +110,6 @@ export default function ProfileSettingsModal({ user, onClose, onUpdate }: Profil
       setCurrentPassword('')
       setNewPassword('')
       setConfirmPassword('')
-
-      // 🔄 Sync with Janus
-      try {
-        // Webhook notification
-        await triggerJanusResync('user_password_reset', {
-          id: user.id,
-          email: user.email,
-          password: newHash
-        }, 'user')
-
-        // Direct DB sync (skips master accounts internally)
-        await syncPasswordToJanus(user.email, newHash, userData.user_type || '')
-      } catch (syncErr) {
-        console.warn('⚠️ Janus sync failed after profile password change:', syncErr)
-      }
-
     } catch (err) {
       console.error('Unexpected error:', err)
       alert('An unexpected error occurred')

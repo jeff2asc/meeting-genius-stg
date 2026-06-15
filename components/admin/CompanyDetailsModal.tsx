@@ -363,50 +363,19 @@ export default function CompanyDetailsModal({
 
     setSavingPM(true)
     setError(null)
-
     try {
-      const { data: existingUser } = await supabase
-        .from("users")
-        .select("id, roles, user_type")
-        .eq("email", newPMEmail.toLowerCase().trim())
-        .maybeSingle()
-
       let pmId: number
-
-      if (existingUser) {
-        const existingRoles = Array.isArray(existingUser.roles) ? existingUser.roles : [existingUser.user_type]
-        const mergedRoles = Array.from(new Set([...existingRoles, "property_manager"]))
-        
-        const { error: updateError } = await supabase
-          .from("users")
-          .update({
-            name: newPMName.trim(),
-            user_type: "property_manager",
-            roles: mergedRoles,
-            company_id: company?.id
-          })
-          .eq("id", existingUser.id)
-
-        if (updateError) throw updateError
-        pmId = existingUser.id
-      } else {
-        const { data: newUser, error: insertError } = await supabase
-          .from("users")
-          .insert({
-            name: newPMName.trim(),
-            email: newPMEmail.toLowerCase().trim(),
-            password_hash:
-              "$2a$10$rXqvFZnPzAMcLzCP2L4dxu7L6Y3Y5KjGNQQF6xZ4Y5Y5Y5Y5Y5Y5Y5",
-            user_type: "property_manager",
-            roles: ["property_manager"],
-            company_id: company?.id,
-          })
-          .select()
-          .single()
-
-        if (insertError) throw insertError
-        pmId = newUser.id
+      const payload = {
+        name: newPMName.trim(),
+        email: newPMEmail.toLowerCase().trim(),
+        password: newPMPassword.trim(),
+        user_type: "property_manager",
+        roles: ["property_manager"],
+        company_id: company?.id,
       }
+
+      const res = await apiClient.v1.users.create(payload)
+      pmId = res.data.id
 
       await fetchCompanyData()
       setSelectedManagerId(pmId)
@@ -561,42 +530,17 @@ export default function CompanyDetailsModal({
 
     setSavingAdmin(true)
     setError(null)
-
     try {
-      const { data: existingUser } = await supabase
-        .from("users")
-        .select("id, roles, user_type")
-        .eq("email", newAdminEmail.toLowerCase().trim())
-        .maybeSingle()
-
-      if (existingUser) {
-        const existingRoles = Array.isArray(existingUser.roles) ? existingUser.roles : [existingUser.user_type]
-        const mergedRoles = Array.from(new Set([...existingRoles, "corporate_administrator"]))
-        
-        const { error: updateError } = await supabase
-          .from("users")
-          .update({
-            name: newAdminName.trim(),
-            user_type: "corporate_administrator",
-            roles: mergedRoles,
-            company_id: company?.id
-          })
-          .eq("id", existingUser.id)
-
-        if (updateError) throw updateError
-      } else {
-        const { error: insertError } = await supabase.from("users").insert({
-          name: newAdminName.trim(),
-          email: newAdminEmail.toLowerCase().trim(),
-          password_hash:
-            "$2a$10$rXqvFZnPzAMcLzCP2L4dxu7L6Y3Y5KjGNQQF6xZ4Y5Y5Y5Y5Y5Y5Y5",
-          user_type: "corporate_administrator",
-          roles: ["corporate_administrator"],
-          company_id: company?.id,
-        })
-
-        if (insertError) throw insertError
+      const payload = {
+        name: newAdminName.trim(),
+        email: newAdminEmail.toLowerCase().trim(),
+        password: newAdminPassword.trim(),
+        user_type: "corporate_administrator",
+        roles: ["corporate_administrator"],
+        company_id: company?.id,
       }
+
+      await apiClient.v1.users.create(payload)
 
       setNewAdminName("")
       setNewAdminEmail("")
@@ -681,40 +625,16 @@ export default function CompanyDetailsModal({
     setError(null)
 
     try {
-      const { data: existingUser } = await supabase
-        .from("users")
-        .select("id, roles, user_type")
-        .eq("email", newUserEmail.toLowerCase().trim())
-        .maybeSingle()
-
-      if (existingUser) {
-        const existingRoles = Array.isArray(existingUser.roles) ? existingUser.roles : [existingUser.user_type]
-        const mergedRoles = Array.from(new Set([...existingRoles, ...selectedRoles]))
-        
-        const { error: updateError } = await supabase
-          .from("users")
-          .update({
-            name: newUserName.trim(),
-            user_type: primaryRole,
-            roles: mergedRoles,
-            company_id: company?.id
-          })
-          .eq("id", existingUser.id)
-
-        if (updateError) throw updateError
-      } else {
-        const { error: insertError } = await supabase.from("users").insert({
-          name: newUserName.trim(),
-          email: newUserEmail.toLowerCase().trim(),
-          password_hash:
-            "$2a$10$rXqvFZnPzAMcLzCP2L4dxu7L6Y3Y5KjGNQQF6xZ4Y5Y5Y5Y5Y5Y5Y5",
-          user_type: primaryRole,
-          roles: selectedRoles,
-          company_id: company?.id,
-        })
-
-        if (insertError) throw insertError
+      const payload = {
+        name: newUserName.trim(),
+        email: newUserEmail.toLowerCase().trim(),
+        password: newUserPassword.trim(),
+        user_type: primaryRole,
+        roles: selectedRoles,
+        company_id: company?.id,
       }
+
+      await apiClient.v1.users.create(payload)
 
       setNewUserName("")
       setNewUserEmail("")

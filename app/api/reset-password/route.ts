@@ -274,6 +274,63 @@ export async function POST(request: NextRequest) {
 
         }
 
+        // ─── ACTION: change-password ──────────────────────────────────────────
+        if (action === 'change-password') {
+            const { userId, currentPassword, newPassword } = body
+
+            if (!userId || !currentPassword || !newPassword) {
+                return NextResponse.json({ error: 'userId, currentPassword, and newPassword are required' }, { status: 400 })
+            }
+
+            if (newPassword.length < 6) {
+                return NextResponse.json({ error: 'Password must be at least 6 characters' }, { status: 400 })
+            }
+
+            // Fetch the user first so we have email, user_type, and current hash
+            const { data: targetUser, error: fetchError } = await supabase
+                .from('users')
+                .select('id, email, user_type, password_hash')
+                .eq('id', userId)
+                .single()
+
+            if (fetchError || !targetUser) {
+                console.error('[Change Password] User not found:', fetchError)
+                return NextResponse.json({ error: 'User not found' }, { status: 404 })
+            }
+
+            // Verify current password hash
+            const isCorrect = await bcrypt.compare(currentPassword, targetUser.password_hash)
+            if (!isCorrect) {
+                return NextResponse.json({ error: 'Current password is incorrect' }, { status: 400 })
+            }
+
+            const salt = await bcrypt.genSalt(10)
+            const newHash = await bcrypt.hash(newPassword, salt)
+
+            const { error: updateError } = await supabase
+                .from('users')
+                .update({ password_hash: newHash })
+                .eq('id', userId)
+
+            if (updateError) {
+                console.error('[Change Password] Error:', updateError)
+                return NextResponse.json({ error: 'Failed to update password' }, { status: 500 })
+            }
+
+            // 🔄 Notify Janus for real-time password sync (legacy webhook)
+            triggerJanusResync('user_password_reset', {
+                id: userId,
+                email: targetUser.email,
+                password: newHash
+            }, 'user')
+
+            // 💪 Strong SSO sync: write the new hash directly to Janus DB (skips master accounts)
+            syncPasswordToJanus(targetUser.email, newHash, targetUser.user_type || '')
+
+            console.log(`[Change Password] Password updated and synced to Janus for ${targetUser.email} (id=${userId})`)
+            return NextResponse.json({ success: true, message: 'Password updated successfully.' })
+        }
+
         return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
 
     } catch (error) {
