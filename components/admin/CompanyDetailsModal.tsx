@@ -609,8 +609,21 @@ export default function CompanyDetailsModal({
   }
 
   const handleAddUser = async () => {
-    if (!newUserName.trim() || !newUserEmail.trim() || !newUserPassword.trim()) {
-      setError("All fields are required")
+    const primaryRole = selectedRoles[0] || "user"
+    const isEmailOptional = ["attendee", "owner", "resident"].includes(primaryRole)
+
+    if (!newUserName.trim()) {
+      setError("Name is required")
+      return
+    }
+
+    if (!isEmailOptional && !newUserEmail.trim()) {
+      setError("Email is required")
+      return
+    }
+
+    if (!isEmailOptional && !newUserPassword.trim()) {
+      setError("Password is required")
       return
     }
 
@@ -618,8 +631,6 @@ export default function CompanyDetailsModal({
       setError("Select at least one role")
       return
     }
-
-    const primaryRole = selectedRoles[0] || "user"
 
     setSavingUser(true)
     setError(null)
@@ -849,6 +860,9 @@ export default function CompanyDetailsModal({
       u.user_type === "property_manager" ||
       (Array.isArray(u.roles) && u.roles.includes("property_manager"))
   )
+
+  const primaryRoleForAdd = selectedRoles[0] || "user"
+  const isEmailOptionalForAdd = ["attendee", "owner", "resident"].includes(primaryRoleForAdd)
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 animate-in fade-in overflow-y-auto p-4">
@@ -1689,14 +1703,14 @@ export default function CompanyDetailsModal({
                           type="email"
                           value={newUserEmail}
                           onChange={(e) => setNewUserEmail(e.target.value)}
-                          placeholder="Email *"
+                          placeholder={isEmailOptionalForAdd ? "Email" : "Email *"}
                           className="w-full px-3 py-2 bg-white border border-border rounded"
                         />
                         <input
                           type="password"
                           value={newUserPassword}
                           onChange={(e) => setNewUserPassword(e.target.value)}
-                          placeholder="Password *"
+                          placeholder={isEmailOptionalForAdd ? "Password" : "Password *"}
                           className="w-full px-3 py-2 bg-white border border-border rounded"
                         />
 
