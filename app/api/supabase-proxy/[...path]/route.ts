@@ -100,6 +100,10 @@ export async function GET(request: NextRequest, { params }: { params: { path: st
   return proxyRequest(request, params)
 }
 
+export async function HEAD(request: NextRequest, { params }: { params: { path: string[] } }) {
+  return proxyRequest(request, params)
+}
+
 export async function POST(request: NextRequest, { params }: { params: { path: string[] } }) {
   return proxyRequest(request, params)
 }
