@@ -150,21 +150,23 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
   const userCanManageBuildings = canManageBuildings(dbUser || currentUser)
   const userShouldFilterByCompany = shouldFilterByCompany(dbUser || currentUser)
 
+  // Helper: fetch from API with auth key
+  const apiFetch = async (url: string) => {
+    const apiKey = process.env.NEXT_PUBLIC_API_KEY || 'meeting-genius-secret-key-2026'
+    const res = await fetch(url, { headers: { 'x-api-key': apiKey } })
+    if (!res.ok) throw new Error(`API ${url} failed: ${res.status}`)
+    return res.json()
+  }
+
   // 1. REFRESH IDENTITY FROM DB
   useEffect(() => {
     const refreshIdentity = async () => {
       if (!currentUser?.id) return
       
       try {
-        const { data, error } = await supabase
-          .from("users")
-          .select("id, name, email, user_type, roles, company_id")
-          .eq("id", currentUser.id)
-          .single()
-        
-        if (data) {
-          setDbUser(data)
-        }
+        const json = await apiFetch(`/api/v1/users?id=${currentUser.id}`)
+        const data = json.data?.[0] || null
+        if (data) setDbUser(data)
       } catch (err) {
         console.error("Identity refresh error:", err)
       } finally {
@@ -225,15 +227,12 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
 
   const fetchCompanies = async () => {
     try {
-      let companiesQuery = supabase.from("companies").select("*").order("name")
-
       const activeUser = dbUser || currentUser
-      if (isMaster) {
-        // Master sees all
-      } else {
-        // All other roles see only their own company
+      let url = '/api/v1/companies'
+
+      if (!isMaster) {
         if (activeUser?.company_id) {
-          companiesQuery = companiesQuery.eq("id", activeUser.company_id)
+          url += `?id=${activeUser.company_id}`
         } else {
           setCompanies([])
           setLoading(false)
@@ -241,16 +240,10 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
         }
       }
 
-      const { data, error } = await companiesQuery
-
-      if (error) {
-        console.error("Error fetching companies:", error)
-        return
-      }
-
-      setCompanies(data || [])
+      const json = await apiFetch(url)
+      setCompanies(json.data || [])
     } catch (err) {
-      console.error("Unexpected error:", err)
+      console.error("Error fetching companies:", err)
     }
   }
 
@@ -318,28 +311,16 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
 
   const fetchPropertyManagers = async () => {
     try {
-      let query = supabase
-        .from("users")
-        .select("id, name, email, company_id, roles")
-        .eq("user_type", "property_manager")
-        .order("name")
+      let url = '/api/v1/users?user_type=property_manager'
 
-      if (isMaster) {
-        // Master sees all PMs
-      } else if (isCorporateAdmin && currentUser?.company_id) {
-        query = query.eq("company_id", currentUser.company_id)
+      if (!isMaster && currentUser?.company_id) {
+        url += `&company_id=${currentUser.company_id}`
       }
 
-      const { data, error } = await query
-
-      if (error) {
-        console.error("Error fetching property managers:", error)
-        return
-      }
-
-      setPropertyManagers(data || [])
+      const json = await apiFetch(url)
+      setPropertyManagers(json.data || [])
     } catch (err) {
-      console.error("Unexpected error:", err)
+      console.error("Error fetching property managers:", err)
     }
   }
 
@@ -347,27 +328,22 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
     try {
       setLoading(true)
 
-      let usersQuery = supabase
-        .from("users")
-        .select("id, name, email, user_type, roles, assigned_pm_id, company_id, created_at, companies(id, name)")
-        .order("created_at", { ascending: false })
-
       const activeUser = dbUser || currentUser
+      let url = '/api/v1/users?include_buildings=true'
+
       if (isMaster) {
-        // Master sees all
+        // Master sees all — no filter
       } else if (isCorporateAdmin) {
         if (activeUser?.company_id) {
-          usersQuery = usersQuery.eq("company_id", activeUser.company_id)
+          url += `&company_id=${activeUser.company_id}`
         } else {
           setUsers([])
           setLoading(false)
           return
         }
       } else if (isPropManager) {
-        // Property Manager sees users in their company OR users with no company (yet)
-        // Filtering by managed buildings happens later in the JS logic
         if (activeUser?.company_id) {
-          usersQuery = usersQuery.or(`company_id.eq.${activeUser.company_id},company_id.is.null`)
+          url += `&company_id=${activeUser.company_id}&include_null_company=true`
         } else {
           setUsers([])
           setLoading(false)
@@ -375,31 +351,12 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
         }
       }
 
-      const { data: usersData, error: usersError } = await usersQuery
+      const json = await apiFetch(url)
+      const usersData = json.data || []
+      const userBuildingsData = json.userBuildings || []
 
-      if (usersError) {
-        console.error("Error fetching users:", usersError)
-        return
-      }
-
-      let ubQuery = supabase
-        .from("user_buildings")
-        .select(`
-          user_id,
-          building_id,
-          unit_number,
-          buildings!inner(id, name, company_id, manager_id)
-        `)
-
-      if (!isMaster && currentUser?.company_id) {
-        ubQuery = ubQuery.eq("buildings.company_id", currentUser.company_id)
-      }
-
-      const { data: userBuildingsData } = await ubQuery
-
-      const usersWithBuildings = (usersData || []).map((user: any) => {
-        const userJunctions = (userBuildingsData || [])
-          .filter((ub: any) => ub.user_id === user.id)
+      const usersWithBuildings = usersData.map((user: any) => {
+        const userJunctions = userBuildingsData.filter((ub: any) => ub.user_id === user.id)
         
         const userBuildings = userJunctions
           .map((ub: any) => ub.unit_number ? `${ub.buildings?.name} (${ub.unit_number})` : ub.buildings?.name)
@@ -416,7 +373,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
         }
       })
 
-      const myBuildingIds = (userBuildingsData || [])
+      const myBuildingIds = userBuildingsData
         .filter((ub: any) => ub.user_id === currentUser?.id)
         .map((ub: any) => ub.building_id)
 
@@ -424,7 +381,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
         setUsers(usersWithBuildings)
       } else if (isPropManager) {
         const filteredUsers = usersWithBuildings.filter(
-          (user) => 
+          (user: any) => 
             user.assigned_pm_id === currentUser?.id || 
             user.id === currentUser?.id || 
             user.isUserInManagedBuilding ||
@@ -432,15 +389,14 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
         )
         setUsers(filteredUsers)
       } else {
-        // Lower roles see users in THEIR buildings only
-        const filteredUsers = usersWithBuildings.filter((user) => {
-           if (user.id === currentUser?.id) return true
-           return user.buildingIds.some((id: number) => myBuildingIds.includes(id))
+        const filteredUsers = usersWithBuildings.filter((user: any) => {
+          if (user.id === currentUser?.id) return true
+          return user.buildingIds.some((id: number) => myBuildingIds.includes(id))
         })
         setUsers(filteredUsers)
       }
     } catch (err) {
-      console.error("Unexpected error:", err)
+      console.error("Error fetching users:", err)
     } finally {
       setLoading(false)
     }

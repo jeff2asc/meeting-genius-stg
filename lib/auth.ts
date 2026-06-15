@@ -1,37 +1,28 @@
-import bcrypt from 'bcryptjs'
-import { supabase, setCurrentUser, User, UserRole } from './supabase'
+import { setCurrentUser, User, UserRole } from './supabase'
 
-// Login function
+// Login function — calls server-side API to avoid Mixed Content + RLS issues
 export async function login(
   email: string,
   password: string
 ): Promise<{ success: boolean; user?: User; error?: string }> {
   try {
-    const { data: user, error } = await supabase
-      .from('users')
-      .select('id, name, email, password_hash, user_type, company_id, assigned_pm_id, roles')
-      .eq('email', email.toLowerCase().trim())
-      .single()
+    const response = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    })
 
-    if (error || !user) {
-      return { success: false, error: 'Invalid email or password' }
-    }
+    const result = await response.json()
 
-    if (!user.password_hash) {
-      return { success: false, error: 'Invalid email or password' }
-    }
-
-    const isPasswordValid = await bcrypt.compare(password, user.password_hash)
-
-    if (!isPasswordValid) {
-      return { success: false, error: 'Invalid email or password' }
+    if (!result.success) {
+      return { success: false, error: result.error || 'Invalid email or password' }
     }
 
     const loggedInUser: User = {
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      user_type: user.user_type as
+      id: result.user.id,
+      name: result.user.name,
+      email: result.user.email,
+      user_type: result.user.user_type as
         | 'master'
         | 'property_manager'
         | 'user'
@@ -39,9 +30,9 @@ export async function login(
         | 'attendee'
         | 'corporate_administrator'
         | 'owner',
-      company_id: user.company_id,
-      assigned_pm_id: user.assigned_pm_id ?? null,
-      roles: (user.roles as UserRole[]) ?? [user.user_type as UserRole],
+      company_id: result.user.company_id,
+      assigned_pm_id: result.user.assigned_pm_id ?? null,
+      roles: (result.user.roles as UserRole[]) ?? [result.user.user_type as UserRole],
     }
 
     console.log('✅ Login successful:', loggedInUser)
