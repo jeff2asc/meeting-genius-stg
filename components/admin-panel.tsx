@@ -6,7 +6,13 @@ import { Button } from "@/components/ui/button"
 import { getCurrentUser, Company } from "@/lib/supabase"
 import { supabase } from "@/lib/supabase"
 import { canManageCompanies, canViewCompanies, canManageBuildings, shouldFilterByCompany, isMaster as checkIsMaster, isCorporateAdmin as checkIsCorporateAdmin, isPropertyManager as checkIsPropertyManager } from "@/lib/permissions"
-import { triggerJanusResync } from "@/lib/janus"
+import { triggerJanusResync } from "@/lib/janus-client"
+import { 
+  fetchBuildingsAction, 
+  deleteBuildingAction, 
+  archiveBuildingAction, 
+  unarchiveBuildingAction 
+} from "@/lib/api-actions"
 
 // Import all the separated components
 import CreateUserModal from "./admin/CreateUserModal"
@@ -101,6 +107,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
   const [showCompanyDetailsModal, setShowCompanyDetailsModal] = useState(false)
   const [showAssignUsersModal, setShowAssignUsersModal] = useState(false)
   const [selectedCompany, setSelectedCompany] = useState<Company | null>(null)
+  const [masterViewCompanyId, setMasterViewCompanyId] = useState<number | null>(null)
 
   const rawCurrentUser = getCurrentUser()
   // Stabilize the reference so downstream useEffects don't re-fire on every render
@@ -446,70 +453,39 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
       const userIsCorporateAdmin = checkIsCorporateAdmin(activeUser)
       const userIsPropManager = checkIsPropertyManager(activeUser)
 
-      // 1. Fetch Active Buildings
-      let buildingsQuery = supabase
-        .from("buildings")
-        .select(
-          "id, name, address, manager_id, company_id, building_type, created_at, board_meeting_notice_days, general_meeting_notice_days, notification_recipient_type, logo_url, is_archived, companies(logo_url)"
-        )
-        .or('is_archived.eq.false,is_archived.is.null')
-        .order("name")
-
+      let buildingsData: any[] = []
+      
       if (userIsMaster) {
-        // Master sees ALL active buildings
+        buildingsData = await fetchBuildingsAction()
       } else if (userIsCorporateAdmin) {
-        if (activeUser?.company_id) {
-          buildingsQuery = buildingsQuery.eq("company_id", activeUser.company_id)
-        } else {
-          setBuildings([])
-          setLoading(false)
-          return
-        }
-      } else if (userIsPropManager && currentUser?.id) {
-        const { data: myBuildings } = await supabase.from("user_buildings").select("building_id").eq("user_id", currentUser.id)
-        const myIds = myBuildings?.map(b => b.building_id) || []
-        if (activeUser?.company_id) {
-          buildingsQuery = buildingsQuery.or(`company_id.eq.${activeUser.company_id},manager_id.eq.${currentUser.id}${myIds.length > 0 ? `,id.in.(${myIds.join(',')})` : ''}`)
-        } else {
-          buildingsQuery = buildingsQuery.or(`manager_id.eq.${currentUser.id}${myIds.length > 0 ? `,id.in.(${myIds.join(',')})` : ''}`)
-        }
-      } else if (currentUser?.id) {
-        const { data: myBuildings } = await supabase.from("user_buildings").select("building_id").eq("user_id", currentUser.id)
-        const myIds = myBuildings?.map(b => b.building_id) || []
-        if (myIds.length > 0) {
-          buildingsQuery = buildingsQuery.in("id", myIds)
-        } else {
-          setBuildings([])
-          setLoading(false)
-          return
-        }
+        buildingsData = await fetchBuildingsAction({ company_id: activeUser.company_id! })
       } else {
-        setBuildings([])
-        setLoading(false)
-        return
+        // PM or User role: fetch buildings they are explicitly assigned to or manage
+        const { data: myBuildings } = await supabase.from("user_buildings").select("building_id").eq("user_id", activeUser.id)
+        const myIds = myBuildings?.map(b => b.building_id) || []
+        
+        // Fetch buildings they manage + buildings they are assigned to
+        const managedBuildings = await fetchBuildingsAction({ manager_id: activeUser.id })
+        const assignedBuildings = myIds.length > 0 ? await fetchBuildingsAction({ building_ids: myIds }) : []
+        
+        // Merge and deduplicate
+        const combined = [...(managedBuildings || []), ...(assignedBuildings || [])]
+        const seen = new Set()
+        buildingsData = combined.filter(b => {
+          if (seen.has(b.id)) return false
+          seen.add(b.id)
+          return true
+        })
       }
-
-      const { data: buildingsData, error: buildingsError } = await buildingsQuery
-      if (buildingsError) console.error("Error fetching active buildings:", buildingsError)
-
+      
       // 2. Fetch Archived Buildings (Only for Master and Corp Admin)
       let archivedData: any[] = []
       if (userIsMaster || userIsCorporateAdmin) {
-        let archivedQuery = supabase
-          .from("buildings")
-          .select(
-            "id, name, address, manager_id, company_id, building_type, created_at, board_meeting_notice_days, general_meeting_notice_days, notification_recipient_type, logo_url, is_archived, archived_at, archived_by, archive_reason, companies(logo_url)"
-          )
-          .eq("is_archived", true)
-          .order("archived_at", { ascending: false })
-
-        if (!userIsMaster && activeUser?.company_id) {
-          archivedQuery = archivedQuery.eq("company_id", activeUser.company_id)
-        }
-
-        const { data, error } = await archivedQuery
-        if (error) console.error("Error fetching archived buildings:", error)
-        archivedData = data || []
+        const archivedBuildingsData = await fetchBuildingsAction({
+          archived: true,
+          ...(!userIsMaster && activeUser?.company_id ? { company_id: activeUser.company_id } : {})
+        })
+        archivedData = archivedBuildingsData || []
       }
 
       // 3. Fetch User Associations for all buildings
@@ -635,14 +611,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
     if (!building) return
     setDeleteConfirmBuilding(null)
     try {
-      const res = await fetch(`/api/v1/buildings/${building.id}`, {
-        method: 'DELETE',
-        headers: { 'x-api-key': process.env.NEXT_PUBLIC_API_KEY || '' }
-      })
-      if (!res.ok) {
-        const data = await res.json()
-        throw new Error(data.error || 'Failed to delete building')
-      }
+      await deleteBuildingAction(building.id)
       fetchBuildings()
       fetchUsers()
       triggerJanusResync('building_deleted')
@@ -654,21 +623,11 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
   const handleArchiveBuilding = async (building: Building) => {
     if (!confirm(`Archive "${building.name}"? It will be removed from active lists and can be restored from Archive Storage.`)) return
     try {
-      const res = await fetch(`/api/v1/buildings/${building.id}/archive`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'x-api-key': process.env.NEXT_PUBLIC_API_KEY || '' 
-        },
-        body: JSON.stringify({
-          archived_by: (dbUser || currentUser)?.name || (dbUser || currentUser)?.email || null,
-          archive_reason: 'Archived from admin panel'
-        })
-      })
-      if (!res.ok) {
-        const data = await res.json()
-        throw new Error(data.error || 'Failed to archive building')
-      }
+      await archiveBuildingAction(
+        building.id,
+        (dbUser || currentUser)?.name || (dbUser || currentUser)?.email || null,
+        'Archived from admin panel'
+      )
       fetchBuildings()
       triggerJanusResync('building_archived')
     } catch (err: any) {
@@ -680,16 +639,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
   const handleUnarchiveBuilding = async (building: Building) => {
     if (!confirm(`Restore "${building.name}" to active use?`)) return
     try {
-      const res = await fetch(`/api/v1/buildings/${building.id}/unarchive`, {
-        method: 'POST',
-        headers: { 
-          'x-api-key': process.env.NEXT_PUBLIC_API_KEY || '' 
-        }
-      })
-      if (!res.ok) {
-        const data = await res.json()
-        throw new Error(data.error || 'Failed to restore building')
-      }
+      await unarchiveBuildingAction(building.id)
       fetchBuildings()
       triggerJanusResync('building_restored')
     } catch (err: any) {
@@ -700,6 +650,9 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
 
   const handleCreateCompanySuccess = () => {
     fetchCompanies()
+    fetchPropertyManagers()
+    fetchUsers()
+    fetchBuildings()
     triggerJanusResync('company_created')
   }
 
@@ -755,11 +708,13 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
 
   const handleEditCompany = (company: Company) => {
     setSelectedCompany(company)
+    setMasterViewCompanyId(company.id)
     setShowEditCompanyModal(true)
   }
 
   const handleViewCompanyDetails = (company: Company) => {
     setSelectedCompany(company)
+    setMasterViewCompanyId(company.id)
     setShowCompanyDetailsModal(true)
   }
 
@@ -828,7 +783,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
                   <span className="hidden sm:inline">Create Building</span>
                 </Button>
               )}
-              {activeTab === "companies" && isMaster && (
+              {activeTab === "companies" && userCanManageCompanies && (
                 <Button
                   onClick={() => setShowCreateCompanyModal(true)}
                   size="sm"
@@ -1023,7 +978,7 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
         )}
 
         {activeTab === "voting" && (
-          <VotingTab />
+          <VotingTab initialCompanyId={masterViewCompanyId} />
         )}
 
       </div>
@@ -1077,6 +1032,8 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
         availableUsers={getAvailableUsers()}
         preselectedManagerId={buildingCreationContext?.managerId}
         preselectedCompanyId={buildingCreationContext?.companyId}
+        existingBuildings={buildings}
+        archivedBuildings={archivedBuildings}
       />
 
       <BuildingDetailsModal

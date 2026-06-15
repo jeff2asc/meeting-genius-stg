@@ -41,7 +41,12 @@ interface MinutesTemplate {
   actionItemsColor: string
   voteResultsColor: string
   coverPageHeight: number
+  coverPageTextColor: string
+  infoCardHeaderTextColor: string
   sectionHeaderTextColor: string
+  motionBoxHeaderTextColor: string
+  actionItemHeaderTextColor: string
+  voteResultHeaderTextColor: string
   richTextBlocks: any[]
 }
 
@@ -135,7 +140,12 @@ export default function GenerateMinutesButton({
           action_items_color,
           vote_results_color,
           coverpage_height,
+          coverpage_text_color,
+          infocard_header_text_color,
           section_header_text_color,
+          motion_box_header_text_color,
+          action_item_header_text_color,
+          vote_result_header_text_color,
           rich_text_blocks
         `
         )
@@ -205,7 +215,12 @@ export default function GenerateMinutesButton({
         actionItemsColor: "#f59e0b",
         voteResultsColor: "#8b5cf6",
         coverPageHeight: 500,
+        coverPageTextColor: "white",
+        infoCardHeaderTextColor: "white",
         sectionHeaderTextColor: "white",
+        motionBoxHeaderTextColor: "white",
+        actionItemHeaderTextColor: "white",
+        voteResultHeaderTextColor: "white",
         richTextBlocks: [],
       }
 
@@ -241,7 +256,12 @@ export default function GenerateMinutesButton({
               row.infocard_fields.length > 0
               ? (row.infocard_fields as unknown as TemplateField[])
               : defaultTemplate.infoCardFields,
+          coverPageTextColor: row.coverpage_text_color || defaultTemplate.coverPageTextColor,
+          infoCardHeaderTextColor: row.infocard_header_text_color || defaultTemplate.infoCardHeaderTextColor,
           sectionHeaderTextColor: row.section_header_text_color || defaultTemplate.sectionHeaderTextColor,
+          motionBoxHeaderTextColor: row.motion_box_header_text_color || defaultTemplate.motionBoxHeaderTextColor,
+          actionItemHeaderTextColor: row.action_item_header_text_color || defaultTemplate.actionItemHeaderTextColor,
+          voteResultHeaderTextColor: row.vote_result_header_text_color || defaultTemplate.voteResultHeaderTextColor,
           richTextBlocks: Array.isArray(row.rich_text_blocks) ? row.rich_text_blocks : defaultTemplate.richTextBlocks,
         }
       }
@@ -282,7 +302,7 @@ export default function GenerateMinutesButton({
         building?.logo_url || company?.logo_url || null
 
       // 3) Load sections/topics/decisions/tasks
-      const { data: sections, error: sectionsError } = await supabase
+      const { data: rawSections, error: sectionsError } = await supabase
         .from("sections")
         .select("*")
         .eq("meeting_id", meetingId)
@@ -291,8 +311,11 @@ export default function GenerateMinutesButton({
       if (sectionsError) {
         console.error("Error loading sections:", sectionsError)
       }
+      
+      const sections = Array.from(new Map((rawSections || []).map(s => [s.id, s])).values())
+        .sort((a, b) => (a.order_index || 0) - (b.order_index || 0))
 
-      const { data: topics, error: topicsError } = await supabase
+      const { data: rawTopics, error: topicsError } = await supabase
         .from("topics")
         .select("*")
         .eq("meeting_id", meetingId)
@@ -302,6 +325,9 @@ export default function GenerateMinutesButton({
       if (topicsError) {
         console.error("Error loading topics:", topicsError)
       }
+
+      const topics = Array.from(new Map((rawTopics || []).map(t => [t.id, t])).values())
+        .sort((a, b) => (a.order_index || 0) - (b.order_index || 0))
 
       // Use the manually entered times from the modal
       const finalStartTime = finalInfo.startTime
@@ -1094,13 +1120,14 @@ function buildMinutesHtml({
 
   // COVER
   html += `
-    <div class="cover" style="height:${COVER_PAGE_HEIGHT}px;background:${safeCoverColor};">
+    <div class="cover" style="height:${COVER_PAGE_HEIGHT}px;background:${safeCoverColor};color:${template.coverPageTextColor};">
       <div class="cover-inner">
         ${renderCoverElements(template.coverPageElements, {
     logoUrl,
     meeting,
     building,
     documentType: "MEETING MINUTES",
+    textColor: template.coverPageTextColor
   })}
       </div>
     </div>
@@ -1117,6 +1144,7 @@ function buildMinutesHtml({
       .filter(b => b.slot === 'header')
       .filter(b => {
         if (!b.meetingTypeFilter || b.meetingTypeFilter.length === 0) return true
+        if (!meetingType) return false
         return b.meetingTypeFilter.some((f: string) => 
           meetingType.toLowerCase().includes(f.toLowerCase()) || 
           f.toLowerCase().includes(meetingType.toLowerCase())
@@ -1198,6 +1226,7 @@ function renderCoverElements(
     meeting: any
     building: any
     documentType: string
+    textColor: string
   }
 ): string {
   if (!elements || elements.length === 0) return ""
@@ -1224,21 +1253,24 @@ function renderCoverElements(
           </div>
         `
       } else if (el.id === "title") {
+        const shadow = ctx.textColor === 'white' ? "text-shadow: 0 1px 2px rgba(0,0,0,0.3);" : ""
         inner = `
-          <div style="text-align:center;">
+          <div style="text-align:center;color:${ctx.textColor};${shadow}">
             <div class="cover-title-line" style="font-size:26px;">MEETING</div>
             <div class="cover-title-line" style="font-size:26px;">MINUTES</div>
           </div>
         `
       } else if (el.id === "building_name") {
+        const buildingColor = ctx.textColor === 'white' ? "rgba(255,255,255,0.95)" : "rgba(0,0,0,0.85)"
         inner = `
-          <div style="font-size:18px;font-weight:500;letter-spacing:1px;opacity:0.95;">
+          <div style="font-size:18px;font-weight:500;letter-spacing:1px;color:${buildingColor};">
             ${escapeHtml(ctx.building?.name || "")}
           </div>
         `
       } else if (el.id === "meeting_type") {
+        const typeColor = ctx.textColor === 'white' ? "rgba(255,255,255,0.9)" : "rgba(0,0,0,0.75)"
         inner = `
-          <div style="font-size:14px;opacity:0.9;">
+          <div style="font-size:14px;color:${typeColor};">
             ${escapeHtml(ctx.meeting.meeting_type || "Council Meeting")}
           </div>
         `
@@ -1309,7 +1341,7 @@ function renderInfoCard(
 
   return `
     <div class="info-card">
-      <div class="info-card-header" style="background:${template.infoCardAccentColor};">
+      <div class="info-card-header" style="background:${template.infoCardAccentColor}; color:${template.infoCardHeaderTextColor};">
         MEETING INFORMATION
       </div>
       <div class="info-card-body">
@@ -1348,7 +1380,7 @@ function renderAttendeesSection(
 
   return `
     <div class="attendees-section">
-      <div class="attendees-header" style="background:${template.infoCardAccentColor};">
+      <div class="attendees-header" style="background:${template.infoCardAccentColor}; color:${template.infoCardHeaderTextColor};">
         👥 ATTENDEES
       </div>
       <table class="attendees-table">
@@ -1442,13 +1474,13 @@ function renderSectionsAndTopics(
                 class="motion-box"
                 style="border-color:${template.motionBoxesColor};background:${lightBg};"
               >
-                <div><span class="motion-badge" style="background:${template.motionBoxesColor};">MOTION ${escapeHtml(motionNumber)}</span></div>
+                <div><span class="motion-badge" style="background:${template.motionBoxesColor}; color:${template.motionBoxHeaderTextColor};">MOTION ${escapeHtml(motionNumber)}</span></div>
                 <div class="motion-text">${escapeHtml((decision.motion_text || "").trim())}</div>
                 ${decision.result && decision.result.trim()
-                ? `<div><span class="decision-badge" style="background:${template.voteResultsColor};"><strong>Decision:</strong> ${escapeHtml(decision.result.trim())}</span></div>`
+                ? `<div><span class="decision-badge" style="background:${template.voteResultsColor}; color:${template.voteResultHeaderTextColor};"><strong>Decision:</strong> ${escapeHtml(decision.result.trim())}</span></div>`
                 : ""
               }
-                <div class="votes-bar" style="background:${template.voteResultsColor};">
+                <div class="votes-bar" style="background:${template.voteResultsColor}; color:${template.voteResultHeaderTextColor};">
                   <span><strong>MECHANISM:</strong> ${escapeHtml(decision.voting_type || "Standard")}</span>
                   <span><strong>FOR:</strong> ${votesFor}</span>
                   <span><strong>AGAINST:</strong> ${votesAgainst}</span>
@@ -1464,6 +1496,30 @@ function renderSectionsAndTopics(
             const content = (note.content || "").trim()
             if (!content) return
             html += `<div class="note-box"><span class="note-icon">🌐</span><strong>NOTE:</strong> ${escapeHtml(content)}</div>`
+          })
+        }
+
+        // Action Items (Tasks) matching the editor preview style
+        if (topic.tasks && topic.tasks.length > 0) {
+          topic.tasks.forEach((task: any) => {
+            const desc = (task.description || "").trim()
+            if (!desc) return
+            
+            // Light background from actionItemsColor
+            const hex = template.actionItemsColor.replace("#", "")
+            const r = Math.min(255, parseInt(hex.substring(0, 2), 16) + 240)
+            const g = Math.min(255, parseInt(hex.substring(2, 4), 16) + 240)
+            const b = Math.min(255, parseInt(hex.substring(4, 6), 16) + 240)
+            const taskBg = `rgb(${r},${g},${b})`
+            
+            html += `
+              <div class="note-box" style="background:${taskBg}; border-left-color:${template.actionItemsColor}; color:${template.actionItemsColor};">
+                <span class="note-icon">✅</span>
+                <span style="background:${template.actionItemsColor}; color:${template.actionItemHeaderTextColor}; padding:1px 4px; border-radius:3px; font-size:9px; font-weight:bold; margin-right:4px;">TASK:</span>
+                ${escapeHtml(desc)}
+                ${task.assigned_name ? ` <span style="font-style:italic; opacity:0.8;">- ${escapeHtml(task.assigned_name)}</span>` : ""}
+              </div>
+            `
           })
         }
 

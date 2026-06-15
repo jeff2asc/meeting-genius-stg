@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { supabase, createAdminClient } from '@/lib/supabase'
+import { rolesFromDbUser } from '@/lib/permissions'
 import bcrypt from 'bcryptjs'
 
 
@@ -23,11 +24,67 @@ interface ImportRequest {
 
 export async function POST(request: NextRequest) {
   try {
-    // 1. Validate API Key
+    // 1. Validate Authentication (either API Key OR Supabase Session)
     const apiKey = request.headers.get('x-api-key')
-    if (!apiKey || apiKey !== (process.env.NEXT_PUBLIC_API_KEY || '')) {
+    const VALID_API_KEY = process.env.INTERNAL_API_KEY || ''
+    let isAuthorized = !!(apiKey && apiKey === VALID_API_KEY)
+
+    if (!isAuthorized) {
+      const authHeader = request.headers.get('Authorization')
+      console.log('--- Bulk Import Auth Check ---')
+      console.log('Authorization Header Present:', !!authHeader)
+
+      if (authHeader?.startsWith('Bearer ')) {
+        const token = authHeader.split('Bearer ')[1]
+        console.log('Token (first 10 chars):', token.substring(0, 10) + '...')
+
+        const { data: { user }, error: authError } = await supabase.auth.getUser(token)
+        
+        if (authError || !user) {
+          console.log('Supabase Auth Error:', authError?.message)
+          console.log('Supabase Auth User:', user)
+        } else {
+          console.log('Authenticated User Email:', user.email)
+
+          // Use Admin Client to bypass RLS for permission check
+          const adminClient = createAdminClient()
+          const { data: userData, error: dbError } = await adminClient
+            .from('users')
+            .select('user_type, roles')
+            .eq('email', user.email!)
+            .single()
+            
+          if (dbError) {
+            console.log('Database Lookup Error:', dbError.message)
+          } else if (!userData) {
+            console.log('No user record found in DB for email:', user.email)
+          } else {
+            // Use specialized project helper to normalize roles/user_type
+            const normalizedRoles = rolesFromDbUser(userData)
+            console.log('Normalized Roles for', user.email, ':', normalizedRoles)
+
+            // Align with lib/permissions.ts: user import is allowed for several roles
+            const authorizedRoles = ['master', 'corporate_administrator', 'corporate_admin', 'admin', 'property_manager']
+            const isAuthorizedUser = normalizedRoles.some(role => authorizedRoles.includes(role))
+
+            console.log('Normalized Roles for', user.email, ':', normalizedRoles)
+
+            if (isAuthorizedUser) {
+              console.log('Authorization Granted: Authorized role found in normalized list')
+              isAuthorized = true
+            } else {
+              console.log('Authorization Denied: No authorized role found in', normalizedRoles)
+            }
+          }
+        }
+      } else {
+        console.log('Authorization Header missing or malformed')
+      }
+    }
+
+    if (!isAuthorized) {
       return NextResponse.json(
-        { error: 'Unauthorized: Invalid API key' },
+        { error: 'Unauthorized' },
         { status: 401 }
       )
     }

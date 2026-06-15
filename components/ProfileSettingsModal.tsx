@@ -6,6 +6,8 @@ import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { supabase } from "@/lib/supabase"
 import { verifyPassword, hashPassword } from "@/lib/auth"
+import { triggerJanusResync, syncPasswordToJanus } from "@/lib/janus-client"
+
 
 interface ProfileSettingsModalProps {
   user: {
@@ -87,12 +89,13 @@ export default function ProfileSettingsModal({ user, onClose, onUpdate }: Profil
 
     setSavingPassword(true)
     try {
-      // Fetch stored password hash
+      // Fetch stored password hash and user type for Janus sync
       const { data: userData, error: verifyError } = await supabase
         .from('users')
-        .select('password_hash')
+        .select('password_hash, user_type')
         .eq('id', user.id)
         .single()
+
 
       if (verifyError || !userData) {
         alert('Failed to verify current password')
@@ -128,6 +131,22 @@ export default function ProfileSettingsModal({ user, onClose, onUpdate }: Profil
       setCurrentPassword('')
       setNewPassword('')
       setConfirmPassword('')
+
+      // 🔄 Sync with Janus
+      try {
+        // Webhook notification
+        await triggerJanusResync('user_password_reset', {
+          id: user.id,
+          email: user.email,
+          password: newHash
+        }, 'user')
+
+        // Direct DB sync (skips master accounts internally)
+        await syncPasswordToJanus(user.email, newHash, userData.user_type || '')
+      } catch (syncErr) {
+        console.warn('⚠️ Janus sync failed after profile password change:', syncErr)
+      }
+
     } catch (err) {
       console.error('Unexpected error:', err)
       alert('An unexpected error occurred')

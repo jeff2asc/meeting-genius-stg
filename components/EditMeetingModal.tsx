@@ -4,7 +4,8 @@ import { useState, useEffect } from "react"
 import { X, Building2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { supabase, getCurrentUser, getVotingParameters } from "@/lib/supabase"
+import { supabase, getCurrentUser } from "@/lib/supabase"
+import { fetchVotingParametersAction } from "@/lib/api-actions"
 import { utcToLocalDateTime, localDateTimeToUtcIso } from "@/lib/timezone"
 
 interface Meeting {
@@ -124,7 +125,7 @@ export default function EditMeetingModal({
         .single()
 
       // 1. Get dynamic parameters from voting_parameters
-      const params = await getVotingParameters(building?.company_id)
+      const params = await fetchVotingParametersAction(building?.company_id)
       const dynamicMeetingTypes = params
         .filter((p: any) => p.parameter_type === "meeting_type")
         .map((p: any) => p.value)
@@ -203,7 +204,7 @@ export default function EditMeetingModal({
       .single()
 
     // 1. Get dynamic parameters from voting_parameters
-    const params = await getVotingParameters(building?.company_id)
+    const params = await fetchVotingParametersAction(building?.company_id)
     const dynamicMeetingTypes = params
       .filter((p: any) => p.parameter_type === "meeting_type")
       .map((p: any) => p.value)

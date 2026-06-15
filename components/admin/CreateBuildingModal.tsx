@@ -4,9 +4,10 @@ import { useState } from "react"
 import { X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { supabase, getVotingParameters } from "@/lib/supabase"
+import { supabase } from "@/lib/supabase"
+import { fetchVotingParametersAction } from "@/lib/api-actions"
 import { isMaster as checkIsMaster, isCorporateAdmin as checkIsCorporateAdmin, isPropertyManager as checkIsPropertyManager } from "@/lib/permissions"
-import { triggerJanusResync } from "@/lib/janus"
+import { triggerJanusResync } from "@/lib/janus-client"
 import { useEffect } from "react"
 
 interface CreateBuildingModalProps {
@@ -23,6 +24,8 @@ interface CreateBuildingModalProps {
   }>
   preselectedManagerId?: number
   preselectedCompanyId?: number
+  existingBuildings?: any[]
+  archivedBuildings?: any[]
 }
 
 
@@ -33,7 +36,9 @@ export default function CreateBuildingModal({
   currentUser,
   availableUsers,
   preselectedManagerId,
-  preselectedCompanyId
+  preselectedCompanyId,
+  existingBuildings = [],
+  archivedBuildings = []
 }: CreateBuildingModalProps) {
   const [buildingFormData, setBuildingFormData] = useState({
     name: "",
@@ -64,8 +69,18 @@ export default function CreateBuildingModal({
       fetchBuildingTypes()
       fetchCompanies()
       setIsFirstRender(true)
+
+      // Sync with preselected props when modal opens
+      if (preselectedCompanyId !== undefined) {
+        setSelectedCompanyId(preselectedCompanyId)
+      }
+      if (preselectedManagerId !== undefined) {
+        setBuildingFormData(prev => ({ ...prev, managerId: preselectedManagerId }))
+      } else if (isPropertyManager && !isCorporateAdmin && !isMaster) {
+        setBuildingFormData(prev => ({ ...prev, managerId: currentUser.id }))
+      }
     }
-  }, [isOpen])
+  }, [isOpen, preselectedCompanyId, preselectedManagerId])
 
   useEffect(() => {
     if (isMaster) {
@@ -86,7 +101,7 @@ export default function CreateBuildingModal({
   }
 
   const fetchBuildingTypes = async () => {
-    const params = await getVotingParameters(currentUser?.company_id)
+    const params = await fetchVotingParametersAction(currentUser?.company_id)
     const types = (params as Array<{ parameter_type: string; value: string }>)
       .filter(p => p.parameter_type === 'building_type')
       .map(p => p.value)
@@ -120,19 +135,29 @@ export default function CreateBuildingModal({
       return
     }
 
+    // Determine companyId early for validation
+    let companyIdToAssign = selectedCompanyId
+    if (isMaster) {
+      // Use selected company ID directly
+    } else if (isCorporateAdmin || isPropertyManager) {
+      companyIdToAssign = currentUser.company_id
+    }
+
+    // Check for duplicate names within the same company
+    const newName = buildingFormData.name.trim().toLowerCase()
+    const isDuplicate = [...existingBuildings, ...archivedBuildings].some(b => 
+      b.name.trim().toLowerCase() === newName && 
+      b.company_id === companyIdToAssign
+    )
+
+    if (isDuplicate) {
+      setError(`A building named "${buildingFormData.name}" already exists for this company. Please choose a different name.`)
+      return
+    }
+
     setSaving(true)
 
     try {
-      // Determine company_id based on user type
-      let companyIdToAssign = selectedCompanyId
-
-      if (isMaster) {
-        // Use selected company ID directly
-      } else if (isCorporateAdmin || isPropertyManager) {
-        // Corporate Admin and Property Manager use their own company_id
-        companyIdToAssign = currentUser.company_id
-      }
-
       console.log('🏢 Creating building with company_id:', companyIdToAssign)
 
       const combinedAddress = [
@@ -158,8 +183,15 @@ export default function CreateBuildingModal({
         .single()
 
       if (buildingError) {
-        console.error('Error creating building:', buildingError)
-        setError('Failed to create building.')
+        console.error('Detailed Error creating building:', buildingError)
+        
+        // Handle 409 Conflict (Duplicate Name or Constraint Violation)
+        if (buildingError.code === '23505') {
+          setError(`Conflict: ${buildingError.details || 'The building name or ID already exists.'} If this is an ID conflict, please reset database sequences.`)
+        } else {
+          setError(`Failed to create building: ${buildingError.message}${buildingError.details ? ` (${buildingError.details})` : ''}`)
+        }
+        
         setSaving(false)
         return
       }
@@ -174,11 +206,16 @@ export default function CreateBuildingModal({
 
       if (pmAssignError) {
         console.error('Error assigning property manager:', pmAssignError)
+        setError(`Building created, but failed to assign property manager: ${pmAssignError.message}`)
+        setSaving(false)
+        return
       }
 
-      // Assign selected users to building
-      if (selectedBuildingUsers.length > 0) {
-        const userAssignments = selectedBuildingUsers.map(userId => ({
+      // Assign selected users to building (excluding the manager who was already added above)
+      const otherUsersToAssign = selectedBuildingUsers.filter(id => id !== buildingFormData.managerId)
+      
+      if (otherUsersToAssign.length > 0) {
+        const userAssignments = otherUsersToAssign.map(userId => ({
           user_id: userId,
           building_id: newBuilding.id
         }))
@@ -189,6 +226,9 @@ export default function CreateBuildingModal({
 
         if (usersError) {
           console.error('Error assigning users:', usersError)
+          setError(`Building created, but failed to assign some users: ${usersError.message}`)
+          setSaving(false)
+          return
         }
       }
 

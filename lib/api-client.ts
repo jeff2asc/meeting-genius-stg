@@ -5,9 +5,19 @@
  * replacing direct Supabase database queries in frontend components.
  */
 
-import { User } from './supabase'
+import { User, supabase } from './supabase'
 
-const BASE_URL = '/api'
+const isServer = typeof window === 'undefined'
+
+function getBaseUrl() {
+  if (!isServer) return '/api'
+  
+  // Use environment variables on the server.
+  // We prefer 127.0.0.1 over localhost for server-side loopback on Windows/Node18+ 
+  // to avoid DNS resolution issues.
+  const envUrl = process.env.INTERNAL_APP_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://[::1]:3000'
+  return `${envUrl.replace(/\/$/, '')}/api`
+}
 
 interface ApiResponse<T> {
   data?: T
@@ -19,16 +29,47 @@ async function fetchApi<T>(
   endpoint: string,
   method: 'GET' | 'POST' | 'PATCH' | 'DELETE' = 'GET',
   body?: any,
-  headers: Record<string, string> = {}
+  headersMap: Record<string, string> = {}
 ): Promise<T> {
-  const response = await fetch(`${BASE_URL}${endpoint}`, {
+  const baseUrl = getBaseUrl()
+
+  // 1. Resolve Authorization (JWT)
+  let authHeader: Record<string, string> = {}
+  try {
+    if (typeof window !== 'undefined') {
+      const { data: { session }, error: sessionErr } = await supabase.auth.getSession()
+      if (session?.access_token) {
+        authHeader['Authorization'] = `Bearer ${session.access_token}`
+      }
+    }
+  } catch (err) {
+    console.warn('[apiClient] Could not get session:', err)
+  }
+
+  // 2. Resolve API Key
+  const apiKey = isServer 
+    ? (process.env.INTERNAL_API_KEY || process.env.NEXT_PUBLIC_API_KEY || '')
+    : (process.env.NEXT_PUBLIC_API_KEY || '')
+  
+  if (apiKey) {
+    authHeader['x-api-key'] = apiKey
+  }
+
+  console.log(`[apiClient] ${method} ${endpoint}`, { 
+    hasAuth: !!authHeader['Authorization'], 
+    hasApiKey: !!authHeader['x-api-key'] 
+  })
+
+  // 3. Perform Request
+  const response = await fetch(`${baseUrl}${endpoint}`, {
     method,
     headers: {
       'Content-Type': 'application/json',
-      'x-api-key': process.env.NEXT_PUBLIC_API_KEY || '',
-      ...headers,
+      ...authHeader,
+      ...headersMap,
     },
     body: body ? JSON.stringify(body) : undefined,
+    cache: 'no-store'
   })
 
   const result = await response.json()
@@ -43,12 +84,13 @@ async function fetchApi<T>(
 export const apiClient = {
   v1: {
     buildings: {
-      list: async (filters?: { company_id?: number; manager_id?: number; building_ids?: number[] }): Promise<any[]> => {
+      list: async (filters?: { company_id?: number; manager_id?: number; building_ids?: number[]; archived?: boolean }): Promise<any[]> => {
         let url = '/v1/buildings'
         const params = new URLSearchParams()
         if (filters?.company_id) params.append('company_id', String(filters.company_id))
         if (filters?.manager_id) params.append('manager_id', String(filters.manager_id))
         if (filters?.building_ids) params.append('building_ids', filters.building_ids.join(','))
+        if (filters?.archived) params.append('archived', 'true')
         
         const queryString = params.toString()
         if (queryString) url += `?${queryString}`
@@ -59,6 +101,21 @@ export const apiClient = {
       get: async (id: number): Promise<any> => {
         const response = await fetchApi<{ data: any }>(`/v1/buildings/${id}`)
         return response.data
+      },
+      update: async (id: number, updates: any): Promise<any> => {
+        const response = await fetchApi<{ data: any }>(`/v1/buildings/${id}`, 'PATCH', updates)
+        return response.data
+      },
+      archive: async (id: number, archived_by?: string, archive_reason?: string): Promise<any> => {
+        const response = await fetchApi<{ data: any }>(`/v1/buildings/${id}/archive`, 'POST', { archived_by, archive_reason })
+        return response.data
+      },
+      unarchive: async (id: number): Promise<any> => {
+        const response = await fetchApi<{ data: any }>(`/v1/buildings/${id}/unarchive`, 'POST')
+        return response.data
+      },
+      delete: async (id: number): Promise<void> => {
+        await fetchApi(`/v1/buildings/${id}`, 'DELETE')
       }
     },
     meetings: {
@@ -143,6 +200,17 @@ export const apiClient = {
       getLogo: async (companyId: number): Promise<string | null> => {
         const response = await fetchApi<{ logo_url: string | null }>(`/v1/companies/${companyId}/logo`)
         return response.logo_url
+      },
+      update: async (id: number, updates: any): Promise<any> => {
+        const response = await fetchApi<{ data: any }>(`/v1/companies/${id}`, 'PATCH', updates)
+        return response.data
+      },
+      createWithUsers: async (companyName: string, users: any[]): Promise<any> => {
+        const response = await fetchApi<{ company: any; users: any[] }>(`/v1/companies/create-with-users`, 'POST', {
+          companyName,
+          users
+        })
+        return response
       }
     },
     votingParameters: {
@@ -204,6 +272,17 @@ export const apiClient = {
       },
       delete: async (id: number): Promise<void> => {
         await fetchApi(`/v1/jurisdiction-rules?id=${id}`, 'DELETE')
+      }
+    },
+    users: {
+      bulkImport: async (data: {
+        users: any[]
+        buildingId: number
+        buildingType: string
+        companyId: number | null
+        managerId: number
+      }): Promise<any> => {
+        return await fetchApi(`/users/bulk-import`, 'POST', data)
       }
     }
   }

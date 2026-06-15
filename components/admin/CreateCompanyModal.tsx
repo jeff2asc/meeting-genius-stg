@@ -4,7 +4,8 @@ import { useState } from "react"
 import { X, Plus, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { triggerJanusResync } from "@/lib/janus"
+import { triggerJanusResync } from "@/lib/janus-client"
+import { apiClient } from "@/lib/api-client"
 
 interface CreateCompanyModalProps {
   isOpen: boolean
@@ -107,28 +108,8 @@ export default function CreateCompanyModal({
         }
       })
 
-      // Call server-side API route to handle hashing + DB writes
-      const apiKey = process.env.NEXT_PUBLIC_API_KEY || ''
-      const response = await fetch('/api/v1/companies/create-with-users', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-        },
-        body: JSON.stringify({
-          companyName: companyName.trim(),
-          users: usersPayload,
-        }),
-      })
-
-      const result = await response.json()
-
-      if (!response.ok) {
-        console.error('Error creating company/users:', result)
-        setError(result.error || 'Failed to create company.')
-        setSaving(false)
-        return
-      }
+      // Call structured API client which handles hashing (on server) + auth headers
+      const result = await apiClient.v1.companies.createWithUsers(companyName.trim(), usersPayload)
 
       const newCompany = result.company
       console.log('✅ Company created:', newCompany.id)

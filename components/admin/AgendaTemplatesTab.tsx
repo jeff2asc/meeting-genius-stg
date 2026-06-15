@@ -21,7 +21,7 @@ interface RichTextBlock {
   meetingTypeFilter: string[]  // empty = all meeting types
 }
 
-const MEETING_TYPE_OPTIONS = ['Council Meeting', 'AGM', 'SGM', 'Special Meeting', 'Emergency Meeting']
+// Dynamic Meeting Types will be fetched from voting_parameters
 
 function generateBlockId(): string {
   return `block-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`
@@ -63,7 +63,6 @@ interface TemplateField {
   order: number
   enabled: boolean
 }
-
 interface TemplateState {
   coverPageElements: CoverPageElement[]
   infoCardFields: TemplateField[]
@@ -71,6 +70,9 @@ interface TemplateState {
   infoCardAccentColor: string
   agendaItemsColor: string
   sectionHeaderTextColor: 'black' | 'white'
+  agendaHeaderTextColor: 'black' | 'white'
+  coverPageTextColor: 'black' | 'white'
+  infoCardHeaderTextColor: 'black' | 'white'
   richTextBlocks: RichTextBlock[]
 }
 
@@ -83,6 +85,9 @@ interface Template {
   infocard_accent_color: string
   agenda_items_color: string
   section_header_text_color: string
+  agenda_header_text_color: string
+  coverpage_text_color: string
+  infocard_header_text_color: string
   rich_text_blocks: RichTextBlock[]
 }
 
@@ -175,12 +180,16 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
   const [agendaItemsColor, setAgendaItemsColor] = useState("#2563eb")
   // Feature 2 — section header text color
   const [sectionHeaderTextColor, setSectionHeaderTextColor] = useState<'black' | 'white'>('white')
+  const [agendaHeaderTextColor, setAgendaHeaderTextColor] = useState<'black' | 'white'>('white')
+  const [coverPageTextColor, setCoverPageTextColor] = useState<'black' | 'white'>('white')
+  const [infoCardHeaderTextColor, setInfoCardHeaderTextColor] = useState<'black' | 'white'>('white')
   // Feature 1 — rich text blocks
   const [richTextBlocks, setRichTextBlocks] = useState<RichTextBlock[]>([])
   const [saving, setSaving] = useState(false)
   const [hasChanges, setHasChanges] = useState(false)
   const [loadingTemplate, setLoadingTemplate] = useState(false)
   const [templateId, setTemplateId] = useState<number | null>(null)
+  const [availableMeetingTypes, setAvailableMeetingTypes] = useState<string[]>([])
 
   // Undo history
   const [history, setHistory] = useState<TemplateState[]>([])
@@ -211,6 +220,9 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
       infoCardAccentColor,
       agendaItemsColor,
       sectionHeaderTextColor,
+      agendaHeaderTextColor,
+      coverPageTextColor,
+      infoCardHeaderTextColor,
       richTextBlocks: [...richTextBlocks],
     }
 
@@ -232,6 +244,9 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
       setInfoCardAccentColor(prevState.infoCardAccentColor)
       setAgendaItemsColor(prevState.agendaItemsColor)
       setSectionHeaderTextColor(prevState.sectionHeaderTextColor || 'white')
+      setAgendaHeaderTextColor(prevState.agendaHeaderTextColor || 'white')
+      setCoverPageTextColor(prevState.coverPageTextColor || 'white')
+      setInfoCardHeaderTextColor(prevState.infoCardHeaderTextColor || 'white')
       setRichTextBlocks(prevState.richTextBlocks || [])
       setHistoryIndex(prev => prev - 1)
       setHasChanges(true)
@@ -261,8 +276,38 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
     if (selectedBuildingId) {
       loadTemplate()
       loadMostRecentMeeting()
+      fetchMeetingTypes()
     }
   }, [selectedBuildingId])
+
+  const fetchMeetingTypes = async () => {
+    if (!selectedBuildingId) return
+    const building = buildings.find(b => b.id === selectedBuildingId)
+    const companyId = building?.company_id
+    
+    try {
+      const { data, error } = await supabase
+        .from('voting_parameters')
+        .select('value, parameter_type, company_id')
+        .eq('parameter_type', 'meeting_type')
+        .or(`company_id.eq.${companyId || -1},company_id.is.null`)
+      
+      if (error) throw error
+      
+      // Deduplicate by value (company override wins)
+      const seen = new Map<string, string>()
+      // Global first
+      data.filter(p => !p.company_id).forEach(p => seen.set(p.value.trim().toLowerCase(), p.value))
+      // Company specific wins
+      data.filter(p => p.company_id).forEach(p => seen.set(p.value.trim().toLowerCase(), p.value))
+      
+      setAvailableMeetingTypes(Array.from(seen.values()))
+    } catch (err) {
+      console.error("Error fetching meeting types for agenda:", err)
+      // Fallback
+      setAvailableMeetingTypes(['Council Meeting', 'AGM', 'SGM', 'Special Meeting', 'Emergency Meeting'])
+    }
+  }
 
   const loadMostRecentMeeting = async () => {
     if (!selectedBuildingId) return
@@ -401,6 +446,9 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
         setInfoCardAccentColor(row.infocard_accent_color || "#2563eb")
         setAgendaItemsColor(row.agenda_items_color || "#2563eb")
         setSectionHeaderTextColor((row.section_header_text_color as 'black' | 'white') || 'white')
+        setAgendaHeaderTextColor((row.agenda_header_text_color as 'black' | 'white') || 'white')
+        setCoverPageTextColor((row.coverpage_text_color as 'black' | 'white') || 'white')
+        setInfoCardHeaderTextColor((row.infocard_header_text_color as 'black' | 'white') || 'white')
         setRichTextBlocks((row.rich_text_blocks as unknown as RichTextBlock[]) || [])
         setCoverPageElements((row.coverpage_elements as unknown as CoverPageElement[]) || DEFAULT_COVERPAGE_ELEMENTS)
         setInfoCardFields((row.infocard_fields as unknown as TemplateField[]) || DEFAULT_INFOCARD_FIELDS)
@@ -498,6 +546,9 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
         agenda_items_color: agendaItemsColor,
         coverpage_height: COVER_PAGE_HEIGHT,
         section_header_text_color: sectionHeaderTextColor,
+        agenda_header_text_color: agendaHeaderTextColor,
+        coverpage_text_color: coverPageTextColor,
+        infocard_header_text_color: infoCardHeaderTextColor,
         rich_text_blocks: richTextBlocks as any,
       }
 
@@ -652,6 +703,31 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
                       }}
                       className="w-full px-2 py-1 border rounded text-sm"
                     />
+                    <div className="mt-3">
+                      <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2">Header Text Color</p>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => { saveToHistory(); setCoverPageTextColor('white'); setHasChanges(true) }}
+                          className={`flex-1 py-1.5 text-xs font-semibold rounded border transition-all ${
+                            coverPageTextColor === 'white'
+                              ? 'bg-gray-800 text-white border-gray-800'
+                              : 'bg-white text-gray-700 border-gray-300 hover:border-gray-500'
+                          }`}
+                        >
+                          ◉ White
+                        </button>
+                        <button
+                          onClick={() => { saveToHistory(); setCoverPageTextColor('black'); setHasChanges(true) }}
+                          className={`flex-1 py-1.5 text-xs font-semibold rounded border transition-all ${
+                            coverPageTextColor === 'black'
+                              ? 'bg-white text-black border-black ring-2 ring-black'
+                              : 'bg-white text-gray-700 border-gray-300 hover:border-gray-500'
+                          }`}
+                        >
+                          ○ Black
+                        </button>
+                      </div>
+                    </div>
                   </Card>
 
                   <Card className="p-4">
@@ -675,6 +751,31 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
                       }}
                       className="w-full px-2 py-1 border rounded text-sm"
                     />
+                    <div className="mt-3">
+                      <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2">Info Header Text</p>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => { saveToHistory(); setInfoCardHeaderTextColor('white'); setHasChanges(true) }}
+                          className={`flex-1 py-1.5 text-xs font-semibold rounded border transition-all ${
+                            infoCardHeaderTextColor === 'white'
+                              ? 'bg-gray-800 text-white border-gray-800'
+                              : 'bg-white text-gray-700 border-gray-300 hover:border-gray-500'
+                          }`}
+                        >
+                          ◉ White
+                        </button>
+                        <button
+                          onClick={() => { saveToHistory(); setInfoCardHeaderTextColor('black'); setHasChanges(true) }}
+                          className={`flex-1 py-1.5 text-xs font-semibold rounded border transition-all ${
+                            infoCardHeaderTextColor === 'black'
+                              ? 'bg-white text-black border-black ring-2 ring-black'
+                              : 'bg-white text-gray-700 border-gray-300 hover:border-gray-500'
+                          }`}
+                        >
+                          ○ Black
+                        </button>
+                      </div>
+                    </div>
                   </Card>
 
                   <Card className="p-4">
@@ -699,7 +800,7 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
                       className="w-full px-2 py-1 border rounded text-sm mb-3"
                     />
                     {/* Feature 2 — Section header text color toggle */}
-                    <div>
+                    <div className="border-t pt-4">
                       <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Section Header Text</p>
                       <div className="flex gap-2">
                         <button
@@ -716,6 +817,32 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
                           onClick={() => { saveToHistory(); setSectionHeaderTextColor('black'); setHasChanges(true) }}
                           className={`flex-1 py-1.5 text-xs font-semibold rounded border transition-all ${
                             sectionHeaderTextColor === 'black'
+                              ? 'bg-white text-black border-black ring-2 ring-black'
+                              : 'bg-white text-gray-700 border-gray-300 hover:border-gray-500'
+                          }`}
+                        >
+                          ○ Black
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 border-t pt-4">
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Agenda Header Text</p>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => { saveToHistory(); setAgendaHeaderTextColor('white'); setHasChanges(true) }}
+                          className={`flex-1 py-1.5 text-xs font-semibold rounded border transition-all ${
+                            agendaHeaderTextColor === 'white'
+                              ? 'bg-gray-800 text-white border-gray-800'
+                              : 'bg-white text-gray-700 border-gray-300 hover:border-gray-500'
+                          }`}
+                        >
+                          ◉ White
+                        </button>
+                        <button
+                          onClick={() => { saveToHistory(); setAgendaHeaderTextColor('black'); setHasChanges(true) }}
+                          className={`flex-1 py-1.5 text-xs font-semibold rounded border transition-all ${
+                            agendaHeaderTextColor === 'black'
                               ? 'bg-white text-black border-black ring-2 ring-black'
                               : 'bg-white text-gray-700 border-gray-300 hover:border-gray-500'
                           }`}
@@ -878,7 +1005,7 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
                         <RichTextBlockEditor
                           key={block.id}
                           block={block}
-                          allBlocks={richTextBlocks}
+                          availableMeetingTypes={availableMeetingTypes}
                           onUpdate={(updated) => {
                             setRichTextBlocks(prev => prev.map(b => b.id === updated.id ? updated : b))
                             setHasChanges(true)
@@ -943,7 +1070,7 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
                         <RichTextBlockEditor
                           key={block.id}
                           block={block}
-                          allBlocks={richTextBlocks}
+                          availableMeetingTypes={availableMeetingTypes}
                           onUpdate={(updated) => {
                             setRichTextBlocks(prev => prev.map(b => b.id === updated.id ? updated : b))
                             setHasChanges(true)
@@ -998,13 +1125,13 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
                       <div className="bg-white px-6 py-2 space-y-2">
                         {richTextBlocks
                           .filter(b => b.slot === 'header')
-                          .filter(b => !meeting || b.meetingTypeFilter.length === 0 || b.meetingTypeFilter.some(mt => meeting.meeting_type?.includes(mt)))
+                          .filter(b => !meeting || b.meetingTypeFilter.length === 0 || (meeting.meeting_type && b.meetingTypeFilter.some(mt => meeting.meeting_type?.toLowerCase().includes(mt.toLowerCase()) || mt.toLowerCase().includes(meeting.meeting_type?.toLowerCase() || ""))))
                           .sort((a,b) => a.order - b.order)
                           .map(block => (
                             <div 
                               key={block.id}
                               style={{
-                                fontSize: `${block.fontSize}px`,
+                                fontSize: `${block.fontSize}pt`,
                                 textAlign: block.textAlign as any,
                                 fontWeight: block.bold ? 'bold' : 'normal',
                                 fontStyle: block.italic ? 'italic' : 'normal',
@@ -1077,7 +1204,13 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
                               )}
 
                               {element.id === 'title' && (
-                                <div className="text-center" style={{ width: '600px' }}>
+                                <div 
+                                  className="text-center" 
+                                  style={{ 
+                                    width: '600px',
+                                    color: coverPageTextColor === 'black' ? '#000000' : '#ffffff'
+                                  }}
+                                >
                                   <div style={{
                                     fontWeight: element.bold ? 800 : 400,
                                     fontStyle: element.italic ? 'italic' : 'normal',
@@ -1085,7 +1218,7 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
                                     fontSize: `${element.fontSize || 48}px`,
                                     lineHeight: '1.1',
                                     textTransform: element.uppercase !== false ? 'uppercase' : 'none',
-                                    textShadow: '0 2px 4px rgba(0,0,0,0.3)'
+                                    textShadow: coverPageTextColor === 'white' ? '0 2px 4px rgba(0,0,0,0.3)' : 'none'
                                   }}>MEETING</div>
                                   <div style={{
                                     fontWeight: element.bold ? 800 : 400,
@@ -1094,7 +1227,7 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
                                     fontSize: `${element.fontSize || 48}px`,
                                     lineHeight: '1.1',
                                     textTransform: element.uppercase !== false ? 'uppercase' : 'none',
-                                    textShadow: '0 2px 4px rgba(0,0,0,0.3)'
+                                    textShadow: coverPageTextColor === 'white' ? '0 2px 4px rgba(0,0,0,0.3)' : 'none'
                                   }}>AGENDA</div>
                                 </div>
                               )}
@@ -1103,7 +1236,7 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
                                 <div 
                                   className="text-center max-w-[80%]" 
                                   style={{ 
-                                    color: 'rgba(200, 220, 255, 0.95)',
+                                    color: coverPageTextColor === 'black' ? 'rgba(0, 0, 0, 0.85)' : 'rgba(255, 255, 255, 0.95)',
                                     fontSize: `${element.fontSize || 24}px`,
                                     fontWeight: element.bold ? 'bold' : 'normal',
                                     fontStyle: element.italic ? 'italic' : 'normal',
@@ -1119,7 +1252,7 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
                                 <div 
                                   className="text-center max-w-[80%]" 
                                   style={{ 
-                                    color: 'rgba(200, 220, 255, 0.9)',
+                                    color: coverPageTextColor === 'black' ? 'rgba(0, 0, 0, 0.75)' : 'rgba(255, 255, 255, 0.85)',
                                     fontSize: `${element.fontSize || 18}px`,
                                     fontWeight: element.bold ? 'bold' : 'normal',
                                     fontStyle: element.italic ? 'italic' : 'normal',
@@ -1139,8 +1272,11 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
                       <div className="p-6 bg-gray-50">
                         <div className="bg-white rounded-lg shadow-xl overflow-hidden border">
                           <div
-                            className="px-4 py-3 text-white font-bold text-sm"
-                            style={{ backgroundColor: infoCardAccentColor }}
+                            className="px-4 py-3 font-bold text-sm"
+                            style={{ 
+                              backgroundColor: infoCardAccentColor,
+                              color: infoCardHeaderTextColor === 'black' ? '#000000' : '#ffffff'
+                            }}
                           >
                             MEETING INFORMATION
                           </div>
@@ -1183,8 +1319,11 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
                       {/* AGENDA ITEMS */}
                       <div className="p-6 bg-white">
                         <div
-                          className="px-4 py-3 text-white font-bold text-xl mb-6 rounded"
-                          style={{ backgroundColor: agendaItemsColor }}
+                          className="px-4 py-3 font-bold text-xl mb-6 rounded"
+                          style={{ 
+                            backgroundColor: agendaItemsColor,
+                            color: agendaHeaderTextColor === 'black' ? '#000000' : '#ffffff'
+                          }}
                         >
                           AGENDA ITEMS
                         </div>
@@ -1249,13 +1388,13 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
                       <div className="bg-white px-6 py-4 border-t space-y-2 mt-auto">
                         {richTextBlocks
                           .filter(b => b.slot === 'footer')
-                          .filter(b => !meeting || b.meetingTypeFilter.length === 0 || b.meetingTypeFilter.some(mt => meeting.meeting_type?.includes(mt)))
+                          .filter(b => !meeting || b.meetingTypeFilter.length === 0 || (meeting.meeting_type && b.meetingTypeFilter.some(mt => meeting.meeting_type?.toLowerCase().includes(mt.toLowerCase()) || mt.toLowerCase().includes(meeting.meeting_type?.toLowerCase() || ""))))
                           .sort((a,b) => a.order - b.order)
                           .map(block => (
                             <div 
                               key={block.id}
                               style={{
-                                fontSize: `${block.fontSize}px`,
+                                fontSize: `${block.fontSize}pt`,
                                 textAlign: block.textAlign as any,
                                 fontWeight: block.bold ? 'bold' : 'normal',
                                 fontStyle: block.italic ? 'italic' : 'normal',
@@ -1300,13 +1439,13 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
 // ─── Sub-component: Rich Text Block Editor ─────────────────────────────────
 function RichTextBlockEditor({
   block,
-  allBlocks,
+  availableMeetingTypes,
   onUpdate,
   onDelete,
   onMove,
 }: {
   block: RichTextBlock
-  allBlocks: RichTextBlock[]
+  availableMeetingTypes: string[]
   onUpdate: (updated: RichTextBlock) => void
   onDelete: () => void
   onMove: (dir: 'up' | 'down') => void
@@ -1410,7 +1549,7 @@ function RichTextBlockEditor({
           <div>
             <label className="text-[10px] font-bold uppercase text-muted-foreground">Show only for (leave empty = all)</label>
             <div className="flex flex-wrap gap-1 mt-1">
-              {MEETING_TYPE_OPTIONS.map(mt => {
+              {availableMeetingTypes.map((mt: string) => {
                 const active = block.meetingTypeFilter.includes(mt)
                 return (
                   <button

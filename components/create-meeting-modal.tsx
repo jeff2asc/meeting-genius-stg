@@ -27,9 +27,9 @@ import { Card } from "@/components/ui/card"
 import { 
   supabase, 
   getPreviousMeetingOfSameType,
-  getTopicsFromMeeting,
-  getVotingParameters
+  getTopicsFromMeeting
 } from "@/lib/supabase"
+import { fetchVotingParametersAction } from "@/lib/api-actions"
 import { apiClient } from "@/lib/api-client"
 import { getCurrentLocalDate, getCurrentLocalTime } from "@/lib/timezone"
 
@@ -86,7 +86,7 @@ export default function CreateMeetingModal({ onClose, onSuccess, buildings }: Cr
       const selectedBuilding = buildings.find(b => b.id === formData.buildingId)
 
       // Single source of truth: voting_parameters for meeting types
-      const votingParams = await getVotingParameters(selectedBuilding?.company_id)
+      const votingParams = await fetchVotingParametersAction(selectedBuilding?.company_id)
       const meetingTypesFromVoting = votingParams
         .filter((p: any) => p.parameter_type === 'meeting_type')
         .map((p: any) => p.value)

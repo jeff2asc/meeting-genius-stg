@@ -77,7 +77,7 @@ export function middleware(req: NextRequest) {
         }
 
         const janusBase = (process.env.NEXT_PUBLIC_JANUS_URL || "https://janusapp.meetinggenius.ca").replace(/\/$/, "");
-        const apiKey = process.env.NEXT_PUBLIC_API_KEY || "meeting-genius-secret-key-2026";
+        const apiKey = process.env.INTERNAL_API_KEY || "meeting-genius-secret-key-2026";
 
         const ssoRes = await fetch(`${janusBase}/api/auth/sso`, {
           method: "POST",

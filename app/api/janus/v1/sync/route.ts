@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { janusClient } from "@/lib/janus-client";
+import { getJanusClient } from "@/lib/janus-client";
 import { createAdminClient } from "@/lib/supabase";
 import { isMaster } from "@/lib/permissions";
+import { validateRequest } from "@/lib/auth-server";
 
 export async function GET(req: NextRequest) {
-  const apiKey = req.headers.get("x-api-key");
-  const documentedSecret = process.env.NEXT_PUBLIC_API_KEY || ""
+  const { authorized, user: authUser } = await validateRequest(req);
 
-  if (apiKey !== documentedSecret) {
+  if (!authorized) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -72,7 +72,8 @@ export async function GET(req: NextRequest) {
     const { data: user_buildings } = await ubQuery;
 
     // 3. Fetch Janus Tickets (Janus -> Meeting Genius) - Direct Fetch from Janus DB
-    let ticketsQuery = janusClient.from('tickets').select('*');
+    const janus = await getJanusClient();
+    let ticketsQuery = janus.from('tickets').select('*');
     if (!isMasterUser && effectiveCompanyId && effectiveCompanyId !== "undefined" && effectiveCompanyId !== "null") {
       const cid = parseInt(effectiveCompanyId);
       if (!isNaN(cid)) {

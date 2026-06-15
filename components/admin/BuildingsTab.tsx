@@ -9,7 +9,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { supabase, getVotingParameters } from "@/lib/supabase"
+import { supabase } from "@/lib/supabase"
+import { fetchVotingParametersAction } from "@/lib/api-actions"
 import { isMaster as checkIsMaster } from "@/lib/permissions"
 
 interface Building {
@@ -66,7 +67,7 @@ export default function BuildingsTab({
 
   useEffect(() => {
     const fetchBuildingTypes = async () => {
-      const params = await getVotingParameters(currentUser?.company_id)
+      const params = await fetchVotingParametersAction(currentUser?.company_id)
       if (Array.isArray(params)) {
         const types = params
           .filter(p => p.parameter_type === 'building_type')

@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
-import { supabase, getCurrentUser, getVotingParameters } from "@/lib/supabase"
+import { supabase, getCurrentUser } from "@/lib/supabase"
+import { fetchVotingParametersAction } from "@/lib/api-actions"
 import { toast } from "sonner"
 import { AlertCircle, CheckSquare, FileText, Plus, Edit3 } from "lucide-react"
 import type { JurisdictionRule } from "@/lib/voting-engine"
@@ -129,7 +130,7 @@ export default function DecisionForm({ topicId, meetingId, onSave }: DecisionFor
           const rules = await apiClient.v1.jurisdictionRules.list({ building_type: bCtx.building_type || undefined, province_code: provinceCode })
           setJurisdictionRules((rules || []) as JurisdictionRule[])
         } catch { setJurisdictionRules([]) }
-        const params = await getVotingParameters(buildingData?.company_id)
+        const params = await fetchVotingParametersAction(buildingData?.company_id)
         const votingParams = params.filter((p: any) => p.parameter_type === "voting_type")
         setVotingParametersData(votingParams as VotingParameterRow[])
         const vTypes = votingParams.map((p: any) => p.value)
@@ -166,7 +167,7 @@ export default function DecisionForm({ topicId, meetingId, onSave }: DecisionFor
       if (meetingError || !meetingData) { setDecisionResults(["M/S/C", "Defeated", "Deferred"]); return; }
       const { data: buildingData, error: buildingError } = await supabase.from("buildings").select("company_id").eq("id", meetingData.building_id).single()
       if (buildingError || !buildingData || !buildingData.company_id) { setDecisionResults(["M/S/C", "Defeated", "Deferred"]); return; }
-      const params = await getVotingParameters(buildingData.company_id)
+      const params = await fetchVotingParametersAction(buildingData.company_id)
       const dynamicResults = params.filter((p: any) => p.parameter_type === 'decision_result').map((p: any) => p.value)
       const { data: companyData } = await supabase.from("companies").select("default_decision_results").eq("id", buildingData.company_id).single()
       const merged = [...new Set(["M/S/C", "Defeated", "Deferred", ...dynamicResults, ...(companyData?.default_decision_results || [])])]

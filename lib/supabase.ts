@@ -378,6 +378,11 @@ export interface Database {
           coverpage_color: string | null
           infocard_accent_color: string | null
           agenda_items_color: string | null
+          section_header_text_color: string | null
+          agenda_header_text_color: string | null
+          coverpage_text_color: string | null
+          infocard_header_text_color: string | null
+          rich_text_blocks: Json | null
           createdat: string
           updatedat: string
         }
@@ -389,6 +394,11 @@ export interface Database {
           coverpage_color?: string | null
           infocard_accent_color?: string | null
           agenda_items_color?: string | null
+          section_header_text_color?: string | null
+          agenda_header_text_color?: string | null
+          coverpage_text_color?: string | null
+          infocard_header_text_color?: string | null
+          rich_text_blocks?: Json | null
           createdat?: string
           updatedat?: string
         }
@@ -400,6 +410,11 @@ export interface Database {
           coverpage_color?: string | null
           infocard_accent_color?: string | null
           agenda_items_color?: string | null
+          section_header_text_color?: string | null
+          agenda_header_text_color?: string | null
+          coverpage_text_color?: string | null
+          infocard_header_text_color?: string | null
+          rich_text_blocks?: Json | null
           createdat?: string
           updatedat?: string
         }
@@ -423,6 +438,13 @@ export interface Database {
           action_items_color: string | null
           vote_results_color: string | null
           coverpage_height: number | null
+          section_header_text_color: string | null
+          coverpage_text_color: string | null
+          infocard_header_text_color: string | null
+          motion_box_header_text_color: string | null
+          action_item_header_text_color: string | null
+          vote_result_header_text_color: string | null
+          rich_text_blocks: Json | null
           created_at: string
           updated_at: string
         }
@@ -443,6 +465,13 @@ export interface Database {
           action_items_color?: string | null
           vote_results_color?: string | null
           coverpage_height?: number | null
+          section_header_text_color?: string | null
+          coverpage_text_color?: string | null
+          infocard_header_text_color?: string | null
+          motion_box_header_text_color?: string | null
+          action_item_header_text_color?: string | null
+          vote_result_header_text_color?: string | null
+          rich_text_blocks?: Json | null
           created_at?: string
           updated_at?: string
         }
@@ -463,6 +492,13 @@ export interface Database {
           action_items_color?: string | null
           vote_results_color?: string | null
           coverpage_height?: number | null
+          section_header_text_color?: string | null
+          coverpage_text_color?: string | null
+          infocard_header_text_color?: string | null
+          motion_box_header_text_color?: string | null
+          action_item_header_text_color?: string | null
+          vote_result_header_text_color?: string | null
+          rich_text_blocks?: Json | null
           created_at?: string
           updated_at?: string
         }
@@ -1453,41 +1489,7 @@ export interface JanusComplaint {
 // CLIENT INITIALIZATION (SINGLETON)
 // ============================================
 
-// Determine the right Supabase URL at runtime:
-// - Server-side (SSR/API routes): use configured URL directly — HTTP→HTTP is fine, no browser restrictions
-// - Browser over HTTPS with HTTP Supabase URL: auto-route through /api/supabase-proxy to avoid mixed content block
-// - Browser over HTTP (localhost): use configured URL directly
-// This means the .env.local never needs to change — it always keeps the raw Supabase IP.
-function getRuntimeSupabaseUrl(): string {
-  const configuredUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-  if (typeof window === 'undefined') {
-    // Server-side: no mixed content restrictions, use directly
-    return configuredUrl
-  }
-  // Browser: if page is HTTPS but Supabase URL is HTTP, proxy through our own HTTPS app
-  if (window.location.protocol === 'https:' && configuredUrl.startsWith('http:')) {
-    return `${window.location.origin}/api/supabase-proxy`
-  }
-  return configuredUrl
-}
-
-// Custom fetch helper to resolve conflicts between browser Basic Auth (on the site) and Supabase Bearer Auth
-const customBrowserFetch = (url: URL | RequestInfo, options?: RequestInit) => {
-  if (typeof window !== 'undefined' && options && options.headers) {
-    const headers = new Headers(options.headers)
-    const authHeader = headers.get('authorization')
-    
-    // If there's a Bearer token, we map it to 'x-supabase-auth' to avoid overriding/colliding with Basic Auth in the browser
-    if (authHeader && authHeader.toLowerCase().startsWith('bearer ')) {
-      headers.set('x-supabase-auth', authHeader)
-      headers.delete('authorization')
-      options.headers = headers
-    }
-  }
-  return fetch(url, options)
-}
-
-const supabaseUrl = getRuntimeSupabaseUrl()
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
 // Fix: Use globalThis for better compatibility and ensure client is stored
@@ -1498,8 +1500,7 @@ const globalForSupabase = globalThis as unknown as {
 
 export const supabase = globalForSupabase.supabase ?? createSupabaseClient<Database>(supabaseUrl, supabaseAnonKey, {
   global: {
-    headers: { 'x-application-name': 'meeting-genius' },
-    fetch: customBrowserFetch
+    headers: { 'x-application-name': 'meeting-genius' }
   },
   auth: {
     persistSession: true,
@@ -1522,8 +1523,6 @@ export function createAdminClient() {
   }
 
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY!
-  // createAdminClient is server-only (service role key has no NEXT_PUBLIC_ prefix)
-  // supabaseUrl on server always resolves to the direct configured URL
   const client = createSupabaseClient<Database>(supabaseUrl, key, {
     auth: { 
       persistSession: false, 
@@ -1712,14 +1711,14 @@ export async function getVotingParameters(companyId?: number | null) {
         // 1. Load global defaults first
         const globalParams = allParams.filter(p => p.company_id === null)
         for (const param of globalParams) {
-          const key = `${param.parameter_type}:${param.value.toLowerCase()}`
+          const key = `${param.parameter_type}:${param.value.trim().toLowerCase()}`
           mergedMap.set(key, param)
         }
 
         // 2. Overwrite/add company-specific parameters
         const companyParams = allParams.filter(p => p.company_id === companyId)
         for (const param of companyParams) {
-          const key = `${param.parameter_type}:${param.value.toLowerCase()}`
+          const key = `${param.parameter_type}:${param.value.trim().toLowerCase()}`
           mergedMap.set(key, param)
         }
 
@@ -1739,26 +1738,49 @@ export async function getVotingParameters(companyId?: number | null) {
         return data || []
       }
     }
-
-    // On client side, fetch via the API route to bypass RLS and avoid 401
+    // Use absolute URL on server, relative on client
+    const isServer = typeof window === 'undefined'
+    const envUrl = process.env.INTERNAL_APP_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+    const baseUrl = isServer ? `${envUrl.replace(/\/$/, '')}/api` : '/api'
+    
     const url = companyId 
-      ? `/api/v1/voting-parameters?company_id=${companyId}`
-      : `/api/v1/voting-parameters`
+      ? `${baseUrl}/v1/voting-parameters?company_id=${companyId}`
+      : `${baseUrl}/v1/voting-parameters`
 
-    const response = await fetch(url, {
-      headers: {
-        'x-api-key': process.env.NEXT_PUBLIC_API_KEY || '',
+    // Get session for auth
+    let authHeader: Record<string, string> = {}
+    
+    if (isServer) {
+      authHeader['x-api-key'] = process.env.INTERNAL_API_KEY || ''
+    } else {
+      // Only send Authorization header on client to hit the session validation path
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session?.access_token) {
+        authHeader['Authorization'] = `Bearer ${session.access_token}`
       }
-    })
-
-    if (!response.ok) {
-      throw new Error(`API Request failed with status ${response.status}`)
+      // We can also send the public API key as a secondary if needed, 
+      // but session is preferred for frontend calls.
     }
 
-    const result = await response.json()
-    return result.data || []
-  } catch (err) {
-    console.error("Error fetching voting parameters:", err)
-    return []
-  }
+    try {
+      const response = await fetch(url, {
+        headers: authHeader,
+        cache: 'no-store'
+      })
+
+      if (!response.ok) {
+        console.error(`API Request failed with status ${response.status} for ${url}`)
+        return []
+      }
+
+      const result = await response.json()
+      return result.data || []
+    } catch (err) {
+      console.error("Error fetching voting parameters:", err)
+      return []
+    }
+    } catch (err) {
+      console.error("Top-level error in getVotingParameters:", err)
+      return []
+    }
 }

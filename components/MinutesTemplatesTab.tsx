@@ -21,7 +21,7 @@ interface RichTextBlock {
   meetingTypeFilter: string[]
 }
 
-const MEETING_TYPE_OPTIONS = ['Council Meeting', 'AGM', 'SGM', 'Special Meeting', 'Emergency Meeting']
+// Dynamic meeting types will be fetched from voting_parameters
 
 function generateBlockId(): string {
   return `block-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`
@@ -77,6 +77,11 @@ interface TemplateState {
   voteResultsColor: string
   coverPageHeight: number
   sectionHeaderTextColor: 'black' | 'white'
+  coverPageTextColor: 'black' | 'white'
+  infoCardHeaderTextColor: 'black' | 'white'
+  motionBoxHeaderTextColor: 'black' | 'white'
+  actionItemHeaderTextColor: 'black' | 'white'
+  voteResultHeaderTextColor: 'black' | 'white'
   richTextBlocks: RichTextBlock[]
 }
 
@@ -93,6 +98,11 @@ interface Template {
   vote_results_color: string
   coverpage_height: number
   section_header_text_color: string
+  coverpage_text_color: string
+  infocard_header_text_color: string
+  motion_box_header_text_color: string
+  action_item_header_text_color: string
+  vote_result_header_text_color: string
   rich_text_blocks: RichTextBlock[]
 }
 
@@ -218,8 +228,12 @@ export default function MinutesTemplatesTab({
   const [actionItemsColor, setActionItemsColor] = useState("#f59e0b")
   const [voteResultsColor, setVoteResultsColor] = useState("#8b5cf6")
   const [coverPageHeight, setCoverPageHeight] = useState(175)
-  // Feature 2 — section header text color
   const [sectionHeaderTextColor, setSectionHeaderTextColor] = useState<'black' | 'white'>('white')
+  const [coverPageTextColor, setCoverPageTextColor] = useState<'black' | 'white'>('white')
+  const [infoCardHeaderTextColor, setInfoCardHeaderTextColor] = useState<'black' | 'white'>('white')
+  const [motionBoxHeaderTextColor, setMotionBoxHeaderTextColor] = useState<'black' | 'white'>('white')
+  const [actionItemHeaderTextColor, setActionItemHeaderTextColor] = useState<'black' | 'white'>('white')
+  const [voteResultHeaderTextColor, setVoteResultHeaderTextColor] = useState<'black' | 'white'>('white')
   // Feature 1 — rich text blocks
   const [richTextBlocks, setRichTextBlocks] = useState<RichTextBlock[]>([])
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null)
@@ -228,6 +242,7 @@ export default function MinutesTemplatesTab({
   const [hasChanges, setHasChanges] = useState(false)
   const [loadingTemplate, setLoadingTemplate] = useState(false)
   const [templateId, setTemplateId] = useState<number | null>(null)
+  const [availableMeetingTypes, setAvailableMeetingTypes] = useState<string[]>([])
 
   const [history, setHistory] = useState<TemplateState[]>([])
   const [historyIndex, setHistoryIndex] = useState(-1)
@@ -269,6 +284,11 @@ export default function MinutesTemplatesTab({
       voteResultsColor,
       coverPageHeight,
       sectionHeaderTextColor,
+      coverPageTextColor,
+      infoCardHeaderTextColor,
+      motionBoxHeaderTextColor,
+      actionItemHeaderTextColor,
+      voteResultHeaderTextColor,
       richTextBlocks: [...richTextBlocks],
     }
 
@@ -306,6 +326,11 @@ export default function MinutesTemplatesTab({
       setVoteResultsColor(prevState.voteResultsColor)
       setCoverPageHeight(prevState.coverPageHeight)
       setSectionHeaderTextColor(prevState.sectionHeaderTextColor || 'white')
+      setCoverPageTextColor(prevState.coverPageTextColor || 'white')
+      setInfoCardHeaderTextColor(prevState.infoCardHeaderTextColor || 'white')
+      setMotionBoxHeaderTextColor(prevState.motionBoxHeaderTextColor || 'white')
+      setActionItemHeaderTextColor(prevState.actionItemHeaderTextColor || 'white')
+      setVoteResultHeaderTextColor(prevState.voteResultHeaderTextColor || 'white')
       setRichTextBlocks(prevState.richTextBlocks || [])
       setHistoryIndex((prev) => prev - 1)
       setHasChanges(true)
@@ -328,7 +353,36 @@ export default function MinutesTemplatesTab({
     if (!selectedBuildingId) return
     loadTemplate(selectedBuildingId)
     loadMostRecentMeeting(selectedBuildingId)
+    fetchMeetingTypes(selectedBuildingId)
   }, [selectedBuildingId])
+
+  const fetchMeetingTypes = async (buildingId: number) => {
+    const building = buildings.find(b => b.id === buildingId)
+    const companyId = building?.company_id
+    
+    try {
+      const { data, error } = await supabase
+        .from('voting_parameters')
+        .select('value, parameter_type, company_id')
+        .eq('parameter_type', 'meeting_type')
+        .or(`company_id.eq.${companyId || -1},company_id.is.null`)
+      
+      if (error) throw error
+      
+      // Deduplicate by value (company override wins)
+      const seen = new Map<string, string>()
+      // Global first
+      data.filter(p => !p.company_id).forEach(p => seen.set(p.value.trim().toLowerCase(), p.value))
+      // Company specific wins
+      data.filter(p => p.company_id).forEach(p => seen.set(p.value.trim().toLowerCase(), p.value))
+      
+      setAvailableMeetingTypes(Array.from(seen.values()))
+    } catch (err) {
+      console.error("Error fetching meeting types for minutes template:", err)
+      // Fallback
+      setAvailableMeetingTypes(['Council Meeting', 'AGM', 'SGM', 'Special Meeting', 'Emergency Meeting'])
+    }
+  }
 
   const loadMostRecentMeeting = async (buildingId: number) => {
     setLoadingMeeting(true)
@@ -553,6 +607,11 @@ export default function MinutesTemplatesTab({
         setVoteResultsColor("#8b5cf6")
         setCoverPageHeight(175)
         setSectionHeaderTextColor('white')
+        setCoverPageTextColor('white')
+        setInfoCardHeaderTextColor('white')
+        setMotionBoxHeaderTextColor('white')
+        setActionItemHeaderTextColor('white')
+        setVoteResultHeaderTextColor('white')
         setRichTextBlocks([])
         setTemplateId(null)
         setHasChanges(false)
@@ -570,6 +629,11 @@ export default function MinutesTemplatesTab({
       setVoteResultsColor(row.vote_results_color || "#8b5cf6")
       setCoverPageHeight(175)
       setSectionHeaderTextColor((row.section_header_text_color as 'black' | 'white') || 'white')
+      setCoverPageTextColor((row.coverpage_text_color as 'black' | 'white') || 'white')
+      setInfoCardHeaderTextColor((row.infocard_header_text_color as 'black' | 'white') || 'white')
+      setMotionBoxHeaderTextColor((row.motion_box_header_text_color as 'black' | 'white') || 'white')
+      setActionItemHeaderTextColor((row.action_item_header_text_color as 'black' | 'white') || 'white')
+      setVoteResultHeaderTextColor((row.vote_result_header_text_color as 'black' | 'white') || 'white')
       setRichTextBlocks((row.rich_text_blocks as unknown as RichTextBlock[]) || [])
       setCoverPageElements((row.coverpage_elements as unknown as CoverPageElement[]) || DEFAULT_COVERPAGE_ELEMENTS)
       setInfoCardFields((row.infocard_fields as unknown as TemplateField[]) || DEFAULT_INFOCARD_FIELDS)
@@ -674,6 +738,11 @@ export default function MinutesTemplatesTab({
         vote_results_color: voteResultsColor,
         coverpage_height: coverPageHeight,
         section_header_text_color: sectionHeaderTextColor,
+        coverpage_text_color: coverPageTextColor,
+        infocard_header_text_color: infoCardHeaderTextColor,
+        motion_box_header_text_color: motionBoxHeaderTextColor,
+        action_item_header_text_color: actionItemHeaderTextColor,
+        vote_result_header_text_color: voteResultHeaderTextColor,
         rich_text_blocks: richTextBlocks as any,
       }
 
@@ -865,8 +934,34 @@ export default function MinutesTemplatesTab({
                       setCoverPageColor(e.target.value)
                       setHasChanges(true)
                     }}
-                    className="w-full px-2 py-1 border rounded text-sm"
+                    className="w-full px-2 py-1 border rounded text-sm mb-3"
                   />
+                  {/* Cover text color toggle */}
+                  <div>
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Header Text Color</p>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => { saveToHistory(); setCoverPageTextColor('white'); setHasChanges(true) }}
+                        className={`flex-1 py-1.5 text-xs font-semibold rounded border transition-all ${
+                          coverPageTextColor === 'white'
+                            ? 'bg-gray-800 text-white border-gray-800'
+                            : 'bg-white text-gray-700 border-gray-300 hover:border-gray-500'
+                        }`}
+                      >
+                        ◉ White
+                      </button>
+                      <button
+                        onClick={() => { saveToHistory(); setCoverPageTextColor('black'); setHasChanges(true) }}
+                        className={`flex-1 py-1.5 text-xs font-semibold rounded border transition-all ${
+                          coverPageTextColor === 'black'
+                            ? 'bg-white text-black border-black ring-2 ring-black'
+                            : 'bg-white text-gray-700 border-gray-300 hover:border-gray-500'
+                        }`}
+                      >
+                        ○ Black
+                      </button>
+                    </div>
+                  </div>
                 </Card>
 
                 <Card className="p-4">
@@ -890,8 +985,34 @@ export default function MinutesTemplatesTab({
                       setInfoCardAccentColor(e.target.value)
                       setHasChanges(true)
                     }}
-                    className="w-full px-2 py-1 border rounded text-sm"
+                    className="w-full px-2 py-1 border rounded text-sm mb-3"
                   />
+                  {/* Info card text color toggle */}
+                  <div>
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Info Header Text</p>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => { saveToHistory(); setInfoCardHeaderTextColor('white'); setHasChanges(true) }}
+                        className={`flex-1 py-1.5 text-xs font-semibold rounded border transition-all ${
+                          infoCardHeaderTextColor === 'white'
+                            ? 'bg-gray-800 text-white border-gray-800'
+                            : 'bg-white text-gray-700 border-gray-300 hover:border-gray-500'
+                        }`}
+                      >
+                        ◉ White
+                      </button>
+                      <button
+                        onClick={() => { saveToHistory(); setInfoCardHeaderTextColor('black'); setHasChanges(true) }}
+                        className={`flex-1 py-1.5 text-xs font-semibold rounded border transition-all ${
+                          infoCardHeaderTextColor === 'black'
+                            ? 'bg-white text-black border-black ring-2 ring-black'
+                            : 'bg-white text-gray-700 border-gray-300 hover:border-gray-500'
+                        }`}
+                      >
+                        ○ Black
+                      </button>
+                    </div>
+                  </div>
                 </Card>
 
                 <Card className="p-4">
@@ -1097,7 +1218,7 @@ export default function MinutesTemplatesTab({
                       <RichTextBlockEditor
                         key={block.id}
                         block={block}
-                        allBlocks={richTextBlocks}
+                        availableMeetingTypes={availableMeetingTypes}
                         onUpdate={(updated) => {
                           setRichTextBlocks(prev => prev.map(b => b.id === updated.id ? updated : b))
                           setHasChanges(true)
@@ -1162,7 +1283,7 @@ export default function MinutesTemplatesTab({
                       <RichTextBlockEditor
                         key={block.id}
                         block={block}
-                        allBlocks={richTextBlocks}
+                        availableMeetingTypes={availableMeetingTypes}
                         onUpdate={(updated) => {
                           setRichTextBlocks(prev => prev.map(b => b.id === updated.id ? updated : b))
                           setHasChanges(true)
@@ -1217,8 +1338,85 @@ export default function MinutesTemplatesTab({
                       setMotionBoxesColor(e.target.value)
                       setHasChanges(true)
                     }}
-                    className="w-full px-2 py-1 border rounded text-sm"
+                    className="w-full px-2 py-1 border rounded text-sm mb-3"
                   />
+                  {/* Motion text color toggle */}
+                  <div>
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Motion Header Text</p>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => { saveToHistory(); setMotionBoxHeaderTextColor('white'); setHasChanges(true) }}
+                        className={`flex-1 py-1.5 text-xs font-semibold rounded border transition-all ${
+                          motionBoxHeaderTextColor === 'white'
+                            ? 'bg-gray-800 text-white border-gray-800'
+                            : 'bg-white text-gray-700 border-gray-300 hover:border-gray-500'
+                        }`}
+                      >
+                        ◉ White
+                      </button>
+                      <button
+                        onClick={() => { saveToHistory(); setMotionBoxHeaderTextColor('black'); setHasChanges(true) }}
+                        className={`flex-1 py-1.5 text-xs font-semibold rounded border transition-all ${
+                          motionBoxHeaderTextColor === 'black'
+                            ? 'bg-white text-black border-black ring-2 ring-black'
+                            : 'bg-white text-gray-700 border-gray-300 hover:border-gray-500'
+                        }`}
+                      >
+                        ○ Black
+                      </button>
+                    </div>
+                  </div>
+                </Card>
+
+                <Card className="p-4">
+                  <h3 className="text-sm font-semibold mb-3">
+                    Action Items
+                  </h3>
+                  <input
+                    type="color"
+                    value={actionItemsColor}
+                    onChange={(e) => {
+                      saveToHistory()
+                      setActionItemsColor(e.target.value)
+                      setHasChanges(true)
+                    }}
+                    className="w-full h-16 rounded border cursor-pointer mb-2"
+                  />
+                  <input
+                    type="text"
+                    value={actionItemsColor}
+                    onChange={(e) => {
+                      setActionItemsColor(e.target.value)
+                      setHasChanges(true)
+                    }}
+                    className="w-full px-2 py-1 border rounded text-sm mb-3"
+                  />
+                  {/* Action items text color toggle */}
+                  <div>
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Action Header Text</p>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => { saveToHistory(); setActionItemHeaderTextColor('white'); setHasChanges(true) }}
+                        className={`flex-1 py-1.5 text-xs font-semibold rounded border transition-all ${
+                          actionItemHeaderTextColor === 'white'
+                            ? 'bg-gray-800 text-white border-gray-800'
+                            : 'bg-white text-gray-700 border-gray-300 hover:border-gray-500'
+                        }`}
+                      >
+                        ◉ White
+                      </button>
+                      <button
+                        onClick={() => { saveToHistory(); setActionItemHeaderTextColor('black'); setHasChanges(true) }}
+                        className={`flex-1 py-1.5 text-xs font-semibold rounded border transition-all ${
+                          actionItemHeaderTextColor === 'black'
+                            ? 'bg-white text-black border-black ring-2 ring-black'
+                            : 'bg-white text-gray-700 border-gray-300 hover:border-gray-500'
+                        }`}
+                      >
+                        ○ Black
+                      </button>
+                    </div>
+                  </div>
                 </Card>
 
                 <Card className="p-4">
@@ -1242,8 +1440,34 @@ export default function MinutesTemplatesTab({
                       setVoteResultsColor(e.target.value)
                       setHasChanges(true)
                     }}
-                    className="w-full px-2 py-1 border rounded text-sm"
+                    className="w-full px-2 py-1 border rounded text-sm mb-3"
                   />
+                  {/* Vote text color toggle */}
+                  <div>
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Vote Header Text</p>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => { saveToHistory(); setVoteResultHeaderTextColor('white'); setHasChanges(true) }}
+                        className={`flex-1 py-1.5 text-xs font-semibold rounded border transition-all ${
+                          voteResultHeaderTextColor === 'white'
+                            ? 'bg-gray-800 text-white border-gray-800'
+                            : 'bg-white text-gray-700 border-gray-300 hover:border-gray-500'
+                        }`}
+                      >
+                        ◉ White
+                      </button>
+                      <button
+                        onClick={() => { saveToHistory(); setVoteResultHeaderTextColor('black'); setHasChanges(true) }}
+                        className={`flex-1 py-1.5 text-xs font-semibold rounded border transition-all ${
+                          voteResultHeaderTextColor === 'black'
+                            ? 'bg-white text-black border-black ring-2 ring-black'
+                            : 'bg-white text-gray-700 border-gray-300 hover:border-gray-500'
+                        }`}
+                      >
+                        ○ Black
+                      </button>
+                    </div>
+                  </div>
                 </Card>
               </div>
 
@@ -1264,7 +1488,7 @@ export default function MinutesTemplatesTab({
                     <div className="bg-white px-6 py-2 space-y-2">
                         {richTextBlocks
                           .filter(b => b.slot === 'header')
-                          .filter(b => !meeting || b.meetingTypeFilter.length === 0 || b.meetingTypeFilter.some(mt => meeting.meeting_type?.includes(mt)))
+                          .filter(b => !meeting || b.meetingTypeFilter.length === 0 || (meeting.meeting_type && b.meetingTypeFilter.some(mt => meeting.meeting_type?.toLowerCase().includes(mt.toLowerCase()) || mt.toLowerCase().includes(meeting.meeting_type?.toLowerCase() || ""))))
                           .sort((a,b) => a.order - b.order)
                           .map(block => (
                             <div 
@@ -1286,9 +1510,10 @@ export default function MinutesTemplatesTab({
                     {/* Cover */}
                     <div
                       ref={coverPageRef}
-                      className="relative text-white cursor-crosshair select-none"
+                      className="relative cursor-crosshair select-none"
                       style={{
                         backgroundColor: coverPageColor,
+                        color: coverPageTextColor,
                         height: `${coverPageHeight}px`,
                         position: "relative",
                       }}
@@ -1348,8 +1573,8 @@ export default function MinutesTemplatesTab({
                                 </div>
                               )}
 
-                              {element.id === "title" && (
-                                <div className="text-center">
+                               {element.id === "title" && (
+                                <div className="text-center" style={{ color: coverPageTextColor }}>
                                   <div style={{
                                     fontWeight: element.bold ? 800 : 400,
                                     fontStyle: element.italic ? 'italic' : 'normal',
@@ -1357,7 +1582,7 @@ export default function MinutesTemplatesTab({
                                     fontSize: `${element.fontSize || 48}px`,
                                     lineHeight: '1.1',
                                     textTransform: element.uppercase !== false ? 'uppercase' : 'none',
-                                    textShadow: '0 2px 4px rgba(0,0,0,0.3)'
+                                    textShadow: coverPageTextColor === 'white' ? '0 2px 4px rgba(0,0,0,0.3)' : 'none'
                                   }}>MEETING</div>
                                   <div style={{
                                     fontWeight: element.bold ? 800 : 400,
@@ -1366,7 +1591,7 @@ export default function MinutesTemplatesTab({
                                     fontSize: `${element.fontSize || 48}px`,
                                     lineHeight: '1.1',
                                     textTransform: element.uppercase !== false ? 'uppercase' : 'none',
-                                    textShadow: '0 2px 4px rgba(0,0,0,0.3)'
+                                    textShadow: coverPageTextColor === 'white' ? '0 2px 4px rgba(0,0,0,0.3)' : 'none'
                                   }}>MINUTES</div>
                                 </div>
                               )}
@@ -1375,7 +1600,7 @@ export default function MinutesTemplatesTab({
                                 <div
                                   className="text-center max-w-[80%]"
                                   style={{
-                                    color: "rgba(200, 220, 255, 0.95)",
+                                    color: coverPageTextColor === 'white' ? "rgba(200, 220, 255, 0.95)" : "rgba(0, 0, 0, 0.8)",
                                     fontSize: `${element.fontSize || 24}px`,
                                     fontWeight: element.bold ? 'bold' : 'normal',
                                     fontStyle: element.italic ? 'italic' : 'normal',
@@ -1391,7 +1616,7 @@ export default function MinutesTemplatesTab({
                                 <div
                                   className="text-center max-w-[80%]"
                                   style={{
-                                    color: "rgba(200, 220, 255, 0.9)",
+                                    color: coverPageTextColor === 'white' ? "rgba(200, 220, 255, 0.9)" : "rgba(0, 0, 0, 0.7)",
                                     fontSize: `${element.fontSize || 18}px`,
                                     fontWeight: element.bold ? "bold" : "normal",
                                     fontStyle: element.italic ? 'italic' : 'normal',
@@ -1411,8 +1636,11 @@ export default function MinutesTemplatesTab({
                     <div className="p-6 bg-gray-50">
                       <div className="bg-white rounded-lg shadow-xl overflow-hidden border">
                         <div
-                          className="px-4 py-3 text-white font-bold text-sm"
-                          style={{ backgroundColor: infoCardAccentColor }}
+                          className="px-4 py-3 font-bold text-sm"
+                          style={{ 
+                            backgroundColor: infoCardAccentColor,
+                            color: infoCardHeaderTextColor
+                          }}
                         >
                           MEETING INFORMATION
                         </div>
@@ -1556,8 +1784,11 @@ export default function MinutesTemplatesTab({
                       {attendees.length > 0 && (
                         <div className="rounded-lg overflow-hidden border shadow-sm">
                           <div
-                            className="px-4 py-2 text-white text-xs font-bold tracking-wide"
-                            style={{ backgroundColor: infoCardAccentColor }}
+                            className="px-4 py-2 text-xs font-bold tracking-wide"
+                            style={{ 
+                              backgroundColor: infoCardAccentColor,
+                              color: infoCardHeaderTextColor
+                            }}
                           >
                             👥 ATTENDEES
                           </div>
@@ -1713,11 +1944,22 @@ export default function MinutesTemplatesTab({
                                               .map((task: any) => (
                                                 <div
                                                   key={`task-${task.id}`}
-                                                  className="text-xs text-amber-800 bg-amber-50/50 border-l-2 border-amber-400 px-3 py-2 rounded flex items-start gap-2"
+                                                  className="text-xs border-l-2 px-3 py-2 rounded flex items-start gap-2"
+                                                  style={{
+                                                    backgroundColor: getLighterColor(actionItemsColor, 240),
+                                                    borderLeftColor: actionItemsColor,
+                                                    color: actionItemsColor
+                                                  }}
                                                 >
                                                   <span className="mt-0.5">✅</span>
                                                   <div>
-                                                    <span className="font-bold">
+                                                    <span 
+                                                      className="font-bold px-1 rounded text-[10px] uppercase"
+                                                      style={{
+                                                        backgroundColor: actionItemsColor,
+                                                        color: actionItemHeaderTextColor
+                                                      }}
+                                                    >
                                                       TASK:
                                                     </span>{" "}
                                                     {task.description}
@@ -1755,31 +1997,30 @@ export default function MinutesTemplatesTab({
                                                   }}
                                                 >
                                                   <div className="flex items-center gap-2 mb-2">
-                                                    <div
-                                                      className="px-3 py-1 rounded text-white font-bold text-xs"
-                                                      style={{
-                                                        backgroundColor:
-                                                          motionBoxesColor,
-                                                      }}
-                                                    >
-                                                      {`MOTION ${sIdx + 1}.${tIdx + 1}`}
-                                                    </div>
+                                                      <div
+                                                        className="px-3 py-1 rounded font-bold text-xs"
+                                                        style={{
+                                                          backgroundColor: motionBoxesColor,
+                                                          color: motionBoxHeaderTextColor
+                                                        }}
+                                                      >
+                                                        {`MOTION ${sIdx + 1}.${tIdx + 1}`}
+                                                      </div>
                                                   </div>
                                                   <div className="text-sm font-semibold text-gray-800 mb-3">
                                                     {decision.motion_text}
                                                   </div>
                                                   {decision.result && (
-                                                    <div
-                                                      className="text-xs px-3 py-2 rounded mb-2 inline-block"
-                                                      style={{
-                                                        backgroundColor:
-                                                          voteResultsColor,
-                                                        color: "white",
-                                                      }}
-                                                    >
-                                                      <strong>Decision:</strong>{" "}
-                                                      {decision.result}
-                                                    </div>
+                                                      <div
+                                                        className="text-xs px-3 py-2 rounded mb-2 inline-block"
+                                                        style={{
+                                                          backgroundColor: voteResultsColor,
+                                                          color: voteResultHeaderTextColor,
+                                                        }}
+                                                      >
+                                                        <strong>Decision:</strong>{" "}
+                                                        {decision.result}
+                                                      </div>
                                                   )}
                                                   {decision.votes_for !==
                                                     null && (
@@ -1788,7 +2029,7 @@ export default function MinutesTemplatesTab({
                                                         style={{
                                                           backgroundColor:
                                                             voteResultsColor,
-                                                          color: "white",
+                                                          color: voteResultHeaderTextColor,
                                                         }}
                                                       >
                                                         <div>
@@ -1830,7 +2071,7 @@ export default function MinutesTemplatesTab({
                           {/* Preview: Footer blocks */}
                           {richTextBlocks
                             .filter(b => b.slot === 'footer')
-                            .filter(b => !meeting || b.meetingTypeFilter.length === 0 || b.meetingTypeFilter.some(mt => meeting.meeting_type?.includes(mt)))
+                            .filter(b => !meeting || b.meetingTypeFilter.length === 0 || (meeting.meeting_type && b.meetingTypeFilter.some(mt => meeting.meeting_type?.toLowerCase().includes(mt.toLowerCase()) || mt.toLowerCase().includes(meeting.meeting_type?.toLowerCase() || ""))))
                             .sort((a,b) => a.order - b.order)
                             .map(block => (
                               <div
@@ -1892,13 +2133,13 @@ export default function MinutesTemplatesTab({
 // ─── Sub-component: Rich Text Block Editor ─────────────────────────────────
 function RichTextBlockEditor({
   block,
-  allBlocks,
+  availableMeetingTypes,
   onUpdate,
   onDelete,
   onMove,
 }: {
   block: RichTextBlock
-  allBlocks: RichTextBlock[]
+  availableMeetingTypes: string[]
   onUpdate: (updated: RichTextBlock) => void
   onDelete: () => void
   onMove: (dir: 'up' | 'down') => void
@@ -2002,7 +2243,7 @@ function RichTextBlockEditor({
           <div>
             <label className="text-[10px] font-bold uppercase text-muted-foreground">Show only for (leave empty = all)</label>
             <div className="flex flex-wrap gap-1 mt-1">
-              {MEETING_TYPE_OPTIONS.map(mt => {
+              {availableMeetingTypes.map((mt: string) => {
                 const active = block.meetingTypeFilter.includes(mt)
                 return (
                   <button

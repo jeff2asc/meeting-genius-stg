@@ -6,8 +6,9 @@ import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { Company, getVotingParameters } from "@/lib/supabase"
-import { triggerJanusResync } from "@/lib/janus"
+import { Company } from "@/lib/supabase"
+import { fetchVotingParametersAction, saveVotingParameterAction, deleteVotingParameterAction } from "@/lib/api-actions"
+import { triggerJanusResync } from "@/lib/janus-client"
 import { toast } from "sonner"
 import { apiClient } from "@/lib/api-client"
 
@@ -59,17 +60,31 @@ export default function EditCompanyModal({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // ─── Fetch voting_parameters meeting types for this company ─────────────────
+  // ─── Fetch voting_parameters for this company ─────────────────
   const fetchMeetingTypes = async (companyId: number) => {
     setLoadingTypes(true)
     try {
-      const allParams = await getVotingParameters(companyId)
-      const dedup = <T extends { id: number }>(arr: T[]): T[] =>
-        arr.filter((item, idx, self) => self.findIndex(x => x.id === item.id) === idx)
-      setMeetingTypeParams(dedup(allParams.filter((p: any) => p.parameter_type === 'meeting_type')))
-      setVotingTypeOptions(dedup(allParams.filter((p: any) => p.parameter_type === 'voting_type')))
+      const allParams = await fetchVotingParametersAction(companyId)
+      
+      const filterAndDedup = (type: string) => {
+        const seen = new Map<string, VotingParameter>()
+        // Global first (lower priority)
+        allParams.filter((p: any) => p.parameter_type === type && p.company_id === null)
+          .forEach((p: any) => seen.set(p.value.trim().toLowerCase(), p))
+        // Company wins
+        allParams.filter((p: any) => p.parameter_type === type && p.company_id !== null)
+          .forEach((p: any) => seen.set(p.value.trim().toLowerCase(), p))
+        return Array.from(seen.values())
+      }
+
+      setMeetingTypeParams(filterAndDedup('meeting_type'))
+      setVotingTypeOptions(filterAndDedup('voting_type'))
+      
+      // Load decision results from voting_parameters too
+      const drs = filterAndDedup('decision_result').map(p => p.value)
+      setDecisionResults(drs.length > 0 ? drs : ["M/S/C", "Defeated", "Deferred"])
     } catch (err) {
-      console.error("Error fetching meeting types:", err)
+      console.error("Error fetching voting parameters:", err)
     } finally {
       setLoadingTypes(false)
     }
@@ -93,11 +108,6 @@ export default function EditCompanyModal({
         id: `sec-${i}-${Date.now()}-${Math.random()}`,
         name
       })))
-      setDecisionResults(company.default_decision_results || [
-        "M/S/C",
-        "Defeated",
-        "Deferred",
-      ])
       fetchMeetingTypes(company.id)
     }
   }, [company])
@@ -136,13 +146,13 @@ export default function EditCompanyModal({
   const handleAddMeetingType = async () => {
     if (!newTypeValue.trim() || !company) return
     try {
-      const data = await apiClient.v1.votingParameters.insert({
+      await saveVotingParameterAction({
         company_id: company.id,
         parameter_type: "meeting_type",
-        value: newTypeValue.trim(),
-        linked_voting_type: newTypeLinkedVotingType || null,
+        value: newTypeValue,
         is_default: false,
         weight: 1.0,
+        linked_voting_type: newTypeLinkedVotingType || null
       })
 
       await fetchMeetingTypes(company.id)
@@ -179,18 +189,18 @@ export default function EditCompanyModal({
     }
 
     try {
-      const { data, meetingsUpdated } = await apiClient.v1.votingParameters.update({
+      const result = await saveVotingParameterAction({
         id,
-        value: newValue,
-        linked_voting_type: editingTypeLinkedVotingType || null,
+        value: editingTypeValue,
         parameter_type: "meeting_type",
+        linked_voting_type: editingTypeLinkedVotingType || null
       })
-      setMeetingTypeParams(prev => prev.map(p => p.id === id ? (data as VotingParameter) : p))
+      await fetchMeetingTypes(company.id)
       setEditingTypeId(null)
       setEditingTypeValue("")
       setEditingTypeLinkedVotingType("")
-      if ((meetingsUpdated ?? 0) > 0) {
-        toast.success(`Meeting type updated — synced ${meetingsUpdated} existing meeting(s)`)
+      if ((result?.meetingsUpdated ?? 0) > 0) {
+        toast.success(`Meeting type updated — synced ${result.meetingsUpdated} existing meeting(s)`)
       } else {
         toast.success("Meeting type updated")
       }
@@ -202,7 +212,7 @@ export default function EditCompanyModal({
   const handleDeleteMeetingType = async (id: number) => {
     if (!confirm("Delete this meeting type?")) return
     try {
-      await apiClient.v1.votingParameters.delete(id)
+      await deleteVotingParameterAction(id)
       setMeetingTypeParams(prev => prev.filter(p => p.id !== id))
       toast.success("Meeting type deleted")
     } catch (err: any) {
@@ -210,20 +220,107 @@ export default function EditCompanyModal({
     }
   }
 
-  // ─── Decision Results ────────────────────────────────────────────────────────
-  const handleAddResult = () => setDecisionResults([...decisionResults, "New Result"])
-  const handleDeleteResult = (idx: number) => setDecisionResults(decisionResults.filter((_, i) => i !== idx))
+  // ─── Decision Results — write directly to voting_parameters ──────────────────
+  const handleAddResult = async () => {
+    if (!company) return
+    const newValue = "New Result"
+    try {
+      await saveVotingParameterAction({
+        company_id: company.id,
+        parameter_type: "decision_result",
+        value: newValue,
+        is_default: false,
+        weight: 1.0,
+      })
+      await fetchMeetingTypes(company.id)
+      toast.success("Decision result added")
+    } catch (err: any) {
+      toast.error(err.message || "Failed to add decision result")
+    }
+  }
+
+  const handleDeleteResult = async (idx: number) => {
+    if (!company) return
+    const valueToDelete = decisionResults[idx]
+    if (!confirm(`Delete "${valueToDelete}"?`)) return
+
+    try {
+      // Find the specific row for this company in voting_parameters
+      const allParams = await fetchVotingParametersAction(company.id)
+      const target = allParams.find((p: any) => 
+        p.parameter_type === 'decision_result' && 
+        p.value.trim().toLowerCase() === valueToDelete.trim().toLowerCase() &&
+        p.company_id === company.id
+      )
+
+      if (target) {
+        await deleteVotingParameterAction(target.id)
+      } else {
+        // If it's a global row, we can't "delete" it from here without affecting everyone, 
+        // but we could mark it as "hidden" if we had that field. 
+        // For now, we'll just say we can't delete global defaults from this view.
+        const isGlobal = allParams.some((p: any) => 
+          p.parameter_type === 'decision_result' && 
+          p.value.trim().toLowerCase() === valueToDelete.trim().toLowerCase() &&
+          p.company_id === null
+        )
+        if (isGlobal) {
+          toast.error("Cannot delete global default results from here. Edit in the Voting tab.")
+          return
+        }
+      }
+      await fetchMeetingTypes(company.id)
+      toast.success("Decision result removed")
+    } catch (err: any) {
+      toast.error(err.message || "Failed to delete result")
+    }
+  }
+
   const handleEditResult = (idx: number) => {
     setEditingResultIdx(idx)
     setEditingValue(decisionResults[idx])
   }
-  const handleSaveResultEdit = () => {
-    if (editingResultIdx !== null) {
-      const updated = [...decisionResults]
-      updated[editingResultIdx] = editingValue
-      setDecisionResults(updated)
-      setEditingResultIdx(null)
-      setEditingValue("")
+
+  const handleSaveResultEdit = async () => {
+    if (editingResultIdx !== null && company) {
+      const oldValue = decisionResults[editingResultIdx]
+      const newValue = editingValue.trim()
+      if (!newValue || oldValue === newValue) {
+        setEditingResultIdx(null)
+        return
+      }
+
+      try {
+        const allParams = await fetchVotingParametersAction(company.id)
+        const target = allParams.find((p: any) => 
+          p.parameter_type === 'decision_result' && 
+          p.value.trim().toLowerCase() === oldValue.trim().toLowerCase() &&
+          p.company_id === company.id
+        )
+
+        if (target) {
+          await saveVotingParameterAction({
+            id: target.id,
+            value: newValue,
+            parameter_type: "decision_result"
+          })
+        } else {
+          // If editing a global default, create a company-specific override
+          await saveVotingParameterAction({
+            company_id: company.id,
+            parameter_type: "decision_result",
+            value: newValue,
+            is_default: false,
+            weight: 1.0,
+          })
+        }
+        await fetchMeetingTypes(company.id)
+        setEditingResultIdx(null)
+        setEditingValue("")
+        toast.success("Decision result updated")
+      } catch (err: any) {
+        toast.error(err.message || "Failed to update result")
+      }
     }
   }
 
@@ -246,7 +343,6 @@ export default function EditCompanyModal({
         await apiClient.v1.companies.update(company.id, {
           name: companyName.trim(),
           default_meeting_sections: sectionsArray,
-          default_decision_results: decisionResults,
         })
       } catch (err: any) {
         console.error('Error updating company:', err)
@@ -432,9 +528,9 @@ export default function EditCompanyModal({
                   </div>
                 ) : (
                   <div className="space-y-1.5 max-h-[160px] overflow-y-auto pr-2 custom-scrollbar">
-                    {meetingTypeParams.map((param) =>
+                    {meetingTypeParams.map((param, idx) =>
                       editingTypeId === param.id ? (
-                        <div key={`edit-type-${param.id}`} className="flex flex-col gap-1.5 p-2 bg-primary/5 border border-primary/20 rounded-lg">
+                        <div key={`edit-type-${param.id}-${idx}`} className="flex flex-col gap-1.5 p-2 bg-primary/5 border border-primary/20 rounded-lg">
                           <input
                             type="text"
                             value={editingTypeValue}
@@ -481,7 +577,7 @@ export default function EditCompanyModal({
                           </div>
                         </div>
                       ) : (
-                        <div key={`view-type-${param.id}`} className="flex items-center justify-between gap-2 px-3 py-1.5 bg-muted/30 hover:bg-muted/60 rounded-md border border-border/40 group transition-all">
+                        <div key={`view-type-${param.id}-${idx}`} className="flex items-center justify-between gap-2 px-3 py-1.5 bg-muted/30 hover:bg-muted/60 rounded-md border border-border/40 group transition-all">
                           <div className="flex flex-col flex-1 min-w-0">
                             <div className="flex items-center gap-2">
                               <span className="flex-1 text-xs font-medium truncate">{param.value}</span>

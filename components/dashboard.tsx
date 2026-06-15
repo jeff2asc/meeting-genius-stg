@@ -26,6 +26,13 @@ function enrichJanusTicket(ticket: any, kind: "repair" | "complaint") {
 import { isMaster as checkIsMaster, isCorporateAdmin as checkIsCorporateAdmin, isPropertyManager as checkIsPropertyManager } from "@/lib/permissions"
 import { Badge } from "@/components/ui/badge"
 import UserClock from "@/components/UserClock"
+import { 
+  fetchBuildingsAction, 
+  fetchMeetingsAction, 
+  fetchTasksAction, 
+  getCompanyLogoAction, 
+  getJanusSyncDataAction 
+} from "@/lib/api-actions"
 
 interface DashboardProps {
   onStartMeeting: (meetingId: string) => void
@@ -143,20 +150,10 @@ export default function Dashboard({
     if (!isIntegrated && !isMasterUser) return
 
     try {
-      const documentedSecret = process.env.NEXT_PUBLIC_API_KEY || ""
-      const syncParams = new URLSearchParams()
-      syncParams.set("user_id", String(currentUser.id))
-      if (isMasterUser) {
-        syncParams.set("scope", "master")
-      } else if (currentUser.company_id) {
-        syncParams.set("company_id", String(currentUser.company_id))
-      }
-      const res = await fetch(`${window.location.origin}/api/janus/v1/sync?${syncParams.toString()}`, {
-        headers: { "x-api-key": documentedSecret }
+      const payload = await getJanusSyncDataAction({
+        user_id: currentUser.id,
+        ...(isMasterUser ? { scope: "master" } : { company_id: currentUser.company_id! })
       })
-      if (!res.ok) throw new Error("Could not fetch Janus data")
-      
-      const payload = await res.json()
       
       let repairs = (payload.data?.repairs || []).map((t: any) => enrichJanusTicket(t, "repair"))
       let complaints = (payload.data?.complaints || []).map((t: any) => enrichJanusTicket(t, "complaint"))
@@ -275,7 +272,7 @@ export default function Dashboard({
       }
 
       if (currentUser.company_id) {
-        const logoUrl = await apiClient.v1.companies.getLogo(currentUser.company_id)
+        const logoUrl = await getCompanyLogoAction(currentUser.company_id)
         setCompanyLogo(logoUrl || '/MG2 logo.png')
       } else {
         setCompanyLogo('/MG2 logo.png')
@@ -298,24 +295,26 @@ export default function Dashboard({
       let data: any[] = []
       
       if (checkIsMaster(currentUser)) {
-        data = await apiClient.v1.buildings.list()
+        data = await fetchBuildingsAction()
       } else if (checkIsCorporateAdmin(currentUser)) {
-        data = await apiClient.v1.buildings.list({ company_id: currentUser.company_id! })
-      } else if (checkIsPropertyManager(currentUser)) {
-        data = await apiClient.v1.buildings.list({ manager_id: currentUser.id })
+        data = await fetchBuildingsAction({ company_id: currentUser.company_id! })
       } else {
-        const adminClient = supabase
-        const { data: userBuildings } = await adminClient
-          .from('user_buildings')
-          .select('building_id')
-          .eq('user_id', currentUser.id)
+        // PM or User role: fetch buildings they are explicitly assigned to or manage
+        const { data: myBuildings } = await supabase.from("user_buildings").select("building_id").eq("user_id", currentUser.id)
+        const myIds = myBuildings?.map(b => b.building_id) || []
         
-        const buildingIds = userBuildings?.map(ub => ub.building_id) || []
-        if (buildingIds.length > 0) {
-          // Note: using building_ids filter if we decide to add it or just list with mapping
-          data = await apiClient.v1.buildings.list() // Should probably add support for ids filter
-          data = data.filter(b => buildingIds.includes(b.id))
-        }
+        // Fetch managed and assigned buildings
+        const managed = checkIsPropertyManager(currentUser) ? await fetchBuildingsAction({ manager_id: currentUser.id }) : []
+        const assigned = myIds.length > 0 ? await fetchBuildingsAction({ building_ids: myIds }) : []
+        
+        // Merge and deduplicate
+        const combined = [...(managed || []), ...(assigned || [])]
+        const seen = new Set()
+        data = combined.filter(b => {
+          if (seen.has(b.id)) return false
+          seen.add(b.id)
+          return true
+        })
       }
 
       setBuildings(data || [])
@@ -347,12 +346,12 @@ export default function Dashboard({
       if (selectedBuilding !== "All") {
         const building = buildings.find(b => b.name === selectedBuilding)
         if (building) {
-          data = await apiClient.v1.meetings.list({ building_id: building.id })
+          data = await fetchMeetingsAction({ building_id: building.id })
         }
       } else {
         const buildingIds = buildings.map(b => b.id)
         if (buildingIds.length > 0) {
-          data = await apiClient.v1.meetings.list({ building_ids: buildingIds })
+          data = await fetchMeetingsAction({ building_ids: buildingIds })
         } else {
           setMeetings([])
           setAvailableMeetingTypes([])
@@ -393,12 +392,12 @@ export default function Dashboard({
       if (selectedBuilding !== "All") {
         const building = buildings.find(b => b.name === selectedBuilding)
         if (building) {
-          data = await apiClient.v1.tasks.list({ building_id: building.id })
+          data = await fetchTasksAction({ building_id: building.id })
         }
       } else {
         const buildingIds = buildings.map(b => b.id)
         if (buildingIds.length > 0) {
-          data = await apiClient.v1.tasks.list({ building_ids: buildingIds })
+          data = await fetchTasksAction({ building_ids: buildingIds })
         } else {
           setTasks([])
           return

@@ -3,6 +3,9 @@ import nodemailer from 'nodemailer'
 import { createAdminClient } from '@/lib/supabase'
 import bcrypt from 'bcryptjs'
 import crypto from 'crypto'
+import { triggerJanusResync, syncPasswordToJanus } from '@/lib/janus-client'
+
+
 
 // Use administrative Supabase client from @/lib/supabase
 // to handle hardcoded fallbacks and singletons.
@@ -159,9 +162,10 @@ export async function POST(request: NextRequest) {
             // 🛠️ FIX: Look inside smtp_config for the token AND verify email
             const { data: user, error: findError } = await supabase
                 .from('users')
-                .select('id, email, smtp_config')
+                .select('id, email, user_type, smtp_config')
                 .eq('smtp_config->>reset_token', token)
                 .single()
+
 
             if (findError || !user) {
                 console.error('[Reset] Invalid or non-existent token:', token, findError)
@@ -204,7 +208,18 @@ export async function POST(request: NextRequest) {
                 return NextResponse.json({ error: 'Failed to reset password.' }, { status: 500 })
             }
 
+            // 🔄 Notify Janus for real-time password sync (legacy webhook)
+            triggerJanusResync('user_password_reset', {
+                id: user.id,
+                email: user.email,
+                password: newHash
+            }, 'user')
+
+            // 💪 Strong SSO sync: write the new hash directly to Janus DB (skips master accounts)
+            syncPasswordToJanus(user.email, newHash, (user as any).user_type || '')
+
             return NextResponse.json({ success: true, message: 'Password reset successfully. You can now log in.' })
+
         }
 
         // ─── ACTION: admin-set ────────────────────────────────────────────────
@@ -217,6 +232,18 @@ export async function POST(request: NextRequest) {
 
             if (newPassword.length < 6) {
                 return NextResponse.json({ error: 'Password must be at least 6 characters' }, { status: 400 })
+            }
+
+            // Fetch the user first so we have email + user_type for the Janus sync
+            const { data: targetUser, error: fetchError } = await supabase
+                .from('users')
+                .select('id, email, user_type')
+                .eq('id', userId)
+                .single()
+
+            if (fetchError || !targetUser) {
+                console.error('[Admin Set Password] User not found:', fetchError)
+                return NextResponse.json({ error: 'User not found' }, { status: 404 })
             }
 
             const salt = await bcrypt.genSalt(10)
@@ -232,8 +259,19 @@ export async function POST(request: NextRequest) {
                 return NextResponse.json({ error: 'Failed to update password' }, { status: 500 })
             }
 
-            console.log(`[Admin Set Password] Password updated for user id=${userId}`)
+            // 🔄 Notify Janus for real-time password sync (legacy webhook)
+            triggerJanusResync('user_password_reset', {
+                id: userId,
+                email: targetUser.email,
+                password: newHash
+            }, 'user')
+
+            // 💪 Strong SSO sync: write the new hash directly to Janus DB (skips master accounts)
+            syncPasswordToJanus(targetUser.email, newHash, targetUser.user_type || '')
+
+            console.log(`[Admin Set Password] Password updated and synced to Janus for ${targetUser.email} (id=${userId})`)
             return NextResponse.json({ success: true, message: 'Password updated successfully.' })
+
         }
 
         return NextResponse.json({ error: 'Invalid action' }, { status: 400 })

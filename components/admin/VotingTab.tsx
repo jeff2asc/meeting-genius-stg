@@ -1,8 +1,17 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { supabase, getCurrentUser, getVotingParameters } from "@/lib/supabase"
+import { useState, useEffect, useRef } from "react"
+import { supabase, getCurrentUser } from "@/lib/supabase"
 import { apiClient } from "@/lib/api-client"
+import { 
+  fetchVotingParametersAction, 
+  fetchJurisdictionRulesAction,
+  fetchVotingTabDataAction, 
+  saveVotingParameterAction, 
+  deleteVotingParameterAction,
+  saveJurisdictionRuleAction,
+  deleteJurisdictionRuleAction
+} from "@/lib/api-actions"
 import { isMaster, isCorporateAdmin } from "@/lib/permissions"
 import UserWeightsModal from "./UserWeightsModal"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
@@ -53,9 +62,17 @@ interface JurisdictionRule {
   description: string | null
 }
 
-export default function VotingTab() {
+interface VotingTabProps {
+  initialCompanyId?: number | null
+}
+
+export default function VotingTab({ initialCompanyId }: VotingTabProps) {
   const [parameters, setParameters] = useState<VotingParameter[]>([])
   const [loading, setLoading] = useState(true)
+  const lastFetchId = useRef(0)
+  const lastUsersFetchId = useRef(0)
+  const lastRulesFetchId = useRef(0)
+  const [showHelp, setShowHelp] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editValue, setEditValue] = useState("")
   const [editDescription, setEditDescription] = useState("")
@@ -92,11 +109,39 @@ export default function VotingTab() {
   const isMasterUser = isMaster(currentUser)
   const isCorporateAdminUser = isCorporateAdmin(currentUser)
 
+  const [companies, setCompanies] = useState<any[]>([])
+  const [selectedCompanyId, setSelectedCompanyId] = useState<number | null>(initialCompanyId || companyId || null)
+  const [fetchingCompanies, setFetchingCompanies] = useState(false)
+
   useEffect(() => {
-    fetchParameters()
-    fetchCompanyUsers()
-    fetchJurisdictionRules()
-  }, [])
+    if (isMasterUser) {
+      fetchCompanies()
+    }
+  }, [isMasterUser])
+
+  useEffect(() => {
+    loadTabData()
+  }, [selectedCompanyId])
+
+  // Sync prop changes if component stays mounted
+  useEffect(() => {
+    if (initialCompanyId !== undefined && initialCompanyId !== selectedCompanyId) {
+      setSelectedCompanyId(initialCompanyId)
+    }
+  }, [initialCompanyId])
+
+  const fetchCompanies = async () => {
+    setFetchingCompanies(true)
+    try {
+      const { data, error } = await supabase.from('companies').select('id, name').order('name')
+      if (error) throw error
+      setCompanies(data || [])
+    } catch (err) {
+      console.error("Error fetching companies:", err)
+    } finally {
+      setFetchingCompanies(false)
+    }
+  }
 
   // Preview how many meetings will be updated when renaming a meeting type
   useEffect(() => {
@@ -160,64 +205,52 @@ export default function VotingTab() {
     }
   }, [paramModalOpen, editingId, editValue, parameters])
 
-  const fetchCompanyUsers = async () => {
-    if (!companyId) return
-    setUserLoading(true)
-    try {
-      const { data, error } = await supabase
-        .from("users")
-        .select("id, name, user_type, voting_weight")
-        .eq("company_id", companyId)
-        .order("name")
-      
-      if (error) throw error
-      setCompanyUsers(data || [])
-    } catch (err) {
-      console.error("Error fetching company users:", err)
-    } finally {
-      setUserLoading(false)
-    }
-  }
-
-  const fetchParameters = async () => {
+  const loadTabData = async () => {
+    const requestId = ++lastFetchId.current
     setLoading(true)
+    setJRulesLoading(true)
+    setUserLoading(true)
+
     try {
-      const data = await getVotingParameters(companyId)
-      setParameters((data as VotingParameter[]) || [])
+      console.log(`[VotingTab] Loading all data for companyId: ${selectedCompanyId}`)
+      const { parameters: pData, rules: rData, users: uData } = await fetchVotingTabDataAction(selectedCompanyId)
+      
+      if (requestId === lastFetchId.current) {
+        setParameters((pData as VotingParameter[]) || [])
+        setJurisdictionRules(rData as JurisdictionRule[])
+        setCompanyUsers(uData || [])
+        setJRulesTableMissing(false)
+        console.log(`[VotingTab] Consolidated load complete: ${pData.length} params, ${rData.length} rules, ${uData.length} users`)
+      }
     } catch (err) {
-      console.error("Unexpected error fetching parameters:", err)
+      console.error("Critical error loading voting tab data:", err)
+      if (requestId === lastFetchId.current) {
+        setJRulesTableMissing(true)
+      }
     } finally {
-      setLoading(false)
+      if (requestId === lastFetchId.current) {
+        setLoading(false)
+        setJRulesLoading(false)
+        setUserLoading(false)
+      }
     }
   }
 
-  const fetchJurisdictionRules = async () => {
-    setJRulesLoading(true)
-    try {
-      const data = await apiClient.v1.jurisdictionRules.list()
-      setJurisdictionRules(data as JurisdictionRule[])
-      setJRulesTableMissing(false)
-    } catch (err: any) {
-      // Gracefully handle the table-not-found case before migration is applied
-      setJurisdictionRules([])
-      setJRulesTableMissing(true)
-    } finally {
-      setJRulesLoading(false)
-    }
-  }
+  // Keep these wrappers for manual refreshes if needed elsewhere
+  const fetchParameters = loadTabData
+  const fetchCompanyUsers = loadTabData
+  const fetchJurisdictionRules = loadTabData
 
   const handleSaveRule = async () => {
     if (!editingRule) return
     setSavingRule(true)
     try {
+      const saved = await saveJurisdictionRuleAction(editingRule) as JurisdictionRule
       if (editingRule.id) {
-        const { id, ...updates } = editingRule
-        const updated = await apiClient.v1.jurisdictionRules.update(id, updates)
-        setJurisdictionRules(prev => prev.map(r => r.id === id ? updated : r))
+        setJurisdictionRules(prev => prev.map(r => r.id === editingRule.id ? saved : r))
         toast.success("Rule updated")
       } else {
-        const created = await apiClient.v1.jurisdictionRules.create(editingRule)
-        setJurisdictionRules(prev => [...prev, created])
+        setJurisdictionRules(prev => [...prev, saved])
         toast.success("Rule created")
       }
       setRuleModalOpen(false)
@@ -232,7 +265,7 @@ export default function VotingTab() {
   const handleDeleteRule = async (id: number) => {
     if (!confirm("Delete this jurisdiction rule? This cannot be undone.")) return
     try {
-      await apiClient.v1.jurisdictionRules.delete(id)
+      await deleteJurisdictionRuleAction(id)
       setJurisdictionRules(prev => prev.filter(r => r.id !== id))
       toast.success("Rule deleted")
     } catch (err: any) {
@@ -244,8 +277,8 @@ export default function VotingTab() {
     if (!newValue.trim()) return false
 
     try {
-      const data = await apiClient.v1.votingParameters.insert({
-        company_id: companyId,
+      const { data } = await saveVotingParameterAction({
+        company_id: selectedCompanyId,
         parameter_type: type,
         value: newValue,
         description: newDescription || null,
@@ -280,7 +313,7 @@ export default function VotingTab() {
 
     setSavingParam(true)
     try {
-      const { data, meetingsUpdated, companiesUpdated } = await apiClient.v1.votingParameters.update({
+      const { data, meetingsUpdated, companiesUpdated } = await saveVotingParameterAction({
         id,
         value: newValue,
         description: editDescription || null,
@@ -312,7 +345,7 @@ export default function VotingTab() {
     if (!confirm("Are you sure you want to delete this parameter?")) return
 
     try {
-      await apiClient.v1.votingParameters.delete(id)
+      await deleteVotingParameterAction(id)
       setParameters(parameters.filter(p => p.id !== id))
       toast.success("Parameter deleted")
     } catch (err: any) {
@@ -465,17 +498,111 @@ export default function VotingTab() {
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="bg-gradient-to-r from-decision-purple to-primary p-8 rounded-3xl text-white shadow-xl flex flex-col md:flex-row justify-between items-center gap-6">
-        <div>
-          <h2 className="text-3xl font-bold tracking-tight">Voting & Meeting Rules</h2>
-          <p className="opacity-90 mt-2 text-lg">Configure how your organization handles decisions and user voting power.</p>
+        <div className="flex-1">
+          <div className="flex items-center gap-3 mb-2">
+            <h2 className="text-3xl font-bold tracking-tight">Voting & Meeting Rules</h2>
+            {isMasterUser && (
+              <div className="bg-white/10 px-3 py-1 rounded-full border border-white/20 flex items-center gap-2">
+                <span className="text-[10px] font-black uppercase tracking-widest opacity-70">Master View</span>
+                <select 
+                  className="bg-transparent border-none text-xs font-bold focus:ring-0 cursor-pointer text-white"
+                  value={selectedCompanyId || ""}
+                  onChange={(e) => setSelectedCompanyId(e.target.value ? parseInt(e.target.value) : null)}
+                >
+                  <option value="" className="text-black">Global Defaults</option>
+                  {companies.map(c => (
+                    <option key={c.id} value={c.id} className="text-black">{c.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+          <p className="opacity-90 text-lg">
+            {selectedCompanyId 
+              ? `Customizing parameters for ${companies.find(c => c.id === selectedCompanyId)?.name || 'Selected Company'}`
+              : "Configure global defaults and user voting power across the system."
+            }
+          </p>
         </div>
-        <Button 
-          onClick={() => setShowUserModal(true)}
-          className="bg-white text-primary hover:bg-white/90 font-bold px-8 h-14 rounded-2xl shadow-lg transition-transform hover:scale-105"
-        >
-          🎯 Manage Individual Weights
-        </Button>
+        <div className="flex items-center gap-3">
+          <Button 
+            variant="outline"
+            onClick={() => setShowHelp(!showHelp)}
+            className="bg-white/10 border-white/20 text-white hover:bg-white/20 font-bold px-6 h-14 rounded-2xl"
+          >
+            <BookOpen className="h-5 w-5 mr-2" /> {showHelp ? 'Hide Help' : 'Help & Formulas'}
+          </Button>
+          <Button 
+            onClick={() => setShowUserModal(true)}
+            className="bg-white text-primary hover:bg-white/90 font-bold px-8 h-14 rounded-2xl shadow-lg transition-transform hover:scale-105"
+          >
+            🎯 Individual Weights
+          </Button>
+        </div>
       </div>
+
+      {showHelp && (
+        <Card className="border-primary/20 bg-primary/5 rounded-3xl overflow-hidden animate-in slide-in-from-top-4 duration-300">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-xl flex items-center gap-2">
+              <BookOpen className="h-5 w-5 text-primary" />
+              Voting & Formula Documentation
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-6 text-sm">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div className="space-y-4">
+                <h4 className="font-bold text-primary uppercase tracking-wider text-xs">Threshold Calculation</h4>
+                <p>The system uses two modes for calculating if a motion passes:</p>
+                <ul className="list-disc pl-5 space-y-2 text-muted-foreground">
+                  <li><strong>Simple (0-100%):</strong> Specify a percentage. The system checks if <code>(Votes For / Total Cast) &gt; %</code>.</li>
+                  <li><strong>Custom Formula:</strong> Use a full mathematical expression for complex legal requirements.</li>
+                </ul>
+                
+                <h4 className="font-bold text-primary uppercase tracking-wider text-xs mt-6">Denominator Sources</h4>
+                <p>Determined by Jurisdiction Rules:</p>
+                <ul className="list-disc pl-5 space-y-2 text-muted-foreground">
+                  <li><strong>Active:</strong> Denominator is <code>For + Against</code>. Abstentions are ignored.</li>
+                  <li><strong>Eligible:</strong> Denominator is the total possible weight of all registered attendees. Abstentions count as "No".</li>
+                </ul>
+              </div>
+
+              <div className="space-y-4">
+                <h4 className="font-bold text-primary uppercase tracking-wider text-xs">Variable Reference</h4>
+                <div className="grid grid-cols-2 gap-2 bg-card p-4 rounded-xl border border-border/50">
+                  <div className="font-mono text-indigo-600">for_weight</div>
+                  <div className="text-xs text-muted-foreground">Total weight of 'For' votes</div>
+                  <div className="font-mono text-indigo-600">against_weight</div>
+                  <div className="text-xs text-muted-foreground">Total weight of 'Against' votes</div>
+                  <div className="font-mono text-indigo-600">eligible_weight</div>
+                  <div className="text-xs text-muted-foreground">Total weight of all eligible voters</div>
+                  <div className="font-mono text-indigo-600">cast_weight</div>
+                  <div className="text-xs text-muted-foreground">for_weight + against_weight</div>
+                </div>
+
+                <h4 className="font-bold text-primary uppercase tracking-wider text-xs mt-6">Example Formulas</h4>
+                <div className="space-y-2">
+                  <div className="p-3 bg-muted/50 rounded-lg">
+                    <p className="font-mono text-xs text-indigo-600">for_weight &gt; (cast_weight * 0.5)</p>
+                    <p className="text-[10px] text-muted-foreground mt-1">Simple Majority (over 50% of votes cast)</p>
+                  </div>
+                  <div className="p-3 bg-muted/50 rounded-lg">
+                    <p className="font-mono text-xs text-indigo-600">for_weight &gt;= (eligible_weight * 0.75)</p>
+                    <p className="text-[10px] text-muted-foreground mt-1">Super Majority (75% of ALL eligible owners)</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <div className="p-4 bg-amber-50 border border-amber-100 rounded-2xl flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+              <div className="text-xs text-amber-800">
+                <strong>Important:</strong> Custom formulas override standard threshold percentage logic. If a formula is present, the percentage slider will be disabled. Ensure your formula evaluates to a boolean (true/false).
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {loading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -783,10 +910,68 @@ export default function VotingTab() {
 
           <div className="space-y-5 py-6">
 
-            {/* Available Voting Type — only shown for meeting_type parameters */}
+            {/* 1. Primary Metadata (Name & Description) */}
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Value / Name</Label>
+                {isAdding === 'user_type' || (editingId && parameters.find(p => p.id === editingId)?.parameter_type === 'user_type') ? (
+                  <select
+                    value={editingId ? editValue : (newValue || 'resident')}
+                    onChange={(e) => editingId ? setEditValue(e.target.value) : setNewValue(e.target.value)}
+                    className="w-full h-11 px-3 bg-muted/20 border border-input rounded-xl text-sm focus:ring-2 focus:ring-primary/20 outline-none transition-shadow"
+                  >
+                    <option value="resident">Resident</option>
+                    <option value="owner">Owner</option>
+                    <option value="property_manager">Property Manager</option>
+                    <option value="corporate_administrator">Corporate Administrator</option>
+                    <option value="user">General User</option>
+                    <option value="vendor">Vendor</option>
+                  </select>
+                ) : (() => {
+                  const editingParam = editingId ? parameters.find(p => p.id === editingId) : null
+                  const isEditingMeetingType = editingParam?.parameter_type === 'meeting_type'
+                  const isRenamingMeetingType =
+                    isEditingMeetingType &&
+                    editingParam &&
+                    editValue.trim() !== '' &&
+                    editValue.trim() !== editingParam.value
+                  return (
+                    <div>
+                      <Input
+                        placeholder="e.g., AGM, Board Meeting"
+                        className="h-11 rounded-xl bg-muted/20 border-border/50 focus:border-primary/50 transition-colors"
+                        value={editingId ? editValue : newValue}
+                        onChange={(e) => editingId ? setEditValue(e.target.value) : setNewValue(e.target.value)}
+                      />
+                      {isEditingMeetingType && (
+                        <p className={`text-[10px] mt-1 ${isRenamingMeetingType ? 'text-amber-600 font-medium' : 'text-muted-foreground'}`}>
+                          {isRenamingMeetingType
+                            ? renameCountLoading
+                              ? 'Checking impact...'
+                              : renameMeetingCount != null && renameMeetingCount > 0
+                                ? `⚠️ ${renameMeetingCount} existing meeting(s) will be updated.`
+                                : 'Applying new name to configuration.'
+                            : 'This name appears in meeting lists and reports.'}
+                        </p>
+                      )}
+                    </div>
+                  )
+                })()}
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Description (Optional)</Label>
+                <Input
+                  placeholder="e.g., Annual general meeting for all owners"
+                  className="h-11 rounded-xl bg-muted/20 border-border/50"
+                  value={editingId ? editDescription : newDescription}
+                  onChange={(e) => editingId ? setEditDescription(e.target.value) : setNewDescription(e.target.value)}
+                />
+              </div>
+            </div>
+
+            {/* 2. Linked Voting Types (Conditional) */}
             {(isAdding === 'meeting_type' || (editingId && parameters.find(p => p.id === editingId)?.parameter_type === 'meeting_type')) && (() => {
-              // Build the same deduplicated list the decision modal uses:
-              // company-specific row wins over global for the same name.
               const vtByName = new Map<string, VotingParameter>()
               parameters
                 .filter(p => p.parameter_type === 'voting_type' && p.company_id === null)
@@ -796,7 +981,6 @@ export default function VotingTab() {
                 .forEach(p => vtByName.set(p.value.trim().toLowerCase(), p))
               const votingTypeOptions = Array.from(vtByName.values())
 
-              // currentValues: lowercase list of what's currently checked
               const currentValues = (editingId ? editLinkedVotingType : newLinkedVotingType)
                 ?.split(',')
                 .map((s: string) => s.trim().toLowerCase())
@@ -804,7 +988,6 @@ export default function VotingTab() {
 
               const toggleType = (canonicalName: string) => {
                 const key = canonicalName.trim().toLowerCase()
-                // Rebuild from canonical names to keep stored values clean
                 const currentCanonical = (editingId ? editLinkedVotingType : newLinkedVotingType)
                   ?.split(',').map((s: string) => s.trim()).filter(Boolean) || []
                 let nextValues: string[]
@@ -819,22 +1002,33 @@ export default function VotingTab() {
               }
 
               return votingTypeOptions.length > 0 ? (
-                <div className="space-y-3 p-4 bg-primary/5 border border-primary/20 rounded-xl">
+                <div className="space-y-3 p-5 bg-primary/5 border border-primary/15 rounded-2xl">
                   <div>
-                    <Label className="text-xs font-bold uppercase tracking-wider text-primary">⚖️ Available Voting Types</Label>
-                    <p className="text-[10px] text-muted-foreground mt-0.5">Select which voting types will be available during this meeting type.</p>
+                    <Label className="text-[11px] font-black uppercase tracking-widest text-primary flex items-center gap-2">
+                      <Shield className="h-3 w-3" /> Enabled Voting Rules
+                    </Label>
+                    <p className="text-[10px] text-muted-foreground mt-1">Restrict which voting types can be used for this meeting.</p>
                   </div>
-                  <div className="grid grid-cols-1 gap-2 mt-2">
+                  <div className="grid grid-cols-2 gap-2 mt-3">
                     {votingTypeOptions.map((vt, idx) => (
-                      <div key={`vt-opt-${vt.id}-${idx}`} className="flex items-center space-x-2 bg-background/50 p-2 rounded-lg border border-border/50 hover:border-primary/30 transition-colors">
+                      <div 
+                        key={`vt-opt-${vt.id}-${idx}`} 
+                        className={`flex items-center space-x-2 p-2.5 rounded-xl border transition-all duration-200 cursor-pointer ${
+                          currentValues.includes(vt.value.trim().toLowerCase())
+                            ? 'bg-background border-primary/40 shadow-sm ring-1 ring-primary/10' 
+                            : 'bg-background/40 border-border/50 hover:border-primary/20'
+                        }`}
+                        onClick={() => toggleType(vt.value)}
+                      >
                         <Checkbox 
                           id={`vt-${vt.id}-${idx}`} 
                           checked={currentValues.includes(vt.value.trim().toLowerCase())}
-                          onCheckedChange={() => toggleType(vt.value)}
+                          onCheckedChange={() => {}} // onClick handles this
+                          className="rounded-md border-muted-foreground/30 data-[state=checked]:bg-primary"
                         />
                         <label 
                           htmlFor={`vt-${vt.id}-${idx}`}
-                          className="text-sm font-medium leading-none cursor-pointer flex-1"
+                          className="text-[11px] font-bold leading-tight cursor-pointer flex-1 truncate"
                         >
                           {vt.value}
                         </label>
@@ -842,73 +1036,14 @@ export default function VotingTab() {
                     ))}
                   </div>
                   {currentValues.length === 0 && (
-                    <p className="text-[10px] text-amber-600 font-medium">⚠️ No types selected. All types will be shown by default.</p>
+                    <div className="flex items-center gap-2 p-2 bg-amber-500/10 rounded-lg mt-1 border border-amber-500/20">
+                      <AlertTriangle className="h-3 w-3 text-amber-600" />
+                      <p className="text-[10px] text-amber-700 font-semibold italic">Show all voting types by default.</p>
+                    </div>
                   )}
                 </div>
-              ) : (
-                <div className="p-3 bg-muted/20 rounded-xl text-xs text-muted-foreground italic">
-                  Create some Voting Types first to link them here.
-                </div>
-              )
+              ) : null
             })()}
-
-            <div className="space-y-2">
-              <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Value / Name</Label>
-              {isAdding === 'user_type' || (editingId && parameters.find(p => p.id === editingId)?.parameter_type === 'user_type') ? (
-                <select
-                  value={editingId ? editValue : (newValue || 'resident')}
-                  onChange={(e) => editingId ? setEditValue(e.target.value) : setNewValue(e.target.value)}
-                  className="w-full h-11 px-3 bg-muted/20 border border-input rounded-xl text-sm focus:ring-2 focus:ring-primary/20 outline-none transition-shadow"
-                >
-                  <option value="resident">Resident</option>
-                  <option value="owner">Owner</option>
-                  <option value="property_manager">Property Manager</option>
-                  <option value="corporate_administrator">Corporate Administrator</option>
-                  <option value="user">General User</option>
-                  <option value="vendor">Vendor</option>
-                </select>
-              ) : (() => {
-                const editingParam = editingId ? parameters.find(p => p.id === editingId) : null
-                const isEditingMeetingType = editingParam?.parameter_type === 'meeting_type'
-                const isRenamingMeetingType =
-                  isEditingMeetingType &&
-                  editingParam &&
-                  editValue.trim() !== '' &&
-                  editValue.trim() !== editingParam.value
-                return (
-                  <div>
-                    <Input
-                      placeholder="e.g., Majority Vote"
-                      className="h-11 rounded-xl bg-muted/20"
-                      value={editingId ? editValue : newValue}
-                      onChange={(e) => editingId ? setEditValue(e.target.value) : setNewValue(e.target.value)}
-                    />
-                    {isEditingMeetingType && (
-                      <p className={`text-[10px] mt-1 ${isRenamingMeetingType ? 'text-amber-600' : 'text-muted-foreground'}`}>
-                        {isRenamingMeetingType
-                          ? renameCountLoading
-                            ? 'Checking how many meetings use this type…'
-                            : renameMeetingCount != null && renameMeetingCount > 0
-                              ? `${renameMeetingCount} meeting(s) use "${editingParam?.value}". Click Save Changes to rename them too.`
-                              : 'Click Save Changes to apply the new name.'
-                          : 'Meeting type name shown in dropdowns and on meeting records.'}
-                      </p>
-                    )}
-                  </div>
-                )
-              })()}
-
-            </div>
-
-            <div className="space-y-2">
-              <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Description (Optional)</Label>
-              <Input
-                placeholder="Brief explanation..."
-                className="h-11 rounded-xl bg-muted/20"
-                value={editingId ? editDescription : newDescription}
-                onChange={(e) => editingId ? setEditDescription(e.target.value) : setNewDescription(e.target.value)}
-              />
-            </div>
 
             {(isAdding === 'user_type' || (editingId && parameters.find(p => p.id === editingId)?.parameter_type === 'user_type')) && (
               <div className="space-y-2">

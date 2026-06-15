@@ -43,7 +43,24 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { supabase, getCurrentUser } from "@/lib/supabase"
 import { canAccessIntegrations, isMaster as checkIsMaster, isCorporateAdmin as checkIsCorporateAdmin } from "@/lib/permissions"
 import { toast } from "sonner"
-import { triggerJanusResync } from "@/lib/janus"
+import { triggerJanusResync } from "@/lib/janus-client"
+
+/**
+ * Call the MG server-side lockout route to lock or unlock Janus accounts for a company.
+ * This never exposes the Janus service-role key to the browser.
+ */
+async function callJanusLockout(action: "lock" | "unlock", companyId: number): Promise<{ count: number }> {
+  const apiKey = process.env.NEXT_PUBLIC_API_KEY || ""
+  const res = await fetch("/api/v1/janus/lockout", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-api-key": apiKey },
+    body: JSON.stringify({ action, company_id: companyId }),
+  })
+  const data = await res.json()
+  if (!res.ok) throw new Error(data?.error || `Lockout ${action} failed`)
+  return { count: data.locked_count ?? data.unlocked_count ?? 0 }
+}
+
 
 interface Integration {
   id: string
@@ -309,11 +326,20 @@ export default function IntegrationsPage({ onBack }: { onBack: () => void }) {
       setSyncLog(prev => [...prev, `❌ Error: ${error.message}`])
     }
 
-    // 4. Mark as installed
+    // 4. Mark as installed in DB + local storage
     const targetCompanyId = !checkIsMaster(currentUser) ? currentUser.company_id : (selectedCompanyId === "all" ? null : parseInt(selectedCompanyId))
     if (targetCompanyId) {
       supabase.from('companies').update({ janus_integrated: true, janus_api_key: API_KEY }).eq('id', targetCompanyId).then()
+      // 🔓 Unlock Janus accounts for this company (re-install scenario)
+      callJanusLockout("unlock", targetCompanyId).then(({ count }) => {
+        if (count > 0) {
+          setSyncLog(prev => [...prev, `🔓 Re-activated ${count} Janus account(s).`])
+        }
+      }).catch(err => {
+        console.warn("[Install] Janus unlock call failed:", err.message)
+      })
     }
+
     const storageKey = `mg_integrations_${currentUser.id}`
     const installed = JSON.parse(localStorage.getItem(storageKey) || "[]")
     if (!installed.includes("janus")) {
@@ -337,34 +363,42 @@ export default function IntegrationsPage({ onBack }: { onBack: () => void }) {
     toast.loading("Disconnecting and locking Janus accounts...", { id: "uninstall-janus" })
 
     try {
-      // 1. Fetch all users for this company to lock them out in Janus
       if (user.company_id) {
+        // 🔒 STRONG LOCKOUT: directly set mg_access = false in Janus DB for all company users
+        const { count: lockedCount } = await callJanusLockout("lock", user.company_id)
+
+        // Also fire the legacy webhook resync so Janus can react (belt + suspenders)
         const { data: companyUsers } = await supabase
           .from('users')
-          .select('*')
+          .select('id, email, user_type')
           .eq('company_id', user.company_id)
+          .neq('user_type', 'master') // never touch master accounts
 
         if (companyUsers && companyUsers.length > 0) {
-          // Send surgical "uninstalled" push for each user
           for (const u of companyUsers) {
             await triggerJanusResync("user_uninstalled", {
               ...u,
-              status: "uninstalled"
+              status: "uninstalled",
+              mg_access: false
             }, "user")
           }
         }
 
-        // Send final company uninstalled push
         await triggerJanusResync("company_uninstalled", {
           id: user.company_id,
           status: "uninstalled"
         }, "company")
 
-        // 2. Save to Database: Mark company as disconnected in MG
+        // Mark company as disconnected in MG DB
         await supabase
           .from('companies')
           .update({ janus_integrated: false })
           .eq('id', user.company_id)
+
+        toast.success("Integration disconnected", {
+          id: "uninstall-janus",
+          description: `${lockedCount} Janus account(s) have been locked out.`
+        })
       }
 
       const storageKey = `mg_integrations_${user.id}`
@@ -372,20 +406,19 @@ export default function IntegrationsPage({ onBack }: { onBack: () => void }) {
       const newInstalled = installed.filter((id: string) => id !== "janus")
       localStorage.setItem(storageKey, JSON.stringify(newInstalled))
       localStorage.removeItem(`mg_janus_token_${user.id}`)
-      
-      setIntegrations(prev => prev.map(int => 
+
+      setIntegrations(prev => prev.map(int =>
         int.id === "janus" ? { ...int, installed: false } : int
       ))
-
-      toast.success("Integration disconnected", {
-        id: "uninstall-janus",
-        description: "All associated Janus accounts have been locked."
-      })
-    } catch (err) {
+    } catch (err: any) {
       console.error("Uninstall error:", err)
-      toast.error("Failed to fully disconnect", { id: "uninstall-janus" })
+      toast.error("Failed to fully disconnect", {
+        id: "uninstall-janus",
+        description: err?.message || "Some accounts may not have been locked."
+      })
     }
   }
+
 
   return (
     <div className="container mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
@@ -456,7 +489,7 @@ export default function IntegrationsPage({ onBack }: { onBack: () => void }) {
                       API Secret Key
                     </div>
                     <div className="text-foreground">
-                      {process.env.NEXT_PUBLIC_API_KEY || "Not Configured"}
+                      {"●●●●●●●●●●●●"}
                     </div>
                   </div>
                 )}

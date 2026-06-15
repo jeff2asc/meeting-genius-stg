@@ -21,8 +21,9 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { supabase, getVotingParameters, Company } from "@/lib/supabase"
-import { triggerJanusResync } from "@/lib/janus"
+import { supabase, Company } from "@/lib/supabase"
+import { fetchVotingParametersAction } from "@/lib/api-actions"
+import { triggerJanusResync } from "@/lib/janus-client"
 import { toast } from "sonner"
 import { apiClient } from "@/lib/api-client"
 
@@ -116,6 +117,7 @@ export default function BuildingDetailsModal({
         return
       }
 
+      const seen = new Set<string>()
       const formatted = (data || [])
         .map((ub: any) => ({
           id: ub.users?.id,
@@ -125,7 +127,13 @@ export default function BuildingDetailsModal({
           roles: ub.users?.roles,
           unit_number: ub.unit_number,
         }))
-        .filter((u: any) => u.id)
+        .filter((u: any) => {
+          if (!u.id) return false
+          const key = `${u.id}-${u.unit_number || "none"}`
+          if (seen.has(key)) return false
+          seen.add(key)
+          return true
+        })
 
       setAssignedUsers(formatted)
     } catch (err) {
@@ -211,7 +219,7 @@ export default function BuildingDetailsModal({
   }
 
   const fetchDynamicParams = async () => {
-    const params = await getVotingParameters(building?.company_id) as Array<{ parameter_type: string; value: string }>
+    const params = await fetchVotingParametersAction(building?.company_id) as Array<{ parameter_type: string; value: string }>
     
     // Deduplicate values for Master users who see multiple company parameters
     const types = params.filter(p => p.parameter_type === 'building_type').map(p => p.value)

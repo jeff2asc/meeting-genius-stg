@@ -4,11 +4,11 @@ import { useState, useEffect } from "react"
 import { X, Check, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { supabase, Company, getVotingParameters } from "@/lib/supabase"
+import { supabase, Company } from "@/lib/supabase"
+import { fetchVotingParametersAction } from "@/lib/api-actions"
 import { hashPassword } from "@/lib/auth"
 import { isMaster as checkIsMaster, isCorporateAdmin as checkIsCorporateAdmin, isPropertyManager as checkIsPropertyManager } from "@/lib/permissions"
-import { triggerJanusResync } from "@/lib/janus"
-import { fetchJanusUserByEmail } from "@/lib/janus-client"
+import { triggerJanusResync, fetchJanusUserByEmail } from "@/lib/janus-client"
 
 interface CreateUserModalProps {
   isOpen: boolean
@@ -79,7 +79,7 @@ export default function CreateUserModal({
   }, [isOpen])
 
   const fetchUserTypes = async () => {
-    const params = await getVotingParameters(currentUser?.company_id) as Array<{ parameter_type: string; value: string }>
+    const params = await fetchVotingParametersAction(currentUser?.company_id) as Array<{ parameter_type: string; value: string }>
     const types = params.filter((p: { parameter_type: string; value: string }) => p.parameter_type === 'user_type').map((p: { parameter_type: string; value: string }) => p.value)
     setUserTypes([...new Set(types)] as string[])
   }

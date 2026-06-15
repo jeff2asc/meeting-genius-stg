@@ -39,6 +39,9 @@ interface AgendaTemplate {
   agendaItemsColor: string
   coverPageHeight: number
   sectionHeaderTextColor: string
+  agendaHeaderTextColor: string
+  coverPageTextColor: string
+  infoCardHeaderTextColor: string
   richTextBlocks: any[]
 }
 
@@ -100,6 +103,9 @@ export default function GenerateAgendaButton({
           infocard_accent_color,
           agenda_items_color,
           section_header_text_color,
+          agenda_header_text_color,
+          coverpage_text_color,
+          infocard_header_text_color,
           rich_text_blocks,
           updatedat
         `
@@ -132,6 +138,9 @@ export default function GenerateAgendaButton({
         agendaItemsColor: "#2563eb",
         coverPageHeight: COVER_PAGE_HEIGHT,
         sectionHeaderTextColor: "white",
+        agendaHeaderTextColor: "white",
+        coverPageTextColor: "white",
+        infoCardHeaderTextColor: "white",
         richTextBlocks: [],
       }
 
@@ -154,6 +163,9 @@ export default function GenerateAgendaButton({
               ? (row.infocard_fields as unknown as TemplateField[])
               : defaultTemplate.infoCardFields,
           sectionHeaderTextColor: row.section_header_text_color || defaultTemplate.sectionHeaderTextColor,
+          agendaHeaderTextColor: row.agenda_header_text_color || defaultTemplate.agendaHeaderTextColor,
+          coverPageTextColor: row.coverpage_text_color || defaultTemplate.coverPageTextColor,
+          infoCardHeaderTextColor: row.infocard_header_text_color || defaultTemplate.infoCardHeaderTextColor,
           richTextBlocks: Array.isArray(row.rich_text_blocks) ? row.rich_text_blocks : defaultTemplate.richTextBlocks,
         }
       }
@@ -162,7 +174,7 @@ export default function GenerateAgendaButton({
       const company = building?.companies
       const logoUrl: string | null = building?.logo_url || company?.logo_url || null
 
-      const { data: sections, error: sectionsError } = await supabase
+      const { data: rawSections, error: sectionsError } = await supabase
         .from("sections")
         .select("*")
         .eq("meeting_id", meetingId)
@@ -170,13 +182,21 @@ export default function GenerateAgendaButton({
 
       if (sectionsError) console.error("Error loading sections:", sectionsError)
 
-      const { data: topics, error: topicsError } = await supabase
+      // Deduplicate sections by ID and sort correctly
+      const sections = Array.from(new Map((rawSections || []).map(s => [s.id, s])).values())
+        .sort((a, b) => (a.order_index || 0) - (b.order_index || 0))
+
+      const { data: rawTopics, error: topicsError } = await supabase
         .from("topics")
         .select("id, title, description, section_id, order_index, is_incamera, time_per_topic")
         .eq("meeting_id", meetingId)
         .order("order_index")
 
       if (topicsError) console.error("Error loading topics:", topicsError)
+
+      // Deduplicate topics by ID
+      const topics = Array.from(new Map((rawTopics || []).map(t => [t.id, t])).values())
+        .sort((a, b) => (a.order_index || 0) - (b.order_index || 0))
 
       const agendaHtml = buildAgendaHtml({
         template,
@@ -659,16 +679,20 @@ function buildAgendaHtml({
           <img src="${logoUrl}" alt="Logo" />
         </div>`
       } else if (element.id === "title") {
-        coverHtml += `<div class="cover-element" style="${posStyle} text-align: center;">
+        const titleColor = template.coverPageTextColor === 'black' ? '#000000' : '#ffffff'
+        const titleShadow = template.coverPageTextColor === 'white' ? 'text-shadow: 0 2px 4px rgba(0,0,0,0.3);' : ''
+        coverHtml += `<div class="cover-element" style="${posStyle} text-align: center; color: ${titleColor}; ${titleShadow}">
           <div class="cover-title-line" style="font-size: 46px;">MEETING</div>
           <div class="cover-title-line" style="font-size: 46px;">AGENDA</div>
         </div>`
       } else if (element.id === "building_name") {
-        coverHtml += `<div class="cover-element" style="${posStyle} font-size: 24px; color: rgba(200, 220, 255, 0.95); text-align: ${element.align};">
+        const nameColor = template.coverPageTextColor === 'black' ? 'rgba(0,0,0,0.85)' : 'rgba(255, 255, 255, 0.95)'
+        coverHtml += `<div class="cover-element" style="${posStyle} font-size: 24px; color: ${nameColor}; text-align: ${element.align};">
           ${escapeHtml(building?.name || "")}
         </div>`
       } else if (element.id === "meeting_type") {
-        coverHtml += `<div class="cover-element" style="${posStyle} font-size: 18px; color: rgba(200, 220, 255, 0.9); text-align: ${element.align};">
+        const typeColor = template.coverPageTextColor === 'black' ? 'rgba(0,0,0,0.75)' : 'rgba(255, 255, 255, 0.85)'
+        coverHtml += `<div class="cover-element" style="${posStyle} font-size: 18px; color: ${typeColor}; text-align: ${element.align};">
           ${escapeHtml(meeting.meeting_type || "Council Meeting")}
         </div>`
       }
@@ -677,7 +701,7 @@ function buildAgendaHtml({
   coverHtml += "</div>"
 
   let infoCardHtml = `<div class="info-card">
-    <div class="info-card-header" style="background-color: ${template.infoCardAccentColor};">
+    <div class="info-card-header" style="background-color: ${template.infoCardAccentColor}; color: ${template.infoCardHeaderTextColor === 'black' ? '#000000' : '#ffffff'};">
       MEETING INFORMATION
     </div>
     <div class="info-card-body">`
@@ -709,6 +733,7 @@ function buildAgendaHtml({
       .filter(b => b.slot === 'header')
       .filter(b => {
         if (!b.meetingTypeFilter || b.meetingTypeFilter.length === 0) return true
+        if (!meetingType) return false
         return b.meetingTypeFilter.some((f: string) => 
           meetingType.toLowerCase().includes(f.toLowerCase()) || 
           f.toLowerCase().includes(meetingType.toLowerCase())
@@ -733,7 +758,7 @@ function buildAgendaHtml({
       })
   }
 
-  let agendaHtml = `<div class="agenda-header" style="background-color: ${template.agendaItemsColor};">
+  let agendaHtml = `<div class="agenda-header" style="background-color: ${template.agendaItemsColor}; color: ${template.agendaHeaderTextColor === 'black' ? '#000000' : '#ffffff'};">
     AGENDA ITEMS
   </div>`
 
@@ -809,6 +834,7 @@ function buildAgendaHtml({
       .filter(b => b.slot === 'footer')
       .filter(b => {
         if (!b.meetingTypeFilter || b.meetingTypeFilter.length === 0) return true
+        if (!meetingType) return false
         return b.meetingTypeFilter.some((f: string) => 
           meetingType.toLowerCase().includes(f.toLowerCase()) || 
           f.toLowerCase().includes(meetingType.toLowerCase())

@@ -4,7 +4,8 @@ import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { X, Trash2 } from "lucide-react"
-import { supabase, getCurrentUser, getVotingParameters } from "@/lib/supabase"
+import { supabase, getCurrentUser } from "@/lib/supabase"
+import { fetchVotingParametersAction } from "@/lib/api-actions"
 import { toast } from "sonner"
 import { AlertCircle, FileText, CheckSquare } from "lucide-react"
 import {
@@ -254,7 +255,7 @@ export default function DecisionModal({
         calculation_formula?: string | null
         is_default?: boolean
       }
-      const params = (await getVotingParameters(companyId)) as RawParam[]
+      const params = (await fetchVotingParametersAction(companyId)) as RawParam[]
       setVotingParametersData(
         params.filter((p) => p.parameter_type === "voting_type") as VotingParameterRow[],
       )

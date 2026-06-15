@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { parseCSV, generateExampleCSV, CSVUser } from "@/lib/csvParser"
 import { toast } from "sonner"
+import { apiClient } from "@/lib/api-client"
 
 interface ImportUsersModalProps {
   isOpen: boolean
@@ -83,26 +84,13 @@ export default function ImportUsersModal({
     setStep("importing")
 
     try {
-      const response = await fetch('/api/users/bulk-import', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': process.env.NEXT_PUBLIC_API_KEY || '',
-        },
-        body: JSON.stringify({
-          users: parsedUsers,
-          buildingId,
-          buildingType,
-          companyId,
-          managerId,
-        }),
+      const data = await apiClient.v1.users.bulkImport({
+        users: parsedUsers,
+        buildingId,
+        buildingType,
+        companyId,
+        managerId,
       })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Import failed')
-      }
 
       setImportResults(data)
       

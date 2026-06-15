@@ -4,8 +4,9 @@ import { useState, useEffect } from "react"
 import { X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { supabase, getVotingParameters } from "@/lib/supabase"
-import { triggerJanusResync } from "@/lib/janus"
+import { supabase } from "@/lib/supabase"
+import { fetchVotingParametersAction } from "@/lib/api-actions"
+import { triggerJanusResync } from "@/lib/janus-client"
 
 // Common IANA timezones — grouped for easy selection
 const TIMEZONE_OPTIONS = [
@@ -86,7 +87,7 @@ export default function EditBuildingModal({
   useEffect(() => {
     if (isOpen) {
       const fetchTypes = async () => {
-        const params = await getVotingParameters(currentUser?.company_id)
+        const params = await fetchVotingParametersAction(currentUser?.company_id)
         const types = (params as Array<{ parameter_type: string; value: string }>)
           .filter(p => p.parameter_type === 'building_type')
           .map(p => p.value)

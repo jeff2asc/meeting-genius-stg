@@ -18,7 +18,8 @@ import LogoTab from "./LogoTab"
 import { Card } from "@/components/ui/card"
 import { supabase, type Company, getCurrentUser } from "@/lib/supabase"
 import { canManageCompanies } from "@/lib/permissions"
-import { triggerJanusResync } from "@/lib/janus"
+import { triggerJanusResync } from "@/lib/janus-client"
+import { apiClient } from "@/lib/api-client"
 
 interface CompanyDetailsModalProps {
   isOpen: boolean
@@ -473,8 +474,15 @@ export default function CompanyDetailsModal({
         .single()
 
       if (insertError) {
-        console.error("Error adding building:", insertError)
-        setError("Failed to add building")
+        console.error("Detailed Error adding building:", insertError)
+        
+        // Handle 409 Conflict (Duplicate ID or Constraint Violation)
+        if (insertError.code === '23505') {
+          setError(`Conflict: ${insertError.details || 'The building ID or name already exists in the database.'} Please check the database sequences if you see an ID conflict.`)
+        } else {
+          setError(`Failed to add building: ${insertError.message}${insertError.details ? ` (${insertError.details})` : ''}`)
+        }
+        
         setSavingBuilding(false)
         return
       }
@@ -751,14 +759,11 @@ export default function CompanyDetailsModal({
         updatePayload.smtp_password = smtpPassword.trim()
       }
 
-      const { error } = await supabase
-        .from("companies")
-        .update(updatePayload)
-        .eq("id", company.id)
-
-      if (error) {
-        console.error("Error saving SMTP:", error)
-        setError("Failed to save SMTP settings")
+      try {
+        await apiClient.v1.companies.update(company.id, updatePayload)
+      } catch (err: any) {
+        console.error("Error saving SMTP:", err)
+        setError(err.message || "Failed to save SMTP settings")
         return
       }
 
@@ -781,18 +786,15 @@ export default function CompanyDetailsModal({
       // Sanitize model name (replace spaces with dashes)
       const sanitizedModel = llmModel.trim().toLowerCase().replace(/\s+/g, '-');
       
-      const { error } = await supabase
-        .from("companies")
-        .update({
+      try {
+        await apiClient.v1.companies.update(company.id, {
           llm_provider: llmProvider === "global" ? null : llmProvider,
           llm_api_key: llmApiKey.trim() || null,
           llm_model: sanitizedModel || null,
         })
-        .eq("id", company.id)
-
-      if (error) {
-        console.error("Error saving LLM settings:", error)
-        setError("Failed to save LLM settings")
+      } catch (err: any) {
+        console.error("Error saving LLM settings:", err)
+        setError(err.message || "Failed to save LLM settings")
         return
       }
 
