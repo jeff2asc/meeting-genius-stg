@@ -81,7 +81,9 @@ async function proxyRequest(request: NextRequest, paramsPromise: Promise<{ path:
     responseHeaders.set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
     responseHeaders.set("Access-Control-Allow-Headers", "authorization, apikey, content-type, prefer, x-client-info, x-supabase-auth")
 
-    const responseBody = await response.arrayBuffer()
+    const responseBody = [204, 304].includes(response.status)
+      ? null
+      : await response.arrayBuffer()
 
     return new NextResponse(responseBody, {
       status: response.status,
