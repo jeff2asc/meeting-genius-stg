@@ -898,7 +898,7 @@ export default function VotingTab({ initialCompanyId }: VotingTabProps) {
 
       {/* 🚀 Modal for Adding/Editing Parameters */}
       <Dialog open={paramModalOpen} onOpenChange={setParamModalOpen}>
-        <DialogContent className="max-w-md bg-background border-border rounded-2xl shadow-2xl">
+        <DialogContent className="max-w-md bg-background border-border rounded-2xl shadow-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader className="space-y-3">
             <DialogTitle className="text-2xl font-bold">
               {editingId ? "Edit Configuration" : `New ${isAdding?.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}`}
