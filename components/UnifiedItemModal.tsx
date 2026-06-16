@@ -19,6 +19,7 @@ interface UnifiedItemModalProps {
     description?: string
     status?: string
   }
+  meetingAttendees?: any[]
 }
 
 export default function UnifiedItemModal({
@@ -28,7 +29,8 @@ export default function UnifiedItemModal({
   meetingId,
   onSave,
   defaultTab = 'task',
-  initialData
+  initialData,
+  meetingAttendees
 }: UnifiedItemModalProps) {
   const [activeTab, setActiveTab] = useState<'task' | 'note' | 'decision'>(defaultTab)
 
@@ -100,6 +102,7 @@ export default function UnifiedItemModal({
               meetingId={meetingId}
               embedded={true}
               initialData={initialData}
+              meetingAttendees={meetingAttendees}
             />
           </div>
 
@@ -122,6 +125,7 @@ export default function UnifiedItemModal({
               topicId={topicId}
               meetingId={meetingId}
               embedded={true}
+              meetingAttendees={meetingAttendees}
             />
           </div>
         </div>

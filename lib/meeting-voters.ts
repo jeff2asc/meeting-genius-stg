@@ -42,7 +42,7 @@ function inferUserTypeFromRole(role?: string): string | undefined {
   if (r.includes("owner")) return "owner"
   if (r.includes("property manager") || r === "pm") return "property_manager"
   if (r.includes("corp") && r.includes("admin")) return "corporate_administrator"
-  if (r.includes("resident")) return "resident"
+  if (r.includes("resident") && !r.includes("president")) return "resident"
   if (r.includes("attendee")) return "attendee"
   return undefined
 }

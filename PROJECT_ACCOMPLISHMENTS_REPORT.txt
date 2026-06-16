@@ -10,7 +10,7 @@ Project Accomplishments Report - June 15, 2026
   - Admin Client Execution: Replaced client-side queries with createAdminClient() calls executed strictly on the backend, preventing database credentials or elevated privileges from being exposed to the browser.
   - Next.js 15 Parameter Upgrades: Refactored dynamic route parameter handling (e.g. app/api/supabase-proxy/[...path]/route.ts) to be compliant with Next.js 15 async paradigms by awaiting parameter promises.
   - No-Content Proxy Handling: Fixed the HTTP proxy response parser to return null body payloads on 204 No Content and 304 Not Modified statuses, preventing native NextResponse constructor exceptions.
-* Transcript Task Extraction: Refactored transcript-based task extractions so the UI matches the manual task creation experience.
+* Transcript Task Extraction: Refacto red transcript-based task extractions so the UI matches the manual task creation experience.
 * Cleaned Mobile View: Optimized layout grids, borders, and overlays to make the mobile view cleaner.
 * Voting Expressions: Custom voting formulas and expressions are now clearer and display proper input configurations.
 

@@ -473,16 +473,18 @@ export default function DecisionModal({
         new Map(merged.map((u: any) => [u.id, u])).values()
       ).sort((a: any, b: any) => a.name.localeCompare(b.name))
 
-      const eligibleUsers = unique.filter(u => u.user_type === 'owner' || u.user_type === 'resident')
-      setTotalLots(eligibleUsers.length)
-      setTotalUE(eligibleUsers.reduce((sum, u) => sum + (u.voting_weight ?? 1), 0))
-      setCompanyUsers(unique)
-
+      // ⭐ UPDATED: Total Lots/UE should be based on MEETING VOTERS (Attendees), not the whole building (§8.3)
+      // This aligns with: "the attendee in the meeting should be the list of the voters in the decision"
       const attendeeList: MeetingAttendeeRecord[] =
         meetingAttendees ??
         ((meetingData.attendees as MeetingAttendeeRecord[] | null) ?? [])
 
-      setMeetingVoters(buildMeetingVoters(attendeeList, unique))
+      const voterList = buildMeetingVoters(attendeeList, unique)
+      const eligibleVoters = voterList.filter(u => u.user_type === 'owner')
+      
+      setTotalLots(eligibleVoters.length)
+      setTotalUE(eligibleVoters.reduce((sum, u) => sum + (u.voting_weight ?? 1), 0))
+      setMeetingVoters(voterList)
       setAttendees(attendeeList as unknown as Attendee[])
     } catch (err) {
       console.error("Error fetching company users:", err)
@@ -526,7 +528,11 @@ export default function DecisionModal({
       if (!textAfterAt.includes(" ") && !textAfterAt.includes("\n")) {
         setMentionStartIndex(atIndex)
 
+        // ⭐ UPDATED: Filter logic — show present attendees if any; otherwise show all (except residents)
+        const hasPresent = meetingVoters.some(v => v.present)
         const filtered = meetingVoters.filter(user =>
+          (hasPresent ? user.present : true) && 
+          user.user_type !== 'resident' &&
           user.name.toLowerCase().includes(textAfterAt.toLowerCase())
         )
 
@@ -898,33 +904,59 @@ export default function DecisionModal({
                 No voters — open <strong>Attendees</strong>, add people, click <strong>Save Attendees</strong>, then reopen this decision.
               </div>
             )}
-            {meetingVoters.map((user) => {
-              const badge = getRoleBadge(user)
-              const isChecked = selected.includes(user.name)
-              return (
-                <div
-                  key={String(user.id)}
-                  className={`flex items-center gap-3 px-3 py-2.5 cursor-pointer transition-colors ${
-                    isChecked ? "bg-primary/5" : "hover:bg-muted"
-                  }`}
-                  onClick={() => toggleVote(type, user.name)}
-                >
-                  <input
-                    type="checkbox"
-                    checked={isChecked}
-                    readOnly
-                    className="h-4 w-4 rounded border-border text-primary focus:ring-primary cursor-pointer pointer-events-none shrink-0"
-                  />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-foreground truncate">{user.name}</div>
-                    <div className="text-xs text-muted-foreground truncate">{user.email}</div>
-                  </div>
-                  <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full shrink-0 ${badge.color}`}>
-                    {badge.label}
-                  </span>
-                </div>
+            {(() => {
+              const hasPresent = meetingVoters.some(v => v.present)
+              const displayList = meetingVoters.filter(u => 
+                (hasPresent ? u.present : true) && 
+                u.user_type !== 'resident'
               )
-            })}
+
+              if (displayList.length === 0) {
+                return (
+                  <div className="p-4 text-center">
+                    <p className="text-sm text-muted-foreground">No eligible voters found.</p>
+                    <p className="text-[10px] text-amber-600 mt-1 uppercase font-bold">Residents are excluded from voting</p>
+                  </div>
+                )
+              }
+
+              return (
+                <>
+                  {hasPresent && (
+                    <div className="px-3 py-1.5 bg-green-50 border-b border-green-100 text-[9px] font-black text-green-700 uppercase tracking-widest">
+                      Showing Present Attendees Only
+                    </div>
+                  )}
+                  {displayList.map((user) => {
+                    const badge = getRoleBadge(user)
+                    const isChecked = selected.includes(user.name)
+                    return (
+                      <div
+                        key={String(user.id)}
+                        className={`flex items-center gap-3 px-3 py-2.5 cursor-pointer transition-colors ${
+                          isChecked ? "bg-primary/5" : "hover:bg-muted"
+                        }`}
+                        onClick={() => toggleVote(type, user.name)}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          readOnly
+                          className="h-4 w-4 rounded border-border text-primary focus:ring-primary cursor-pointer pointer-events-none shrink-0"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium text-foreground truncate">{user.name}</div>
+                          <div className="text-xs text-muted-foreground truncate">{user.email}</div>
+                        </div>
+                        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full shrink-0 ${badge.color}`}>
+                          {badge.label}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </>
+              )
+            })()}
           </div>
         )}
       </div>

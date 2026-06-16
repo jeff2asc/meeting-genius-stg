@@ -10,6 +10,7 @@ interface Attendee {
   email?: string
   role?: string
   present: boolean
+  user_type?: string
 }
 
 interface SelectRecorderModalProps {
@@ -47,8 +48,8 @@ export default function SelectRecorderModal({
 
   if (!isOpen) return null
 
-  const presentAttendees = attendees.filter((a) => a.present)
-  const pickerList = presentAttendees.length > 0 ? presentAttendees : attendees
+  const presentAttendees = attendees.filter((a) => a.present && a.user_type !== 'resident')
+  const pickerList = (presentAttendees.length > 0 ? presentAttendees : attendees).filter(a => a.user_type !== 'resident')
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 animate-in fade-in">
