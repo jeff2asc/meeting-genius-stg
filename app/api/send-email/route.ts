@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import nodemailer from 'nodemailer'
-import { createClient } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabase'
+import { isAuthorizedRequest } from '@/lib/auth-server'
 
 // Use centralized Supabase client from @/lib/supabase
 // to handle hardcoded fallbacks and singletons.
@@ -12,9 +12,7 @@ export async function POST(request: NextRequest) {
     const { companyId, to, subject, html, text } = body
 
     // API Key verification
-    const apiKey = request.headers.get('x-api-key')
-    const validApiKey = process.env.NEXT_PUBLIC_API_KEY || ''
-    if (!apiKey || apiKey !== validApiKey) {
+    if (!isAuthorizedRequest(request)) {
       return NextResponse.json(
         { error: 'Unauthorized: Invalid API key' },
         { status: 401 }

@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef, useCallback } from "react"
-import { GripVertical, Save, FileText, Loader2, Undo, Home, Plus, Trash2, AlignLeft, AlignCenter, AlignRight, ChevronUp, ChevronDown } from "lucide-react"
+import { GripVertical, Save, FileText, Loader2, Undo, Home, Plus, Trash2, AlignLeft, AlignCenter, AlignRight, ChevronUp, ChevronDown, Link as LinkIcon, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { supabase } from "@/lib/supabase"
@@ -19,6 +19,8 @@ interface RichTextBlock {
   italic: boolean
   textAlign: 'left' | 'center' | 'right'
   meetingTypeFilter: string[]
+  attachmentPath?: string
+  attachmentName?: string
 }
 
 // Dynamic meeting types will be fetched from voting_parameters
@@ -1219,6 +1221,7 @@ export default function MinutesTemplatesTab({
                         key={block.id}
                         block={block}
                         availableMeetingTypes={availableMeetingTypes}
+                        buildingId={selectedBuildingId || undefined}
                         onUpdate={(updated) => {
                           setRichTextBlocks(prev => prev.map(b => b.id === updated.id ? updated : b))
                           setHasChanges(true)
@@ -1491,18 +1494,25 @@ export default function MinutesTemplatesTab({
                           .filter(b => !meeting || b.meetingTypeFilter.length === 0 || (meeting.meeting_type && b.meetingTypeFilter.some(mt => meeting.meeting_type?.toLowerCase().includes(mt.toLowerCase()) || mt.toLowerCase().includes(meeting.meeting_type?.toLowerCase() || ""))))
                           .sort((a,b) => a.order - b.order)
                           .map(block => (
-                            <div 
-                              key={block.id}
-                              style={{
-                                fontSize: `${block.fontSize}pt`,
-                                textAlign: block.textAlign as any,
-                                fontWeight: block.bold ? 'bold' : 'normal',
-                                fontStyle: block.italic ? 'italic' : 'normal',
-                                whiteSpace: 'pre-wrap',
-                                color: '#374151'
-                              }}
-                            >
-                              {block.content || <span className="text-gray-300 italic">(Empty {block.label})</span>}
+                            <div key={block.id}>
+                              <div 
+                                style={{
+                                  fontSize: `${block.fontSize}pt`,
+                                  textAlign: block.textAlign as any,
+                                  fontWeight: block.bold ? 'bold' : 'normal',
+                                  fontStyle: block.italic ? 'italic' : 'normal',
+                                  whiteSpace: 'pre-wrap',
+                                  color: '#374151'
+                                }}
+                              >
+                                {block.content || <span className="text-gray-300 italic">(Empty {block.label})</span>}
+                              </div>
+                              {block.attachmentName && (
+                                <div className="mt-1 inline-flex items-center gap-1.5 bg-blue-50 border border-blue-200 text-blue-700 rounded px-2 py-0.5">
+                                  <FileText className="h-3 w-3 flex-shrink-0" />
+                                  <span className="text-[10px] font-medium">📎 {block.attachmentName}</span>
+                                </div>
+                              )}
                             </div>
                           ))}
                       </div>
@@ -2074,19 +2084,25 @@ export default function MinutesTemplatesTab({
                             .filter(b => !meeting || b.meetingTypeFilter.length === 0 || (meeting.meeting_type && b.meetingTypeFilter.some(mt => meeting.meeting_type?.toLowerCase().includes(mt.toLowerCase()) || mt.toLowerCase().includes(meeting.meeting_type?.toLowerCase() || ""))))
                             .sort((a,b) => a.order - b.order)
                             .map(block => (
-                              <div
-                                key={block.id}
-                                className="mt-8 border-t pt-4"
-                                style={{
-                                  fontSize: `${block.fontSize}pt`,
-                                  fontWeight: block.bold ? 'bold' : 'normal',
-                                  fontStyle: block.italic ? 'italic' : 'normal',
-                                  textAlign: block.textAlign as any,
-                                  whiteSpace: 'pre-wrap',
-                                  color: '#374151'
-                                }}
-                              >
-                                {block.content || <span className="opacity-30 italic">[{block.label} content goes here]</span>}
+                              <div key={block.id} className="mt-8 border-t pt-4">
+                                <div
+                                  style={{
+                                    fontSize: `${block.fontSize}pt`,
+                                    fontWeight: block.bold ? 'bold' : 'normal',
+                                    fontStyle: block.italic ? 'italic' : 'normal',
+                                    textAlign: block.textAlign as any,
+                                    whiteSpace: 'pre-wrap',
+                                    color: '#374151'
+                                  }}
+                                >
+                                  {block.content || <span className="opacity-30 italic">[{block.label} content goes here]</span>}
+                                </div>
+                                {block.attachmentName && (
+                                  <div className="mt-1 inline-flex items-center gap-1.5 bg-blue-50 border border-blue-200 text-blue-700 rounded px-2 py-0.5">
+                                    <FileText className="h-3 w-3 flex-shrink-0" />
+                                    <span className="text-[10px] font-medium">📎 {block.attachmentName}</span>
+                                  </div>
+                                )}
                               </div>
                             ))
                           }
@@ -2137,17 +2153,72 @@ function RichTextBlockEditor({
   onUpdate,
   onDelete,
   onMove,
+  buildingId,
 }: {
   block: RichTextBlock
   availableMeetingTypes: string[]
   onUpdate: (updated: RichTextBlock) => void
   onDelete: () => void
   onMove: (dir: 'up' | 'down') => void
+  buildingId?: number
 }) {
   const [expanded, setExpanded] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file || !buildingId) return
+
+    if (file.type !== 'application/pdf') {
+      alert('Please select a PDF file')
+      return
+    }
+
+    setUploading(true)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('buildingId', String(buildingId))
+
+      const response = await fetch('/api/templates/upload-attachment', {
+        method: 'POST',
+        headers: {
+          'x-api-key': process.env.NEXT_PUBLIC_API_KEY || '',
+        },
+        body: formData,
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Upload failed')
+      }
+
+      onUpdate({
+        ...block,
+        attachmentPath: result.filePath,
+        attachmentName: result.fileName,
+      })
+    } catch (err) {
+      console.error('Error uploading template attachment:', err)
+      alert('Failed to upload PDF. Please try again.')
+    } finally {
+      setUploading(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
+
+  const removeAttachment = () => {
+    onUpdate({
+      ...block,
+      attachmentPath: undefined,
+      attachmentName: undefined
+    })
+  }
 
   return (
-    <div className="border rounded-lg mb-2 overflow-hidden">
+    <div className="border rounded-lg mb-2 overflow-hidden shadow-sm hover:shadow-md transition-shadow">
       {/* Collapsed header row */}
       <div
         className="flex items-center gap-2 px-2 py-1.5 bg-gray-50 cursor-pointer hover:bg-gray-100 transition-colors"
@@ -2155,6 +2226,11 @@ function RichTextBlockEditor({
       >
         <GripVertical className="h-3 w-3 text-gray-400 flex-shrink-0" />
         <span className="text-xs font-semibold text-gray-700 flex-1 truncate">{block.label || '(untitled)'}</span>
+        {block.attachmentPath && (
+          <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full flex items-center gap-1">
+            <LinkIcon className="h-2.5 w-2.5" /> PDF
+          </span>
+        )}
         <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
           <button onClick={() => onMove('up')} className="p-0.5 hover:bg-gray-200 rounded"><ChevronUp className="h-3 w-3" /></button>
           <button onClick={() => onMove('down')} className="p-0.5 hover:bg-gray-200 rounded"><ChevronDown className="h-3 w-3" /></button>
@@ -2164,7 +2240,7 @@ function RichTextBlockEditor({
 
       {/* Expanded editor */}
       {expanded && (
-        <div className="p-2 space-y-2 bg-white">
+        <div className="p-2 space-y-3 bg-white">
           {/* Label */}
           <div>
             <label className="text-[10px] font-bold uppercase text-muted-foreground">Label</label>
@@ -2188,6 +2264,53 @@ function RichTextBlockEditor({
             />
           </div>
 
+          <div className="flex flex-col gap-2 p-2 bg-gray-50 rounded border border-dashed">
+            <label className="text-[10px] font-bold uppercase text-muted-foreground">Attached PDF (Sent in Email)</label>
+            
+            {block.attachmentPath ? (
+              <div className="flex items-center justify-between bg-white p-1.5 rounded border shadow-sm">
+                <div className="flex items-center gap-2 truncate">
+                  <div className="bg-blue-100 p-1.5 rounded">
+                    <FileText className="h-3.5 w-3.5 text-blue-600" />
+                  </div>
+                  <span className="text-[11px] font-medium truncate max-w-[150px]">{block.attachmentName}</span>
+                </div>
+                <button 
+                  onClick={removeAttachment}
+                  className="p-1 hover:bg-red-50 rounded text-red-500 transition-colors"
+                  title="Remove attachment"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <input
+                  type="file"
+                  accept=".pdf"
+                  onChange={handleFileSelect}
+                  className="hidden"
+                  ref={fileInputRef}
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploading || !buildingId}
+                  className="h-7 text-[10px] font-bold uppercase bg-white border-blue-200 text-blue-600 hover:bg-blue-50"
+                >
+                  {uploading ? (
+                    <><Loader2 className="h-3 w-3 mr-1 animate-spin" /> Uploading...</>
+                  ) : (
+                    <><Plus className="h-3 w-3 mr-1" /> Attach PDF</>
+                  )}
+                </Button>
+                {!buildingId && <span className="text-[9px] text-red-500 font-bold">SELECT BUILDING FIRST</span>}
+                <p className="text-[9px] text-muted-foreground">PDFs only. Max 50MB.</p>
+              </div>
+            )}
+          </div>
+
           {/* Style row */}
           <div className="flex items-center gap-2">
             <div>
@@ -2206,7 +2329,7 @@ function RichTextBlockEditor({
                 <button
                   onClick={() => onUpdate({ ...block, bold: !block.bold })}
                   className={`px-2 py-1 text-xs font-bold rounded border transition-colors ${
-                    block.bold ? 'bg-gray-800 text-white border-gray-800' : 'bg-white border-gray-300 hover:border-gray-500'
+                    block.bold ? 'bg-gray-800 text-white border-gray-800 shadow-sm' : 'bg-white border-gray-300 hover:border-gray-500'
                   }`}
                 >
                   B
@@ -2214,7 +2337,7 @@ function RichTextBlockEditor({
                 <button
                   onClick={() => onUpdate({ ...block, italic: !block.italic })}
                   className={`px-2 py-1 text-xs italic rounded border transition-colors ${
-                    block.italic ? 'bg-gray-800 text-white border-gray-800' : 'bg-white border-gray-300 hover:border-gray-500'
+                    block.italic ? 'bg-gray-800 text-white border-gray-800 shadow-sm' : 'bg-white border-gray-300 hover:border-gray-500'
                   }`}
                 >
                   I
@@ -2229,7 +2352,7 @@ function RichTextBlockEditor({
                     key={a}
                     onClick={() => onUpdate({ ...block, textAlign: a })}
                     className={`px-1.5 py-1 rounded border transition-colors ${
-                      block.textAlign === a ? 'bg-gray-800 text-white border-gray-800' : 'bg-white border-gray-300 hover:border-gray-500'
+                      block.textAlign === a ? 'bg-gray-800 text-white border-gray-800 shadow-sm' : 'bg-white border-gray-300 hover:border-gray-500'
                     }`}
                   >
                     {a === 'left' ? <AlignLeft className="h-3 w-3" /> : a === 'center' ? <AlignCenter className="h-3 w-3" /> : <AlignRight className="h-3 w-3" />}
@@ -2256,7 +2379,7 @@ function RichTextBlockEditor({
                     }}
                     className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border transition-colors ${
                       active
-                        ? 'bg-blue-600 text-white border-blue-600'
+                        ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
                         : 'bg-white text-gray-600 border-gray-300 hover:border-blue-400'
                     }`}
                   >
@@ -2265,9 +2388,6 @@ function RichTextBlockEditor({
                 )
               })}
             </div>
-            {block.meetingTypeFilter.length > 0 && (
-              <p className="text-[10px] text-blue-600 mt-1">✓ Only in: {block.meetingTypeFilter.join(', ')}</p>
-            )}
           </div>
         </div>
       )}

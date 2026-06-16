@@ -1204,9 +1204,17 @@ export default function MeetingView({
   const handleSendNotice = async () => {
     if (!meeting) return
 
+    // Build recipient list from meeting attendees who have an email
+    const meetingAttendees: Attendee[] = (meeting.attendees as Attendee[]) || []
+    const attendeesWithEmail = meetingAttendees.filter((a) => a.email?.trim())
+
+    const recipientCount = attendeesWithEmail.length
     const confirmed = confirm(
-      `Send meeting notice to all owners/residents of ${meeting.building}?\n\n` +
-      `This will email the agenda to all assigned owners and residents.`
+      `Send meeting notice to ${recipientCount} attendee(s) of "${meeting.title}"?\n\n` +
+      `Recipients: ${recipientCount > 0
+        ? attendeesWithEmail.map((a) => a.name || a.email).join(", ")
+        : "None found — will fall back to building owners/residents"
+      }`
     )
 
     if (!confirmed) return
@@ -1216,7 +1224,7 @@ export default function MeetingView({
 
       const { data: buildingData, error: buildingError } = await supabase
         .from("buildings")
-        .select("company_id, name")
+        .select("id, company_id, name")
         .eq("id", meeting.building_id)
         .single()
 
@@ -1225,39 +1233,51 @@ export default function MeetingView({
         return
       }
 
-      const { data: userBuildings, error: userBuildingsError } = await supabase
-        .from("user_buildings")
-        .select("user_id")
-        .eq("building_id", meeting.building_id)
+      let recipients = ""
+      let recipientLabel = 0
 
-      if (userBuildingsError) {
-        alert("Error: Could not fetch building users")
-        return
-      }
+      if (attendeesWithEmail.length > 0) {
+        // ✅ Primary: use meeting attendees
+        recipients = attendeesWithEmail.map((a) => a.email!).join(", ")
+        recipientLabel = attendeesWithEmail.length
+      } else {
+        // ⚠️ Fallback: building owners/residents if no attendees have emails
+        const { data: userBuildings, error: userBuildingsError } = await supabase
+          .from("user_buildings")
+          .select("user_id")
+          .eq("building_id", meeting.building_id)
 
-      const userIds = userBuildings.map((ub) => ub.user_id)
+        if (userBuildingsError) {
+          alert("Error: Could not fetch building users")
+          return
+        }
 
-      if (userIds.length === 0) {
-        alert("No owners/residents assigned to this building")
-        return
-      }
+        const userIds = (userBuildings || []).map((ub) => ub.user_id)
 
-      const { data: users, error: usersError } = await supabase
-        .from("users")
-        .select("id, name, email, user_type")
-        .in("id", userIds)
-        .in("user_type", ["owner", "resident"])
+        if (userIds.length === 0) {
+          alert("No attendees with emails and no owners/residents assigned to this building")
+          return
+        }
 
-      if (usersError || !users || users.length === 0) {
-        alert("No owners/residents found for this building")
-        return
-      }
+        const { data: users, error: usersError } = await supabase
+          .from("users")
+          .select("id, name, email, user_type")
+          .in("id", userIds)
+          .in("user_type", ["owner", "resident"])
 
-      const recipients = users.filter((u) => u.email).map((u) => u.email).join(", ")
+        if (usersError || !users || users.length === 0) {
+          alert("No attendees with emails and no owners/residents found for this building")
+          return
+        }
 
-      if (!recipients) {
-        alert("No email addresses found for owners/residents")
-        return
+        const fallbackEmails = users.filter((u) => u.email).map((u) => u.email)
+        if (fallbackEmails.length === 0) {
+          alert("No email addresses found for attendees or building owners/residents")
+          return
+        }
+
+        recipients = fallbackEmails.join(", ")
+        recipientLabel = fallbackEmails.length
       }
 
       const subject = `Meeting Notice: ${meeting.title}`
@@ -1612,7 +1632,41 @@ export default function MeetingView({
       const allTopicIds = sections.flatMap(s => s.topics.map(t => t.id))
       let emailAttachments: any[] = []
 
-      // Add section-level attachments
+      // 1. Fetch template-defined attachments (from Rich Text Blocks)
+      const { data: templateData } = await supabase
+        .from('agendatemplates')
+        .select('rich_text_blocks')
+        .eq('buildingid', buildingData.id)
+        .maybeSingle()
+
+      if (templateData && (templateData as any).rich_text_blocks) {
+        const templateBlocks = (templateData as any).rich_text_blocks as any[]
+        const meetingType = meeting.meeting_type?.toLowerCase() || ""
+        
+        templateBlocks.forEach(block => {
+          if (block.attachmentPath && block.attachmentName) {
+            // Check meeting type filter
+            const matchesFilter = !block.meetingTypeFilter || 
+                                block.meetingTypeFilter.length === 0 || 
+                                block.meetingTypeFilter.some((mt: string) => 
+                                  meetingType.includes(mt.toLowerCase()) || mt.toLowerCase().includes(meetingType)
+                                )
+            
+            if (matchesFilter) {
+              const { data: { publicUrl } } = supabase.storage
+                .from('building-documents')
+                .getPublicUrl(block.attachmentPath)
+                
+              emailAttachments.push({
+                filename: block.attachmentName,
+                path: publicUrl
+              })
+            }
+          }
+        })
+      }
+
+      // 2. Add section-level attachments
       sections.forEach(s => {
         if (s.attachments && s.attachments.length > 0) {
           s.attachments.forEach(att => {
@@ -1624,6 +1678,7 @@ export default function MeetingView({
         }
       })
 
+      // 3. Add topic-level attachments
       if (allTopicIds.length > 0) {
         const { data: attachmentsData } = await supabase
           .from('topic_attachments')
@@ -1658,13 +1713,438 @@ export default function MeetingView({
       const result = await response.json()
 
       if (response.ok) {
-        alert(`✅ Notice sent successfully to ${users.length} recipient(s)!`)
+        alert(`✅ Notice sent successfully to ${recipientLabel} recipient(s)!`)
       } else {
         alert(`❌ Failed to send notice: ${result.error || "Unknown error"}`)
       }
     } catch (error) {
       console.error("Error sending notice:", error)
       alert("Error sending notice. Please try again.")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleSendMinutes = async () => {
+    if (!meeting) return
+
+    const confirmed = confirm(
+      `Send meeting minutes to all owners/residents of ${meeting.building}?\n\n` +
+      `This will email the meeting summary and any attached documents.`
+    )
+
+    if (!confirmed) return
+
+    try {
+      setLoading(true)
+
+      const { data: buildingData, error: buildingError } = await supabase
+        .from("buildings")
+        .select("id, company_id, name")
+        .eq("id", meeting.building_id)
+        .single()
+
+      if (buildingError || !buildingData) {
+        alert("Error: Could not fetch building information")
+        return
+      }
+
+      const { data: userBuildings, error: userBuildingsError } = await supabase
+        .from("user_buildings")
+        .select("user_id")
+        .eq("building_id", meeting.building_id)
+
+      if (userBuildingsError) {
+        alert("Error: Could not fetch building users")
+        return
+      }
+
+      const userIds = userBuildings.map((ub) => ub.user_id)
+
+      if (userIds.length === 0) {
+        alert("No owners/residents assigned to this building")
+        return
+      }
+
+      const { data: users, error: usersError } = await supabase
+        .from("users")
+        .select("id, name, email, user_type")
+        .in("id", userIds)
+        .in("user_type", ["owner", "resident"])
+
+      if (usersError || !users || users.length === 0) {
+        alert("No owners/residents found for this building")
+        return
+      }
+
+      const recipients = users.filter((u) => u.email).map((u) => u.email).join(", ")
+
+      if (!recipients) {
+        alert("No email addresses found for owners/residents")
+        return
+      }
+
+      const subject = `Meeting Minutes: ${meeting.title}`
+      const html = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body {
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+              background-color: #f5f7fa;
+              padding: 20px 0;
+            }
+            .email-wrapper {
+              max-width: 650px;
+              margin: 0 auto;
+              background: #ffffff;
+              border-radius: 16px;
+              overflow: hidden;
+              box-shadow: 0 10px 40px rgba(0, 0, 0, 0.08);
+            }
+            .header {
+              background: linear-gradient(135deg, #7c3aed 0%, #a855f7 100%);
+              padding: 48px 32px;
+              text-align: center;
+              position: relative;
+            }
+            .header h1 {
+              color: #ffffff;
+              font-size: 32px;
+              font-weight: 800;
+              margin-bottom: 12px;
+              text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            }
+            .building-badge {
+              display: inline-block;
+              background: rgba(255, 255, 255, 0.2);
+              backdrop-filter: blur(10px);
+              color: #ffffff;
+              padding: 8px 20px;
+              border-radius: 20px;
+              font-size: 15px;
+              font-weight: 600;
+              border: 1px solid rgba(255, 255, 255, 0.3);
+            }
+            .content { padding: 40px 32px; }
+            .info-grid {
+              display: grid;
+              grid-template-columns: 1fr;
+              gap: 12px;
+              margin-bottom: 36px;
+            }
+            .info-card {
+              background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+              border-left: 4px solid #7c3aed;
+              border-radius: 10px;
+              padding: 18px 20px;
+              display: flex;
+              align-items: center;
+            }
+            .info-icon {
+              font-size: 24px;
+              margin-right: 16px;
+              flex-shrink: 0;
+            }
+            .info-content { flex: 1; }
+            .info-label {
+              font-size: 12px;
+              font-weight: 700;
+              text-transform: uppercase;
+              color: #64748b;
+              letter-spacing: 0.5px;
+              margin-bottom: 4px;
+            }
+            .info-value {
+              font-size: 16px;
+              font-weight: 600;
+              color: #1e293b;
+            }
+            .divider {
+              height: 2px;
+              background: linear-gradient(90deg, transparent 0%, #cbd5e1 50%, transparent 100%);
+              margin: 36px 0;
+            }
+            .agenda-header {
+              text-align: center;
+              margin-bottom: 32px;
+            }
+            .agenda-title {
+              font-size: 28px;
+              font-weight: 800;
+              color: #1e293b;
+              margin-bottom: 8px;
+            }
+            .agenda-subtitle {
+              font-size: 14px;
+              color: #64748b;
+              font-weight: 500;
+            }
+            .section-card {
+              background: #ffffff;
+              border: 2px solid #e2e8f0;
+              border-radius: 12px;
+              margin-bottom: 20px;
+              overflow: hidden;
+            }
+            .section-header {
+              background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
+              padding: 16px 24px 16px 32px;
+              display: flex;
+              align-items: center;
+              border-bottom: 2px solid #cbd5e1;
+            }
+            .section-number {
+              width: 44px;
+              height: 44px;
+              min-width: 44px;
+              min-height: 44px;
+              background: linear-gradient(135deg, #7c3aed 0%, #a855f7 100%);
+              color: #ffffff;
+              border-radius: 12px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              font-size: 20px;
+              font-weight: 700;
+              margin-right: 16px;
+              flex-shrink: 0;
+              box-shadow: 0 4px 12px rgba(124, 58, 237, 0.3);
+              line-height: 2;
+              padding: 2;
+            }
+            .section-title {
+              font-size: 20px;
+              font-weight: 700;
+              color: #1e293b;
+              line-height: 1.2;
+            }
+            .section-body { padding: 24px; }
+            .topics-list {
+              list-style: none;
+              padding: 0;
+              margin: 0;
+            }
+            .topic-item {
+              padding: 16px;
+              background: #f8fafc;
+              border-radius: 8px;
+              margin-bottom: 12px;
+              border-left: 3px solid #7c3aed;
+            }
+            .topic-item:last-child { margin-bottom: 0; }
+            .topic-number {
+              display: inline-flex;
+              align-items: center;
+              justify-content: center;
+              background: #7c3aed;
+              color: #ffffff;
+              font-size: 12px;
+              font-weight: 700;
+              padding: 4px 10px;
+              border-radius: 6px;
+              margin-right: 10px;
+              vertical-align: middle;
+              line-height: 1;
+            }
+            .topic-title {
+              font-size: 16px;
+              font-weight: 700;
+              color: #1e293b;
+              line-height: 1.5;
+            }
+            .topic-description {
+              font-size: 14px;
+              color: #64748b;
+              margin-top: 8px;
+              line-height: 1.6;
+              font-style: italic;
+            }
+            .footer {
+              background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
+              padding: 32px;
+              text-align: center;
+              border-top: 2px solid #cbd5e1;
+            }
+            .footer-text {
+              font-size: 13px;
+              color: #64748b;
+              line-height: 1.8;
+              margin-bottom: 12px;
+            }
+            .footer-brand {
+              font-size: 16px;
+              font-weight: 800;
+              background: linear-gradient(135deg, #7c3aed 0%, #a855f7 100%);
+              -webkit-background-clip: text;
+              -webkit-text-fill-color: transparent;
+              background-clip: text;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="email-wrapper">
+            <div class="header">
+              <h1>📋 Meeting Minutes</h1>
+              <div class="building-badge">${buildingData.name}</div>
+            </div>
+            <div class="content">
+              <div class="info-grid">
+                <div class="info-card">
+                  <div class="info-icon">📋</div>
+                  <div class="info-content">
+                    <div class="info-label">Meeting Title</div>
+                    <div class="info-value">${meeting.title}</div>
+                  </div>
+                </div>
+                ${meeting.meeting_type ? `
+                  <div class="info-card">
+                    <div class="info-icon">🏢</div>
+                    <div class="info-content">
+                      <div class="info-label">Meeting Type</div>
+                      <div class="info-value">${meeting.meeting_type}</div>
+                    </div>
+                  </div>
+                ` : ""}
+                <div class="info-card">
+                  <div class="info-icon">📅</div>
+                  <div class="info-content">
+                    <div class="info-label">Date</div>
+                    <div class="info-value">${formatDate(meeting.meeting_date)}</div>
+                  </div>
+                </div>
+              </div>
+              <div class="divider"></div>
+              <div class="agenda-header">
+                <h2 class="agenda-title">📝 Meeting Summary</h2>
+                <p class="agenda-subtitle">Key decisions and topics from the meeting</p>
+              </div>
+              ${sections.map((section, idx) => `
+                <div class="section-card">
+                  <div class="section-header">
+                    <div class="section-number">${idx + 1}</div>
+                    <div class="section-title">${section.title}</div>
+                  </div>
+                  <div class="section-body">
+                    ${section.topics.length > 0 ? `
+                      <ul class="topics-list">
+                        ${section.topics.map((topic, topicIdx) => `
+                          <li class="topic-item">
+                            <span class="topic-number">${idx + 1}.${topicIdx + 1}</span>
+                            <span class="topic-title">${topic.title}</span>
+                            ${topic.description ? `<div class="topic-description">${topic.description}</div>` : ""}
+                          </li>
+                        `).join("")}
+                      </ul>
+                    ` : '<div class="no-topics">No topics recorded for this section</div>'}
+                  </div>
+                </div>
+              `).join("")}
+            </div>
+            <div class="footer">
+              <p class="footer-text">
+                This meeting summary was generated by Meeting Genius.<br>
+                Please do not reply to this email.
+              </p>
+              <div class="footer-brand">Meeting Genius</div>
+            </div>
+          </div>
+        </body>
+        </html>
+      `
+
+      const allTopicIds = sections.flatMap(s => s.topics.map(t => t.id))
+      let emailAttachments: any[] = []
+
+      // 1. Fetch template-defined attachments (from Minutes template Rich Text Blocks)
+      const { data: templateData } = await supabase
+        .from('minutes_templates')
+        .select('rich_text_blocks')
+        .eq('building_id', meeting.building_id)
+        .maybeSingle()
+
+      if (templateData && (templateData as any).rich_text_blocks) {
+        const templateBlocks = (templateData as any).rich_text_blocks as any[]
+        const meetingType = meeting.meeting_type?.toLowerCase() || ""
+        
+        templateBlocks.forEach(block => {
+          if (block.attachmentPath && block.attachmentName) {
+            const matchesFilter = !block.meetingTypeFilter || 
+                                block.meetingTypeFilter.length === 0 || 
+                                block.meetingTypeFilter.some((mt: string) => 
+                                  meetingType.includes(mt.toLowerCase()) || mt.toLowerCase().includes(meetingType)
+                                )
+            
+            if (matchesFilter) {
+              const { data: { publicUrl } } = supabase.storage
+                .from('building-documents')
+                .getPublicUrl(block.attachmentPath)
+                
+              emailAttachments.push({
+                filename: block.attachmentName,
+                path: publicUrl
+              })
+            }
+          }
+        })
+      }
+
+      // 2. Add section-level attachments
+      sections.forEach(s => {
+        if (s.attachments && s.attachments.length > 0) {
+          s.attachments.forEach(att => {
+            emailAttachments.push({
+              filename: att.filename,
+              path: encodeURI(att.file_url)
+            })
+          })
+        }
+      })
+
+      // 3. Add topic attachments
+      if (allTopicIds.length > 0) {
+        const { data: attachmentsData } = await supabase
+          .from('topic_attachments')
+          .select('filename, file_url')
+          .in('topic_id', allTopicIds)
+
+        const topicAtts = (attachmentsData || []).map(att => ({
+          filename: att.filename,
+          path: encodeURI(att.file_url)
+        }))
+        emailAttachments = [...emailAttachments, ...topicAtts]
+      }
+
+      const response = await fetch("/api/send-email", {
+        method: "POST",
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-api-key': process.env.NEXT_PUBLIC_API_KEY || ''
+        },
+        body: JSON.stringify({
+          companyId: buildingData.company_id,
+          to: recipients,
+          subject,
+          html,
+          text: `Final Minutes for ${meeting.title}\n\nBuilding: ${buildingData.name}\nDate: ${formatDate(meeting.meeting_date)}`,
+          attachments: emailAttachments,
+        }),
+      })
+
+      const result = await response.json()
+
+      if (response.ok) {
+        alert(`✅ Minutes sent successfully to ${users.length} recipient(s)!`)
+      } else {
+        alert(`❌ Failed to send minutes: ${result.error || "Unknown error"}`)
+      }
+    } catch (error) {
+      console.error("Error sending minutes:", error)
+      alert("Error sending minutes. Please try again.")
     } finally {
       setLoading(false)
     }
@@ -2146,12 +2626,17 @@ export default function MeetingView({
 
             {userCanEdit &&
               (meeting.status === "working_agenda" ||
-                meeting.status === "agenda") && (
+                meeting.status === "agenda" ||
+                meeting.status === "minutes") && (
                 <Button
                   size="sm"
-                  onClick={handleSendNotice}
+                  onClick={meeting.status === "minutes" ? handleSendMinutes : handleSendNotice}
                   variant="outline"
-                  className="h-8 px-2.5 text-xs flex-shrink-0 border-blue-500 text-blue-600 hover:bg-blue-50 rounded-lg"
+                  className={`h-8 px-2.5 text-xs flex-shrink-0 rounded-lg ${
+                    meeting.status === "minutes" 
+                      ? "border-purple-500 text-purple-600 hover:bg-purple-50" 
+                      : "border-blue-500 text-blue-600 hover:bg-blue-50"
+                  }`}
                 >
                   <Mail className="h-3.5 w-3.5 mr-1" />
                   Notice

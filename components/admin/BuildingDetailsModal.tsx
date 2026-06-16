@@ -1039,7 +1039,6 @@ export default function BuildingDetailsModal({
         propertyManagers={propertyManagers}
         buildings={availableBuildings}
         companies={companies}
-        defaultBuilding={building ? { id: building.id, name: building.name } : null}
       />
     </div>
   )
@@ -1388,13 +1387,21 @@ function DocumentsTab({ building, onSuccess, pendingUrlSaveRef }: DocumentsTabPr
 
     setSavingUrl(true)
     try {
-      await apiClient.v1.buildings.addDocumentUrl({
-        building_id: Number(building.id),
-        document_type: urlType,
-        url: urlLink.trim(),
-        title: urlTitle.trim(),
-        description: urlDescription.trim() || null,
-      })
+      const { error } = await supabase
+        .from("building_document_urls")
+        .insert({
+          building_id: Number(building.id),
+          document_type: urlType,
+          url: urlLink.trim(),
+          title: urlTitle.trim(),
+          description: urlDescription.trim() || null,
+        })
+
+      if (error) {
+        console.error("Error saving URL:", error)
+        toast.error("Failed to save URL")
+        return
+      }
 
       toast.success("Reference URL added successfully!")
       setUrlTitle("")
@@ -1403,9 +1410,10 @@ function DocumentsTab({ building, onSuccess, pendingUrlSaveRef }: DocumentsTabPr
       setUrlDescription("")
       setShowUrlForm(false)
       await fetchDocumentUrls()
-    } catch (err: any) {
+      onSuccess()
+    } catch (err) {
       console.error("Unexpected error:", err)
-      toast.error(err.message || "Failed to save URL")
+      toast.error("Failed to save URL")
     } finally {
       setSavingUrl(false)
     }
@@ -1415,12 +1423,22 @@ function DocumentsTab({ building, onSuccess, pendingUrlSaveRef }: DocumentsTabPr
     if (!confirm("Are you sure you want to delete this reference URL?")) return
 
     try {
-      await apiClient.v1.buildings.deleteDocumentUrl(urlId)
+      const { error } = await supabase
+        .from("building_document_urls")
+        .delete()
+        .eq("id", urlId)
+
+      if (error) {
+        toast.error("Failed to delete URL")
+        return
+      }
+
       toast.success("Reference URL deleted")
       await fetchDocumentUrls()
-    } catch (err: any) {
+      onSuccess()
+    } catch (err) {
       console.error("Delete error:", err)
-      toast.error(err.message || "Failed to delete URL")
+      toast.error("Failed to delete URL")
     }
   }
 
@@ -1493,7 +1511,7 @@ function DocumentsTab({ building, onSuccess, pendingUrlSaveRef }: DocumentsTabPr
       alert("Document uploaded successfully!")
       setSelectedFile(null)
       await fetchDocuments()
-      // Removed onSuccess call to keep modal open
+      onSuccess()
     } catch (error: any) {
       console.error("Upload error:", error)
       alert(error.message || "Upload failed")
@@ -1522,7 +1540,7 @@ function DocumentsTab({ building, onSuccess, pendingUrlSaveRef }: DocumentsTabPr
 
       alert("Document deleted successfully")
       await fetchDocuments()
-      // Removed onSuccess call to keep modal open
+      onSuccess()
     } catch (error: any) {
       console.error("Delete error:", error)
       alert(error.message || "Delete failed")

@@ -72,25 +72,43 @@ export async function GET(req: NextRequest) {
     const { data: user_buildings } = await ubQuery;
 
     // 3. Fetch Janus Tickets (Janus -> Meeting Genius) - Direct Fetch from Janus DB
-    const janus = await getJanusClient();
-    let ticketsQuery = janus.from('tickets').select('*');
-    if (!isMasterUser && effectiveCompanyId && effectiveCompanyId !== "undefined" && effectiveCompanyId !== "null") {
-      const cid = parseInt(effectiveCompanyId);
-      if (!isNaN(cid)) {
-        ticketsQuery = ticketsQuery.eq('company_id', cid);
-      }
-    }
-
-    const { data: rawTickets, error: janusErr } = await ticketsQuery.order('created_at', { ascending: false });
-    
     let repairs: any[] = [];
     let complaints: any[] = [];
     let errors: string[] = [];
 
+    let janus: any = null;
+    try {
+      janus = await getJanusClient();
+    } catch (janusInitErr: any) {
+      console.warn("⚠️ Could not initialize Janus client:", janusInitErr.message);
+      errors.push(`Janus unavailable: ${janusInitErr.message}`);
+    }
+
+    let rawTickets: any[] = [];
+    let janusErr: any = null;
+
+    if (janus) {
+      let ticketsQuery = janus.from('tickets').select('*');
+      if (!isMasterUser && effectiveCompanyId && effectiveCompanyId !== "undefined" && effectiveCompanyId !== "null") {
+        const cid = parseInt(effectiveCompanyId);
+        if (!isNaN(cid)) {
+          ticketsQuery = ticketsQuery.eq('company_id', cid);
+        }
+      }
+      try {
+        const result = await ticketsQuery.order('created_at', { ascending: false });
+        rawTickets = result.data || [];
+        janusErr = result.error;
+      } catch (fetchErr: any) {
+        console.warn("⚠️ Janus ticket fetch failed:", fetchErr.message);
+        errors.push(`Janus fetch: ${fetchErr.message}`);
+      }
+    }
+
     if (janusErr) {
       console.warn("⚠️ Could not reach Janus DB:", janusErr.message);
       errors.push(`Janus DB: ${janusErr.message}`);
-    } else if (rawTickets) {
+    } else if (rawTickets.length > 0) {
       const resolveJanusTicketId = (t: any): string => {
         const candidates = [t.ticket_id, t.ticket_number, t.janus_ticket_id, t.external_id]
         for (const c of candidates) {
