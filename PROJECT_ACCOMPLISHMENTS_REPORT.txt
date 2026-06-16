@@ -1,0 +1,50 @@
+Project Accomplishments Report - June 15, 2026
+
+* Corporate admin Archive & Unarchive: Corporate Admins can now only archive and unarchive buildings they own. They can see the archive storage but cannot delete anything (only unarchive).
+* Master Admin Archive: Master admin has full Archive & Delete control. Created the archive storage interface where delete actions can be executed.
+* Archiving Logic: Archiving a building now automatically archives all building-level templates and dependencies (aside from users).
+* Login & Data Fetching Fixes: Fixed the underlying proxy and API routing errors that were preventing meetings, users, buildings, companies, and logins from loading correctly.
+* Security & Master Control Data (API Gateway Upgrade):
+  - Server-Side Isolation: Migrated all critical database mutations (user creation, company details, reference link deletions) from vulnerable client-side queries to secure backend API routes.
+  - Signature & Token Verification: Implemented server-side request verification (isAuthorizedRequest()) checking for a valid system API Key (x-api-key) or active user session Bearer token, immediately blocking unauthorized requests with a 401 Unauthorized status.
+  - Admin Client Execution: Replaced client-side queries with createAdminClient() calls executed strictly on the backend, preventing database credentials or elevated privileges from being exposed to the browser.
+  - Next.js 15 Parameter Upgrades: Refactored dynamic route parameter handling (e.g. app/api/supabase-proxy/[...path]/route.ts) to be compliant with Next.js 15 async paradigms by awaiting parameter promises.
+  - No-Content Proxy Handling: Fixed the HTTP proxy response parser to return null body payloads on 204 No Content and 304 Not Modified statuses, preventing native NextResponse constructor exceptions.
+* Transcript Task Extraction: Refactored transcript-based task extractions so the UI matches the manual task creation experience.
+* Cleaned Mobile View: Optimized layout grids, borders, and overlays to make the mobile view cleaner.
+* Voting Expressions: Custom voting formulas and expressions are now clearer and display proper input configurations.
+
+Loom 1:
+* Creating and setting up new companies is now fully fixed.
+* Fixed the logins and initial database fetches so meetings and dashboards load successfully without blocking.
+
+Loom 2:
+* Creating and deleting default meeting types inside the company is fixed.
+* In edit building -> documents -> add URL, clicking "Save Changes" now automatically saves the URL even if the user forgets to click "Save URL" first.
+* Adding a new user inside the building modal now pre-fills the building assignment and links the user automatically.
+* Fixed user creation: email and password are now optional for the Attendee, Owner, and Resident roles. 
+* Added overwrite protection: leaving email blank generates a unique placeholder, and entering generic emails (like noreply@cccm.bc.ca) converts them to unique addresses, preventing database overwrite bugs.
+
+Loom 3:
+* Added new configuration settings for the minutes and agenda tab.
+* Ensured the PDF downloader follows the custom agenda and minutes tab layouts perfectly.
+
+Loom 4:
+* Upgraded Next.js 15 async routing parameters and secured backend APIs using API keys and validation middleware, fixing building, user, and company creation.
+
+---
+
+Janus:
+Loom 1:
+* Renaming the "Financial" in edit building into "Supplier".
+* Adding some information when creating a new supplier, also when editing a supplier.
+* Correcting the time in conversation history in the ticket when it is manually made.
+* In edit building, the inbound email per company can be seen.
+* Adding country code in the address in the company.
+* Fix the UI of the Risk Sentiment Intelligence in the edit company.
+
+Core Agent:
+* Uploaded to the server and code adjusted to match the server.
+
+Monterio Law:
+* Fix Regex issue.

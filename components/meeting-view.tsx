@@ -2914,6 +2914,7 @@ export default function MeetingView({
                 status={meeting.status}
                 userCanEdit={userCanEdit}
                 companyId={(meeting as any)?.buildings?.company_id ?? null}
+                buildingId={(meeting as any)?.building_id ?? null}
                 onUpdate={async (updatedAttendees) => {
                   await supabase
                     .from("meetings")

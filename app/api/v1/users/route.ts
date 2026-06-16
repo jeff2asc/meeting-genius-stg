@@ -92,6 +92,27 @@ export async function GET(request: NextRequest) {
 
       const { data: ubData } = await ubQuery
       userBuildingsData = ubData || []
+
+      // If filtering by company, also include users who are assigned to
+      // company buildings but have a null company_id (e.g. attendees, owners,
+      // residents added without a real email — they are linked via user_buildings
+      // but their users.company_id is null, so they don't appear in the main query above)
+      if (companyId) {
+        const buildingUserIds = userBuildingsData.map((ub: any) => ub.user_id)
+        const existingUserIds = (usersData || []).map((u: any) => u.id)
+        const missingUserIds = buildingUserIds.filter((id: number) => !existingUserIds.includes(id))
+
+        if (missingUserIds.length > 0) {
+          const { data: extraUsers } = await supabase
+            .from('users')
+            .select('id, name, email, user_type, roles, assigned_pm_id, company_id, voting_weight, created_at, companies(id, name)')
+            .in('id', missingUserIds)
+
+          if (extraUsers && extraUsers.length > 0) {
+            ;(usersData as any[]).push(...extraUsers)
+          }
+        }
+      }
     }
 
     return NextResponse.json({ data: usersData || [], userBuildings: userBuildingsData, success: true })

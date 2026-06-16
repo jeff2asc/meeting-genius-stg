@@ -22,6 +22,7 @@ interface AttendeeManagementProps {
   status: string
   userCanEdit: boolean
   companyId?: number | null
+  buildingId?: number | null
   onUpdate: (attendees: Attendee[]) => void
   onClose?: () => void
 }
@@ -32,6 +33,7 @@ export default function AttendeeManagement({
   status,
   userCanEdit,
   companyId,
+  buildingId,
   onUpdate,
   onClose
 }: AttendeeManagementProps) {
@@ -164,48 +166,74 @@ export default function AttendeeManagement({
   }
 
   const fetchDefaultAttendees = async () => {
-    if (!companyId) return
-    const meetingIdNum = Number(meetingId)
+    if (!buildingId && !companyId) return
     
     try {
-      // Fetch all eligible company users
-      const { data: users } = await supabase
-        .from('users')
-        .select('id, name, email, user_type, roles')
-        .eq('company_id', companyId)
+      let attendeeUsers: any[] = []
 
-      if (users) {
-        const newAttendees = users
-          .filter(u => {
+      if (buildingId) {
+        // Preferred: fetch all users assigned to THIS specific building via user_buildings
+        // This includes attendees/owners/residents who may have null company_id
+        const { data: ubData } = await supabase
+          .from('user_buildings')
+          .select('user_id, unit_number, users!inner(id, name, email, user_type, roles)')
+          .eq('building_id', buildingId)
+
+        if (ubData) {
+          attendeeUsers = ubData
+            .map((ub: any) => ub.users)
+            .filter((u: any) => {
+              if (!u) return false
+              const typeMatch = u.user_type?.toLowerCase() === 'attendee'
+              const roleMatch = Array.isArray(u.roles) && u.roles.some((r: string) => r.toLowerCase().includes('attendee'))
+              const stringRoleMatch = typeof u.roles === 'string' && (u.roles as string).toLowerCase().includes('attendee')
+              return typeMatch || roleMatch || stringRoleMatch
+            })
+        }
+      } else if (companyId) {
+        // Fallback: filter by company_id if no building is known
+        const { data: users } = await supabase
+          .from('users')
+          .select('id, name, email, user_type, roles')
+          .eq('company_id', companyId)
+
+        if (users) {
+          attendeeUsers = users.filter((u: any) => {
             const typeMatch = u.user_type?.toLowerCase() === 'attendee'
             const roleMatch = Array.isArray(u.roles) && u.roles.some((r: string) => r.toLowerCase().includes('attendee'))
             const stringRoleMatch = typeof u.roles === 'string' && (u.roles as string).toLowerCase().includes('attendee')
-            
             return typeMatch || roleMatch || stringRoleMatch
           })
-          .map(u => ({
-            name: u.name,
-            email: u.email,
-            role: u.user_type?.toLowerCase() === 'attendee' ? 'Attendee' : 'Attendee',
-            user_id: u.id,
-            present: false
-          }))
-
-        if (newAttendees.length === 0) {
-          toast.info("No users with 'Attendee' role found in this company.")
-          return
         }
+      }
 
-        // Merge with existing avoiding duplicates by email
-        const existingEmails = new Set(localAttendees.map(a => a.email?.toLowerCase()).filter(Boolean))
-        const uniqueNewAttendees = newAttendees.filter(a => !existingEmails.has(a.email?.toLowerCase()))
+      if (attendeeUsers.length === 0) {
+        toast.info("No users with 'Attendee' role found for this building.")
+        return
+      }
 
-        if (uniqueNewAttendees.length > 0) {
-          setLocalAttendees(prev => [...prev, ...uniqueNewAttendees])
-          toast.success(`Added ${uniqueNewAttendees.length} attendees from building.`)
-        } else {
-          toast.info("All building attendees are already in the list.")
-        }
+      const newAttendees = attendeeUsers.map((u: any) => ({
+        name: u.name,
+        email: u.email,
+        role: 'Attendee',
+        user_id: u.id,
+        present: false
+      }))
+
+      // Merge with existing avoiding duplicates by user_id first, then email
+      const existingIds = new Set(localAttendees.map(a => a.user_id).filter(Boolean))
+      const existingEmails = new Set(localAttendees.map(a => a.email?.toLowerCase()).filter(Boolean))
+      const uniqueNewAttendees = newAttendees.filter((a: any) => {
+        if (a.user_id && existingIds.has(a.user_id)) return false
+        if (a.email && existingEmails.has(a.email?.toLowerCase())) return false
+        return true
+      })
+
+      if (uniqueNewAttendees.length > 0) {
+        setLocalAttendees(prev => [...prev, ...uniqueNewAttendees])
+        toast.success(`Added ${uniqueNewAttendees.length} attendees from building.`)
+      } else {
+        toast.info("All building attendees are already in the list.")
       }
     } catch (err) {
       console.error('Error fetching building attendees:', err)
