@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isAuthorizedRequest } from '@/lib/auth-server'
 import { createClient } from "@/lib/supabase";
 import { extractTasksFromTranscript } from "@/lib/ai";
 import { extractTextFromFile } from "@/lib/documentExtractor";
@@ -8,9 +9,7 @@ export async function POST(request: NextRequest) {
     const supabase = createClient();
     
     // API Key verification
-    const apiKey = request.headers.get('x-api-key');
-    const validApiKey = process.env.NEXT_PUBLIC_API_KEY || ''
-    if (!apiKey || apiKey !== validApiKey) {
+    if (!isAuthorizedRequest(request)) {
       return NextResponse.json(
         { error: 'Unauthorized: Invalid API key' },
         { status: 401 }

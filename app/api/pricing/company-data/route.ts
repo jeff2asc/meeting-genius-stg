@@ -1,12 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabase'
-
-// Use centralized Supabase client from @/lib/supabase
-// to handle hardcoded fallbacks and singletons.
-
-// API Key validation
-const VALID_API_KEY = process.env.NEXT_PUBLIC_API_KEY || ''
+import { isAuthorizedRequest } from '@/lib/auth-server'
 
 /**
  * Calculates the billing tier based on building count
@@ -45,8 +39,7 @@ function calculateTier(buildingCount: number) {
 export async function GET(request: NextRequest) {
   try {
     // 1. Validate API Key
-    const apiKey = request.headers.get('x-api-key')
-    if (!apiKey || apiKey !== VALID_API_KEY) {
+    if (!isAuthorizedRequest(request)) {
       return NextResponse.json(
         { error: 'Unauthorized: Invalid API key' },
         { status: 401 }
@@ -117,7 +110,6 @@ export async function GET(request: NextRequest) {
 
     // 6. Organize buildings by property manager
     const pmList = (propertyManagers || []).map((pm) => {
-      // Filter buildings for this PM
       const pmBuildings = (allBuildings || [])
         .filter((building) => building.manager_id === pm.id)
         .map((building) => ({
@@ -149,7 +141,7 @@ export async function GET(request: NextRequest) {
     const totalAssignedBuildings = pmList.reduce((sum, pm) => sum + pm.building_count, 0)
     const totalUnassignedBuildings = unassignedBuildings.length
     const totalBuildingCount = totalAssignedBuildings + totalUnassignedBuildings
-    
+
     // 9. Check Tiers for Odoo Billing
     const billingTier = calculateTier(totalBuildingCount)
 
@@ -179,8 +171,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     // Validate API Key
-    const apiKey = request.headers.get('x-api-key')
-    if (!apiKey || apiKey !== VALID_API_KEY) {
+    if (!isAuthorizedRequest(request)) {
       return NextResponse.json(
         { error: 'Unauthorized: Invalid API key' },
         { status: 401 }

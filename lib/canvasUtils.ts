@@ -20,7 +20,7 @@ function generateId(): string {
 
 // ============== TYPES ==============
 
-export type ElementType = 'text' | 'image' | 'shape' | 'container' | 'dynamic'
+export type ElementType = 'text' | 'image' | 'shape' | 'container' | 'dynamic' | 'html_header'
 
 export type DynamicFieldType =
   | 'company_logo'
@@ -37,6 +37,39 @@ export type DynamicFieldType =
   | 'topics_list'
   | 'sections_list'
   | 'attendees_list'
+  | 'document_heading'
+  | 'attendance_block'
+  | 'attendee_list'
+  | 'attendee_names'
+  | 'attendee_roles'
+  | 'attendance_status'
+  | 'section_titles'
+  | 'section_numbers'
+  | 'topic_titles'
+  | 'topic_numbers'
+  | 'topic_descriptions'
+  | 'topic_notes'
+  | 'topic_tasks'
+  | 'topic_decisions'
+  | 'decision_votes'
+  | 'task_assignees'
+  | 'task_due_dates'
+  | 'footer_building_name'
+  | 'page_number'
+  | 'branding'
+  | 'adjournment_time'
+  | 'next_meeting_date'
+  | 'signatures'
+
+// Config for orientation-aware elements
+export interface ElementConfig {
+  // For document_heading and attendance_block
+  orientation?: 'horizontal' | 'vertical'
+  // For attendance_block style
+  attendanceStyle?: 'table' | 'list' | 'compact'
+  // For document_heading format
+  headingFormat?: 'full_sentence' | 'stacked' | 'inline'
+}
 
 export interface CanvasElement {
   id: string
@@ -55,6 +88,7 @@ export interface CanvasElement {
     borderRadius?: string | number
     textAlign?: string
   }
+  config?: ElementConfig   // sub-configuration for special elements
   zIndex?: number
   locked?: boolean
 }
@@ -133,6 +167,16 @@ export function createDefaultElement(
         }
       }
 
+    case 'html_header':
+      return {
+        ...baseElement,
+        content: '<div style="background:#1e3a8a;color:white;padding:16px;font-family:sans-serif;display:flex;align-items:center;gap:12px;"><div style="width:40px;height:40px;background:white;border-radius:50%;"></div><div><div style="font-size:18px;font-weight:bold;">MEETING AGENDA</div><div style="font-size:12px;opacity:0.8;">Building Name</div></div></div>',
+        style: {
+          backgroundColor: 'transparent',
+          borderRadius: 0
+        }
+      }
+
     case 'dynamic':
       return {
         ...baseElement,
@@ -162,7 +206,7 @@ export function duplicateElement(element: CanvasElement): CanvasElement {
 }
 
 export function getDynamicFieldName(type: DynamicFieldType): string {
-  const names: Record<DynamicFieldType, string> = {
+  const names: Partial<Record<DynamicFieldType, string>> = {
     company_logo: 'Company Logo',
     building_name: 'Building Name',
     meeting_title: 'Meeting Title',
@@ -176,7 +220,9 @@ export function getDynamicFieldName(type: DynamicFieldType): string {
     strata_plan: 'Strata Plan',
     topics_list: 'Agenda Items',
     sections_list: 'Sections List',
-    attendees_list: 'Attendees List'
+    attendees_list: 'Attendees List',
+    document_heading: 'Document Heading',
+    attendance_block: 'Attendance Block',
   }
   return names[type] || type
 }
@@ -187,7 +233,8 @@ export function getElementTypeName(type: ElementType): string {
     image: 'Image',
     shape: 'Shape',
     container: 'Container',
-    dynamic: 'Dynamic Field'
+    dynamic: 'Dynamic Field',
+    html_header: 'HTML Header'
   }
   return names[type] || type
 }

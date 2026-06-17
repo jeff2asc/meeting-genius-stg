@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabase'
 import bcrypt from 'bcryptjs'
+import { isAuthorizedRequest } from '@/lib/auth-server'
 
 
 // Use centralized Supabase client from @/lib/supabase
@@ -9,14 +10,13 @@ import bcrypt from 'bcryptjs'
 
 
 // API Key validation
-const VALID_API_KEY = process.env.NEXT_PUBLIC_API_KEY || ''
+
 
 
 export async function POST(request: NextRequest) {
   try {
     // 1. Validate API Key
-    const apiKey = request.headers.get('x-api-key')
-    if (!apiKey || apiKey !== VALID_API_KEY) {
+    if (!isAuthorizedRequest(request)) {
       return NextResponse.json(
         { error: 'Unauthorized: Invalid API key' },
         { status: 401 }
@@ -62,7 +62,7 @@ export async function POST(request: NextRequest) {
           property_manager_password = property_manager_password || extracted.property_manager_password || 'MGAdmin2026!'
           default_meeting_sections = default_meeting_sections || extracted.default_meeting_sections
           default_meeting_types = default_meeting_types || extracted.default_meeting_types
-          
+
           if (extracted.first_meeting) {
             firstMeeting = extracted.first_meeting
           }
@@ -104,8 +104,8 @@ export async function POST(request: NextRequest) {
 
     // 5. Hash passwords
     const hashedAdminPassword = await bcrypt.hash(corporate_admin_password, 10)
-    const hashedPMPassword = property_manager_password 
-      ? await bcrypt.hash(property_manager_password, 10) 
+    const hashedPMPassword = property_manager_password
+      ? await bcrypt.hash(property_manager_password, 10)
       : null
 
 
@@ -230,11 +230,11 @@ export async function POST(request: NextRequest) {
           status: 'working_agenda',
           attendees: Array.isArray(firstMeeting.attendees)
             ? firstMeeting.attendees.map((att: any) => ({
-                name: att.name || 'Attendee',
-                email: att.email || '',
-                role: att.role || 'Attendee',
-                present: false
-              }))
+              name: att.name || 'Attendee',
+              email: att.email || '',
+              role: att.role || 'Attendee',
+              present: false
+            }))
             : []
         })
         .select()

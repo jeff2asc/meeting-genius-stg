@@ -877,32 +877,328 @@ export const DETAILED_MINUTES_TEMPLATE: CanvasElement[] = [
   }
 ]
 
+// Corporate Gold Template — premium dark navy + gold accent
+export const CORPORATE_GOLD_MINUTES_TEMPLATE: CanvasElement[] = [
+  // Top navy bar (full width)
+  {
+    id: "cg-header-bg",
+    type: "shape",
+    position: { x: 0, y: 0 },
+    size: { width: 210, height: 45 },
+    content: null,
+    style: { backgroundColor: "#0f172a", borderRadius: 0 },
+    locked: false,
+  },
+  // Gold accent strip
+  {
+    id: "cg-gold-strip",
+    type: "shape",
+    position: { x: 0, y: 45 },
+    size: { width: 210, height: 3 },
+    content: null,
+    style: { backgroundColor: "#d4a017", borderRadius: 0 },
+    locked: false,
+  },
+  // Logo (top-left)
+  {
+    id: "cg-logo",
+    type: "dynamic",
+    position: { x: 12, y: 10 },
+    size: { width: 24, height: 24 },
+    style: { backgroundColor: "transparent", borderRadius: 4 },
+    content: { type: "company_logo" },
+    locked: false,
+  },
+  // MEETING MINUTES title
+  {
+    id: "cg-title",
+    type: "text",
+    position: { x: 42, y: 11 },
+    size: { width: 140, height: 12 },
+    style: {
+      fontSize: 26,
+      fontWeight: "bold",
+      color: "#ffffff",
+      textAlign: "center",
+      backgroundColor: "transparent",
+    },
+    content: "MEETING MINUTES",
+    locked: false,
+  },
+  // Building name subtitle
+  {
+    id: "cg-building",
+    type: "dynamic",
+    position: { x: 42, y: 26 },
+    size: { width: 140, height: 8 },
+    style: {
+      fontSize: 13,
+      fontWeight: "normal",
+      color: "#d4a017",
+      textAlign: "center",
+      backgroundColor: "transparent",
+    },
+    content: { type: "building_name" },
+    locked: false,
+  },
+  // Strata plan (small, below building)
+  {
+    id: "cg-strata",
+    type: "dynamic",
+    position: { x: 42, y: 36 },
+    size: { width: 140, height: 6 },
+    style: {
+      fontSize: 9,
+      fontWeight: "normal",
+      color: "#94a3b8",
+      textAlign: "center",
+      backgroundColor: "transparent",
+    },
+    content: { type: "strata_plan" },
+    locked: false,
+  },
+  // Document Heading block (full formatted sentence)
+  {
+    id: "cg-doc-heading",
+    type: "dynamic",
+    position: { x: 12, y: 54 },
+    size: { width: 186, height: 16 },
+    style: {
+      fontSize: 10,
+      fontWeight: "normal",
+      color: "#1e293b",
+      textAlign: "left",
+      backgroundColor: "#fefce8",
+      borderWidth: "1px",
+      borderColor: "#d4a017",
+      borderRadius: 4,
+    },
+    content: { type: "document_heading" },
+    config: { headingFormat: "full_sentence", orientation: "horizontal" },
+    locked: false,
+  },
+  // Meeting details row — info card background
+  {
+    id: "cg-info-bg",
+    type: "container",
+    position: { x: 12, y: 76 },
+    size: { width: 186, height: 28 },
+    content: null,
+    style: {
+      backgroundColor: "#f8fafc",
+      borderWidth: "1px",
+      borderColor: "#e2e8f0",
+      borderRadius: 6,
+    },
+    locked: false,
+  },
+  // Type label
+  {
+    id: "cg-type-lbl",
+    type: "text",
+    position: { x: 17, y: 80 },
+    size: { width: 44, height: 4 },
+    style: { fontSize: 7, fontWeight: "bold", color: "#d4a017", textAlign: "left", backgroundColor: "transparent" },
+    content: "MEETING TYPE",
+    locked: false,
+  },
+  {
+    id: "cg-type-val",
+    type: "dynamic",
+    position: { x: 17, y: 85 },
+    size: { width: 44, height: 6 },
+    style: { fontSize: 10, fontWeight: "normal", color: "#1e293b", textAlign: "left", backgroundColor: "transparent" },
+    content: { type: "meeting_type" },
+    locked: false,
+  },
+  // Date label
+  {
+    id: "cg-date-lbl",
+    type: "text",
+    position: { x: 68, y: 80 },
+    size: { width: 44, height: 4 },
+    style: { fontSize: 7, fontWeight: "bold", color: "#d4a017", textAlign: "left", backgroundColor: "transparent" },
+    content: "DATE",
+    locked: false,
+  },
+  {
+    id: "cg-date-val",
+    type: "dynamic",
+    position: { x: 68, y: 85 },
+    size: { width: 44, height: 6 },
+    style: { fontSize: 10, fontWeight: "normal", color: "#1e293b", textAlign: "left", backgroundColor: "transparent" },
+    content: { type: "meeting_date" },
+    locked: false,
+  },
+  // Time label
+  {
+    id: "cg-time-lbl",
+    type: "text",
+    position: { x: 119, y: 80 },
+    size: { width: 35, height: 4 },
+    style: { fontSize: 7, fontWeight: "bold", color: "#d4a017", textAlign: "left", backgroundColor: "transparent" },
+    content: "TIME",
+    locked: false,
+  },
+  {
+    id: "cg-time-val",
+    type: "dynamic",
+    position: { x: 119, y: 85 },
+    size: { width: 35, height: 6 },
+    style: { fontSize: 10, fontWeight: "normal", color: "#1e293b", textAlign: "left", backgroundColor: "transparent" },
+    content: { type: "start_time" },
+    locked: false,
+  },
+  // Location label
+  {
+    id: "cg-loc-lbl",
+    type: "text",
+    position: { x: 160, y: 80 },
+    size: { width: 35, height: 4 },
+    style: { fontSize: 7, fontWeight: "bold", color: "#d4a017", textAlign: "left", backgroundColor: "transparent" },
+    content: "LOCATION",
+    locked: false,
+  },
+  {
+    id: "cg-loc-val",
+    type: "dynamic",
+    position: { x: 160, y: 85 },
+    size: { width: 35, height: 6 },
+    style: { fontSize: 10, fontWeight: "normal", color: "#1e293b", textAlign: "left", backgroundColor: "transparent" },
+    content: { type: "location" },
+    locked: false,
+  },
+  // Section divider — ATTENDEES
+  {
+    id: "cg-att-divider",
+    type: "shape",
+    position: { x: 12, y: 109 },
+    size: { width: 186, height: 0.5 },
+    content: null,
+    style: { backgroundColor: "#d4a017", borderRadius: 0 },
+    locked: false,
+  },
+  {
+    id: "cg-att-title",
+    type: "text",
+    position: { x: 12, y: 112 },
+    size: { width: 80, height: 7 },
+    style: { fontSize: 11, fontWeight: "bold", color: "#0f172a", textAlign: "left", backgroundColor: "transparent" },
+    content: "ATTENDEES",
+    locked: false,
+  },
+  // Attendance block
+  {
+    id: "cg-attendance",
+    type: "dynamic",
+    position: { x: 12, y: 121 },
+    size: { width: 186, height: 42 },
+    style: {
+      fontSize: 9,
+      fontWeight: "normal",
+      color: "#1e293b",
+      textAlign: "left",
+      backgroundColor: "#ffffff",
+      borderWidth: "1px",
+      borderColor: "#e2e8f0",
+      borderRadius: 4,
+    },
+    content: { type: "attendance_block" },
+    config: { attendanceStyle: "table", orientation: "horizontal" },
+    locked: false,
+  },
+  // Section divider — DISCUSSION
+  {
+    id: "cg-disc-divider",
+    type: "shape",
+    position: { x: 12, y: 168 },
+    size: { width: 186, height: 0.5 },
+    content: null,
+    style: { backgroundColor: "#d4a017", borderRadius: 0 },
+    locked: false,
+  },
+  {
+    id: "cg-disc-title",
+    type: "text",
+    position: { x: 12, y: 171 },
+    size: { width: 180, height: 7 },
+    style: { fontSize: 11, fontWeight: "bold", color: "#0f172a", textAlign: "left", backgroundColor: "transparent" },
+    content: "DISCUSSION & DECISIONS",
+    locked: false,
+  },
+  // Topics content
+  {
+    id: "cg-topics",
+    type: "dynamic",
+    position: { x: 12, y: 181 },
+    size: { width: 186, height: 400 },
+    style: { fontSize: 9, fontWeight: "normal", color: "#1e293b", textAlign: "left", backgroundColor: "transparent" },
+    content: { type: "topics_list" },
+    locked: false,
+  },
+  // Footer bar
+  {
+    id: "cg-footer-bg",
+    type: "shape",
+    position: { x: 0, y: 284 },
+    size: { width: 210, height: 13 },
+    content: null,
+    style: { backgroundColor: "#0f172a", borderRadius: 0 },
+    locked: false,
+  },
+  {
+    id: "cg-footer-building",
+    type: "dynamic",
+    position: { x: 12, y: 287 },
+    size: { width: 100, height: 6 },
+    style: { fontSize: 7, fontWeight: "normal", color: "#94a3b8", textAlign: "left", backgroundColor: "transparent" },
+    content: { type: "footer_building_name" },
+    locked: false,
+  },
+  {
+    id: "cg-footer-page",
+    type: "dynamic",
+    position: { x: 170, y: 287 },
+    size: { width: 28, height: 6 },
+    style: { fontSize: 7, fontWeight: "normal", color: "#94a3b8", textAlign: "right", backgroundColor: "transparent" },
+    content: { type: "page_number" },
+    locked: false,
+  },
+]
+
 // Template Registry
 export const MINUTES_CANVAS_TEMPLATES = {
+  corporate_gold: {
+    name: "Corporate Gold ⭐",
+    description: "Premium dark navy + gold accent with document heading, attendance table, and full content layout",
+    thumbnail: "🏆",
+    elements: CORPORATE_GOLD_MINUTES_TEMPLATE,
+  },
   professional: {
     name: "Professional",
     description: "Clean professional layout with blue gradient header and detailed sections",
     thumbnail: "📋",
-    elements: PROFESSIONAL_MINUTES_TEMPLATE
+    elements: PROFESSIONAL_MINUTES_TEMPLATE,
   },
   minimal: {
     name: "Modern Minimal",
     description: "Minimalist centered design with simple divider and clean typography",
     thumbnail: "✨",
-    elements: MINIMAL_MINUTES_TEMPLATE
+    elements: MINIMAL_MINUTES_TEMPLATE,
   },
   compact: {
     name: "Compact",
     description: "Space-efficient layout with green accent and condensed sections",
     thumbnail: "📄",
-    elements: COMPACT_MINUTES_TEMPLATE
+    elements: COMPACT_MINUTES_TEMPLATE,
   },
   detailed: {
     name: "Detailed",
     description: "Comprehensive layout with purple theme, perfect for formal minutes",
     thumbnail: "📚",
-    elements: DETAILED_MINUTES_TEMPLATE
-  }
+    elements: DETAILED_MINUTES_TEMPLATE,
+  },
 }
 
 export type MinutesTemplateKey = keyof typeof MINUTES_CANVAS_TEMPLATES
+

@@ -81,7 +81,7 @@ interface Decision {
 
 export default function MeetingExternalPage() {
     const params = useParams()
-    const token = params.token as string
+    const token = (params?.token ?? "") as string
 
     const [loading, setLoading] = useState(false)
     const [meeting, setMeeting] = useState<Meeting | null>(null)

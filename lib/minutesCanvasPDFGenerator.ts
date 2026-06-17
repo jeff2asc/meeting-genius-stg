@@ -147,6 +147,9 @@ async function renderMinutesElement(
         logoUrl
       )
       break
+    case "html_header":
+      await renderHtmlHeaderElement(pdf, element, x, y, width, height)
+      break
     default:
       console.warn("Unknown element type in minutes canvas:", element.type)
   }
@@ -288,10 +291,12 @@ async function renderMinutesDynamicElement(
   logoUrl: string | null
 ) {
   if (!element.content || typeof element.content !== "object" || !("type" in element.content)) {
+    console.log("⚠️ renderMinutesDynamicElement: content is not an object", element.id, element.content)
     return
   }
 
   const fieldType = element.content.type as MinutesDynamicFieldType
+  console.log("⚡ renderMinutesDynamicElement processing:", element.id, "fieldType:", fieldType)
 
   // Company logo handling
   if (fieldType === ("company_logo" as any)) {
@@ -378,6 +383,132 @@ async function renderMinutesDynamicElement(
       )
       return
 
+    case "document_heading": {
+      const buildingName = meeting.buildings?.name || ""
+      const meetingType = meeting.meeting_type || "Council Meeting"
+      const strataNo = meeting.strata_plan_number || ""
+      const dateStr = formatMeetingDate(meeting.meeting_date)
+      const timeStr = meeting.start_time || ""
+      const location = meeting.location || ""
+      const cfg = element.config || {}
+      const headingFormat = cfg.headingFormat || "full_sentence"
+      const orientation = cfg.orientation || "horizontal"
+
+      if (headingFormat === "full_sentence" || headingFormat === "inline") {
+        const sentence = `Minutes of the ${meetingType} of ${buildingName}, Strata Plan ${strataNo}, held on ${dateStr}${timeStr ? " at " + timeStr : ""}${location ? " in " + location : ""}.`
+        renderSimpleTextDynamic(pdf, element, x, y, width, sentence)
+      } else {
+        const fontSize = element.style?.fontSize ? parseInt(element.style.fontSize) : 12
+        const fontWeight = element.style?.fontWeight === "bold" ? "bold" : "normal"
+        const color = element.style?.color || "#000000"
+        
+        pdf.setFontSize(fontSize)
+        pdf.setFont("helvetica", fontWeight)
+        pdf.setTextColor(color)
+        
+        let currentY = y + fontSize * 0.75
+        
+        pdf.setFont("helvetica", "bold")
+        pdf.setFontSize(fontSize + 2)
+        pdf.text(`Minutes of the ${meetingType}`, x, currentY)
+        currentY += (fontSize + 2) * 1.3
+        
+        pdf.setFont("helvetica", "normal")
+        pdf.setFontSize(fontSize)
+        pdf.text(`${buildingName} · Strata Plan ${strataNo}`, x, currentY)
+        currentY += fontSize * 1.3
+        
+        if (orientation === "vertical") {
+          pdf.text(`📅 ${dateStr}`, x, currentY)
+          currentY += fontSize * 1.2
+          if (timeStr) {
+            pdf.text(`🕐 ${timeStr}`, x, currentY)
+            currentY += fontSize * 1.2
+          }
+          if (location) {
+            pdf.text(`📍 ${location}`, x, currentY)
+          }
+        } else {
+          const details = `📅 ${dateStr}${timeStr ? "  🕐 " + timeStr : ""}${location ? "  📍 " + location : ""}`
+          pdf.text(details, x, currentY)
+        }
+      }
+      return
+    }
+
+    case "attendance_block": {
+      const attendees = meeting.attendees || []
+      const cfg = element.config || {}
+      const attendanceStyle = cfg.attendanceStyle || "table"
+      const orientation = cfg.orientation || "horizontal"
+
+      const fontSize = element.style?.fontSize ? parseInt(element.style.fontSize) : 10
+      const color = element.style?.color || "#000000"
+      const bgColor = element.style?.backgroundColor || "#f3f4f6"
+
+      pdf.setFontSize(fontSize)
+      pdf.setFont("helvetica", "normal")
+      pdf.setTextColor(color)
+
+      if (!attendees || !Array.isArray(attendees) || attendees.length === 0) {
+        pdf.text("No attendees recorded.", x, y + fontSize)
+        return
+      }
+
+      let currentY = y + fontSize
+
+      if (attendanceStyle === "table" || orientation === "horizontal") {
+        const rowHeight = fontSize * 1.8
+        const colWidths = [width * 0.45, width * 0.4, width * 0.15]
+        
+        pdf.setFillColor(bgColor)
+        pdf.rect(x, currentY - fontSize * 0.8, width, rowHeight, "F")
+        
+        pdf.setFont("helvetica", "bold")
+        pdf.text("Name", x + 4, currentY + fontSize * 0.1)
+        pdf.text("Role", x + colWidths[0] + 4, currentY + fontSize * 0.1)
+        pdf.text("Present", x + colWidths[0] + colWidths[1], currentY + fontSize * 0.1, { align: "center" })
+        
+        currentY += rowHeight
+        pdf.setFont("helvetica", "normal")
+
+        attendees.forEach((a: any, i: number) => {
+          if (currentY > PAGE_HEIGHT - PAGE_MARGIN_BOTTOM) {
+            pdf.addPage()
+            currentY = PAGE_MARGIN_TOP + rowHeight
+          }
+          
+          if (i % 2 === 1) {
+            pdf.setFillColor("#f8fafc")
+            pdf.rect(x, currentY - fontSize * 0.8, width, rowHeight, "F")
+          }
+          
+          pdf.text(a.name || "", x + 4, currentY + fontSize * 0.1)
+          pdf.setTextColor("#6b7280")
+          pdf.text(a.role || "", x + colWidths[0] + 4, currentY + fontSize * 0.1)
+          pdf.setTextColor(color)
+          pdf.text(a.present ? "Yes" : "No", x + colWidths[0] + colWidths[1], currentY + fontSize * 0.1, { align: "center" })
+          
+          currentY += rowHeight
+        })
+      } else {
+        attendees.forEach((a: any, i: number) => {
+          if (currentY > PAGE_HEIGHT - PAGE_MARGIN_BOTTOM) {
+            pdf.addPage()
+            currentY = PAGE_MARGIN_TOP
+          }
+          
+          const statusBullet = a.present ? "Present" : "Absent"
+          const roleText = a.role ? ` (${a.role})` : ""
+          const lineText = `• ${a.name}${roleText} - ${statusBullet}`
+          
+          pdf.text(lineText, x, currentY)
+          currentY += fontSize * 1.3
+        })
+      }
+      return
+    }
+
     case "attendee_list":
     case "attendee_names":
     case "attendee_roles":
@@ -385,6 +516,7 @@ async function renderMinutesDynamicElement(
       renderMinutesAttendeesBlock(pdf, element, x, y, width, meeting.attendees || [])
       return
 
+    case "topics_list":
     case "section_titles":
     case "section_numbers":
     case "topic_titles":
@@ -550,6 +682,7 @@ function renderMinutesTopicsBlock(
   topics: Topic[],
   fieldType: MinutesDynamicFieldType
 ) {
+  console.log("📝 renderMinutesTopicsBlock fieldType:", fieldType, "sections count:", sections?.length, "topics count:", topics?.length)
   const fontSize = element.style?.fontSize ? parseInt(element.style.fontSize) : 10
   const color = element.style?.color || "#000000"
 
@@ -627,7 +760,8 @@ function renderMinutesTopicsBlock(
         fieldType === "topic_decisions" ||
         fieldType === "decision_votes" ||
         fieldType === "task_assignees" ||
-        fieldType === "task_due_dates"
+        fieldType === "task_due_dates" ||
+        fieldType === "topics_list"
       ) {
         if (topic.description) {
           const descLines = pdf.splitTextToSize(topic.description, width - 20)
@@ -644,7 +778,7 @@ function renderMinutesTopicsBlock(
       }
 
       // Notes
-      if (fieldType === "topic_notes" && topic.notes && topic.notes.length > 0) {
+      if ((fieldType === "topic_notes" || fieldType === "topics_list") && topic.notes && topic.notes.length > 0) {
         pdf.setFont("helvetica", "bold")
         pdf.text("Notes:", x + 15, currentY)
         currentY += fontSize * 1.2
@@ -665,7 +799,7 @@ function renderMinutesTopicsBlock(
       }
 
       // Tasks
-      if (fieldType === "topic_tasks" && topic.tasks && topic.tasks.length > 0) {
+      if ((fieldType === "topic_tasks" || fieldType === "topics_list") && topic.tasks && topic.tasks.length > 0) {
         pdf.setFont("helvetica", "bold")
         pdf.text("Tasks:", x + 15, currentY)
         currentY += fontSize * 1.2
@@ -694,7 +828,8 @@ function renderMinutesTopicsBlock(
       // Motions / Decisions / Votes (new layout)
       if (
         (fieldType === "topic_decisions" ||
-          fieldType === "decision_votes") &&
+          fieldType === "decision_votes" ||
+          fieldType === "topics_list") &&
         topic.decisions &&
         topic.decisions.length > 0
       ) {
@@ -870,4 +1005,59 @@ function loadImageAsBase64(url: string): Promise<string> {
 
     img.src = url
   })
+}
+
+async function renderHtmlHeaderElement(
+  pdf: jsPDF,
+  element: CanvasElement,
+  x: number,
+  y: number,
+  width: number,
+  height: number
+) {
+  if (!element.content || typeof element.content !== "string") return
+
+  try {
+    const html2canvas = (await import("html2canvas")).default
+    
+    const container = document.createElement("div")
+    container.style.position = "absolute"
+    container.style.left = "-9999px"
+    container.style.top = "-9999px"
+    
+    const mmToPx = 3.7795275591
+    const elementWidthPx = element.size.width * mmToPx
+    const elementHeightPx = element.size.height * mmToPx
+    
+    container.style.width = `${elementWidthPx}px`
+    container.style.height = `${elementHeightPx}px`
+    container.style.overflow = "hidden"
+    container.innerHTML = element.content
+
+    document.body.appendChild(container)
+
+    // Wait a brief moment for assets
+    await new Promise((resolve) => setTimeout(resolve, 150))
+
+    const canvas = await html2canvas(container, {
+      width: elementWidthPx,
+      height: elementHeightPx,
+      backgroundColor: null,
+      logging: false,
+      useCORS: true,
+      scale: 2
+    })
+
+    document.body.removeChild(container)
+
+    const base64Image = canvas.toDataURL("image/png")
+    pdf.addImage(base64Image, "PNG", x, y, width, height)
+  } catch (error) {
+    console.error("❌ Failed to render HTML Header to PDF:", error)
+    pdf.setFillColor("#1e3a8a")
+    pdf.rect(x, y, width, height, "F")
+    pdf.setFontSize(10)
+    pdf.setTextColor("#ffffff")
+    pdf.text("HTML Header Render Failed", x + 10, y + 20)
+  }
 }

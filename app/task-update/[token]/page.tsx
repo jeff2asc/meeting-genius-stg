@@ -26,7 +26,7 @@ interface TaskNote {
 export default function TaskUpdatePage() {
   const params = useParams()
   const router = useRouter()
-  const token = params.token as string
+  const token = (params?.token ?? "") as string
 
   const [loading, setLoading] = useState(true)
   const [task, setTask] = useState<any>(null)

@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button"
 import { supabase } from "@/lib/supabase"
 import jsPDF from "jspdf"
 import html2canvas from "html2canvas"
+import { generateMinutesCanvasPDF } from "@/lib/minutesCanvasPDFGenerator"
+import { CanvasElement as CanvasElementType } from "@/lib/canvasUtils"
 
 interface GenerateMinutesButtonProps {
   meetingId: number
@@ -126,8 +128,43 @@ export default function GenerateMinutesButton({
   const handleGenerateMinutes = async (finalInfo: EditableMinutesInfo) => {
     setGenerating(true)
     try {
-      // 1) Load per-building minutes template from DB
-      const { data: templateRow, error: templateError } = await supabase
+      // 1) Load meeting
+      const { data: meeting, error: meetingError } = await supabase
+        .from("meetings")
+        .select(
+          `
+          *,
+          buildings(
+            id,
+            name,
+            address,
+            logo_url,
+            building_type,
+            company_id,
+            companies(
+              id,
+              logo_url
+            )
+          )
+        `
+        )
+        .eq("id", meetingId)
+        .single()
+
+      if (meetingError || !meeting) {
+        console.error("Failed to load meeting data:", meetingError)
+        alert("Failed to load meeting data")
+        setGenerating(false)
+        return
+      }
+
+      const building = meeting.buildings
+      const company = building?.companies
+      const logoUrl: string | null =
+        building?.logo_url || company?.logo_url || null
+
+      // 2) Load per-building minutes template from DB
+      let { data: buildingTemplate, error: templateError } = await supabase
         .from("minutes_templates")
         .select(
           `
@@ -146,13 +183,52 @@ export default function GenerateMinutesButton({
           motion_box_header_text_color,
           action_item_header_text_color,
           vote_result_header_text_color,
-          rich_text_blocks
+          rich_text_blocks,
+          canvas_content
         `
         )
         .eq("building_id", buildingId)
         .order("updated_at", { ascending: false })
         .limit(1)
         .maybeSingle()
+
+      let companyTemplate = null
+      const compId = meeting?.buildings?.company_id ?? meeting?.buildings?.id
+      if (compId) {
+        const { data: companyRow, error: companyError } = await supabase
+          .from("minutes_templates")
+          .select(
+            `
+            coverpage_elements,
+            infocard_fields,
+            coverpage_color,
+            infocard_accent_color,
+            section_headers_color,
+            motion_boxes_color,
+            action_items_color,
+            vote_results_color,
+            coverpage_height,
+            coverpage_text_color,
+            infocard_header_text_color,
+            section_header_text_color,
+            motion_box_header_text_color,
+            action_item_header_text_color,
+            vote_result_header_text_color,
+            rich_text_blocks,
+            canvas_content
+          `
+          )
+          .eq("company_id", compId.toString())
+          .order("updated_at", { ascending: false })
+          .limit(1)
+          .maybeSingle()
+
+        if (!companyError && companyRow) {
+          companyTemplate = companyRow
+        }
+      }
+
+      const templateRow = buildingTemplate || companyTemplate
 
       if (templateError) {
         console.error("Error loading minutes template:", templateError)
@@ -266,41 +342,6 @@ export default function GenerateMinutesButton({
         }
       }
 
-      // 2) Load meeting
-      const { data: meeting, error: meetingError } = await supabase
-        .from("meetings")
-        .select(
-          `
-          *,
-          buildings(
-            id,
-            name,
-            address,
-            logo_url,
-            building_type,
-            company_id,
-            companies(
-              id,
-              logo_url
-            )
-          )
-        `
-        )
-        .eq("id", meetingId)
-        .single()
-
-      if (meetingError || !meeting) {
-        console.error("Failed to load meeting data:", meetingError)
-        alert("Failed to load meeting data")
-        setGenerating(false)
-        return
-      }
-
-      const building = meeting.buildings
-      const company = building?.companies
-      const logoUrl: string | null =
-        building?.logo_url || company?.logo_url || null
-
       // 3) Load sections/topics/decisions/tasks
       const { data: rawSections, error: sectionsError } = await supabase
         .from("sections")
@@ -400,6 +441,36 @@ export default function GenerateMinutesButton({
 
       // 5) Attendees from meeting.attendees JSONB
       const attendees = (meeting.attendees as any[]) || []
+
+      // 5.5) Intercept if this is an advanced canvas template
+      const bCanvas = buildingTemplate?.canvas_content as any
+      const cCanvas = companyTemplate?.canvas_content as any
+
+      const isAdvanced =
+        bCanvas?.canvas?.mode === "advanced" ||
+        cCanvas?.canvas?.mode === "advanced"
+
+      const elements =
+        bCanvas?.canvas?.elements ||
+        cCanvas?.canvas?.elements
+
+      if (isAdvanced && Array.isArray(elements) && elements.length > 0) {
+        const topicsWithDetails = (topics || []).map((topic: any) => ({
+          ...topic,
+          decisions: decisions.filter((d: any) => d.topic_id === topic.id),
+          tasks: tasks.filter((t: any) => t.topic_id === topic.id),
+          notes: notes.filter((n: any) => n.topic_id === topic.id),
+        }))
+
+        await generateMinutesCanvasPDF(
+          elements as CanvasElementType[],
+          meetingForPdf as any,
+          sections as any,
+          topicsWithDetails as any
+        )
+        setGenerating(false)
+        return
+      }
 
   // 6) Build HTML
   const minutesHtml = buildMinutesHtml({

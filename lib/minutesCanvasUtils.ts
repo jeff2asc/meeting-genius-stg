@@ -11,6 +11,9 @@ export type MinutesDynamicFieldType =
   | "location"
   | "address"
   | "strata_plan"
+  // NEW: Special layout fields
+  | "document_heading"
+  | "attendance_block"
   // Attendee fields
   | "attendee_list"
   | "attendee_names"
@@ -47,6 +50,10 @@ export function getMinutesDynamicFieldName(type: MinutesDynamicFieldType): strin
     location: "Location",
     address: "Address",
     strata_plan: "Strata Plan Number",
+
+    // Special layout
+    document_heading: "Document Heading",
+    attendance_block: "Attendance Block",
 
     // Attendees
     attendee_list: "Attendee List (Full)",
@@ -92,6 +99,10 @@ export function getMinutesDynamicFieldDescription(type: MinutesDynamicFieldType)
     address: "Building address",
     strata_plan: "Strata plan number",
 
+    // Special layout blocks
+    document_heading: "Full formatted document heading with building, date and meeting type",
+    attendance_block: "Complete attendance table or list with names, roles and status",
+
     // Attendees
     attendee_list: "Complete list of attendees with names, roles, and presence",
     attendee_names: "Names of all attendees",
@@ -127,6 +138,11 @@ export function getMinutesDynamicFieldDescription(type: MinutesDynamicFieldType)
 
 // Group fields by category for component library
 export const MINUTES_FIELD_CATEGORIES: Record<string, MinutesDynamicFieldType[]> = {
+  "🎨 Layout Blocks": [
+    "document_heading",
+    "attendance_block",
+  ],
+
   "Header Information": [
     "building_name",
     "meeting_type",

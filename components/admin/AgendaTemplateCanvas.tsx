@@ -3,11 +3,12 @@
 
 import { useState, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
-import { ZoomIn, ZoomOut, Maximize2, Save, Eye, Undo, Redo, Layout } from "lucide-react"
-import ComponentLibrary from "./canvas/ComponentLibrary"
-import CanvasElement from "./canvas/CanvasElement"
-import PropertiesPanel from "./canvas/PropertiesPanel"
-import TemplateGalleryModal from "./canvas/TemplateGalleryModal"
+import { ZoomIn, ZoomOut, Maximize2, Save, Eye, Undo, Redo, Layout, Code2 } from "lucide-react"
+import ComponentLibrary from "@/components/admin/canvas/ComponentLibrary"
+import CanvasElement from "@/components/admin/canvas/CanvasElement"
+import PropertiesPanel from "@/components/admin/canvas/PropertiesPanel"
+import TemplateGalleryModal from "@/components/admin/canvas/TemplateGalleryModal"
+import HtmlHeaderImportModal from "@/components/admin/canvas/HtmlHeaderImportModal"
 import {
   CanvasElement as CanvasElementType,
   ElementType,
@@ -44,6 +45,7 @@ export default function AgendaTemplateCanvas({ company, onBack }: AgendaTemplate
   const [showTemplateGallery, setShowTemplateGallery] = useState(false)
   const [hasLoadedInitial, setHasLoadedInitial] = useState(false)
   const [hasSimpleTemplate, setHasSimpleTemplate] = useState(false)
+  const [showHtmlImport, setShowHtmlImport] = useState(false)
   const canvasRef = useRef<HTMLDivElement>(null)
 
 
@@ -139,21 +141,22 @@ export default function AgendaTemplateCanvas({ company, onBack }: AgendaTemplate
         return
       }
 
+      const blocks = data?.blocks as any
 
-      if (data?.blocks?.canvas?.elements) {
+      if (blocks?.canvas?.elements) {
         console.log('Loading saved Canvas template...')
-        setElements(data.blocks.canvas.elements)
-        addToHistory(data.blocks.canvas.elements)
+        setElements(blocks.canvas.elements)
+        addToHistory(blocks.canvas.elements)
         setHasLoadedInitial(true)
         
-        if (data?.blocks?.sections) {
+        if (blocks?.sections) {
           setHasSimpleTemplate(true)
         }
-      } else if (data?.blocks?.sections) {
+      } else if (blocks?.sections) {
         console.log('Converting Simple template to Canvas...')
         setHasSimpleTemplate(true)
         
-        const convertedElements = convertSimpleTemplateToCanvas(data.blocks)
+        const convertedElements = convertSimpleTemplateToCanvas(blocks)
         setElements(convertedElements)
         addToHistory(convertedElements)
         setHasLoadedInitial(true)
@@ -349,7 +352,7 @@ export default function AgendaTemplateCanvas({ company, onBack }: AgendaTemplate
     try {
       const { data: existing, error: fetchError } = await supabase
         .from('company_agenda_templates')
-        .select('id, blocks')
+        .select('id, title, blocks')
         .eq('company_id', company.id)
         .single()
 
@@ -363,8 +366,9 @@ export default function AgendaTemplateCanvas({ company, onBack }: AgendaTemplate
 
       const templateData = {
         company_id: company.id,
+        title: existing?.title || `${company.name} Agenda Template`,
         blocks: {
-          ...(existing?.blocks || {}),
+          ...((existing?.blocks as any) || {}),
           canvas: {
             mode: 'advanced',
             elements: elements
@@ -381,6 +385,7 @@ export default function AgendaTemplateCanvas({ company, onBack }: AgendaTemplate
         const { error, data } = await supabase
           .from('company_agenda_templates')
           .update({ 
+            title: templateData.title,
             blocks: templateData.blocks, 
             updated_at: new Date().toISOString() 
           })
@@ -475,9 +480,9 @@ export default function AgendaTemplateCanvas({ company, onBack }: AgendaTemplate
           .eq('company_id', company.id)
           .single()
 
-
-        if (data?.blocks?.sections) {
-          const convertedElements = convertSimpleTemplateToCanvas(data.blocks)
+        const blocks = data?.blocks as any
+        if (blocks?.sections) {
+          const convertedElements = convertSimpleTemplateToCanvas(blocks)
           setElements(convertedElements)
           addToHistory(convertedElements)
         }
@@ -530,6 +535,17 @@ export default function AgendaTemplateCanvas({ company, onBack }: AgendaTemplate
     
     if (type === 'dynamic' && dynamicFieldType) {
       newElement.content = { type: dynamicFieldType }
+      // Default config for special layout fields
+      if (dynamicFieldType === 'document_heading') {
+        newElement.config = { orientation: 'horizontal', headingFormat: 'full_sentence' }
+        newElement.size = { width: 180, height: 25 }
+        newElement.position = { x: 15, y: 20 }
+      }
+      if (dynamicFieldType === 'attendance_block') {
+        newElement.config = { orientation: 'horizontal', attendanceStyle: 'table' }
+        newElement.size = { width: 180, height: 40 }
+        newElement.position = { x: 15, y: 50 }
+      }
     }
 
 
@@ -577,6 +593,16 @@ export default function AgendaTemplateCanvas({ company, onBack }: AgendaTemplate
   const zoomIn = () => setScale(Math.min(scale + 0.1, 1.5))
   const zoomOut = () => setScale(Math.max(scale - 0.1, 0.2))
   const zoomFit = () => setScale(0.5)
+
+  // Handle HTML header import
+  const handleHtmlImport = (htmlContent: string, heightMm: number) => {
+    const newElement = createDefaultElement('html_header', { x: 0, y: 0 }, { width: 210, height: heightMm })
+    newElement.content = htmlContent
+    const newElements = [...elements, newElement]
+    setElements(newElements)
+    setSelectedElementId(newElement.id)
+    addToHistory(newElements)
+  }
 
 
   const selectedElement = elements.find(el => el.id === selectedElementId) || null
@@ -684,6 +710,16 @@ export default function AgendaTemplateCanvas({ company, onBack }: AgendaTemplate
             <Layout className="h-4 w-4" />
             Load Template
           </Button>
+
+          <Button 
+            variant="outline" 
+            size="sm"
+            onClick={() => setShowHtmlImport(true)}
+            className="gap-2"
+          >
+            <Code2 className="h-4 w-4" />
+            Import HTML Header
+          </Button>
           
           <Button 
             variant="outline" 
@@ -751,7 +787,7 @@ export default function AgendaTemplateCanvas({ company, onBack }: AgendaTemplate
                         scale={scale}
                         pageIndex={pageIndex}
                         onSelect={() => setSelectedElementId(element.id)}
-                        onUpdate={(updates) => handleUpdateElement(element.id, updates)}
+                        onUpdate={(updates: any) => handleUpdateElement(element.id, updates)}
                         onDelete={() => handleDeleteElement(element.id)}
                         onDuplicate={() => handleDuplicateElement(element.id)}
                         companyData={{
@@ -886,7 +922,7 @@ export default function AgendaTemplateCanvas({ company, onBack }: AgendaTemplate
 
         <PropertiesPanel
           selectedElement={selectedElement}
-          onUpdate={(updates) => {
+          onUpdate={(updates: any) => {
             if (selectedElementId) {
               handleUpdateElement(selectedElementId, updates)
             }
@@ -927,6 +963,13 @@ export default function AgendaTemplateCanvas({ company, onBack }: AgendaTemplate
           }}
           onSelectTemplate={handleSelectTemplate}
           hasSimpleTemplate={hasSimpleTemplate}
+        />
+      )}
+
+      {showHtmlImport && (
+        <HtmlHeaderImportModal
+          onClose={() => setShowHtmlImport(false)}
+          onImport={handleHtmlImport}
         />
       )}
     </div>

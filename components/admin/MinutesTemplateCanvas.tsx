@@ -2,10 +2,11 @@
 
 import { useState, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
-import { ZoomIn, ZoomOut, Maximize2, Save, Eye, Undo, Redo } from "lucide-react"
-import MinutesComponentLibrary from "./canvas/MinutesComponentLibrary"
-import CanvasElementComponent from "./canvas/CanvasElement"
-import PropertiesPanel from "./canvas/PropertiesPanel"
+import { ZoomIn, ZoomOut, Maximize2, Save, Eye, Undo, Redo, Code2 } from "lucide-react"
+import MinutesComponentLibrary from "@/components/admin/canvas/MinutesComponentLibrary"
+import CanvasElementComponent from "@/components/admin/canvas/CanvasElement"
+import PropertiesPanel from "@/components/admin/canvas/PropertiesPanel"
+import HtmlHeaderImportModal from "@/components/admin/canvas/HtmlHeaderImportModal"
 import {
   CanvasElement as CanvasElementType,
   ElementType,
@@ -40,6 +41,8 @@ export default function MinutesTemplateCanvas({
   const [previewing, setPreviewing] = useState(false)
   const [history, setHistory] = useState<CanvasElementType[][]>([])
   const [historyIndex, setHistoryIndex] = useState(-1)
+  const [showHtmlImport, setShowHtmlImport] = useState(false)
+  const [showTemplatePicker, setShowTemplatePicker] = useState(false)
   const canvasRef = useRef<HTMLDivElement>(null)
 
   const mockMeetingData = {
@@ -129,20 +132,22 @@ export default function MinutesTemplateCanvas({
     try {
       const { data, error } = await supabase
         .from("minutes_templates")
-        .select("blocks")
-        .eq("company_id", company.id)
+        .select("canvas_content")
+        .eq("company_id", company.id.toString())
         .maybeSingle()
 
       if (error && error.code !== "PGRST116") {
         console.error("Error loading minutes canvas template:", error)
       }
 
-      if (data?.blocks?.canvas?.elements) {
-        const loaded = data.blocks.canvas.elements as CanvasElementType[]
+      const canvasContent = data?.canvas_content as any
+
+      if (canvasContent?.canvas?.elements) {
+        const loaded = canvasContent.canvas.elements as CanvasElementType[]
         setElements(loaded)
         addToHistory(loaded)
       } else {
-        const template = MINUTES_CANVAS_TEMPLATES["professional"]
+        const template = MINUTES_CANVAS_TEMPLATES["corporate_gold"]
         const defaultElements = JSON.parse(
           JSON.stringify(template.elements)
         ) as CanvasElementType[]
@@ -159,12 +164,12 @@ export default function MinutesTemplateCanvas({
     try {
       const { data: existing } = await supabase
         .from("minutes_templates")
-        .select("id, blocks, company_id")
-        .eq("company_id", company.id)
+        .select("id, canvas_content, company_id")
+        .eq("company_id", company.id.toString())
         .maybeSingle()
 
-      const blocks = {
-        ...(existing?.blocks || {}),
+      const canvasContent = {
+        ...((existing?.canvas_content as any) || {}),
         canvas: {
           mode: "advanced",
           elements,
@@ -174,8 +179,8 @@ export default function MinutesTemplateCanvas({
       if (existing) {
         const { error } = await supabase
           .from("minutes_templates")
-          .update({ blocks, updated_at: new Date().toISOString() })
-          .eq("company_id", company.id)
+          .update({ canvas_content: canvasContent, updated_at: new Date().toISOString() })
+          .eq("company_id", company.id.toString())
 
         if (error) {
           console.error("Error updating minutes canvas template:", error)
@@ -187,8 +192,8 @@ export default function MinutesTemplateCanvas({
         const { error } = await supabase
           .from("minutes_templates")
           .insert({
-            company_id: company.id,
-            blocks,
+            company_id: company.id.toString(),
+            canvas_content: canvasContent,
           })
 
         if (error) {
@@ -274,6 +279,17 @@ export default function MinutesTemplateCanvas({
 
     if (type === "dynamic" && dynamicFieldType) {
       newElement.content = { type: dynamicFieldType as unknown as DynamicFieldType }
+      // Default config for special layout fields
+      if (dynamicFieldType === "document_heading") {
+        newElement.config = { orientation: "horizontal", headingFormat: "full_sentence" }
+        newElement.size = { width: 180, height: 25 }
+        newElement.position = { x: 15, y: 20 }
+      }
+      if (dynamicFieldType === "attendance_block") {
+        newElement.config = { orientation: "horizontal", attendanceStyle: "table" }
+        newElement.size = { width: 180, height: 40 }
+        newElement.position = { x: 15, y: 50 }
+      }
     }
 
     const newElements = [...elements, newElement]
@@ -312,6 +328,16 @@ export default function MinutesTemplateCanvas({
   const zoomFit = () => setScale(0.5)
 
   const selectedElement = elements.find((el) => el.id === selectedElementId) || null
+
+  // Handle HTML header import
+  const handleHtmlImport = (htmlContent: string, heightMm: number) => {
+    const newElement = createDefaultElement("html_header", { x: 0, y: 0 }, { width: 210, height: heightMm })
+    newElement.content = htmlContent
+    const newElements = [...elements, newElement]
+    setElements(newElements)
+    setSelectedElementId(newElement.id)
+    addToHistory(newElements)
+  }
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -386,6 +412,56 @@ export default function MinutesTemplateCanvas({
           </Button>
 
           <div className="h-6 w-px bg-border mx-2" />
+
+          {/* Load Template picker */}
+          <div className="relative">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowTemplatePicker((v) => !v)}
+              className="gap-2"
+            >
+              🎨 Load Template
+            </Button>
+            {showTemplatePicker && (
+              <div className="absolute top-10 left-0 z-50 bg-white border border-border rounded-lg shadow-lg w-72 p-2">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide px-2 py-1 mb-1">Choose a Template</p>
+                {Object.entries(MINUTES_CANVAS_TEMPLATES).map(([key, tmpl]) => (
+                  <button
+                    key={key}
+                    className="w-full text-left px-3 py-2 rounded hover:bg-slate-50 flex items-start gap-3 transition-colors"
+                    onClick={() => {
+                      if (confirm(`Load the "${tmpl.name}" template? This will replace all current elements.`)) {
+                        const fresh = JSON.parse(JSON.stringify(tmpl.elements)) as CanvasElementType[]
+                        setElements(fresh)
+                        addToHistory(fresh)
+                        setSelectedElementId(null)
+                      }
+                      setShowTemplatePicker(false)
+                    }}
+                  >
+                    <span className="text-2xl leading-none">{tmpl.thumbnail}</span>
+                    <div>
+                      <p className="text-sm font-medium text-slate-800">{tmpl.name}</p>
+                      <p className="text-xs text-slate-500">{tmpl.description}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="h-6 w-px bg-border mx-2" />
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowHtmlImport(true)}
+            className="gap-2"
+          >
+            <Code2 className="h-4 w-4" />
+            Import HTML Header
+          </Button>
 
           <Button
             variant="outline"
@@ -607,6 +683,13 @@ export default function MinutesTemplateCanvas({
           </span>
         </div>
       </div>
+
+      {showHtmlImport && (
+        <HtmlHeaderImportModal
+          onClose={() => setShowHtmlImport(false)}
+          onImport={handleHtmlImport}
+        />
+      )}
     </div>
   )
 }
