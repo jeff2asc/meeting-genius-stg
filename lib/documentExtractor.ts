@@ -1,5 +1,4 @@
 import { supabase } from './supabase'
-import pdfToText from 'react-pdftotext'
 import mammoth from 'mammoth'
 
 
@@ -24,17 +23,36 @@ interface TopicAttachment {
 }
 
 
-async function extractTextFromPDF(fileUrl: string): Promise<string> {
-  try {
-    const response = await fetch(fileUrl)
-    const blob = await response.blob()
-    const file = new File([blob], 'document.pdf', { type: 'application/pdf' })
-    const text = await pdfToText(file)
-    return text
-  } catch (error) {
-    console.error('Error extracting PDF text:', error)
-    throw error
+// Client-side PDF text extraction using pdfjs-dist directly.
+// We use a dynamic import so Webpack sees only ESM (no CJS require chain).
+// Worker is loaded from CDN to avoid bundling the 1MB worker file.
+async function extractPdfTextOnClient(fileOrUrl: File | string): Promise<string> {
+  const pdfjsLib = await import('pdfjs-dist')
+  // CDN worker — avoids bundling the 1 MB worker file
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`
+
+  let arrayBuffer: ArrayBuffer
+  if (typeof fileOrUrl === 'string') {
+    const response = await fetch(fileOrUrl)
+    arrayBuffer = await response.arrayBuffer()
+  } else {
+    arrayBuffer = await fileOrUrl.arrayBuffer()
   }
+
+  const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) })
+  const pdfDoc = await loadingTask.promise
+  const pageTexts: string[] = []
+  for (let i = 1; i <= pdfDoc.numPages; i++) {
+    const page = await pdfDoc.getPage(i)
+    const content = await page.getTextContent()
+    const pageText = content.items
+      .map((item: any) => ('str' in item ? item.str : ''))
+      .join(' ')
+    pageTexts.push(pageText)
+  }
+  await pdfDoc.destroy()
+  return pageTexts.join('\n')
 }
 
 
@@ -72,15 +90,35 @@ export async function extractTextFromFile(
 
       if (fileMimeType === 'application/pdf') {
         if (typeof window !== 'undefined') {
-          const text = await pdfToText(file)
-          return text
+          return await extractPdfTextOnClient(file)
         } else {
-          // Dynamic import to avoid bundling Node modules on client
+          // Server-side: pdf-parse is in serverExternalPackages so it loads raw from node_modules
+          // (not bundled by Webpack). Dynamic import works correctly here.
           const pdfParseModule = await import('pdf-parse')
-          const pdfParse = (pdfParseModule as any).default || pdfParseModule
+          const PDFParseClass = (pdfParseModule as any).PDFParse ?? (pdfParseModule as any).default?.PDFParse
           const arrayBuffer = await file.arrayBuffer()
-          const data = await pdfParse(Buffer.from(arrayBuffer))
-          return data.text
+
+          if (PDFParseClass) {
+            // setWorker() registers pdfjs on globalThis; disableWorker avoids needing a Worker thread
+            try {
+              PDFParseClass.setWorker()
+              if ((globalThis as any).pdfjs?.GlobalWorkerOptions) {
+                (globalThis as any).pdfjs.GlobalWorkerOptions.disableWorker = true
+              }
+            } catch (err) {
+              console.warn('[documentExtractor] Could not set disableWorker:', err)
+            }
+
+            const parser = new PDFParseClass({ data: Buffer.from(arrayBuffer) })
+            const result = await parser.getText()
+            await parser.destroy()
+            return result.text
+          } else {
+            // Legacy fallback — old-style functional api
+            const pdfParseFn = (pdfParseModule as any).default ?? pdfParseModule
+            const data = await pdfParseFn(Buffer.from(arrayBuffer))
+            return data.text
+          }
         }
       } else if (
         fileMimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
@@ -109,7 +147,7 @@ export async function extractTextFromFile(
       const fileUrl = fileOrUrl
 
       if (mimeType === 'application/pdf') {
-        return await extractTextFromPDF(fileUrl)
+        return await extractPdfTextOnClient(fileUrl)
       } else if (
         mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
       ) {

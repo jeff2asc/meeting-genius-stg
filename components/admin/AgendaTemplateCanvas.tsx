@@ -29,12 +29,21 @@ import { generateCanvasPDF } from "@/lib/canvasPDFGenerator"
 
 
 interface AgendaTemplateCanvasProps {
-  company: Company
+  building: {
+    id: number
+    name: string
+    address: string | null
+    manager_id: number
+    company_id: number | null
+    created_at: string
+    logo_url?: string | null
+    companies?: { logo_url: string | null } | null
+  }
   onBack: () => void
 }
 
 
-export default function AgendaTemplateCanvas({ company, onBack }: AgendaTemplateCanvasProps) {
+export default function AgendaTemplateCanvas({ building, onBack }: AgendaTemplateCanvasProps) {
   const [elements, setElements] = useState<CanvasElementType[]>([])
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null)
   const [scale, setScale] = useState(0.5)
@@ -124,16 +133,18 @@ export default function AgendaTemplateCanvas({ company, onBack }: AgendaTemplate
   // Load template from database on mount
   useEffect(() => {
     loadTemplate()
-  }, [])
+  }, [building.id])
 
 
   const loadTemplate = async () => {
     try {
       const { data, error } = await supabase
-        .from('company_agenda_templates')
-        .select('blocks')
-        .eq('company_id', company.id)
-        .single()
+        .from('agendatemplates')
+        .select('coverpage_elements')
+        .eq('buildingid', building.id)
+        .order('updatedat', { ascending: false })
+        .limit(1)
+        .maybeSingle()
 
 
       if (error && error.code !== 'PGRST116') {
@@ -141,30 +152,13 @@ export default function AgendaTemplateCanvas({ company, onBack }: AgendaTemplate
         return
       }
 
-      const blocks = data?.blocks as any
+      const coverpageElements = data?.coverpage_elements as any
 
-      if (blocks?.canvas?.elements) {
+      if (coverpageElements?.canvas?.elements) {
         console.log('Loading saved Canvas template...')
-        setElements(blocks.canvas.elements)
-        addToHistory(blocks.canvas.elements)
+        setElements(coverpageElements.canvas.elements)
+        addToHistory(coverpageElements.canvas.elements)
         setHasLoadedInitial(true)
-        
-        if (blocks?.sections) {
-          setHasSimpleTemplate(true)
-        }
-      } else if (blocks?.sections) {
-        console.log('Converting Simple template to Canvas...')
-        setHasSimpleTemplate(true)
-        
-        const convertedElements = convertSimpleTemplateToCanvas(blocks)
-        setElements(convertedElements)
-        addToHistory(convertedElements)
-        setHasLoadedInitial(true)
-        
-        setTimeout(() => {
-          const message = '✨ Your Simple Mode template has been loaded into the canvas! This is your current design. You can now customize it with drag-and-drop, or click "Load Template" to choose a different starter template.'
-          alert(message)
-        }, 500)
       } else {
         console.log('No template found. Loading default Professional template...')
         setHasSimpleTemplate(false)
@@ -350,84 +344,49 @@ export default function AgendaTemplateCanvas({ company, onBack }: AgendaTemplate
   const saveTemplate = async () => {
     setSaving(true)
     try {
-      const { data: existing, error: fetchError } = await supabase
-        .from('company_agenda_templates')
-        .select('id, title, blocks')
-        .eq('company_id', company.id)
-        .single()
+      const { data: existing } = await supabase
+        .from('agendatemplates')
+        .select('id, coverpage_elements')
+        .eq('buildingid', building.id)
+        .order('updatedat', { ascending: false })
+        .limit(1)
+        .maybeSingle()
 
 
-      console.log('Existing template:', existing)
-      console.log('Fetch error:', fetchError)
-
-
-      const simpleTemplate = convertCanvasToSimpleTemplate()
-
-
-      const templateData = {
-        company_id: company.id,
-        title: existing?.title || `${company.name} Agenda Template`,
-        blocks: {
-          ...((existing?.blocks as any) || {}),
-          canvas: {
-            mode: 'advanced',
-            elements: elements
-          },
-          sections: simpleTemplate.sections
+      const canvasContent = {
+        canvas: {
+          mode: 'advanced',
+          elements: elements
         }
       }
 
 
-      console.log('Attempting to save:', templateData)
-
-
       if (existing) {
-        const { error, data } = await supabase
-          .from('company_agenda_templates')
+        const { error } = await supabase
+          .from('agendatemplates')
           .update({ 
-            title: templateData.title,
-            blocks: templateData.blocks, 
-            updated_at: new Date().toISOString() 
+            coverpage_elements: canvasContent as any, 
+            updatedat: new Date().toISOString() 
           })
-          .eq('company_id', company.id)
-          .select()
+          .eq('id', existing.id)
 
-
-        console.log('Update result:', { error, data })
-        
-        if (error) {
-          console.error('Update error details:', error)
-          throw error
-        }
+        if (error) throw error
       } else {
-        const { error, data } = await supabase
-          .from('company_agenda_templates')
-          .insert(templateData)
-          .select()
+        const { error } = await supabase
+          .from('agendatemplates')
+          .insert({
+            buildingid: building.id,
+            coverpage_elements: canvasContent as any,
+          })
 
-
-        console.log('Insert result:', { error, data })
-        
-        if (error) {
-          console.error('Insert error details:', error)
-          throw error
-        }
+        if (error) throw error
       }
 
 
       alert('✅ Canvas template saved successfully! Your exact canvas layout will appear in generated PDFs.')
     } catch (err: any) {
       console.error('Error saving template:', err)
-      
-      let errorMessage = 'Failed to save template'
-      
-      if (err.code === '42501') {
-        errorMessage = '🔒 Permission denied. Please check your Supabase RLS policies for the company_agenda_templates table.'
-      } else if (err.message) {
-        errorMessage = `Failed to save template: ${err.message}`
-      }
-      
-      alert(errorMessage)
+      alert('Failed to save template: ' + (err.message || err))
     } finally {
       setSaving(false)
     }
@@ -446,13 +405,13 @@ export default function AgendaTemplateCanvas({ company, onBack }: AgendaTemplate
         strata_plan_number: mockMeetingData.strata_plan_number,
         attendees: mockMeetingData.attendees,
         buildings: {
-          name: company.name,
-          address: "123 Main Street, Vancouver, BC",
+          name: building.name,
+          address: building.address || "123 Main Street, Vancouver, BC",
           building_type: "Strata",
-          logo_url: company.logo_url || null,
-          company_id: company.id,
+          logo_url: building.logo_url || building.companies?.logo_url || null,
+          company_id: building.company_id,
           companies: {
-            logo_url: company.logo_url || null
+            logo_url: building.companies?.logo_url || null
           }
         }
       }
@@ -475,14 +434,16 @@ export default function AgendaTemplateCanvas({ company, onBack }: AgendaTemplate
     if (key === 'convert') {
       try {
         const { data } = await supabase
-          .from('company_agenda_templates')
-          .select('blocks')
-          .eq('company_id', company.id)
-          .single()
+          .from('agendatemplates')
+          .select('coverpage_elements')
+          .eq('buildingid', building.id)
+          .order('updatedat', { ascending: false })
+          .limit(1)
+          .maybeSingle()
 
-        const blocks = data?.blocks as any
-        if (blocks?.sections) {
-          const convertedElements = convertSimpleTemplateToCanvas(blocks)
+        const coverpageElements = data?.coverpage_elements as any
+        if (coverpageElements?.sections) {
+          const convertedElements = convertSimpleTemplateToCanvas(coverpageElements)
           setElements(convertedElements)
           addToHistory(convertedElements)
         }
@@ -655,7 +616,7 @@ export default function AgendaTemplateCanvas({ company, onBack }: AgendaTemplate
           <div className="h-6 w-px bg-border" />
           <div>
             <h2 className="text-lg font-semibold text-foreground">Advanced Canvas Builder</h2>
-            <p className="text-xs text-muted-foreground">{company.name}</p>
+            <p className="text-xs text-muted-foreground">{building.name}</p>
           </div>
         </div>
 
@@ -791,8 +752,8 @@ export default function AgendaTemplateCanvas({ company, onBack }: AgendaTemplate
                         onDelete={() => handleDeleteElement(element.id)}
                         onDuplicate={() => handleDuplicateElement(element.id)}
                         companyData={{
-                          name: company.name,
-                          logo_url: company.logo_url || null
+                          name: building.name,
+                          logo_url: building.logo_url || building.companies?.logo_url || null
                         }}
                         meetingData={mockMeetingData}
                         sections={mockSections}

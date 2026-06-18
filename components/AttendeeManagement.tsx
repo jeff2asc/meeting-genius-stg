@@ -23,6 +23,7 @@ interface AttendeeManagementProps {
   status: string
   userCanEdit: boolean
   companyId?: number | null
+  buildingId?: number | null
   onUpdate: (attendees: Attendee[]) => void
   onClose?: () => void
 }
@@ -33,6 +34,7 @@ export default function AttendeeManagement({
   status,
   userCanEdit,
   companyId,
+  buildingId,
   onUpdate,
   onClose
 }: AttendeeManagementProps) {
@@ -164,50 +166,100 @@ export default function AttendeeManagement({
     }
   }
 
+  // User types that should appear as meeting attendees (excludes admin/superadmin)
+  const ATTENDEE_USER_TYPES = ['attendee', 'owner', 'resident', 'council', 'staff', 'user']
+
   const fetchDefaultAttendees = async () => {
     if (!companyId) return
-    const meetingIdNum = Number(meetingId)
-    
+
     try {
-      // Fetch all eligible company users
-      const { data: users } = await supabase
-        .from('users')
-        .select('id, name, email, user_type, roles')
-        .eq('company_id', companyId)
+      let users: any[] = []
 
-      if (users) {
-        const newAttendees = users
-          .filter(u => {
-            const typeMatch = u.user_type?.toLowerCase() === 'attendee'
-            const roleMatch = Array.isArray(u.roles) && u.roles.some((r: string) => r.toLowerCase().includes('attendee'))
-            const stringRoleMatch = typeof u.roles === 'string' && (u.roles as string).toLowerCase().includes('attendee')
-            
-            return typeMatch || roleMatch || stringRoleMatch
-          })
-          .map(u => ({
-            name: u.name,
-            email: u.email,
-            role: u.user_type?.toLowerCase() === 'attendee' ? 'Attendee' : 'Attendee',
-            user_id: u.id,
-            present: false,
-            user_type: u.user_type
-          }))
+      if (buildingId) {
+        // ✅ Preferred path: scope to this specific building via user_buildings join
+        const { data: userBuildings, error: ubError } = await supabase
+          .from('user_buildings')
+          .select('user_id')
+          .eq('building_id', buildingId)
 
-        if (newAttendees.length === 0) {
-          toast.info("No users with 'Attendee' role found in this company.")
+        if (ubError) {
+          console.error('Error fetching user_buildings:', ubError)
+          toast.error('Failed to fetch building members')
           return
         }
 
-        // Merge with existing avoiding duplicates by email
-        const existingEmails = new Set(localAttendees.map(a => a.email?.toLowerCase()).filter(Boolean))
-        const uniqueNewAttendees = newAttendees.filter(a => !existingEmails.has(a.email?.toLowerCase()))
+        const userIds = (userBuildings || []).map((ub: any) => ub.user_id)
 
-        if (uniqueNewAttendees.length > 0) {
-          setLocalAttendees(prev => [...prev, ...uniqueNewAttendees])
-          toast.success(`Added ${uniqueNewAttendees.length} attendees from building.`)
-        } else {
-          toast.info("All building attendees are already in the list.")
+        if (userIds.length === 0) {
+          toast.info('No users are assigned to this building yet.')
+          return
         }
+
+        const { data: buildingUsers, error: usersError } = await supabase
+          .from('users')
+          .select('id, name, email, user_type, roles')
+          .in('id', userIds)
+
+        if (usersError) {
+          console.error('Error fetching building users:', usersError)
+          toast.error('Failed to sync attendees')
+          return
+        }
+
+        users = buildingUsers || []
+      } else {
+        // ⚠️ Fallback: no building_id, use company-wide query
+        const { data: companyUsers, error: companyErr } = await supabase
+          .from('users')
+          .select('id, name, email, user_type, roles')
+          .eq('company_id', companyId)
+
+        if (companyErr) {
+          toast.error('Failed to sync attendees')
+          return
+        }
+        users = companyUsers || []
+      }
+
+      // Include all non-admin user types
+      const newAttendees = users
+        .filter(u => {
+          const type = u.user_type?.toLowerCase() || ''
+          return ATTENDEE_USER_TYPES.includes(type)
+        })
+        .map(u => ({
+          name: u.name,
+          email: u.email,
+          role: u.user_type
+            ? u.user_type.charAt(0).toUpperCase() + u.user_type.slice(1).toLowerCase()
+            : 'Attendee',
+          user_id: u.id,
+          present: false,
+          user_type: u.user_type
+        }))
+
+      if (newAttendees.length === 0) {
+        toast.info('No eligible users found for this building.')
+        return
+      }
+
+      // Merge, avoiding duplicates by email (or name if no email)
+      const existingEmails = new Set(
+        localAttendees.map(a => a.email?.toLowerCase()).filter(Boolean)
+      )
+      const existingNames = new Set(
+        localAttendees.filter(a => !a.email).map(a => a.name?.toLowerCase()).filter(Boolean)
+      )
+      const uniqueNewAttendees = newAttendees.filter(a => {
+        if (a.email) return !existingEmails.has(a.email.toLowerCase())
+        return !existingNames.has(a.name?.toLowerCase())
+      })
+
+      if (uniqueNewAttendees.length > 0) {
+        setLocalAttendees(prev => [...prev, ...uniqueNewAttendees])
+        toast.success(`Added ${uniqueNewAttendees.length} attendee(s) from building.`)
+      } else {
+        toast.info('All building members are already in the list.')
       }
     } catch (err) {
       console.error('Error fetching building attendees:', err)

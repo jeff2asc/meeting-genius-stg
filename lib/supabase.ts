@@ -928,6 +928,8 @@ export interface Database {
           reconsideration_triggered: boolean | null
           reconsideration_hold_days: number | null
           reconsideration_hold_until: string | null
+          moved_by: string | null
+          seconded_by: string | null
         }
         Insert: {
           id?: number
@@ -948,6 +950,8 @@ export interface Database {
           reconsideration_triggered?: boolean | null
           reconsideration_hold_days?: number | null
           reconsideration_hold_until?: string | null
+          moved_by?: string | null
+          seconded_by?: string | null
         }
         Update: {
           id?: number
@@ -968,6 +972,8 @@ export interface Database {
           reconsideration_triggered?: boolean | null
           reconsideration_hold_days?: number | null
           reconsideration_hold_until?: string | null
+          moved_by?: string | null
+          seconded_by?: string | null
         }
         Relationships: []
       }

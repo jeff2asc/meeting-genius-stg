@@ -1039,6 +1039,8 @@ export default function BuildingDetailsModal({
         propertyManagers={propertyManagers}
         buildings={availableBuildings}
         companies={companies}
+        defaultBuildingId={building?.id}
+        defaultUserType="attendee"
       />
     </div>
   )

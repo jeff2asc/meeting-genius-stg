@@ -423,7 +423,7 @@ Ensure the first_meeting contains the structural sections and topics discussed i
 
 Minutes text:
 """
-\${minutesText}
+${minutesText}
 """
 `;
 
@@ -438,6 +438,101 @@ Minutes text:
     throw new Error("Failed to parse extracted onboarding details from minutes");
   }
 }
+
+/**
+ * Parses a meeting minutes PDF/text into sections, topics, decisions, tasks, and notes.
+ */
+export async function parseMinutesToStructure(
+  minutesText: string,
+  customApiKey?: string
+): Promise<any> {
+  let apiKey = customApiKey || process.env.GEMINI_API_KEY || "";
+  
+  if (!apiKey) {
+    try {
+      const { createClient } = await import("./supabase");
+      const supabase = createClient();
+      const { data } = await supabase
+        .from("system_settings")
+        .select("key, value")
+        .eq("key", "global_llm_api_key")
+        .single();
+      if (data?.value) {
+        apiKey = data.value;
+      }
+    } catch (e) {
+      console.error("Failed to fetch global_llm_api_key from system_settings", e);
+    }
+  }
+
+  if (!apiKey) {
+    throw new Error("Missing Gemini API Key");
+  }
+
+  const genAI = new GoogleGenerativeAI(apiKey);
+  const model = genAI.getGenerativeModel({
+    model: "gemini-2.5-flash",
+    generationConfig: { responseMimeType: "application/json" }
+  });
+
+  const prompt = `
+Analyze the following meeting minutes text and break it down into its constituent sections, topics, paragraphs/descriptions, decisions, tasks, and notes.
+
+Return a JSON object conforming strictly to this JSON schema structure:
+{
+  "sections": [
+    {
+      "title": "string (The title of the section, e.g., '1. CALL TO ORDER', 'FINANCIAL REPORT')",
+      "topics": [
+        {
+          "title": "string (The title of the topic or item discussed, e.g., 'Review of previous minutes', 'Insurance renewal')",
+          "description": "string (The general discussion text, paragraphs, or comments for this topic)",
+          "notes": [
+            {
+              "content": "string (Individual note, comment, or observation from the topic discussion)"
+            }
+          ],
+          "decisions": [
+            {
+              "motion_text": "string (The text of the motion or decision made, e.g., 'To approve the 2026 budget as presented')",
+              "result": "string (E.g. 'Carried', 'Defeated', or null)",
+              "moved_by": "string or null",
+              "seconded_by": "string or null"
+            }
+          ],
+          "tasks": [
+            {
+              "description": "string (The task or action item description, e.g., 'Obtain three quotes for roof replacement')",
+              "assigned_name": "string or null (Name of the person assigned to the task)",
+              "due_date": "string or null (Format: YYYY-MM-DD)"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+
+Be extremely accurate. Every section should be extracted. Every topic within that section should map to its description paragraphs, notes, decisions, and tasks. Do not lose any text or context.
+
+Minutes text:
+"""
+${minutesText}
+"""
+`;
+
+  const result = await model.generateContent(prompt);
+  const response = await result.response;
+  const text = response.text();
+
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    console.error("Failed to parse parsed minutes JSON from Gemini", e);
+    throw new Error("Failed to parse extracted minutes structure from PDF");
+  }
+}
+
 
 
 

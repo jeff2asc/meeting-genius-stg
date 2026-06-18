@@ -37,6 +37,7 @@ import {
 import { UploadTranscriptModal } from "@/components/transcript/upload-transcript-modal"
 import { PreviewTasksModal } from "@/components/transcript/preview-tasks-modal"
 import { ViewTranscriptsModal } from "@/components/transcript/view-transcripts-modal"
+import { ImportMinutesModal } from "@/components/transcript/import-minutes-modal"
 import RolloverTopicModal from "./rollover-topic-modal"
 import { getCurrentLocalDate } from "@/lib/timezone"
 import { Clock as ClockIcon } from "lucide-react"
@@ -174,6 +175,7 @@ export default function MeetingView({
   const [sectionRenameValue, setSectionRenameValue] = useState("")
   const [sectionToDelete, setSectionToDelete] = useState<Section | null>(null)
   const [showUploadTranscript, setShowUploadTranscript] = useState(false)
+  const [showImportMinutes, setShowImportMinutes] = useState(false)
   const [showPreviewTasks, setShowPreviewTasks] = useState(false)
   const [transcriptId, setTranscriptId] = useState<number | null>(null)
   const [extractedTasks, setExtractedTasks] = useState<any[]>([])
@@ -2656,6 +2658,19 @@ export default function MeetingView({
               </Button>
             )}
 
+            {/* Import PDF Minutes button */}
+            {userCanEdit && (meeting.status === "working_minutes" || meeting.status === "minutes") && (
+              <Button
+                size="sm"
+                onClick={() => setShowImportMinutes(true)}
+                variant="outline"
+                className="h-8 px-2.5 text-xs flex-shrink-0 border-emerald-500 text-emerald-600 hover:bg-emerald-50 rounded-lg"
+              >
+                <FileUp className="h-3.5 w-3.5 mr-1" />
+                Import PDF Minutes
+              </Button>
+            )}
+
             {/* View Transcripts button */}
             {(meeting.status === "working_minutes" || meeting.status === "minutes") && (
               <Button
@@ -3399,6 +3414,7 @@ export default function MeetingView({
                 status={meeting.status}
                 userCanEdit={userCanEdit}
                 companyId={(meeting as any)?.buildings?.company_id ?? null}
+                buildingId={meeting.building_id ?? null}
                 onUpdate={async (updatedAttendees) => {
                   await supabase
                     .from("meetings")
@@ -3820,6 +3836,14 @@ export default function MeetingView({
         isOpen={showViewTranscripts}
         onClose={() => setShowViewTranscripts(false)}
         meetingId={parseInt(meetingId)}
+      />
+
+      <ImportMinutesModal
+        isOpen={showImportMinutes}
+        onClose={() => setShowImportMinutes(false)}
+        meetingId={parseInt(meetingId)}
+        sections={sections}
+        onSuccess={fetchSectionsAndTopics}
       />
 
       {showUnifiedModal && selectedTopicForModal && (

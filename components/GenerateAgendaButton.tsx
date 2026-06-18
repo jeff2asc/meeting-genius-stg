@@ -7,6 +7,8 @@ import { supabase } from "@/lib/supabase"
 import jsPDF from "jspdf"
 import html2canvas from "html2canvas"
 import { formatUtcToLocalLong, formatUtcToLocalShort } from "@/lib/timezone"
+import { generateCanvasPDF } from "@/lib/canvasPDFGenerator"
+import { CanvasElement } from "@/lib/canvasUtils"
 
 interface GenerateAgendaButtonProps {
   meetingId: number
@@ -197,6 +199,26 @@ export default function GenerateAgendaButton({
       // Deduplicate topics by ID
       const topics = Array.from(new Map((rawTopics || []).map(t => [t.id, t])).values())
         .sort((a, b) => (a.order_index || 0) - (b.order_index || 0))
+
+      // Detect if coverpage_elements contains the advanced canvas config
+      const isAdvanced =
+        templateRow &&
+        templateRow.coverpage_elements &&
+        typeof templateRow.coverpage_elements === "object" &&
+        !Array.isArray(templateRow.coverpage_elements) &&
+        (templateRow.coverpage_elements as any).canvas?.mode === "advanced"
+
+      if (isAdvanced) {
+        const elements = (templateRow.coverpage_elements as any).canvas?.elements || []
+        await generateCanvasPDF(
+          elements as CanvasElement[],
+          meetingData as any,
+          sections as any,
+          topics as any
+        )
+        setGenerating(false)
+        return
+      }
 
       const agendaHtml = buildAgendaHtml({
         template,

@@ -1,11 +1,12 @@
 "use client"
 
 import { useState, useEffect, useRef, useCallback } from "react"
-import { GripVertical, Save, FileText, Loader2, Undo, Plus, Trash2, AlignLeft, AlignCenter, AlignRight, ChevronUp, ChevronDown, Link as LinkIcon, X } from "lucide-react"
+import { GripVertical, Save, FileText, Loader2, Undo, Plus, Trash2, AlignLeft, AlignCenter, AlignRight, ChevronUp, ChevronDown, Link as LinkIcon, X, Layers } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { supabase } from "@/lib/supabase"
 import { getCurrentLocalDate } from "@/lib/timezone"
+import AgendaTemplateCanvas from "./AgendaTemplateCanvas"
 
 // ─── Rich Text Block (Feature 1 & 3) ───────────────────────────────────────
 interface RichTextBlock {
@@ -192,6 +193,14 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
   const [loadingTemplate, setLoadingTemplate] = useState(false)
   const [templateId, setTemplateId] = useState<number | null>(null)
   const [availableMeetingTypes, setAvailableMeetingTypes] = useState<string[]>([])
+  const [showCanvasBuilder, setShowCanvasBuilder] = useState(false)
+  const [templateMode, setTemplateMode] = useState<"simple" | "advanced">("simple")
+  const [canvasContentState, setCanvasContentState] = useState<any>(null)
+
+  const handleToggleMode = (mode: "simple" | "advanced") => {
+    setTemplateMode(mode)
+    setHasChanges(true)
+  }
 
   // Undo history
   const [history, setHistory] = useState<TemplateState[]>([])
@@ -440,6 +449,8 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
           setSectionHeaderTextColor('white')
           setRichTextBlocks([])
           setTemplateId(null)
+          setTemplateMode("simple")
+          setCanvasContentState(null)
         }
       } else if (data) {
         const row = data as any
@@ -452,7 +463,20 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
         setCoverPageTextColor((row.coverpage_text_color as 'black' | 'white') || 'white')
         setInfoCardHeaderTextColor((row.infocard_header_text_color as 'black' | 'white') || 'white')
         setRichTextBlocks((row.rich_text_blocks as unknown as RichTextBlock[]) || [])
-        setCoverPageElements((row.coverpage_elements as unknown as CoverPageElement[]) || DEFAULT_COVERPAGE_ELEMENTS)
+        
+        // Detect if coverpage_elements contains the advanced canvas config
+        const isCanvasObj = row.coverpage_elements && typeof row.coverpage_elements === 'object' && !Array.isArray(row.coverpage_elements) && (row.coverpage_elements as any).canvas?.mode === 'advanced'
+        
+        if (isCanvasObj) {
+          setTemplateMode("advanced")
+          setCanvasContentState(row.coverpage_elements)
+          setCoverPageElements(DEFAULT_COVERPAGE_ELEMENTS)
+        } else {
+          setTemplateMode("simple")
+          setCoverPageElements((row.coverpage_elements as unknown as CoverPageElement[]) || DEFAULT_COVERPAGE_ELEMENTS)
+          setCanvasContentState(null)
+        }
+
         setInfoCardFields((row.infocard_fields as unknown as TemplateField[]) || DEFAULT_INFOCARD_FIELDS)
       }
 
@@ -541,7 +565,9 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
     try {
       const templateData = {
         buildingid: selectedBuildingId,
-        coverpage_elements: coverPageElements as any,
+        coverpage_elements: templateMode === 'advanced'
+          ? (canvasContentState || { canvas: { mode: 'advanced', elements: [] } })
+          : coverPageElements as any,
         infocard_fields: infoCardFields as any,
         coverpage_color: coverPageColor,
         infocard_accent_color: infoCardAccentColor,
@@ -616,6 +642,20 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
     return acc
   }, {} as Record<number, Topic[]>)
 
+  const selectedBuilding = buildings.find(b => b.id === selectedBuildingId)
+
+  if (showCanvasBuilder && selectedBuilding) {
+    return (
+      <AgendaTemplateCanvas
+        building={selectedBuilding as any}
+        onBack={() => {
+          setShowCanvasBuilder(false)
+          loadTemplate()
+        }}
+      />
+    )
+  }
+
   return (
     <>
       <div className="mb-6">
@@ -655,6 +695,20 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
                   Previewing: <strong>{meeting.title}</strong>
                 </span>
               )}
+              {selectedBuildingId && (
+                <div className="flex items-center gap-2 border-l border-border pl-4">
+                  <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider whitespace-nowrap">Layout Mode:</span>
+                  <select
+                    value={templateMode}
+                    onChange={(e) => handleToggleMode(e.target.value as "simple" | "advanced")}
+                    className="px-3 py-2 bg-background border border-border rounded focus:outline-none focus:ring-2 focus:ring-primary/50 text-sm font-semibold cursor-pointer"
+                  >
+                    <option value="simple">📝 Simple Style Editor</option>
+                    <option value="advanced">🎨 Advanced Canvas Layout</option>
+                  </select>
+                </div>
+              )}
+
               <Button
                 onClick={handleUndo}
                 disabled={historyIndex <= 0}
@@ -664,6 +718,16 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
               >
                 <Undo className="h-4 w-4" />
                 Undo (Ctrl+Z)
+              </Button>
+
+              <Button
+                onClick={() => setShowCanvasBuilder(true)}
+                disabled={!selectedBuildingId}
+                size="sm"
+                className="gap-2 bg-violet-600 hover:bg-violet-700 text-white"
+              >
+                <Layers className="h-4 w-4" />
+                Advanced Canvas Builder
               </Button>
             </div>
           </Card>
@@ -677,11 +741,21 @@ export default function AgendaTemplatesTab({ buildings, loading }: AgendaTemplat
             <>
               <div className="grid grid-cols-12 gap-6 mb-6">
                 <div className="col-span-12 lg:col-span-3 space-y-4">
-                  <div className="flex items-center justify-between mb-2 px-1">
-                     <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Template Editor</h3>
-                     {meeting?.id === 0 && (
-                       <span className="text-[10px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-black uppercase tracking-wider">Default Template</span>
-                     )}
+                  <div className="flex flex-col gap-1 mb-2 px-1">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-bold text-primary flex items-center gap-2">
+                        <Save className="h-4 w-4" /> Template Editor
+                      </h3>
+                      {meeting?.id === 0 && (
+                        <span className="text-[10px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-black uppercase tracking-wider">Default Template</span>
+                      )}
+                    </div>
+                    {templateMode === "advanced" && (
+                      <div className="p-3 bg-amber-50 border border-amber-200 text-amber-800 text-[11px] rounded-lg mt-1 shadow-sm leading-normal">
+                        <span className="font-bold block mb-1">⚠️ Advanced Layout Active</span>
+                        This building is configured to use the Advanced Canvas Layout. Changes below won't be applied to generated PDFs unless Layout Mode is set back to "Simple Style Editor".
+                      </div>
+                    )}
                   </div>
 
                   <Card className="p-4">
