@@ -201,15 +201,37 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
   }
 
   const handleDeleteUser = async (userId: number) => {
-    const confirmed = window.confirm("Are you sure you want to delete this user?")
+    const confirmed = window.confirm("Are you sure you want to delete this user? This will remove all their building assignments and related data.")
     if (!confirmed) return
 
     try {
+      // 1. Remove building assignments (FK: user_buildings.user_id → users.id)
+      const { error: ubError } = await supabase
+        .from("user_buildings")
+        .delete()
+        .eq("user_id", userId)
+      if (ubError) {
+        console.error("Error removing user building assignments:", ubError)
+        alert("Failed to delete user: could not remove building assignments")
+        return
+      }
+
+      // 2. Remove genius words (FK: genius_words.user_id → users.id)
+      const { error: gwError } = await supabase
+        .from("genius_words")
+        .delete()
+        .eq("user_id", userId)
+      if (gwError) {
+        console.error("Error removing genius words:", gwError)
+        // Non-fatal — continue
+      }
+
+      // 3. Finally delete the user record
       const { error } = await supabase.from("users").delete().eq("id", userId)
 
       if (error) {
         console.error("Error deleting user:", error)
-        alert("Failed to delete user")
+        alert(`Failed to delete user: ${error.message}`)
         return
       }
 
