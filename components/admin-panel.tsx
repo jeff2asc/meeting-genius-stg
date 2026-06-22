@@ -419,7 +419,29 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
 
       const { data: userBuildingsData } = await ubQuery
 
-      const usersWithBuildings = (usersData || []).map((user: any) => {
+      // If filtering by company, also include users who are assigned to
+      // company buildings but have a null company_id (e.g. attendees, owners,
+      // residents added without a real email — they are linked via user_buildings
+      // but their users.company_id is null, so they don't appear in the main query above)
+      let finalUsersData = [...(usersData || [])]
+      if (!isMaster && currentUser?.company_id && userBuildingsData && userBuildingsData.length > 0) {
+        const buildingUserIds = userBuildingsData.map((ub: any) => ub.user_id)
+        const existingUserIds = finalUsersData.map((u: any) => u.id)
+        const missingUserIds = buildingUserIds.filter((id: number) => !existingUserIds.includes(id))
+
+        if (missingUserIds.length > 0) {
+          const { data: extraUsers } = await supabase
+            .from("users")
+            .select("id, name, email, user_type, roles, assigned_pm_id, company_id, created_at, companies(id, name)")
+            .in("id", missingUserIds)
+
+          if (extraUsers && extraUsers.length > 0) {
+            finalUsersData.push(...extraUsers)
+          }
+        }
+      }
+
+      const usersWithBuildings = finalUsersData.map((user: any) => {
         const userJunctions = (userBuildingsData || [])
           .filter((ub: any) => ub.user_id === user.id)
         
