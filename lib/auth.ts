@@ -1,4 +1,10 @@
 import { setCurrentUser, User, UserRole } from './supabase'
+import bcrypt from 'bcryptjs'
+
+export async function hashPassword(password: string): Promise<string> {
+  const salt = await bcrypt.genSalt(10)
+  return bcrypt.hash(password, salt)
+}
 
 // Login function — calls server-side API to avoid Mixed Content + RLS issues
 export async function login(
