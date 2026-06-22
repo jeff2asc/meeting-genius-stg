@@ -350,7 +350,7 @@ export function ImportMinutesModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={(v) => !v && !isUploading && !isImporting && onClose()}>
-      <DialogContent className="max-w-6xl max-h-[90vh] flex flex-col p-6 gap-4">
+      <DialogContent className="max-w-6xl sm:max-w-6xl max-h-[90vh] flex flex-col p-6 gap-4">
         <DialogHeader className="border-b pb-3">
           <DialogTitle className="flex items-center gap-2 text-xl font-bold">
             <FileUp className="h-5 w-5 text-emerald-600" />
@@ -507,7 +507,7 @@ export function ImportMinutesModal({
                             })
                           }}
                         >
-                          <SelectTrigger className="bg-white h-9">
+                          <SelectTrigger className="w-full bg-white h-9">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -537,7 +537,7 @@ export function ImportMinutesModal({
                               updateActiveTopic({ destSectionId: val })
                             }}
                           >
-                            <SelectTrigger className="bg-white h-9">
+                            <SelectTrigger className="w-full bg-white h-9">
                               <SelectValue placeholder="Choose a section..." />
                             </SelectTrigger>
                             <SelectContent>
@@ -571,7 +571,7 @@ export function ImportMinutesModal({
                             })
                           }}
                         >
-                          <SelectTrigger className="bg-white h-9">
+                          <SelectTrigger className="w-full bg-white h-9">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -597,7 +597,7 @@ export function ImportMinutesModal({
                             value={activeTopic.destTopicId}
                             onValueChange={(val) => updateActiveTopic({ destTopicId: val })}
                           >
-                            <SelectTrigger className="bg-white h-9">
+                            <SelectTrigger className="w-full bg-white h-9">
                               <SelectValue placeholder="Choose a topic..." />
                             </SelectTrigger>
                             <SelectContent>
