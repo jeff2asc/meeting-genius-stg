@@ -191,17 +191,44 @@ export default function CompanyDetailsModal({
         .eq("company_id", company.id)
         .order("name")
 
-      if (usersError) {
-        console.error("Error fetching users:", usersError)
-      } else {
-        setUsers(usersData || [])
-      }
-
       const { data: buildingsData, error: buildingsError } = await supabase
         .from("buildings")
         .select("id, name, address, manager_id, building_type, board_meeting_notice_days, general_meeting_notice_days, notification_recipient_type")
         .eq("company_id", company.id)
         .order("name")
+
+      let finalUsers = usersData || []
+
+      if (buildingsData && buildingsData.length > 0) {
+        const buildingIds = buildingsData.map(b => b.id)
+        const { data: ubData, error: ubError } = await supabase
+          .from("user_buildings")
+          .select("user_id")
+          .in("building_id", buildingIds)
+
+        if (!ubError && ubData && ubData.length > 0) {
+          const buildingUserIds = ubData.map((ub: any) => ub.user_id)
+          const existingUserIds = finalUsers.map((u: any) => u.id)
+          const missingUserIds = buildingUserIds.filter((id: number) => !existingUserIds.includes(id))
+
+          if (missingUserIds.length > 0) {
+            const { data: extraUsers, error: extraError } = await supabase
+              .from("users")
+              .select("id, name, email, user_type, roles, company_id")
+              .in("id", missingUserIds)
+
+            if (!extraError && extraUsers && extraUsers.length > 0) {
+              finalUsers = [...finalUsers, ...extraUsers]
+            }
+          }
+        }
+      }
+
+      if (usersError) {
+        console.error("Error fetching users:", usersError)
+      } else {
+        setUsers(finalUsers)
+      }
 
       if (buildingsError) {
         console.error("Error fetching buildings:", buildingsError)
