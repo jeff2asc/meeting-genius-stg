@@ -3,6 +3,15 @@ import { isAuthorizedRequest } from '@/lib/auth-server';
 import { parseMinutesToStructure } from "@/lib/ai";
 import { extractTextFromFile } from "@/lib/documentExtractor";
 
+// Allow large PDF/DOCX uploads up to 50MB
+export const config = {
+  api: {
+    bodyParser: {
+      sizeLimit: '50mb',
+    },
+  },
+};
+
 export async function POST(request: NextRequest) {
   try {
     // API Key verification
