@@ -52,7 +52,7 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
     e.preventDefault()
     setError(null)
 
-    if (!captchaToken) {
+    if (process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY && !captchaToken) {
       setError("Please complete the CAPTCHA verification")
       return
     }
@@ -387,24 +387,27 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
         </div>
 
         {/* reCAPTCHA Widget */}
-        <div className="flex justify-center">
-          <ReCAPTCHA
-            ref={captchaRef}
-            sitekey="6LfKE-gsAAAAANXM4nX9kJF16xHCthr6n_sZlpj1"
-            onChange={(token) => setCaptchaToken(token)}
-            onExpired={() => setCaptchaToken(null)}
-            theme="light"
-          />
-        </div>
+        {process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY && (
+          <div className="flex justify-center">
+            <ReCAPTCHA
+              ref={captchaRef}
+              sitekey={process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY}
+              onChange={(token) => setCaptchaToken(token)}
+              onExpired={() => setCaptchaToken(null)}
+              theme="light"
+            />
+          </div>
+        )}
 
         <Button
           type="submit"
-          disabled={loading || !captchaToken}
+          disabled={loading || (!!process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY && !captchaToken)}
           className="w-full bg-gradient-to-r from-primary to-decision-purple text-primary-foreground hover:opacity-90 py-6 text-lg disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {loading ? "Signing in..." : "Sign In"}
         </Button>
       </form>
+
     </>
   )
 }
